@@ -20,7 +20,7 @@ import {
 } from "@wow-two-beta/ui-vue/presentation/forms";
 
 import { useAuditEntries, useAuditVerification } from "@/application/audit";
-import { useRefresh } from "@/application/common";
+import { useRefresh } from "@/bootstrap/query";
 import { AuditArea, AuditExtensions, AuditOutcome } from "@/domain/audit";
 import { Measures } from "@/domain/common";
 import { LoadState, PageActions, Panel, RefreshButton } from "@/presentation/common/components";

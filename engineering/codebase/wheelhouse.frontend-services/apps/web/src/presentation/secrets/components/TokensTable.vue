@@ -36,7 +36,8 @@ import {
 } from "@wow-two-beta/ui-vue/presentation/overlays";
 import { useTokenChanges, useVaultTokens } from "@/application/secrets";
 import { Measures } from "@/domain/common";
-import { LoadState, SkeletonStateSlot } from "@/presentation/common/components";
+import { SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { LoadState } from "@/presentation/common/components";
 import MintTokenModal from "./MintTokenModal.vue";
 
 /** Administers metadata, one-time minting, and confirmed token revocation. */

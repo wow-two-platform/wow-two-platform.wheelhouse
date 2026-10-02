@@ -15,8 +15,7 @@ export interface LoadStateProps {
 <script setup lang="ts">
 import { Button } from '@wow-two-beta/ui-vue/presentation/actions';
 import { EmptyState } from '@wow-two-beta/ui-vue/presentation/display';
-import { SkeletonState } from '@wow-two-beta/ui-vue/presentation/feedback';
-import SkeletonStateGroup from './skeleton/SkeletonStateGroup.vue';
+import { SkeletonState, SkeletonStateGroup } from '@wow-two-beta/ui-vue/presentation/feedback';
 
 /** Keeps pending, failed, empty, and retained operational data distinct; a refresh never blanks the region. */
 defineOptions({ name: 'LoadState' });

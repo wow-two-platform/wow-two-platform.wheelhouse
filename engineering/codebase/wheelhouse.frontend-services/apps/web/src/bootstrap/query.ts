@@ -1,6 +1,6 @@
 import { createQueryClient, useQueryCache } from '@wow-two-beta/ui-vue/query';
 
-export { useAppQuery, useAppQueries, useAppMutation, useQueryCache, queryPlugin } from '@wow-two-beta/ui-vue/query';
+export { useAppQuery, useAppQueries, useAppMutation, useQueryCache, useRefresh, queryPlugin } from '@wow-two-beta/ui-vue/query';
 
 /** Owns the operator session's in-memory server cache. */
 export const queryClient = createQueryClient();

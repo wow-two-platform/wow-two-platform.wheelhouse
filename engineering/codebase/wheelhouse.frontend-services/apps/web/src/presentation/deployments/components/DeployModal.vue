@@ -260,8 +260,8 @@ function close(open: boolean): void {
 <template>
   <Modal
     :open="props.open"
-    :dismiss-on-outside-click="!start.loading.value"
-    :dismiss-on-escape="!start.loading.value"
+    :can-dismiss-on-outside-click="!start.loading.value"
+    :can-dismiss-on-escape="!start.loading.value"
     @update:open="close"
   >
     <ModalContent class="flex max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col">

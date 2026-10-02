@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
 
-import { useRefresh } from "@/application/common";
+import { useRefresh } from "@/bootstrap/query";
 import {
   useDeploymentTargets,
   useReleaseArtifacts,

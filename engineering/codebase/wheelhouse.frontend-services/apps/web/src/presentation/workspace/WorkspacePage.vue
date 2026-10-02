@@ -33,7 +33,7 @@ import {
   useReleaseArtifacts,
   useDeploymentOutcome,
 } from "@/application/deployments";
-import { useRefresh } from "@/application/common";
+import { useRefresh } from "@/bootstrap/query";
 import { useTargetTopology } from "@/application/topology";
 import {
   buildWorkspaceInventory,

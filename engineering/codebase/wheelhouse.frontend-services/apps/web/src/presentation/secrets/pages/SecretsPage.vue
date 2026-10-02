@@ -25,9 +25,10 @@ import {
   useVaults,
 } from "@/application/secrets";
 import { useInvalidate } from "@/bootstrap/query";
-import { useRefresh } from "@/application/common";
+import { useRefresh } from "@/bootstrap/query";
 import { VaultStatus } from "@/domain/secrets";
-import { LoadState, Panel, PageActions, RefreshButton, SkeletonStateGroup, SkeletonStateSlot } from "@/presentation/common/components";
+import { SkeletonStateGroup, SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { LoadState, Panel, PageActions, RefreshButton } from "@/presentation/common/components";
 import NamespaceList from "../components/NamespaceList.vue";
 import SecretsTable from "../components/SecretsTable.vue";
 import TokensTable from "../components/TokensTable.vue";

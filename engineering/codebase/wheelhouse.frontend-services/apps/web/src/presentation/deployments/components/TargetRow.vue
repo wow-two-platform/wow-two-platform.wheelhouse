@@ -17,7 +17,7 @@ import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import { Badge } from "@wow-two-beta/ui-vue/presentation/display";
 import { Spinner } from "@wow-two-beta/ui-vue/presentation/feedback";
 
-import { useRefresh } from "@/application/common";
+import { useRefresh } from "@/bootstrap/query";
 import { useTargetState } from "@/application/deployments";
 import { DeploymentExtensions, TargetCondition } from "@/domain/deployments";
 

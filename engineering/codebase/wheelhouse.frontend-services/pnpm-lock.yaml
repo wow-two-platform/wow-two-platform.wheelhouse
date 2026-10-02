@@ -14,8 +14,8 @@ importers:
         specifier: ^5.103.2
         version: 5.104.0(vue@3.5.43(typescript@5.9.3))
       '@wow-two-beta/ui-vue':
-        specifier: 0.0.9
-        version: 0.0.9(@tanstack/vue-query@5.104.0(vue@3.5.43(typescript@5.9.3)))(tailwindcss@4.3.0)(vue-router@4.6.4(vue@3.5.43(typescript@5.9.3)))(vue@3.5.43(typescript@5.9.3))
+        specifier: 0.0.12
+        version: 0.0.12(@tanstack/vue-query@5.104.0(vue@3.5.43(typescript@5.9.3)))(tailwindcss@4.3.0)(vue-router@4.6.4(vue@3.5.43(typescript@5.9.3)))(vue@3.5.43(typescript@5.9.3))
       lucide-vue-next:
         specifier: ^0.460.0
         version: 0.460.0(vue@3.5.43(typescript@5.9.3))
@@ -577,8 +577,8 @@ packages:
   '@vue/shared@3.5.43':
     resolution: {integrity: sha512-uksS7YGMR5NZyr4JNq0Rp+QyLns0ueaz20KwzIPW9R0LH1Vnt4E+XUM29PNseEbf1www2gOuhuDi5AKOIXag9Q==}
 
-  '@wow-two-beta/ui-vue@0.0.9':
-    resolution: {integrity: sha512-R8ooh0fkCcuP7ktcveNOmJrEfzYg+OijawZlVq+aA99NTVd5GzGaVAAag+TDciwh6K/1SRkrqFuUGn49aUm94A==}
+  '@wow-two-beta/ui-vue@0.0.12':
+    resolution: {integrity: sha512-Kq/HHUsaMwz5hVv5fHLsWjo0G74c0NfOy1An7jB93fASqksNmOX/6ldDDVosk1TCHffA0ZC+N9F/WosYKZ1P3A==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       '@tanstack/vue-form': ^1.0.0
@@ -1331,7 +1331,7 @@ snapshots:
 
   '@vue/shared@3.5.43': {}
 
-  '@wow-two-beta/ui-vue@0.0.9(@tanstack/vue-query@5.104.0(vue@3.5.43(typescript@5.9.3)))(tailwindcss@4.3.0)(vue-router@4.6.4(vue@3.5.43(typescript@5.9.3)))(vue@3.5.43(typescript@5.9.3))':
+  '@wow-two-beta/ui-vue@0.0.12(@tanstack/vue-query@5.104.0(vue@3.5.43(typescript@5.9.3)))(tailwindcss@4.3.0)(vue-router@4.6.4(vue@3.5.43(typescript@5.9.3)))(vue@3.5.43(typescript@5.9.3))':
     dependencies:
       '@floating-ui/vue': 1.1.11(vue@3.5.43(typescript@5.9.3))
       bignumber.js: 11.1.5

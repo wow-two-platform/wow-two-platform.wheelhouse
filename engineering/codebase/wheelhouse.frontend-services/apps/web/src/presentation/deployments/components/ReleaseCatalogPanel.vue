@@ -20,7 +20,7 @@ import {
   SelectPickerValue,
 } from "@wow-two-beta/ui-vue/presentation/forms";
 
-import { useRefresh } from "@/application/common";
+import { useRefresh } from "@/bootstrap/query";
 import { useReleaseArtifacts } from "@/application/deployments";
 import { Measures } from "@/domain/common";
 import { LoadState, Panel } from "@/presentation/common/components";

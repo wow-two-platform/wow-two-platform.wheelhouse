@@ -27,7 +27,7 @@ import {
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import { Badge, EmptyState } from "@wow-two-beta/ui-vue/presentation/display";
 import { Measures } from "@/domain/common";
-import { CanvasArea } from "@/presentation/common";
+import { CanvasArea } from "@wow-two-beta/ui-vue/presentation/layout";
 import { TopologyAvailability } from "@/domain/topology";
 import {
   buildServiceMapLayout,

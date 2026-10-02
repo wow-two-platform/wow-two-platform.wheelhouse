@@ -3,7 +3,7 @@ import { Rocket } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 
-import { useRefresh } from "@/application/common";
+import { useRefresh } from "@/bootstrap/query";
 import { useDeploymentHistory } from "@/application/deployments";
 import type { DeploymentJob } from "@/domain/deployments";
 import {

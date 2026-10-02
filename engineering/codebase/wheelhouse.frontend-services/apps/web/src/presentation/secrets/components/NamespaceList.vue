@@ -10,7 +10,8 @@ export interface NamespaceListProps {
 import { ref, watch } from "vue";
 import { Plus } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { SkeletonStateSlot, LoadState } from "@/presentation/common/components";
+import { SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { LoadState } from "@/presentation/common/components";
 import { useVaultNamespaces } from "@/application/secrets";
 import NamespaceModal from "./NamespaceModal.vue";
 

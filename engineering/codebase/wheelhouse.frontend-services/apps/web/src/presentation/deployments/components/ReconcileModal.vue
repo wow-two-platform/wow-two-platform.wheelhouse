@@ -71,7 +71,7 @@ async function confirm(): Promise<void> {
 <template>
   <AlertModal
     :open="props.open"
-    :dismiss-on-escape="!reconcile.loading.value"
+    :can-dismiss-on-escape="!reconcile.loading.value"
     @update:open="close"
   >
     <AlertModalContent class="flex max-h-[calc(100dvh-2rem)] flex-col">

@@ -31,7 +31,8 @@ import {
 import { useSecretChanges, useVaultSecrets } from "@/application/secrets";
 import { Measures } from "@/domain/common";
 import { SecretState } from "@/domain/secrets";
-import { LoadState, SkeletonStateSlot } from "@/presentation/common/components";
+import { SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { LoadState } from "@/presentation/common/components";
 import SetSecretModal from "./SetSecretModal.vue";
 
 /** Shows metadata and controls serving state without exposing stored values. */

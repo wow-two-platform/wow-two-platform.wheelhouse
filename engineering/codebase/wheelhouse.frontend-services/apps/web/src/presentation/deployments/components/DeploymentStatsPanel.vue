@@ -22,14 +22,11 @@ import {
 } from "@wow-two-beta/ui-vue/presentation/display";
 import { SkeletonState } from "@wow-two-beta/ui-vue/presentation/feedback";
 
-import { useRefresh } from "@/application/common";
+import { useRefresh } from "@/bootstrap/query";
 import { useDeploymentStats } from "@/application/deployments";
 import { Measures } from "@/domain/common";
-import {
-  LoadState,
-  Panel,
-  SkeletonStateSlot,
-} from "@/presentation/common/components";
+import { SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { LoadState, Panel } from "@/presentation/common/components";
 
 import JobStatusIndicator from "./JobStatusIndicator.vue";
 

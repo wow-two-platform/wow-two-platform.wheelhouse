@@ -32,7 +32,7 @@ import {
   ModalTitle,
 } from "@wow-two-beta/ui-vue/presentation/overlays";
 
-import { useRefresh } from "@/application/common";
+import { useRefresh } from "@/bootstrap/query";
 import { useServiceLogs } from "@/application/deployments";
 import { Measures } from "@/domain/common";
 import { RefreshButton } from "@/presentation/common/components";

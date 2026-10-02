@@ -20,7 +20,7 @@ import {
 } from '@wow-two-beta/ui-vue/presentation/forms';
 import { useServers, useServerVitals, useVitalsHistory } from '@/application/servers';
 import { useDeploymentTargets } from '@/application/deployments';
-import { useRefresh } from '@/application/common';
+import { useRefresh } from '@/bootstrap/query';
 import { ServerExtensions, TrendRanges, VpsProvider, hostTrend, type TrendRange } from '@/domain/servers';
 import { Measures } from '@/domain/common';
 import { Panel, LoadState, PageActions, RefreshButton } from '@/presentation/common/components';
