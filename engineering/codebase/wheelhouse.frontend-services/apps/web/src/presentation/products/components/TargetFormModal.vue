@@ -16,7 +16,7 @@ export interface TargetFormModalProps {
 </script>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { ref, watch } from "vue";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
 import {
@@ -36,9 +36,16 @@ import {
   ModalHeader,
   ModalTitle,
 } from "@wow-two-beta/ui-vue/presentation/overlays";
-import { DeploymentEnvironment, type SaveTargetRequest } from "@/domain/targets";
-import { failureMessages } from "@/integration/common";
-import { DeleteConfirm, RowsEditor } from "@/presentation/common/components";
+import { useAppForm } from "@/bootstrap/form";
+import {
+  suggestedTargetSlug,
+  targetFormOf,
+  targetFormSchema,
+  targetRequestOf,
+} from "@/application/targets/TargetForms";
+import { DeploymentEnvironment } from "@/domain/targets";
+import { failureReason } from "@/integration/common";
+import { DeleteConfirm, RowsField } from "@/presentation/common/components";
 
 /** Edits where an environment runs, which settings files its services read, which requests prove a rollout and
  * which hosts its sites answer on. */
@@ -47,95 +54,49 @@ const props = defineProps<TargetFormModalProps>();
 const emit = defineEmits<{ "update:open": [open: boolean] }>();
 defineSlots<{}>();
 
-const model = reactive({
-  slug: "",
-  environment: DeploymentEnvironment.Dev as DeploymentEnvironment,
-  server: null as string | null,
-  network: "platform",
-  root: "/srv/wheelhouse",
-  settings: [] as Record<string, string | number>[],
-  smokeChecks: [] as Record<string, string | number>[],
-  sites: [] as Record<string, string | number>[],
-});
-const slugEdited = ref(false);
-const errors = ref<string[]>([]);
-const saving = ref(false);
-const removing = ref(false);
 const environments = Object.values(DeploymentEnvironment);
-const suggestedSlug = computed(() => `${props.product}-${model.environment}`);
+const removeError = ref("");
+const form = useAppForm({
+  defaultValues: targetFormOf(null, props.product, null),
+  schema: targetFormSchema,
+  onSubmit: async (values) => {
+    const body = targetRequestOf(values, props.product, !props.target);
+    const result = props.target
+      ? await props.operations.update(props.target.slug, body)
+      : await props.operations.create(body);
+    if (result.ok) emit("update:open", false);
+    return result;
+  },
+});
 
 /** Starts each session from the target being edited, or a dev environment on the first server. */
 watch(
   () => props.open,
   (open) => {
     if (!open) return;
-    const target = props.target;
-    Object.assign(model, {
-      slug: target?.slug ?? `${props.product}-dev`,
-      environment: target?.environment ?? DeploymentEnvironment.Dev,
-      server: target?.server ?? props.servers[0]?.slug ?? null,
-      network: target?.network ?? "platform",
-      root: target?.root ?? "/srv/wheelhouse",
-      settings: target?.settings.map((setting) => ({ ...setting })) ?? [],
-      smokeChecks: target?.smokeChecks.map((check) => ({ ...check })) ?? [],
-      sites: target?.sites.map((site) => ({ ...site })) ?? [],
-    });
-    slugEdited.value = false;
-    errors.value = [];
+    removeError.value = "";
+    form.invalidateSession(targetFormOf(props.target, props.product, props.servers[0]?.slug ?? null));
   },
-  { immediate: true },
+  { immediate: true, flush: "sync" },
 );
 
-/** Keeps a new target's slug following its environment until the operator types one. */
-watch(suggestedSlug, (slug) => {
-  if (!props.target && !slugEdited.value) model.slug = slug;
-});
-
-/** The request body the form describes. */
-function body(): SaveTargetRequest {
-  return {
-    ...(props.target ? {} : { slug: model.slug.trim() }),
-    product: props.product,
-    server: model.server ?? "",
-    environment: model.environment,
-    network: model.network.trim(),
-    root: model.root.trim(),
-    settings: model.settings.map((row) => ({ service: String(row.service).trim(), path: String(row.path).trim() })),
-    smokeChecks: model.smokeChecks.map((row) => ({
-      service: String(row.service).trim(), path: String(row.path).trim(), status: Number(row.status),
-    })),
-    sites: model.sites.map((row) => ({ site: String(row.site).trim(), host: String(row.host).trim() })),
-  };
-}
-
-/** Saves the environment once the server accepts it. */
-async function submit(): Promise<void> {
-  if (saving.value) return;
-  saving.value = true;
-  errors.value = [];
-  try {
-    const result = props.target
-      ? await props.operations.update(props.target.slug, body())
-      : await props.operations.create(body());
-    if (!result.ok) errors.value = failureMessages(result.failure);
-    else emit("update:open", false);
-  } finally {
-    saving.value = false;
-  }
-}
+/** Keeps a new target's slug following its environment until the operator types another. */
+watch(
+  () => form.state.values.environment,
+  (environment, previous) => {
+    if (props.target || !previous) return;
+    if (form.state.values.slug === suggestedTargetSlug(props.product, previous))
+      form.setValue("slug", suggestedTargetSlug(props.product, environment));
+  },
+);
 
 /** Removes the environment from the inventory; what runs on its host stays until torn down there. */
 async function remove(): Promise<void> {
-  if (!props.target || removing.value) return;
-  removing.value = true;
-  errors.value = [];
-  try {
-    const result = await props.operations.remove(props.target.slug);
-    if (!result.ok) errors.value = failureMessages(result.failure);
-    else emit("update:open", false);
-  } finally {
-    removing.value = false;
-  }
+  if (!props.target) return;
+  removeError.value = "";
+  const result = await props.operations.remove(props.target.slug);
+  if (!result.ok) removeError.value = failureReason(result.failure);
+  else emit("update:open", false);
 }
 </script>
 
@@ -145,73 +106,99 @@ async function remove(): Promise<void> {
       <ModalHeader>
         <ModalTitle>{{ target ? `Edit ${target.slug}` : "New environment" }}</ModalTitle>
       </ModalHeader>
-      <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="submit">
+      <form class="flex min-h-0 flex-1 flex-col" @submit="form.handleSubmit">
         <ModalBody class="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1">
           <div class="grid gap-4 sm:grid-cols-2">
-            <Field label="Environment">
-              <SelectPicker v-model="model.environment"
-                ><SelectPickerTrigger aria-label="Environment"><SelectPickerValue /></SelectPickerTrigger
-                ><SelectPickerContent
-                  ><SelectPickerItem v-for="value in environments" :key="value" :item-key="value" :label="value"
-                /></SelectPickerContent
-              ></SelectPicker>
-            </Field>
-            <Field label="Server">
-              <SelectPicker v-model="model.server"
-                ><SelectPickerTrigger aria-label="Server"><SelectPickerValue placeholder="Choose a server" /></SelectPickerTrigger
-                ><SelectPickerContent
-                  ><SelectPickerItem
-                    v-for="server in servers"
-                    :key="server.slug"
-                    :item-key="server.slug"
-                    :label="server.name"
-                /></SelectPickerContent
-              ></SelectPicker>
-            </Field>
+            <form.Field name="environment" is-required v-slot="field">
+              <Field label="Environment">
+                <SelectPicker v-model="field.value"
+                  ><SelectPickerTrigger aria-label="Environment"><SelectPickerValue /></SelectPickerTrigger
+                  ><SelectPickerContent
+                    ><SelectPickerItem v-for="value in environments" :key="value" :item-key="value" :label="value"
+                  /></SelectPickerContent
+                ></SelectPicker>
+              </Field>
+            </form.Field>
+            <form.Field name="server" is-required v-slot="field">
+              <Field label="Server">
+                <SelectPicker v-model="field.value"
+                  ><SelectPickerTrigger aria-label="Server"
+                    ><SelectPickerValue placeholder="Choose a server" /></SelectPickerTrigger
+                  ><SelectPickerContent
+                    ><SelectPickerItem
+                      v-for="server in servers"
+                      :key="server.slug"
+                      :item-key="server.slug"
+                      :label="server.name"
+                  /></SelectPickerContent
+                ></SelectPicker>
+              </Field>
+            </form.Field>
           </div>
-          <Field v-if="!target" label="Slug" helper="Deployments know the environment by this; it never changes">
-            <TextInput v-model="model.slug" autocomplete="off" @update:model-value="slugEdited = true" />
-          </Field>
+          <form.Field v-if="!target" name="slug" is-required v-slot="field">
+            <Field label="Slug" helper="Deployments know the environment by this; it never changes">
+              <TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" />
+            </Field>
+          </form.Field>
           <div class="grid gap-4 sm:grid-cols-2">
-            <Field label="Network"><TextInput v-model="model.network" autocomplete="off" /></Field>
-            <Field label="Releases folder"><TextInput v-model="model.root" autocomplete="off" /></Field>
+            <form.Field name="network" is-required v-slot="field">
+              <Field label="Network"><TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" /></Field>
+            </form.Field>
+            <form.Field name="root" is-required v-slot="field">
+              <Field label="Releases folder"><TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" /></Field>
+            </form.Field>
           </div>
-          <RowsEditor
-            v-model="model.settings"
+          <RowsField
+            :form="form"
+            name="settings"
             label="Settings files"
             add-label="Add service"
+            :blank="{ service: '', path: '' }"
             :columns="[
               { key: 'service', label: 'Service', placeholder: 'api' },
               { key: 'path', label: 'Path on the host', placeholder: '/srv/settings/product/api.json' },
             ]"
           />
-          <RowsEditor
-            v-model="model.smokeChecks"
+          <RowsField
+            :form="form"
+            name="smokeChecks"
             label="Smoke checks"
             add-label="Add check"
+            :blank="{ service: '', path: '/health', status: 200 }"
             :columns="[
               { key: 'service', label: 'Service', placeholder: 'api' },
               { key: 'path', label: 'Path', placeholder: '/health' },
-              { key: 'status', label: 'Status', initial: 200 },
+              { key: 'status', label: 'Status', isNumeric: true },
             ]"
           />
-          <RowsEditor
-            v-model="model.sites"
+          <RowsField
+            :form="form"
+            name="sites"
             label="Site hosts"
             add-label="Add site"
+            :blank="{ site: '', host: '' }"
             :columns="[
               { key: 'site', label: 'Site', placeholder: 'app' },
               { key: 'host', label: 'Host', placeholder: 'app.example.com' },
             ]"
           />
-          <Alert v-if="errors.length" severity="danger" :description="errors.join(' ')" />
+          <Alert
+            v-if="removeError || form.state.submitError"
+            severity="danger"
+            :description="removeError || failureReason(form.state.submitError)"
+          />
         </ModalBody>
         <ModalFooter class="justify-between">
-          <DeleteConfirm v-if="target" label="Remove environment" :is-loading="removing" @confirm="remove" />
+          <DeleteConfirm
+            v-if="target"
+            label="Remove environment"
+            :question="`Remove ${target.slug}?`"
+            :on-confirm="remove"
+          />
           <span v-else />
           <span class="flex gap-2">
             <Button type="button" variant="outline" tone="neutral" @click="emit('update:open', false)">Cancel</Button>
-            <Button type="submit" :is-loading="saving">{{ target ? "Save" : "Add environment" }}</Button>
+            <Button type="submit" :is-loading="form.state.isSubmitting">{{ target ? "Save" : "Add environment" }}</Button>
           </span>
         </ModalFooter>
       </form>

@@ -12,7 +12,7 @@ export interface ProductFormModalProps {
 </script>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from "vue";
+import { ref, watch } from "vue";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { Field, SwitchField, TextAreaInput, TextInput } from "@wow-two-beta/ui-vue/presentation/forms";
@@ -24,9 +24,15 @@ import {
   ModalHeader,
   ModalTitle,
 } from "@wow-two-beta/ui-vue/presentation/overlays";
-import type { SaveProductRequest } from "@/domain/products";
-import { failureMessages } from "@/integration/common";
-import { DeleteConfirm, RowsEditor } from "@/presentation/common/components";
+import { useAppForm } from "@/bootstrap/form";
+import {
+  productFieldPath,
+  productFormOf,
+  productFormSchema,
+  productRequestOf,
+} from "@/application/products/ProductForms";
+import { failureReason } from "@/integration/common";
+import { DeleteConfirm, RowsField } from "@/presentation/common/components";
 
 /** Edits a product's identity and release source, and removes a product nothing runs any more. */
 defineOptions({ name: "ProductFormModal" });
@@ -34,94 +40,44 @@ const props = defineProps<ProductFormModalProps>();
 const emit = defineEmits<{ "update:open": [open: boolean]; saved: [slug: string]; removed: [] }>();
 defineSlots<{}>();
 
-const model = reactive({
-  slug: "",
-  name: "",
-  description: "",
-  repository: "",
-  defaultBranch: "main",
-  publishes: false,
-  asset: "",
-  workflow: "",
-  images: [] as Record<string, string | number>[],
+const removeError = ref("");
+const form = useAppForm({
+  defaultValues: productFormOf(null),
+  schema: productFormSchema,
+  mapFieldPath: productFieldPath,
+  onSubmit: async (values) => {
+    const body = productRequestOf(values, !props.product);
+    const result = props.product
+      ? await props.operations.update(props.product.slug, body)
+      : await props.operations.create(body);
+    if (result.ok) {
+      emit("saved", result.value.slug);
+      emit("update:open", false);
+    }
+    return result;
+  },
 });
-const errors = ref<string[]>([]);
-const saving = ref(false);
-const removing = ref(false);
 
 /** Starts each session from the product being edited, or blank. */
 watch(
   () => props.open,
   (open) => {
     if (!open) return;
-    const product = props.product;
-    Object.assign(model, {
-      slug: product?.slug ?? "",
-      name: product?.name ?? "",
-      description: product?.description ?? "",
-      repository: product?.repository.name ?? "",
-      defaultBranch: product?.repository.defaultBranch ?? "main",
-      publishes: product?.release != null,
-      asset: product?.release?.asset ?? "",
-      workflow: product?.release?.workflow ?? "",
-      images: product?.release?.images.map((image) => ({ ...image })) ?? [],
-    });
-    errors.value = [];
+    removeError.value = "";
+    form.invalidateSession(productFormOf(props.product));
   },
-  { immediate: true },
+  { immediate: true, flush: "sync" },
 );
 
-/** The request body the form describes. */
-function body(): SaveProductRequest {
-  return {
-    ...(props.product ? {} : { slug: model.slug.trim() }),
-    name: model.name.trim(),
-    description: model.description.trim(),
-    repository: model.repository.trim(),
-    defaultBranch: model.defaultBranch.trim(),
-    release: model.publishes
-      ? {
-          asset: model.asset.trim(),
-          workflow: model.workflow.trim() || null,
-          images: model.images.map((row) => ({ service: String(row.service).trim(), image: String(row.image).trim() })),
-        }
-      : null,
-  };
-}
-
-/** Saves the product once the server accepts it. */
-async function submit(): Promise<void> {
-  if (saving.value) return;
-  saving.value = true;
-  errors.value = [];
-  try {
-    const result = props.product
-      ? await props.operations.update(props.product.slug, body())
-      : await props.operations.create(body());
-    if (!result.ok) errors.value = failureMessages(result.failure);
-    else {
-      emit("saved", result.value.slug);
-      emit("update:open", false);
-    }
-  } finally {
-    saving.value = false;
-  }
-}
-
-/** Removes the product once the server accepts it; a product a target runs stays. */
+/** Removes the product once the host accepts it; a product an environment still runs stays. */
 async function remove(): Promise<void> {
-  if (!props.product || removing.value) return;
-  removing.value = true;
-  errors.value = [];
-  try {
-    const result = await props.operations.remove(props.product.slug);
-    if (!result.ok) errors.value = failureMessages(result.failure);
-    else {
-      emit("removed");
-      emit("update:open", false);
-    }
-  } finally {
-    removing.value = false;
+  if (!props.product) return;
+  removeError.value = "";
+  const result = await props.operations.remove(props.product.slug);
+  if (!result.ok) removeError.value = failureReason(result.failure);
+  else {
+    emit("removed");
+    emit("update:open", false);
   }
 }
 </script>
@@ -132,41 +88,69 @@ async function remove(): Promise<void> {
       <ModalHeader>
         <ModalTitle>{{ product ? `Edit ${product.name}` : "New product" }}</ModalTitle>
       </ModalHeader>
-      <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="submit">
+      <form class="flex min-h-0 flex-1 flex-col" @submit="form.handleSubmit">
         <ModalBody class="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1">
-          <Field v-if="!product" label="Slug" helper="Targets, bundles and URLs know it by this; it never changes">
-            <TextInput v-model="model.slug" autocomplete="off" placeholder="foreverpin" />
-          </Field>
-          <Field label="Name"><TextInput v-model="model.name" autocomplete="off" /></Field>
-          <Field label="Description"><TextAreaInput v-model="model.description" :rows="2" /></Field>
+          <form.Field v-if="!product" name="slug" is-required v-slot="field">
+            <Field label="Slug" helper="Targets, bundles and URLs know it by this; it never changes">
+              <TextInput v-model="field.value" autocomplete="off" placeholder="foreverpin" @blur="field.onBlur" />
+            </Field>
+          </form.Field>
+          <form.Field name="name" is-required v-slot="field">
+            <Field label="Name"><TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" /></Field>
+          </form.Field>
+          <form.Field name="description" v-slot="field">
+            <Field label="Description"><TextAreaInput v-model="field.value" :rows="2" @blur="field.onBlur" /></Field>
+          </form.Field>
           <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
-            <Field label="Repository"><TextInput v-model="model.repository" autocomplete="off" placeholder="owner/name" /></Field>
-            <Field label="Default branch"><TextInput v-model="model.defaultBranch" autocomplete="off" /></Field>
+            <form.Field name="repository" is-required v-slot="field">
+              <Field label="Repository">
+                <TextInput v-model="field.value" autocomplete="off" placeholder="owner/name" @blur="field.onBlur" />
+              </Field>
+            </form.Field>
+            <form.Field name="defaultBranch" is-required v-slot="field">
+              <Field label="Default branch"><TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" /></Field>
+            </form.Field>
           </div>
-          <SwitchField v-model="model.publishes" label="Publishes releases" />
-          <template v-if="model.publishes">
+          <form.Field name="publishes" v-slot="field">
+            <SwitchField v-model="field.value" label="Publishes releases" />
+          </form.Field>
+          <template v-if="form.state.values.publishes">
             <div class="grid gap-4 sm:grid-cols-2">
-              <Field label="Release asset"><TextInput v-model="model.asset" autocomplete="off" placeholder="product-release.tar.gz" /></Field>
-              <Field label="Build workflow"><TextInput v-model="model.workflow" autocomplete="off" placeholder="publish-docker-image.yml" /></Field>
+              <form.Field name="asset" is-required v-slot="field">
+                <Field label="Release asset">
+                  <TextInput v-model="field.value" autocomplete="off" placeholder="product-release.tar.gz" @blur="field.onBlur" />
+                </Field>
+              </form.Field>
+              <form.Field name="workflow" v-slot="field">
+                <Field label="Build workflow">
+                  <TextInput v-model="field.value" autocomplete="off" placeholder="publish-docker-image.yml" @blur="field.onBlur" />
+                </Field>
+              </form.Field>
             </div>
-            <RowsEditor
-              v-model="model.images"
+            <RowsField
+              :form="form"
+              name="images"
               label="Images"
               add-label="Add service"
+              :blank="{ service: '', image: '' }"
               :columns="[
                 { key: 'service', label: 'Service', placeholder: 'api' },
                 { key: 'image', label: 'Image', placeholder: 'ghcr.io/owner/product/api' },
               ]"
             />
           </template>
-          <Alert v-if="errors.length" severity="danger" :description="errors.join(' ')" />
+          <Alert
+            v-if="removeError || form.state.submitError"
+            severity="danger"
+            :description="removeError || failureReason(form.state.submitError)"
+          />
         </ModalBody>
         <ModalFooter class="justify-between">
-          <DeleteConfirm v-if="product" label="Delete product" :is-loading="removing" @confirm="remove" />
+          <DeleteConfirm v-if="product" label="Delete product" :question="`Delete ${product.name}?`" :on-confirm="remove" />
           <span v-else />
           <span class="flex gap-2">
             <Button type="button" variant="outline" tone="neutral" @click="emit('update:open', false)">Cancel</Button>
-            <Button type="submit" :is-loading="saving">{{ product ? "Save" : "Add product" }}</Button>
+            <Button type="submit" :is-loading="form.state.isSubmitting">{{ product ? "Save" : "Add product" }}</Button>
           </span>
         </ModalFooter>
       </form>

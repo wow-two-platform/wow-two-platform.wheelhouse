@@ -14,7 +14,7 @@ export interface VaultFormModalProps {
 </script>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from "vue";
+import { ref, watch } from "vue";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { Field, TextInput } from "@wow-two-beta/ui-vue/presentation/forms";
@@ -26,8 +26,13 @@ import {
   ModalHeader,
   ModalTitle,
 } from "@wow-two-beta/ui-vue/presentation/overlays";
-import type { SaveVaultRequest } from "@/domain/secrets";
-import { failureMessages } from "@/integration/common";
+import { useAppForm } from "@/bootstrap/form";
+import {
+  vaultDefinitionFormOf,
+  vaultDefinitionFormSchema,
+  vaultDefinitionRequestOf,
+} from "@/application/secrets/VaultDefinitionForms";
+import { failureReason } from "@/integration/common";
 import { DeleteConfirm } from "@/presentation/common/components";
 
 /** Edits where Wheelhouse reaches a vault. Its administrator password stays a file on the control host, so a new
@@ -37,62 +42,39 @@ const props = defineProps<VaultFormModalProps>();
 const emit = defineEmits<{ "update:open": [open: boolean] }>();
 defineSlots<{}>();
 
-const model = reactive({ slug: "", name: "", url: "http://vault:8080" });
-const errors = ref<string[]>([]);
-const saving = ref(false);
-const removing = ref(false);
+const removeError = ref("");
+const form = useAppForm({
+  defaultValues: vaultDefinitionFormOf(null, props.server),
+  schema: vaultDefinitionFormSchema,
+  onSubmit: async (values) => {
+    const server = props.vault?.server ?? props.server;
+    const body = vaultDefinitionRequestOf(values, server, !props.vault);
+    const result = props.vault
+      ? await props.operations.update(props.vault.slug, body)
+      : await props.operations.create(body);
+    if (result.ok) emit("update:open", false);
+    return result;
+  },
+});
 
-/** Starts each session from the vault being edited, or blank. */
+/** Starts each session from the vault being edited, or one named after its server. */
 watch(
   () => props.open,
   (open) => {
     if (!open) return;
-    Object.assign(model, {
-      slug: props.vault?.slug ?? `${props.server}-vault`,
-      name: props.vault?.name ?? "",
-      url: props.vault?.url ?? "http://vault:8080",
-    });
-    errors.value = [];
+    removeError.value = "";
+    form.invalidateSession(vaultDefinitionFormOf(props.vault, props.server));
   },
-  { immediate: true },
+  { immediate: true, flush: "sync" },
 );
-
-/** The request body the form describes. */
-function body(): SaveVaultRequest {
-  return {
-    ...(props.vault ? {} : { slug: model.slug.trim() }),
-    name: model.name.trim(),
-    server: props.vault?.server ?? props.server,
-    url: model.url.trim(),
-  };
-}
-
-/** Saves the vault once the API accepts it. */
-async function submit(): Promise<void> {
-  if (saving.value) return;
-  saving.value = true;
-  errors.value = [];
-  try {
-    const result = props.vault ? await props.operations.update(props.vault.slug, body()) : await props.operations.create(body());
-    if (!result.ok) errors.value = failureMessages(result.failure);
-    else emit("update:open", false);
-  } finally {
-    saving.value = false;
-  }
-}
 
 /** Stops administering the vault; the vault and its secrets stay where they run. */
 async function remove(): Promise<void> {
-  if (!props.vault || removing.value) return;
-  removing.value = true;
-  errors.value = [];
-  try {
-    const result = await props.operations.remove(props.vault.slug);
-    if (!result.ok) errors.value = failureMessages(result.failure);
-    else emit("update:open", false);
-  } finally {
-    removing.value = false;
-  }
+  if (!props.vault) return;
+  removeError.value = "";
+  const result = await props.operations.remove(props.vault.slug);
+  if (!result.ok) removeError.value = failureReason(result.failure);
+  else emit("update:open", false);
 }
 </script>
 
@@ -102,23 +84,33 @@ async function remove(): Promise<void> {
       <ModalHeader>
         <ModalTitle>{{ vault ? `Edit ${vault.name}` : "New vault" }}</ModalTitle>
       </ModalHeader>
-      <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="submit">
+      <form class="flex min-h-0 flex-1 flex-col" @submit="form.handleSubmit">
         <ModalBody class="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1">
-          <Field v-if="!vault" label="Slug" helper="Its password goes in vaults/<slug>/password on the control host">
-            <TextInput v-model="model.slug" autocomplete="off" />
-          </Field>
-          <Field label="Name"><TextInput v-model="model.name" autocomplete="off" /></Field>
-          <Field label="Endpoint" helper="Reached from the control host, never from the browser">
-            <TextInput v-model="model.url" autocomplete="off" />
-          </Field>
-          <Alert v-if="errors.length" severity="danger" :description="errors.join(' ')" />
+          <form.Field v-if="!vault" name="slug" is-required v-slot="field">
+            <Field label="Slug" helper="Its password goes in vaults/<slug>/password on the control host">
+              <TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" />
+            </Field>
+          </form.Field>
+          <form.Field name="name" is-required v-slot="field">
+            <Field label="Name"><TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" /></Field>
+          </form.Field>
+          <form.Field name="url" is-required v-slot="field">
+            <Field label="Endpoint" helper="Reached from the control host, never from the browser">
+              <TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" />
+            </Field>
+          </form.Field>
+          <Alert
+            v-if="removeError || form.state.submitError"
+            severity="danger"
+            :description="removeError || failureReason(form.state.submitError)"
+          />
         </ModalBody>
         <ModalFooter class="justify-between">
-          <DeleteConfirm v-if="vault" label="Remove vault" :is-loading="removing" @confirm="remove" />
+          <DeleteConfirm v-if="vault" label="Remove vault" :question="`Remove ${vault.name}?`" :on-confirm="remove" />
           <span v-else />
           <span class="flex gap-2">
             <Button type="button" variant="outline" tone="neutral" @click="emit('update:open', false)">Cancel</Button>
-            <Button type="submit" :is-loading="saving">{{ vault ? "Save" : "Add vault" }}</Button>
+            <Button type="submit" :is-loading="form.state.isSubmitting">{{ vault ? "Save" : "Add vault" }}</Button>
           </span>
         </ModalFooter>
       </form>

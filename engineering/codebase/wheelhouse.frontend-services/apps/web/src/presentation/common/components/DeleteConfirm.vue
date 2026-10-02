@@ -3,27 +3,26 @@
 export interface DeleteConfirmProps {
   /** What the control removes, in the button's words, such as "Delete server". */
   readonly label: string;
-  readonly isLoading?: boolean;
+  /** The question the confirmation asks, such as "Delete Helsinki?". */
+  readonly question: string;
+  /** Removes the record; the confirmation stays busy until it settles. */
+  readonly onConfirm: () => Promise<unknown>;
 }
 </script>
 <script setup lang="ts">
-import { ref } from "vue";
 import { Trash2 } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
+import { ConfirmPopover } from "@wow-two-beta/ui-vue/presentation/overlays";
 
-/** Renders a quiet delete button that turns into a confirm and cancel pair. */
+/** Renders a quiet delete button whose confirmation the SDK popover asks. */
 defineOptions({ name: "DeleteConfirm" });
-const props = withDefaults(defineProps<DeleteConfirmProps>(), { isLoading: false });
-const emit = defineEmits<{ confirm: [] }>();
+const props = defineProps<DeleteConfirmProps>();
 defineSlots<{}>();
-const asking = ref(false);
 </script>
 <template>
-  <span v-if="asking" class="inline-flex gap-2">
-    <Button type="button" size="sm" variant="ghost" tone="neutral" :is-disabled="props.isLoading" @click="asking = false">Keep</Button>
-    <Button type="button" size="sm" tone="danger" :is-loading="props.isLoading" @click="emit('confirm')">{{ props.label }}</Button>
-  </span>
-  <Button v-else type="button" size="sm" variant="ghost" tone="danger" @click="asking = true">
-    <template #leading><Trash2 :size="14" /></template>{{ props.label }}
-  </Button>
+  <ConfirmPopover :title="props.question" :confirm-label="props.label" tone="danger" :on-confirm="props.onConfirm">
+    <Button type="button" size="sm" variant="ghost" tone="danger">
+      <template #leading><Trash2 :size="14" /></template>{{ props.label }}
+    </Button>
+  </ConfirmPopover>
 </template>
