@@ -12,7 +12,10 @@ namespace Wheelhouse.Tests.E2E.Tests;
 [Collection(WheelhouseCollection.Name)]
 public sealed class AuthGateE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBase(fixture)
 {
-    private static object ServerBody => new { name = "auth-srv", host = "10.9.9.9", sshUser = "root", sshPort = 22, region = "hel1" };
+    private static object ServerBody => new
+    {
+        slug = "auth-srv", name = "Auth server", provider = "hetzner", host = "10.9.9.9", sshUser = "root", sshPort = 22, region = "hel1",
+    };
 
     [Theory]
     [InlineData("api/products")]
@@ -58,6 +61,8 @@ public sealed class AuthGateE2ETests(WheelhouseAppFixture fixture) : WheelhouseE
         (await client.PutJsonAsync("api/products/foreverpin/lifecycle", new { lifecycle = "paused" }))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
-        (await AdminClient.PostJsonAsync("api/servers", ServerBody)).StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        var servers = AdminClient;
+        servers.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "server");
+        (await servers.PostJsonAsync("api/servers", ServerBody)).StatusCode.Should().Be(HttpStatusCode.Created);
     }
 }

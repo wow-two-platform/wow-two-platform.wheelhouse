@@ -1,15 +1,14 @@
 using AwesomeAssertions;
-using Wheelhouse.Domain.Integrations.Entities;
-using Wheelhouse.Domain.Servers.Entities;
-using Wheelhouse.Tests.Integration.Harness;
 using Microsoft.EntityFrameworkCore;
+using Wheelhouse.Tests.Integration.Harness;
+using Wheelhouse.Tests.Integration.Support;
 
 namespace Wheelhouse.Tests.Integration.Tests;
 
 /// <summary>
-/// The unique-index constraints declared on the EF model (<c>ix_integration_keys_hash</c>, <c>ix_servers_host</c>) are enforced
-/// by the real database — a duplicate insert surfaces as a <see cref="DbUpdateException"/>. Runs on the SDK
-/// <see cref="WheelhouseTestDb"/> (Postgres container or in-memory SQLite); the schema is created by EF from <c>OnModelCreating</c>.
+/// The constraints the EF model declares are enforced by the real database: unique slugs and key hashes, and a target
+/// that holds its product and server in place. Runs on the SDK <see cref="WheelhouseTestDb"/> (Postgres container or
+/// in-memory SQLite); the schema is created by EF from the entity configurations.
 /// </summary>
 [Collection(WheelhouseTestDbCollection.Name)]
 public sealed class ConstraintTests(WheelhouseTestDb db) : IAsyncLifetime
@@ -25,53 +24,53 @@ public sealed class ConstraintTests(WheelhouseTestDb db) : IAsyncLifetime
     {
         await using (var ctx = db.NewContext())
         {
-            ctx.IntegrationKeys.Add(NewKey("first", "hash-1"));
+            ctx.IntegrationKeys.Add(InventoryRows.Key("first", "hash-1"));
             await ctx.SaveChangesAsync();
         }
 
         await using var ctx2 = db.NewContext();
-        ctx2.IntegrationKeys.Add(NewKey("second", "hash-1")); // same secret hash, different key.
+        ctx2.IntegrationKeys.Add(InventoryRows.Key("second", "hash-1"));
 
-        var act = async () => await ctx2.SaveChangesAsync();
-
-        // The unique index rejects the duplicate (provider-specific inner exception — assert the EF wrapper only).
-        await act.Should().ThrowAsync<DbUpdateException>();
+        await ctx2.Invoking(ctx => ctx.SaveChangesAsync()).Should().ThrowAsync<DbUpdateException>();
     }
 
     [Fact]
-    public async Task DuplicateServerHost_ViolatesUniqueIndex()
+    public async Task Slugs_ShouldBeRejected_WhenAnotherRowHasThem()
     {
         await using (var ctx = db.NewContext())
         {
-            ctx.Servers.Add(NewServer("first", "10.0.0.1"));
+            ctx.Products.Add(InventoryRows.Product("pilot"));
+            ctx.Servers.Add(InventoryRows.Server("hel1"));
             await ctx.SaveChangesAsync();
         }
 
-        await using var ctx2 = db.NewContext();
-        ctx2.Servers.Add(NewServer("second", "10.0.0.1")); // same host, different id.
+        await using (var products = db.NewContext())
+        {
+            products.Products.Add(InventoryRows.Product("pilot"));
+            await products.Invoking(ctx => ctx.SaveChangesAsync()).Should().ThrowAsync<DbUpdateException>();
+        }
 
-        var act = async () => await ctx2.SaveChangesAsync();
-
-        await act.Should().ThrowAsync<DbUpdateException>();
+        await using var servers = db.NewContext();
+        servers.Servers.Add(InventoryRows.Server("hel1"));
+        await servers.Invoking(ctx => ctx.SaveChangesAsync()).Should().ThrowAsync<DbUpdateException>();
     }
 
-    private static IntegrationKeyEntity NewKey(string name, string hash) => new()
+    [Fact]
+    public async Task Product_ShouldStay_WhenATargetStillRunsIt()
     {
-        Id = Guid.NewGuid(),
-        Name = name,
-        Prefix = "wh_abcdefgh",
-        Hash = hash,
-        Scopes = "catalog:read",
-        CreatedBy = "test-admin",
-        CreatedAt = DateTimeOffset.UtcNow,
-    };
+        var product = InventoryRows.Product("pilot");
+        var server = InventoryRows.Server("hel1");
+        await using (var ctx = db.NewContext())
+        {
+            ctx.Products.Add(product);
+            ctx.Servers.Add(server);
+            ctx.Targets.Add(InventoryRows.Target("pilot-prod", product, server));
+            await ctx.SaveChangesAsync();
+        }
 
-    private static Server NewServer(string name, string host) => new()
-    {
-        Id = Guid.NewGuid(),
-        Name = name,
-        Host = host,
-        SshUser = "deploy",
-        CreatedAt = DateTimeOffset.UtcNow,
-    };
+        await using var remove = db.NewContext();
+        remove.Products.Remove(await remove.Products.SingleAsync(row => row.Slug == "pilot"));
+
+        await remove.Invoking(ctx => ctx.SaveChangesAsync()).Should().ThrowAsync<DbUpdateException>();
+    }
 }

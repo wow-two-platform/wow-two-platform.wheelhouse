@@ -8,7 +8,7 @@ using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 namespace Wheelhouse.Application.Integrations.QueryHandlers;
 
 /// <summary>Handles <see cref="IntegrationKeyGetAllQuery"/>.</summary>
-public sealed class IntegrationKeyGetAllQueryHandler(IIntegrationKeyRepository keys)
+public sealed class IntegrationKeyGetAllQueryHandler(IIntegrationKeysRepository keys)
     : IQueryHandler<IntegrationKeyGetAllQuery, AppResult<IReadOnlyList<IntegrationKeyDto>>>
 {
     /// <inheritdoc />

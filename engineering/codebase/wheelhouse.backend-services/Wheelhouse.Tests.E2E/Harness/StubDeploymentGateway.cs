@@ -38,33 +38,9 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
             "stats" => new { windowDays = int.Parse(id!), deploys = 1, succeeded = 0, failed = 1, refused = 0, pending = 0 },
             "vitals" => new { collectedAt = "2026-09-26T12:00:00+00:00", targets = new[] { new { targetId = "pilot", serverId = "pilot-host", ok = true } } },
             "branches" => new[] { "main", "feature/pins" },
-            "products" => new object[]
+            "sites" => new Dictionary<string, object[]>
             {
-                new
-                {
-                    slug = "foreverpin", name = "ForeverPin", description = "Styled QR codes and short links.",
-                    repository = "sulton-max/10x-venture-forever-pin", defaultBranch = "main", hasReleaseSource = true,
-                    environments = new object[]
-                    {
-                        new
-                        {
-                            name = "dev", targetId = "foreverpin-dev", serverId = "pilot-host",
-                            sites = new[] { new { name = "app", url = "https://dev.foreverpin.example", exposure = "public" } },
-                            secrets = (object?)new { vaultId = "pilot-vault", @namespace = "foreverpin-dev" },
-                        },
-                        new
-                        {
-                            name = "prod", targetId = "foreverpin-prod", serverId = "prod-host",
-                            sites = Array.Empty<object>(), secrets = (object?)null,
-                        },
-                    },
-                },
-                new
-                {
-                    slug = "wheelhouse", name = "Wheelhouse", description = "The portfolio's control plane.",
-                    repository = "wow-two-platform/wow-two-platform.wheelhouse", defaultBranch = "main",
-                    hasReleaseSource = false, environments = Array.Empty<object>(),
-                },
+                ["foreverpin-dev"] = [new { name = "app", url = "https://dev.foreverpin.example", exposure = "public" }],
             },
             _ => new object[] { new { id = "pilot", product = "foreverpin", environment = "dev", acceptsCandidates = true, needsConfirmation = false } }
         })));

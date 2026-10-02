@@ -7,6 +7,10 @@ using Wheelhouse.Application.Vaults;
 using Wheelhouse.Application.Vaults.Changes;
 using Wheelhouse.Infrastructure.Settings;
 using Wheelhouse.Infrastructure.Vaults;
+using Wheelhouse.Domain.Servers.Entities;
+using Wheelhouse.Domain.Servers.Models;
+using Wheelhouse.Domain.Vaults.Entities;
+using Wheelhouse.Tests.Unit.Fakes;
 using Microsoft.Extensions.Time.Testing;
 using WoW.Two.Sdk.Backend.Beta.Foundation.Errors;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
@@ -31,8 +35,23 @@ public sealed class VaultGatewayTests : IDisposable
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
-    private VaultGateway Gateway(VaultSessionCache? cache = null) => new(
-        new CatalogStub(), new ClientFactory(_vault), cache ?? new VaultSessionCache(_time), new DeploymentSettings { Root = _root });
+    private VaultGateway Gateway(VaultSessionCache? cache = null)
+    {
+        var servers = new InMemoryServersRepository();
+        var server = new ServerEntity
+        {
+            Id = Guid.NewGuid(), Slug = "pilot", Name = "Pilot", Host = "vps.example.net", Region = "hel1", SshUser = "deploy",
+            Ingress = new ServerIngressValueObject(),
+        };
+        servers.Rows.Add(server);
+        var vaults = new InMemoryVaultsRepository();
+        vaults.Rows.Add(new VaultEntity
+        {
+            Id = Guid.NewGuid(), Slug = "pilot-vault", Name = "Pilot vault", ServerId = server.Id, Url = "http://vault.internal:8080",
+        });
+        return new VaultGateway(vaults, servers, new ClientFactory(_vault), cache ?? new VaultSessionCache(_time),
+            new DeploymentSettings { Root = _root });
+    }
 
     [Fact]
     public async Task One_session_serves_consecutive_calls()
@@ -152,22 +171,6 @@ public sealed class VaultGatewayTests : IDisposable
     private static AppError Error(AppResult<JsonElement> result) => ((AppResult<JsonElement>.Failure)result).Error;
 
     // ---- Doubles ----
-
-    private sealed class CatalogStub : IDeploymentGateway
-    {
-        public Task<AppResult<JsonElement>> ReadAsync(string resource, string? id, CancellationToken ct) =>
-            Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new[]
-            {
-                new { id = "pilot-vault", name = "Pilot vault", serverId = "pilot", url = "http://vault.internal:8080" }
-            })));
-
-        public Task<AppResult<JsonElement>> CheckAsync(string target, string? release, CancellationToken ct) => throw new NotSupportedException();
-        public Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipTestPass, CancellationToken ct) => throw new NotSupportedException();
-        public Task<AppResult<JsonElement>> ReconcileAsync(string target, string job, string actor, CancellationToken ct) => throw new NotSupportedException();
-        public Task<AppResult<JsonElement>> CommitsAsync(string product, string branch, CancellationToken ct) => throw new NotSupportedException();
-        public Task<AppResult<JsonElement>> RequestBuildAsync(string product, string commit, CancellationToken ct) => throw new NotSupportedException();
-        public Task<AppResult<JsonElement>> LogsAsync(string target, string service, int tail, CancellationToken ct) => throw new NotSupportedException();
-    }
 
     private sealed class ClientFactory(HttpMessageHandler handler) : IHttpClientFactory
     {

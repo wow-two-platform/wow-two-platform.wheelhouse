@@ -30,21 +30,21 @@ public sealed class DeploymentGatewayTests : IDisposable
     private async Task<(string? Rig, string? State)> RunWith(DeploymentSettings settings)
     {
         var gateway = new DeploymentGateway(settings with { TransportPath = _transport, Root = _root }, new RunnerFailureParser());
-        var result = await gateway.ReadAsync("servers", null, CancellationToken.None);
+        var result = await gateway.ReadAsync("targets", null, CancellationToken.None);
         var data = result.Should().BeOfType<AppResult<JsonElement>.Success>().Subject.Data;
         return (data.GetProperty("rig").GetString(), data.GetProperty("state").GetString());
     }
 
     [Fact]
-    public async Task ReadAsync_ShouldRunTheProductsAction_WhenTheCatalogIsRead()
+    public async Task ReadAsync_ShouldRunTheSitesAction_WhenPublishedSitesAreRead()
     {
         File.WriteAllText(_transport, "import json, sys\nprint(json.dumps({'action': sys.argv[1]}))\n");
         var gateway = new DeploymentGateway(new DeploymentSettings() with { TransportPath = _transport, Root = _root }, new RunnerFailureParser());
 
-        var result = await gateway.ReadAsync("products", null, CancellationToken.None);
+        var result = await gateway.ReadAsync("sites", null, CancellationToken.None);
 
         result.Should().BeOfType<AppResult<JsonElement>.Success>().Subject.Data.GetProperty("action").GetString()
-            .Should().Be("products");
+            .Should().Be("sites");
     }
 
     [Fact]

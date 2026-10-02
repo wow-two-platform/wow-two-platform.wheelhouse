@@ -1,21 +1,37 @@
 namespace Wheelhouse.Tests.E2E.Support;
 
 /// <summary>Response shape for a server (mirrors the host's <c>ServerDto</c> — enum read as its string name).</summary>
-/// <param name="Id">Server id.</param>
-/// <param name="Name">Friendly label.</param>
-/// <param name="Host">IP or hostname.</param>
-/// <param name="SshUser">Deploy user.</param>
-/// <param name="Region">Hetzner region, when known.</param>
-/// <param name="Status">Connectivity state (string-serialized enum).</param>
-/// <param name="CreatedAtUtc">When the server was registered.</param>
+/// <param name="Slug">The server's slug.</param>
+/// <param name="Name">Display name.</param>
+/// <param name="Provider">Who hosts it (string-serialized enum).</param>
+/// <param name="Host">The host SSH connects to.</param>
+/// <param name="Region">The provider's region.</param>
+/// <param name="SshUser">The user SSH signs in as.</param>
+/// <param name="SshPort">The port SSH connects to.</param>
 public sealed record ServerResponse(
-    Guid Id,
+    string Slug,
     string Name,
+    string Provider,
     string Host,
+    string Region,
     string SshUser,
-    string? Region,
-    string Status,
-    DateTimeOffset CreatedAtUtc);
+    int SshPort);
+
+/// <summary>Response shape for a target (mirrors the host's <c>TargetDto</c> — enum read as its string name).</summary>
+/// <param name="Slug">The target's slug.</param>
+/// <param name="Product">Its product's slug.</param>
+/// <param name="Server">Its server's slug.</param>
+/// <param name="Environment">Its stage (string-serialized enum).</param>
+/// <param name="Network">Its shared network.</param>
+/// <param name="Root">Its releases folder.</param>
+public sealed record TargetResponse(string Slug, string Product, string Server, string Environment, string Network, string Root);
+
+/// <summary>Response shape for a vault definition (mirrors the host's <c>VaultDto</c>).</summary>
+/// <param name="Slug">The vault's slug.</param>
+/// <param name="Name">Display name.</param>
+/// <param name="Server">Its server's slug.</param>
+/// <param name="Url">Its management endpoint.</param>
+public sealed record VaultResponse(string Slug, string Name, string Server, string Url);
 
 /// <summary>Response shape for a catalog product (mirrors the host's <c>ProductDto</c> — enum read as its string name).</summary>
 /// <param name="Slug">The product's identifier.</param>

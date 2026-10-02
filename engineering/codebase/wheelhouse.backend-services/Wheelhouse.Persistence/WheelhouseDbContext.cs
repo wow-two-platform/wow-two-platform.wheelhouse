@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Wheelhouse.Domain.Audit.Entities;
 using Wheelhouse.Domain.Deployments.Entities;
 using Wheelhouse.Domain.Domains.Entities;
@@ -6,35 +7,46 @@ using Wheelhouse.Domain.Operations.Entities;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Secrets.Entities;
 using Wheelhouse.Domain.Servers.Entities;
-using Microsoft.EntityFrameworkCore;
+using Wheelhouse.Domain.Targets.Entities;
+using Wheelhouse.Domain.Vaults.Entities;
 using WoW.Two.Sdk.Backend.Beta.Data.EntityFrameworkCore;
 using WoW.Two.Sdk.Backend.Beta.Data.EntityFrameworkCore.Naming;
 using WoW.Two.Sdk.Backend.Beta.Data.EntityFrameworkCore.Sqlite;
 
 namespace Wheelhouse.Persistence;
 
-/// <summary>EF Core context for the Wheelhouse control plane — a pure mapper over the Postgres schema the bespoke SQL migrator owns. Snake_case naming + enums-as-snake_case-text; <c>DateTimeOffset</c> → <c>timestamptz</c> natively. On the SDK <see cref="AppDbContextBase"/>, so the audit interceptor stamps the <c>IAuditable</c> create/update timestamps.</summary>
+/// <summary>EF Core context for the Wheelhouse control plane — a pure mapper over the Postgres schema the bespoke SQL
+/// migrator owns. Each entity's mapping lives in <c>Configurations/</c>; snake_case naming and enums as snake_case text
+/// apply model-wide. On the SDK <see cref="AppDbContextBase"/>, so the audit interceptor stamps the <c>IAuditable</c>
+/// create and update timestamps.</summary>
 public sealed class WheelhouseDbContext(DbContextOptions<WheelhouseDbContext> options) : AppDbContextBase(options)
 {
-    /// <summary>The EF Core SQLite provider name — gates the SQLite-only <c>DateTimeOffset</c> binary conversion (test hosts only; Npgsql maps <c>DateTimeOffset</c> natively).</summary>
+    /// <summary>The EF Core SQLite provider name — gates the SQLite-only <c>DateTimeOffset</c> binary conversion (test
+    /// hosts only; Npgsql maps <c>DateTimeOffset</c> natively).</summary>
     private const string SqliteProviderName = "Microsoft.EntityFrameworkCore.Sqlite";
 
-    /// <summary>Gets the registered deploy-target servers.</summary>
-    public DbSet<Server> Servers => Set<Server>();
+    /// <summary>Gets the portfolio's products.</summary>
+    public DbSet<ProductEntity> Products => Set<ProductEntity>();
 
-    /// <summary>Gets what the operator records about catalog products.</summary>
-    public DbSet<ProductMetadataEntity> ProductMetadata => Set<ProductMetadataEntity>();
+    /// <summary>Gets the hosts Wheelhouse deploys to.</summary>
+    public DbSet<ServerEntity> Servers => Set<ServerEntity>();
+
+    /// <summary>Gets each product's environments on their servers.</summary>
+    public DbSet<TargetEntity> Targets => Set<TargetEntity>();
+
+    /// <summary>Gets the secrets vaults Wheelhouse administers.</summary>
+    public DbSet<VaultEntity> Vaults => Set<VaultEntity>();
 
     /// <summary>Gets the keys other programs present to read Wheelhouse.</summary>
     public DbSet<IntegrationKeyEntity> IntegrationKeys => Set<IntegrationKeyEntity>();
 
-    /// <summary>Gets the deployment history.</summary>
+    /// <summary>Gets the placeholder deployment rows.</summary>
     public DbSet<Deployment> Deployments => Set<Deployment>();
 
-    /// <summary>Gets the managed domains.</summary>
+    /// <summary>Gets the placeholder managed domains.</summary>
     public DbSet<ManagedDomain> Domains => Set<ManagedDomain>();
 
-    /// <summary>Gets the encrypted secrets.</summary>
+    /// <summary>Gets the placeholder encrypted secrets.</summary>
     public DbSet<SecretEntry> Secrets => Set<SecretEntry>();
 
     /// <summary>Gets the append-only, hash-chained audit trail.</summary>
@@ -46,103 +58,14 @@ public sealed class WheelhouseDbContext(DbContextOptions<WheelhouseDbContext> op
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // Base applies the SDK conventions and this assembly's IEntityTypeConfiguration<T> (none here — harmless no-op).
+        // Base applies this assembly's entity configurations and the SDK conventions.
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<Server>(e =>
-        {
-            e.ToTable(Server.TableName);
-            e.HasKey(x => x.Id);
-            e.HasIndex(x => x.Host).IsUnique();
-            e.Property(x => x.Name).IsRequired();
-            e.Property(x => x.Host).IsRequired();
-            // IAuditable maps onto the existing schema-first columns (no rename → no migration for created_at_utc).
-            e.Property(x => x.CreatedAt).HasColumnName("created_at_utc");
-            e.Property(x => x.UpdatedAt).HasColumnName("updated_at_utc");
-        });
-
-        // Product identity lives in the code-owned catalog; this row holds only what the operator records, by slug.
-        modelBuilder.Entity<ProductMetadataEntity>(e =>
-        {
-            e.ToTable(ProductMetadataEntity.TableName);
-            e.HasKey(x => x.Id);
-            e.Property(x => x.Id).HasColumnName("slug");
-            e.Property(x => x.CreatedAt).HasColumnName("created_at_utc");
-            e.Property(x => x.UpdatedAt).HasColumnName("updated_at_utc");
-        });
-
-        modelBuilder.Entity<IntegrationKeyEntity>(e =>
-        {
-            e.ToTable(IntegrationKeyEntity.TableName);
-            e.HasKey(x => x.Id);
-            e.HasIndex(x => x.Hash).IsUnique();
-            e.Property(x => x.Name).IsRequired();
-            e.Property(x => x.Prefix).IsRequired();
-            e.Property(x => x.Hash).IsRequired();
-            e.Property(x => x.Scopes).IsRequired();
-            e.Property(x => x.CreatedBy).IsRequired();
-            e.Property(x => x.LastUsedAt).HasColumnName("last_used_at_utc");
-            e.Property(x => x.RevokedAt).HasColumnName("revoked_at_utc");
-            e.Property(x => x.CreatedAt).HasColumnName("created_at_utc");
-            e.Property(x => x.UpdatedAt).HasColumnName("updated_at_utc");
-            e.Ignore(x => x.ScopeList);
-        });
-
-        modelBuilder.Entity<Deployment>(e =>
-        {
-            e.ToTable(Deployment.TableName);
-            e.HasKey(x => x.Id);
-            e.Property(x => x.CreatedAt).HasColumnName("created_at_utc");
-            e.Property(x => x.UpdatedAt).HasColumnName("updated_at_utc");
-            e.HasIndex(x => new { x.ProductId, x.CreatedAt });
-        });
-
-        modelBuilder.Entity<ManagedDomain>(e =>
-        {
-            e.ToTable("domains");
-            e.HasKey(x => x.Id);
-            e.HasIndex(x => x.Name).IsUnique();
-            e.Property(x => x.Name).IsRequired();
-        });
-
-        modelBuilder.Entity<SecretEntry>(e =>
-        {
-            e.ToTable("secrets");
-            e.HasKey(x => x.Id);
-            e.HasIndex(x => new { x.Scope, x.RefId, x.Key }).IsUnique();
-            e.Property(x => x.Key).IsRequired();
-        });
-
-        modelBuilder.Entity<AuditEntry>(e =>
-        {
-            e.ToTable(AuditEntry.TableName);
-            e.HasKey(x => x.Id);
-            e.HasIndex(x => x.Sequence).IsUnique();
-            e.HasIndex(x => x.OccurredAtUtc);
-            e.Property(x => x.PreviousHash).IsRequired();
-            e.Property(x => x.Hash).IsRequired();
-            e.Property(x => x.Actor).IsRequired();
-            e.Property(x => x.Action).IsRequired();
-            e.Property(x => x.Subject).IsRequired();
-        });
-
-        modelBuilder.Entity<VitalsSample>(e =>
-        {
-            e.ToTable(VitalsSample.TableName);
-            e.HasKey(x => x.Id);
-            e.HasIndex(x => new { x.TargetId, x.SampledAtUtc });
-            e.HasIndex(x => x.SampledAtUtc);
-            e.Property(x => x.TargetId).IsRequired();
-            e.Property(x => x.ServerId).IsRequired();
-        });
-
-        // Store every enum in the model as snake_case text via the SDK reversible converter (member-built reverse map →
-        // multi-word values round-trip losslessly, e.g. RolledBack ↔ rolled_back). One call replaces the per-enum list;
-        // runs after the entities are mapped. Postgres-native casing; text columns unchanged.
+        // Every enum as reversible snake_case text (RolledBack ↔ rolled_back); runs after the entities are mapped.
         modelBuilder.ApplyEnumStringConversions();
 
-        // SQLite has no native DateTimeOffset (Npgsql maps it natively) — under the SQLite test provider, store every
-        // DateTimeOffset as a binary Int64 so range reads and ORDER BY match Postgres. No-op under Npgsql.
+        // SQLite has no native DateTimeOffset — under the SQLite test provider, store each one as a binary Int64 so range
+        // reads and ORDER BY match Postgres. No-op under Npgsql.
         if (Database.ProviderName == SqliteProviderName)
             modelBuilder.ApplyDateTimeOffsetToBinaryConversion();
     }

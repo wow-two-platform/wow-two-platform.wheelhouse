@@ -11,13 +11,14 @@ using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 
 namespace Wheelhouse.Infrastructure.Vaults;
 
-/// <summary>Administers code-owned vaults over their management API with Wheelhouse's administrator credential.</summary>
+/// <summary>Administers the inventory's vaults over their management API with Wheelhouse's administrator credential.</summary>
 /// <remarks>
-/// Endpoints come only from the fleet catalog, so a browser can never choose where Wheelhouse connects.
+/// Endpoints come only from the inventory the operator edits, so a request can never choose where Wheelhouse connects.
 /// Secret values travel one way — to the vault — and responses carry metadata, except a freshly minted token.
 /// </remarks>
 public sealed class VaultGateway(
-    IDeploymentGateway catalog,
+    IVaultsRepository vaults,
+    IServersRepository servers,
     IHttpClientFactory clients,
     VaultSessionCache sessions,
     DeploymentSettings settings) : IVaultGateway
@@ -65,28 +66,27 @@ public sealed class VaultGateway(
         return await SendAsync(endpoint, method, path, body, ct);
     }
 
-    // ---- Catalog ----
+    // ---- Inventory ----
 
     private async Task<AppResult<JsonElement>> ListAsync(CancellationToken ct)
     {
-        var catalogResult = await catalog.ReadAsync("vaults", null, ct);
-        if (catalogResult is not AppResult<JsonElement>.Success { Data: var entries })
-            return catalogResult;
-        var vaults = entries.EnumerateArray().Select(VaultEndpoint.From).ToList();
-        var statuses = await Task.WhenAll(vaults.Select(vault => StatusAsync(vault, ct)));
-        var summaries = vaults.Select((vault, index) => new { vault.Id, vault.Name, vault.ServerId, status = statuses[index] });
+        var serverSlugs = (await servers.GetAllAsync(ct)).ToDictionary(server => server.Id, server => server.Slug);
+        var endpoints = (await vaults.GetAllAsync(ct))
+            .Select(vault => new VaultEndpoint(vault.Slug, vault.Name, serverSlugs[vault.ServerId], vault.Url.TrimEnd('/')))
+            .ToList();
+        var statuses = await Task.WhenAll(endpoints.Select(vault => StatusAsync(vault, ct)));
+        // The console lists names and state only; the endpoint stays with the inventory editor.
+        var summaries = endpoints.Select((vault, index) => new { vault.Id, vault.Name, vault.ServerId, status = statuses[index] });
         return AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(summaries, JsonSerializerOptions.Web));
     }
 
     private async Task<AppResult<VaultEndpoint>> ResolveAsync(string? vault, CancellationToken ct)
     {
-        var catalogResult = await catalog.ReadAsync("vaults", null, ct);
-        if (catalogResult is not AppResult<JsonElement>.Success { Data: var entries })
-            return AppResult<VaultEndpoint>.Fail(((AppResult<JsonElement>.Failure)catalogResult).Error);
-        var endpoint = entries.EnumerateArray().Select(VaultEndpoint.From).FirstOrDefault(item => item.Id == vault);
-        return endpoint is null
-            ? AppResult<VaultEndpoint>.Fail(AppErrorFactory.NotFound("The vault is not defined in code."))
-            : AppResult<VaultEndpoint>.Ok(endpoint);
+        var stored = vault is null ? null : await vaults.GetBySlugAsync(vault, ct);
+        var server = stored is null ? null : await servers.GetByIdAsync(stored.ServerId, ct);
+        return stored is null || server is null
+            ? AppResult<VaultEndpoint>.Fail(AppErrorFactory.NotFound($"Vault '{vault}' was not found."))
+            : AppResult<VaultEndpoint>.Ok(new VaultEndpoint(stored.Slug, stored.Name, server.Slug, stored.Url.TrimEnd('/')));
     }
 
     private async Task<string> StatusAsync(VaultEndpoint vault, CancellationToken ct)

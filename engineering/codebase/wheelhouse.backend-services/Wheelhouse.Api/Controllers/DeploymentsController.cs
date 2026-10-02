@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.Text.Json;
+using Wheelhouse.Api.Filters;
 using Wheelhouse.Api.Requests;
 using Wheelhouse.Application.Deployments;
 using Wheelhouse.Application.Operations;
@@ -18,7 +19,7 @@ namespace Wheelhouse.Api.Controllers;
 public sealed class DeploymentsController(ISender sender, IErrorHttpStatusCodeMapper errors) : ControllerBase
 {
     // Route regex constraints ignore case; a validated parameter keeps catalog ids exact.
-    private const string Slug = "^[a-z][a-z0-9-]{0,47}$";
+    private const string Slug = Wheelhouse.Application.Inventory.Constants.InventoryPatternConstants.Slug;
     private const string Branch = "^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$";
 
     /// <summary>Lists recent deployments with their last observed outcome.</summary>
@@ -49,11 +50,10 @@ public sealed class DeploymentsController(ISender sender, IErrorHttpStatusCodeMa
 
     /// <summary>Acknowledges an interrupted or failed rollout the operator has inspected.</summary>
     [HttpPost("targets/{target}/reconcile")]
+    [RequireAction("reconcile")]
     public async Task<IActionResult> Reconcile(
         [RegularExpression(Slug)] string target, DeploymentReconcileRequest request, CancellationToken ct)
     {
-        if (Request.Headers["X-Wheelhouse-Action"] != "reconcile")
-            return Problem(statusCode: 400, detail: "An explicit reconcile action is required.");
         var result = await sender.SendAsync(new DeploymentReconcileCommand(target, request.Job!.Value.ToString(), Actor()), ct);
         return Render(result);
     }
@@ -95,11 +95,10 @@ public sealed class DeploymentsController(ISender sender, IErrorHttpStatusCodeMa
 
     /// <summary>Starts a build of a commit that has none; the build appears in the catalog once its workflow finishes.</summary>
     [HttpPost("products/{product}/builds")]
+    [RequireAction("build")]
     public async Task<IActionResult> Build(
         [RegularExpression(Slug)] string product, DeploymentBuildRequest request, CancellationToken ct)
     {
-        if (Request.Headers["X-Wheelhouse-Action"] != "build")
-            return Problem(statusCode: 400, detail: "An explicit build action is required.");
         var result = await sender.SendAsync(new DeploymentBuildCommand(product, request.Commit, Actor()), ct);
         return result.Match<IActionResult>(
             ok => Accepted(ApiResponse<JsonElement>.Ok(ok.Data)),
@@ -121,11 +120,9 @@ public sealed class DeploymentsController(ISender sender, IErrorHttpStatusCodeMa
 
     /// <summary>Queues a deployment; success is established by its later target status.</summary>
     [HttpPost]
+    [RequireAction("deploy")]
     public async Task<IActionResult> Start(DeploymentStartRequest request, CancellationToken ct)
     {
-        // A non-simple custom header blocks cross-origin cookie writes without trusting a body token.
-        if (Request.Headers["X-Wheelhouse-Action"] != "deploy")
-            return Problem(statusCode: 400, detail: "An explicit deployment action is required.");
         var result = await sender.SendAsync(
             new DeploymentStartCommand(request.Target, request.Release, Actor(), request.Confirm, request.SkipTestPass), ct);
         return result.Match<IActionResult>(

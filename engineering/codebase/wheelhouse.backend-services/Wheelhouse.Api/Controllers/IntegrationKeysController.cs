@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Wheelhouse.Api.Filters;
 using Wheelhouse.Api.Requests;
 using Wheelhouse.Application.Integrations.Commands;
 using Wheelhouse.Application.Integrations.Models;
@@ -25,14 +26,13 @@ public sealed class IntegrationKeysController(ISender sender, IErrorHttpStatusCo
 
     /// <summary>Creates an integration key; the response carries its secret this once, never cached or stored.</summary>
     [HttpPost]
+    [RequireAction("key-create")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [ProducesResponseType<ApiResponse<IntegrationKeyWithSecretDto>>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Create(CreateIntegrationKeyApiRequest request, CancellationToken ct)
     {
-        if (Request.Headers["X-Wheelhouse-Action"] != "key-create")
-            return Problem(statusCode: 400, detail: "An explicit key creation action is required.");
         var result = await sender.SendAsync(new IntegrationKeyCreateCommand { Name = request.Name, Scopes = request.Scopes }, ct);
         return result.Match<IActionResult>(
             ok => StatusCode(StatusCodes.Status201Created, ApiResponse<IntegrationKeyWithSecretDto>.Ok(ok.Data)),
@@ -41,12 +41,11 @@ public sealed class IntegrationKeysController(ISender sender, IErrorHttpStatusCo
 
     /// <summary>Revokes an integration key, so it never authenticates again.</summary>
     [HttpPost("{id:guid}/revoke")]
+    [RequireAction("key-revoke")]
     [ProducesResponseType<ApiResponse<IntegrationKeyDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Revoke(Guid id, CancellationToken ct)
     {
-        if (Request.Headers["X-Wheelhouse-Action"] != "key-revoke")
-            return Problem(statusCode: 400, detail: "An explicit key revocation action is required.");
         var result = await sender.SendAsync(new IntegrationKeyRevokeCommand { Id = id }, ct);
         return result.Match<IActionResult>(
             ok => Ok(ApiResponse<IntegrationKeyDto>.Ok(ok.Data)),

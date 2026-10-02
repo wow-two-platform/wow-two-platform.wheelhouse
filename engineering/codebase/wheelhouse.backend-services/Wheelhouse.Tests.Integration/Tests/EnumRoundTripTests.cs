@@ -1,21 +1,21 @@
 using AwesomeAssertions;
 using Dapper;
+using Microsoft.EntityFrameworkCore;
 using Wheelhouse.Domain.Deployments.Entities;
 using Wheelhouse.Domain.Deployments.Enums;
-using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Products.Enums;
-using Wheelhouse.Domain.Servers.Entities;
 using Wheelhouse.Domain.Servers.Enums;
+using Wheelhouse.Domain.Targets.Enums;
 using Wheelhouse.Tests.Integration.Harness;
-using Microsoft.EntityFrameworkCore;
+using Wheelhouse.Tests.Integration.Support;
 
 namespace Wheelhouse.Tests.Integration.Tests;
 
 /// <summary>
-/// The EF ↔ schema enum contract: the SDK <c>EnumCaseConverter</c> (wired model-wide by <c>ApplyEnumStringConversions</c>)
-/// stores each enum as snake_case <c>text</c>, and EF reads it back to the right member. Asserts the on-disk text directly
-/// (raw SQL over the context's own connection — provider-agnostic), including the multi-word <c>RolledBack ↔ rolled_back</c>
-/// case that single-word casing would miss. Runs on the SDK <see cref="WheelhouseTestDb"/> (Postgres container or SQLite).
+/// The EF ↔ schema enum contract: the SDK converter (wired model-wide by <c>ApplyEnumStringConversions</c>) stores each enum
+/// as snake_case <c>text</c>, and EF reads it back to the right member — including the multi-word
+/// <c>RolledBack ↔ rolled_back</c> case single-word casing would miss. Asserts the on-disk text over the context's own
+/// connection, provider-agnostic.
 /// </summary>
 [Collection(WheelhouseTestDbCollection.Name)]
 public sealed class EnumRoundTripTests(WheelhouseTestDb db) : IAsyncLifetime
@@ -27,39 +27,32 @@ public sealed class EnumRoundTripTests(WheelhouseTestDb db) : IAsyncLifetime
     public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
-    public async Task SingleWordEnum_RoundTrips_AndIsStoredSnakeCaseText()
+    public async Task InventoryEnums_ShouldBeStoredAsSnakeCaseTextAndReadBack_WhenRecorded()
     {
-        var id = Guid.NewGuid();
-
+        var product = InventoryRows.Product("pilot") with { Lifecycle = ProductLifecycle.Live };
+        var server = InventoryRows.Server("hel1") with { Provider = VpsProvider.Local };
         await using (var ctx = db.NewContext())
         {
-            ctx.Servers.Add(new Server
-            {
-                Id = id,
-                Name = "hel1-prod",
-                Host = "10.0.0.1",
-                SshUser = "deploy",
-                Status = ServerStatus.Unreachable, // single word, but the converter still lowercases it.
-                CreatedAt = DateTimeOffset.UtcNow,
-            });
+            ctx.Products.Add(product);
+            ctx.Servers.Add(server);
+            ctx.Targets.Add(InventoryRows.Target("pilot-prod", product, server));
             await ctx.SaveChangesAsync();
         }
 
-        // On disk it is plain lowercase text, not the PascalCase member name.
-        (await ReadScalarAsync<string>("select status from servers where id = @id", id))
-            .Should().Be("unreachable");
+        (await ReadAsync("select lifecycle from products where slug = 'pilot'")).Should().Be("live");
+        (await ReadAsync("select provider from servers where slug = 'hel1'")).Should().Be("local");
+        (await ReadAsync("select environment from targets where slug = 'pilot-prod'")).Should().Be("prod");
 
-        // EF reads the text back to the right member.
         await using var read = db.NewContext();
-        var loaded = await read.Servers.FindAsync(id);
-        loaded!.Status.Should().Be(ServerStatus.Unreachable);
+        (await read.Products.SingleAsync()).Lifecycle.Should().Be(ProductLifecycle.Live);
+        (await read.Servers.SingleAsync()).Provider.Should().Be(VpsProvider.Local);
+        (await read.Targets.SingleAsync()).Environment.Should().Be(DeploymentEnvironment.Prod);
     }
 
     [Fact]
-    public async Task MultiWordEnum_RolledBack_IsStoredAsSnakeCase_AndRoundTrips()
+    public async Task MultiWordEnum_ShouldBeStoredAsSnakeCase_WhenRecorded()
     {
         var id = Guid.NewGuid();
-
         await using (var ctx = db.NewContext())
         {
             ctx.Deployments.Add(new Deployment
@@ -67,42 +60,21 @@ public sealed class EnumRoundTripTests(WheelhouseTestDb db) : IAsyncLifetime
                 Id = id,
                 ProductId = Guid.NewGuid(),
                 ServerId = Guid.NewGuid(),
-                Status = DeploymentStatus.RolledBack, // the multi-word case the 002 migration + converter exist for.
+                Status = DeploymentStatus.RolledBack,
                 CreatedAt = DateTimeOffset.UtcNow,
             });
             await ctx.SaveChangesAsync();
         }
 
-        // The whole point: RolledBack persists as rolled_back, not "RolledBack" / "rolledback".
-        (await ReadScalarAsync<string>("select status from deployments where id = @id", id))
-            .Should().Be("rolled_back");
-
+        (await ReadAsync("select status from deployments where id = @id", new { id })).Should().Be("rolled_back");
         await using var read = db.NewContext();
-        var loaded = await read.Deployments.FindAsync(id);
-        loaded!.Status.Should().Be(DeploymentStatus.RolledBack);
+        (await read.Deployments.FindAsync(id))!.Status.Should().Be(DeploymentStatus.RolledBack);
     }
 
-    [Fact]
-    public async Task ProductLifecycle_ShouldBeStoredAsSnakeCaseTextAndReadBack_WhenRecorded()
-    {
-        await using (var ctx = db.NewContext())
-        {
-            ctx.ProductMetadata.Add(new ProductMetadataEntity { Id = "smart-qr", Lifecycle = ProductLifecycle.Live });
-            await ctx.SaveChangesAsync();
-        }
-
-        (await ReadScalarAsync<string>("select lifecycle from product_metadata where slug = @id", "smart-qr"))
-            .Should().Be("live");
-
-        await using var read = db.NewContext();
-        (await read.ProductMetadata.FindAsync("smart-qr"))!.Lifecycle.Should().Be(ProductLifecycle.Live);
-    }
-
-    /// <summary>Reads a single scalar via the context's own ADO connection (bypasses EF; provider-agnostic — asserts the raw column on Postgres or SQLite).</summary>
-    private async Task<T?> ReadScalarAsync<T>(string sql, object id)
+    /// <summary>Reads one scalar over the context's own connection, bypassing EF.</summary>
+    private async Task<string?> ReadAsync(string sql, object? parameters = null)
     {
         await using var ctx = db.NewContext();
-        var conn = ctx.Database.GetDbConnection();
-        return await conn.ExecuteScalarAsync<T>(sql, new { id });
+        return await ctx.Database.GetDbConnection().ExecuteScalarAsync<string>(sql, parameters);
     }
 }

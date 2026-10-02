@@ -2,8 +2,8 @@ using Wheelhouse.Domain.Products.Enums;
 
 namespace Wheelhouse.Application.Products.Models;
 
-/// <summary>Represents a catalog product as integrations read it: identity, lifecycle and where each environment is
-/// reached — no targets, releases or deployment state.</summary>
+/// <summary>Represents a product as integrations read it: identity, lifecycle, release source and where each
+/// environment is reached — no targets, servers or deployment state.</summary>
 public sealed record ProductDto
 {
     /// <summary>Gets the product's identifier.</summary>
@@ -20,6 +20,10 @@ public sealed record ProductDto
 
     /// <summary>Gets the product's source repository.</summary>
     public required ProductRepositoryDto Repository { get; init; }
+
+    /// <summary>Gets where published releases and commit builds come from, or <c>null</c> when only hand-imported
+    /// bundles deploy.</summary>
+    public ProductReleaseDto? Release { get; init; }
 
     /// <summary>Gets the path of the product's icon; it answers not found when the repository carries none.</summary>
     public required string IconUrl { get; init; }

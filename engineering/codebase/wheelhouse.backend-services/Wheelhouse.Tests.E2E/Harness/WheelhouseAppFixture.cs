@@ -29,7 +29,10 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     public WebApiTestHost<Program> Host =>
         _host ?? throw new InvalidOperationException("Fixture not initialized — Host is null.");
 
-    /// <summary>The shared runner stub — answers the catalog and deployment reads and records what was submitted.</summary>
+    /// <summary>The runner root the host exports its inventory snapshot to; a temporary folder per run.</summary>
+    public string InventoryRoot { get; } = Directory.CreateTempSubdirectory("wheelhouse-inventory-").FullName;
+
+    /// <summary>The shared runner stub — answers the deployment reads and records what was submitted.</summary>
     public StubDeploymentGateway Deployments { get; } = new();
 
     /// <summary>The shared vault stub — records the last change so tests can assert what Wheelhouse forwarded.</summary>
@@ -60,6 +63,8 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
         // config below (the app's own ConnectionStrings:Wheelhouse key) is the belt-and-suspenders for any later config read.
         Environment.SetEnvironmentVariable("DB_CONNECTION", _postgres.ConnectionString);
         Environment.SetEnvironmentVariable("Identity__AllowedGitHubLogins__0", "test-admin");
+        // Deployment settings bind at registration, before the host hook's configuration exists.
+        Environment.SetEnvironmentVariable("Deployment__Root", InventoryRoot);
 
         _host = new WebApiTestHost<Program>
         {
@@ -100,6 +105,8 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
         // Don't leak the container connection string into other test processes.
         Environment.SetEnvironmentVariable("DB_CONNECTION", null);
         Environment.SetEnvironmentVariable("Identity__AllowedGitHubLogins__0", null);
+        Environment.SetEnvironmentVariable("Deployment__Root", null);
+        Directory.Delete(InventoryRoot, recursive: true);
     }
 
     /// <summary>Truncates every data table between tests via Respawn (the migration history is preserved), and resets the stubs.</summary>
@@ -148,7 +155,11 @@ public abstract class WheelhouseE2EBase(WheelhouseAppFixture fixture) : IAsyncLi
     protected HttpClient AdminClient => Fixture.CreateAdminClient();
 
     /// <inheritdoc />
-    public async Task InitializeAsync() => await Fixture.ResetAsync();
+    public async Task InitializeAsync()
+    {
+        await Fixture.ResetAsync();
+        await InventorySeed.SeedAsync(Fixture);
+    }
 
     /// <inheritdoc />
     public Task DisposeAsync() => Task.CompletedTask;

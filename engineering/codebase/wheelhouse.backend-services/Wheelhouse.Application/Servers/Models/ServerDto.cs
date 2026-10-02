@@ -2,19 +2,30 @@ using Wheelhouse.Domain.Servers.Enums;
 
 namespace Wheelhouse.Application.Servers.Models;
 
-/// <summary>Read model for a registered server.</summary>
-/// <param name="Id">Server id.</param>
-/// <param name="Name">Friendly label.</param>
-/// <param name="Host">IP or hostname.</param>
-/// <param name="SshUser">Deploy user.</param>
-/// <param name="Region">Hetzner region, when known.</param>
-/// <param name="Status">Connectivity state.</param>
-/// <param name="CreatedAtUtc">When the server was registered.</param>
-public sealed record ServerDto(
-    Guid Id,
-    string Name,
-    string Host,
-    string SshUser,
-    string? Region,
-    ServerStatus Status,
-    DateTimeOffset CreatedAtUtc);
+/// <summary>Represents a host Wheelhouse deploys to, as the operator edits it; never its credentials.</summary>
+public sealed record ServerDto
+{
+    /// <summary>Gets the name targets, vaults and the credential folders know the server by.</summary>
+    public required string Slug { get; init; }
+
+    /// <summary>Gets the display name.</summary>
+    public required string Name { get; init; }
+
+    /// <summary>Gets who hosts the server.</summary>
+    public required VpsProvider Provider { get; init; }
+
+    /// <summary>Gets the host name or address SSH connects to.</summary>
+    public required string Host { get; init; }
+
+    /// <summary>Gets the provider's region.</summary>
+    public required string Region { get; init; }
+
+    /// <summary>Gets the user SSH signs in as.</summary>
+    public required string SshUser { get; init; }
+
+    /// <summary>Gets the port SSH connects to.</summary>
+    public required int SshPort { get; init; }
+
+    /// <summary>Gets how the server's ingress publishes sites.</summary>
+    public required ServerIngressDto Ingress { get; init; }
+}

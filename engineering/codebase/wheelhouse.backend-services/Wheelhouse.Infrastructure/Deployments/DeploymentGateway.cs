@@ -16,7 +16,7 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
     public Task<AppResult<JsonElement>> ReadAsync(string resource, string? id, CancellationToken ct) =>
         resource switch
         {
-            "products" or "servers" or "targets" or "vaults" or "releases" or "jobs" => RunAsync([resource], ct),
+            "sites" or "fixtures" or "targets" or "releases" or "jobs" => RunAsync([resource], ct),
             "status" when Guid.TryParse(id, out _) => RunAsync(["status", "--job", id], ct),
             "state" when id is not null => RunAsync(["state", "--target", id], ct),
             "topology" when id is not null => RunAsync(["topology", "--target", id], ct),

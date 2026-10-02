@@ -9,7 +9,7 @@ using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 namespace Wheelhouse.Application.Integrations.CommandHandlers;
 
 /// <summary>Handles <see cref="IntegrationKeyRevokeCommand"/>; revoking a revoked key keeps its first revocation.</summary>
-public sealed class IntegrationKeyRevokeCommandHandler(IIntegrationKeyRepository keys, TimeProvider time)
+public sealed class IntegrationKeyRevokeCommandHandler(IIntegrationKeysRepository keys, TimeProvider time)
     : ICommandHandler<IntegrationKeyRevokeCommand, AppResult<IntegrationKeyDto>>
 {
     /// <inheritdoc />

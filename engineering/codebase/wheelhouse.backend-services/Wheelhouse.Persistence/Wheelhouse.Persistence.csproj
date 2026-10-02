@@ -28,6 +28,8 @@
        internal EF stores by concrete type, so it needs visibility into them. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Wheelhouse.Api" />
+    <!-- The integration tier drives the real repositories over a real database. -->
+    <InternalsVisibleTo Include="Wheelhouse.Tests.Integration" />
   </ItemGroup>
 
 </Project>

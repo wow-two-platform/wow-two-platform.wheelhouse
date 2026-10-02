@@ -1,4 +1,5 @@
 using FluentValidation;
+using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Application.Products.Commands;
 
 namespace Wheelhouse.Application.Products.Validators;
@@ -10,8 +11,7 @@ public sealed class ProductLifecycleUpdateCommandValidator : AbstractValidator<P
     public ProductLifecycleUpdateCommandValidator()
     {
         RuleFor(x => x.Slug)
-            .Matches("^[a-z][a-z0-9-]{0,47}$")
-            .WithMessage("Slug must be a catalog product slug.");
+            .MustBeSlug();
 
         RuleFor(x => x.Lifecycle)
             .IsInEnum();

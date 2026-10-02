@@ -1,43 +1,40 @@
 using System.Net;
-using System.Text.Json;
 using AwesomeAssertions;
 using Wheelhouse.Tests.E2E.Harness;
+using Wheelhouse.Tests.E2E.Support;
 using WoW.Two.Sdk.Backend.Beta.Testing.Web;
 
 namespace Wheelhouse.Tests.E2E.Tests;
 
-/// <summary>Verifies the read-only, code-owned fleet boundary.</summary>
+/// <summary>Verifies the server inventory boundary: the operator reads and edits servers; nobody else does.</summary>
 [Collection(WheelhouseCollection.Name)]
 public sealed class ServersE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBase(fixture)
 {
     [Fact]
-    public async Task Get_Anonymous_Returns401()
+    public async Task Get_ShouldReturn401_WhenTheCallerIsAnonymous()
     {
         var response = await AnonymousClient.GetAsync("api/servers");
+
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Fact]
-    public async Task Get_Admin_ReturnsConfiguredProvider()
+    public async Task Get_ShouldReturn200WithEveryServerBySlug_WhenTheOperatorReads()
     {
         var response = await AdminClient.GetAsync("api/servers");
+
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var servers = await response.ReadEnvelopeAsync<JsonElement>();
-        servers[0].GetProperty("id").GetString().Should().Be("pilot-host");
-        servers[0].GetProperty("provider").GetString().Should().Be("Hetzner");
+        var servers = await response.ReadEnvelopeAsync<IReadOnlyList<ServerResponse>>();
+        servers.Select(server => (server.Slug, server.Provider, server.Host))
+            .Should().Equal(("pilot-host", "hetzner", "vps.example.net"), ("prod-host", "hetzner", "prod.example.net"));
     }
 
     [Fact]
-    public async Task Post_Admin_CannotRegisterHost()
+    public async Task Post_ShouldReturn400_WhenTheActionHeaderIsMissing()
     {
-        var response = await AdminClient.PostJsonAsync("api/servers", new { name = "unreviewed", host = "10.0.0.1" });
-        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
-    }
+        var response = await AdminClient.PostJsonAsync("api/servers",
+            new { slug = "hel2", name = "Helsinki 2", provider = "hetzner", host = "hel2.example.net", region = "hel1" });
 
-    [Fact]
-    public async Task Delete_Admin_CannotRemoveHost()
-    {
-        var response = await AdminClient.DeleteAsync($"api/servers/{Guid.NewGuid()}");
-        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }
