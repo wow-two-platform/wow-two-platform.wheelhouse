@@ -15,7 +15,7 @@ public sealed class IntegrationKeyGetAllQueryHandler(IIntegrationKeysRepository 
     public async ValueTask<AppResult<IReadOnlyList<IntegrationKeyDto>>> HandleAsync(
         IntegrationKeyGetAllQuery request, CancellationToken cancellationToken)
     {
-        IReadOnlyList<IntegrationKeyDto> listed = [.. (await keys.ListAsync(cancellationToken)).Select(IntegrationKeyMapper.Map)];
+        IReadOnlyList<IntegrationKeyDto> listed = [.. (await keys.GetAllAsync(cancellationToken)).Select(IntegrationKeyMapper.Map)];
         return AppResult<IReadOnlyList<IntegrationKeyDto>>.Ok(listed);
     }
 }

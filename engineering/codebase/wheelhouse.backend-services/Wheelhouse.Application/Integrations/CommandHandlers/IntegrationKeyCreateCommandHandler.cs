@@ -21,7 +21,7 @@ public sealed class IntegrationKeyCreateCommandHandler(
         IntegrationKeyCreateCommand request, CancellationToken cancellationToken)
     {
         var name = request.Name.Trim();
-        var existing = await keys.ListAsync(cancellationToken);
+        var existing = await keys.GetAllAsync(cancellationToken);
         if (existing.Any(key => key.RevokedAt is null && string.Equals(key.Name, name, StringComparison.OrdinalIgnoreCase)))
             return AppResult<IntegrationKeyWithSecretDto>.Fail(AppErrorFactory.Conflict($"A live key is already named '{name}'."));
 
@@ -35,7 +35,7 @@ public sealed class IntegrationKeyCreateCommandHandler(
             Scopes = string.Join(' ', request.Scopes.Distinct(StringComparer.Ordinal)),
             CreatedBy = operatorContext.Actor,
         };
-        await keys.AddAsync(key, cancellationToken);
+        await keys.CreateAsync(key, cancellationToken);
 
         return AppResult<IntegrationKeyWithSecretDto>.Ok(
             new IntegrationKeyWithSecretDto { Key = IntegrationKeyMapper.Map(key), Secret = secret.Secret });

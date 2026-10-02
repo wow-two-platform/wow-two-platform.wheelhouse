@@ -137,8 +137,8 @@ public sealed class RepositoryTests(WheelhouseTestDb db) : IAsyncLifetime
         await using (var ctx = db.NewContext())
         {
             var keys = new IntegrationKeysRepository(ctx);
-            await keys.AddAsync(InventoryRows.Key("live", "hash-live"));
-            await keys.AddAsync(InventoryRows.Key("revoked", "hash-revoked") with { RevokedAt = DateTimeOffset.UtcNow });
+            await keys.CreateAsync(InventoryRows.Key("live", "hash-live"));
+            await keys.CreateAsync(InventoryRows.Key("revoked", "hash-revoked") with { RevokedAt = DateTimeOffset.UtcNow });
         }
 
         await using var read = db.NewContext();
@@ -156,8 +156,8 @@ public sealed class RepositoryTests(WheelhouseTestDb db) : IAsyncLifetime
         await using (var ctx = db.NewContext())
         {
             var keys = new IntegrationKeysRepository(ctx);
-            await keys.AddAsync(used);
-            await keys.AddAsync(idle);
+            await keys.CreateAsync(used);
+            await keys.CreateAsync(idle);
         }
 
         var at = DateTimeOffset.UtcNow;
@@ -184,7 +184,7 @@ public sealed class RepositoryTests(WheelhouseTestDb db) : IAsyncLifetime
         }
 
         await using var read = db.NewContext();
-        (await new IntegrationKeysRepository(read).ListAsync()).Select(key => key.Name)
+        (await new IntegrationKeysRepository(read).GetAllAsync()).Select(key => key.Name)
             .Should().Equal("newest", "middle", "oldest");
     }
 }

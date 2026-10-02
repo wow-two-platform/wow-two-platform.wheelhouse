@@ -48,7 +48,7 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     public HttpClient CreateAdminClient()
     {
         var client = Host.CreateClient();
-        client.DefaultRequestHeaders.Add(TestAuthHandler.AdminHeader, "1");
+        client.DefaultRequestHeaders.Add(TestAuthExtensions.AdminHeader, "1");
         return client;
     }
 

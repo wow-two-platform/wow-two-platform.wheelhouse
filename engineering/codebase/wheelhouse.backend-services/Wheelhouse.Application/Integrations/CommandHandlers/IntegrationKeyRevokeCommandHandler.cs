@@ -16,7 +16,7 @@ public sealed class IntegrationKeyRevokeCommandHandler(IIntegrationKeysRepositor
     public async ValueTask<AppResult<IntegrationKeyDto>> HandleAsync(
         IntegrationKeyRevokeCommand request, CancellationToken cancellationToken)
     {
-        var key = await keys.FindAsync(request.Id, cancellationToken);
+        var key = await keys.GetByIdAsync(request.Id, cancellationToken);
         if (key is null)
             return AppResult<IntegrationKeyDto>.Fail(AppErrorFactory.NotFound($"Integration key '{request.Id}' was not found."));
 

@@ -1,96 +1,39 @@
 using System.Security.Claims;
-using System.Text.Encodings.Web;
-using Wheelhouse.Api.Auth;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
+using Wheelhouse.Api.Auth;
 using WoW.Two.Sdk.Backend.Beta.Identity.ApiKeys;
+using WoW.Two.Sdk.Backend.Beta.Testing.Auth;
 
 namespace Wheelhouse.Tests.E2E.Harness;
 
-/// <summary>
-/// A test authentication handler that authenticates every request as a valid Wheelhouse admin. Registered
-/// only in the test host (via <see cref="TestAuthExtensions.UseTestAdminAuth"/>) so <c>[Authorize]</c> and
-/// the fallback admin policy pass without the real GitHub-OAuth cookie flow.
-/// </summary>
-/// <remarks>
-/// Wheelhouse's production policies (<see cref="AuthConfigurationExtensions.AdminPolicy"/> + the fallback) are
-/// built against the <see cref="AuthConfigurationExtensions.CookieScheme"/> and only require an authenticated
-/// user. The test host re-points those policies at <see cref="SchemeName"/> and registers this handler, so an
-/// authenticated principal here satisfies them. Anonymous clients simply omit the trigger header.
-/// </remarks>
-public sealed class TestAuthHandler(
-    IOptionsMonitor<TestAuthSchemeOptions> options,
-    ILoggerFactory logger,
-    UrlEncoder encoder)
-    : AuthenticationHandler<TestAuthSchemeOptions>(options, logger, encoder)
-{
-    /// <summary>The test scheme name the host's admin policies are re-pointed at.</summary>
-    public const string SchemeName = "Test";
-
-    /// <summary>
-    /// Request header that toggles authentication. Present (any value) → authenticate as admin; absent →
-    /// no result, so the request is treated as anonymous and protected endpoints return 401.
-    /// </summary>
-    public const string AdminHeader = "X-Test-Admin";
-
-    /// <inheritdoc />
-    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
-    {
-        if (!Request.Headers.ContainsKey(AdminHeader))
-            return Task.FromResult(AuthenticateResult.NoResult());
-
-        var claims = new[]
-        {
-            new Claim(ClaimTypes.NameIdentifier, "test-admin-id"),
-            new Claim(ClaimTypes.Name, Options.AdminLogin),
-            // The login as the claim normalizer writes it, which the allowlist reads.
-            new Claim("wt:username", Options.AdminLogin),
-        };
-        var identity = new ClaimsIdentity(claims, SchemeName);
-        var principal = new ClaimsPrincipal(identity);
-        var ticket = new AuthenticationTicket(principal, SchemeName);
-
-        return Task.FromResult(AuthenticateResult.Success(ticket));
-    }
-}
-
-/// <summary>Options for the <see cref="TestAuthHandler"/>.</summary>
-public sealed class TestAuthSchemeOptions : AuthenticationSchemeOptions
-{
-    /// <summary>The GitHub login the test principal carries (only relevant if an allowlist is configured).</summary>
-    public string AdminLogin { get; set; } = "test-admin";
-}
-
-/// <summary>Wires the test authentication scheme + re-points Wheelhouse's admin policies at it.</summary>
+/// <summary>Configures the SDK test-auth scheme as Wheelhouse's allowlisted admin and re-points the admin policies at it.</summary>
+/// <remarks>Wheelhouse's policies name the cookie scheme, so making the test scheme the default is not enough: the admin,
+/// fallback and catalog-read policies are registered again against it. Clients without <see cref="AdminHeader"/> stay
+/// anonymous, so protected endpoints return 401.</remarks>
 public static class TestAuthExtensions
 {
-    /// <summary>
-    /// Registers <see cref="TestAuthHandler"/> as the default scheme and rebinds both the named
-    /// <see cref="AuthConfigurationExtensions.AdminPolicy"/> and the fallback policy onto it. Call from a
-    /// <see cref="WebApiTestHost{TEntryPoint}.ConfigureServicesHook"/> so it overrides the real cookie/OAuth
-    /// auth registered by the host.
-    /// </summary>
+    /// <summary>Holds the request header that signs a request in as the admin; any value works.</summary>
+    public const string AdminHeader = "X-Test-Admin";
+
+    /// <summary>Holds the GitHub login the test admin carries, which the host's allowlist names.</summary>
+    public const string AdminLogin = "test-admin";
+
+    /// <summary>Registers the SDK test-auth scheme as the admin and rebinds Wheelhouse's policies onto it. Call from a
+    /// test host's services hook so it overrides the real cookie and OAuth registration.</summary>
+    /// <param name="services">The host's services.</param>
     public static IServiceCollection UseTestAdminAuth(this IServiceCollection services)
     {
-        // Make the test scheme the default so policies that don't name a scheme also resolve here.
-        services.AddAuthentication(options =>
-            {
-                options.DefaultScheme = TestAuthHandler.SchemeName;
-                options.DefaultAuthenticateScheme = TestAuthHandler.SchemeName;
-                options.DefaultChallengeScheme = TestAuthHandler.SchemeName;
-            })
-            .AddScheme<TestAuthSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
+        services.AddTestAuth(options =>
+        {
+            options.UserId = "test-admin-id";
+            options.Name = AdminLogin;
+            options.RequiredHeader = AdminHeader;
+            // The login as the claim normalizer writes it, which the allowlist reads.
+            options.ExtraClaims = [new Claim("wt:username", AdminLogin)];
+        });
 
-        // The host's policies are bound to the cookie scheme; re-register them (same name → overwrite,
-        // SetFallbackPolicy → last-write-wins) so they authenticate against the test scheme instead.
-        var adminPolicy = new AuthorizationPolicyBuilder(TestAuthHandler.SchemeName)
-            .RequireAuthenticatedUser()
-            .Build();
-
+        var adminPolicy = new AuthorizationPolicyBuilder(TestAuthHandler.SchemeName).RequireAuthenticatedUser().Build();
         services.AddAuthorizationBuilder()
             .AddPolicy(AuthConfigurationExtensions.AdminPolicy, adminPolicy)
             .SetFallbackPolicy(adminPolicy)
