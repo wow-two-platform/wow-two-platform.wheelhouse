@@ -13,6 +13,12 @@ from urllib.request import Request
 import artifacts
 import runner
 import transport
+import catalog
+
+# ForeverPin's release source as the local server's fixture product defines it.
+FOREVERPIN = next(artifacts.Source(item.slug, item.repository, item.release.asset, item.release.images,
+                                   workflow=item.release.workflow)
+                  for item in catalog.LOCAL_PRODUCTS if item.slug == 'foreverpin')
 
 
 class ArtifactTests(unittest.TestCase):
@@ -20,9 +26,12 @@ class ArtifactTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         # Published releases only; CandidateTests covers the per-commit builds a workflow adds.
-        self.source = replace(artifacts.SOURCES[0], workflow=None)
-        self.sources = patch.object(artifacts, 'SOURCES', (self.source,))
+        self.source = replace(FOREVERPIN, workflow=None)
+        self.sources = patch.object(artifacts, 'sources', lambda: (self.source,))
         self.sources.start()
+        products = patch.object(catalog, 'PRODUCTS', catalog.LOCAL_PRODUCTS)
+        products.start()
+        self.addCleanup(products.stop)
         images = {service: image + '@sha256:' + 'a' * 64 for service, image in self.source.images}
         compose = {'services': {name: {'image': image, 'platform': 'linux/amd64',
                     'healthcheck': {'test': ['CMD', 'true']}} for name, image in images.items()}}
@@ -150,7 +159,7 @@ class CandidateTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.commit = 'c' * 40
-        base = artifacts.SOURCES[0]
+        base = FOREVERPIN
         self.source = artifacts.Source(base.product, base.repository, base.asset_name, base.images,
                                        workflow='publish-docker-image.yml')
         images = {service: image + '@sha256:' + 'a' * 64 for service, image in self.source.images}
@@ -169,8 +178,11 @@ class CandidateTests(unittest.TestCase):
             {'id': 5, 'name': 'bundle-' + 'd' * 40, 'expired': True, 'size_in_bytes': 900},
             {'id': 4, 'name': 'coverage', 'expired': False, 'size_in_bytes': 900}]}
         self.posts = []
-        self.sources = patch.object(artifacts, 'SOURCES', (self.source,))
+        self.sources = patch.object(artifacts, 'sources', lambda: (self.source,))
         self.sources.start()
+        products = patch.object(catalog, 'PRODUCTS', catalog.LOCAL_PRODUCTS)
+        products.start()
+        self.addCleanup(products.stop)
 
     def tearDown(self):
         self.sources.stop()
@@ -231,7 +243,7 @@ class CandidateTests(unittest.TestCase):
                            {'ref': 'main', 'inputs': {'commit': 'e' * 40}})], self.posts)
 
     def test_a_product_without_a_workflow_cannot_build(self):
-        with patch.object(artifacts, 'SOURCES', (artifacts.Source('foreverpin', 'o/r', 'a.tar.gz', ()),)):
+        with patch.object(artifacts, 'sources', lambda: (artifacts.Source('foreverpin', 'o/r', 'a.tar.gz', ()),)):
             with self.assertRaisesRegex(ValueError, 'no build workflow'):
                 artifacts.request_build('foreverpin', self.commit)
 

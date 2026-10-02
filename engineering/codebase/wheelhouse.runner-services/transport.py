@@ -13,9 +13,9 @@ import sys
 import tarfile
 import tempfile
 import uuid
-import catalog
 import fleet
 import artifacts
+import inventory
 from runner import (PROXIES, SLUG, CommandFailed, Rejected, now, reason, rejection, require, read_json,
                     write_json, validate_bundle, validate_target, empty_topology)
 
@@ -108,30 +108,6 @@ def targets(root):
                        "acceptsTestBuilds": config["acceptsTestBuilds"],
                        "needsConfirmation": config["needsConfirmation"],
                        "requiresTestPass": config["requiresTestPass"]})
-    return result
-
-
-def products(root):
-    """The product catalog as integrations read it: each product's identity and, per environment its targets bind,
-    the sites its newest recorded rollout published and the vault namespace its settings belong in."""
-    order = {environment: index for index, environment in enumerate(fleet.DeploymentEnvironment)}
-    sites = latest_sites(root)
-    # A server's first declared vault holds its products' settings, one namespace per product environment.
-    vaults = {vault.server_id: vault.id for vault in reversed(fleet.active_vaults())}
-    result = []
-    for product in catalog.products():
-        environments = []
-        for binding in sorted((item for item in fleet.active_targets() if item.product == product.slug),
-                              key=lambda item: (order[item.environment], item.id)):
-            vault = vaults.get(binding.server_id)
-            environments.append({
-                "name": binding.environment.value, "targetId": binding.id, "serverId": binding.server_id,
-                "sites": sites.get(binding.id, []),
-                "secrets": {"vaultId": vault, "namespace": product.slug + "-" + binding.environment.value}
-                if vault else None})
-        result.append({"slug": product.slug, "name": product.name, "description": product.description,
-                       "repository": product.repository, "defaultBranch": product.default_branch,
-                       "hasReleaseSource": product.release is not None, "environments": environments})
     return result
 
 
@@ -398,7 +374,7 @@ def reconcile(root, target_id, job_id, actor):
 def vitals(root, target_id=None):
     """Reads every target's (or one target's) host and containers in parallel; a failing target reports why."""
     bindings = [binding for binding in fleet.active_targets() if target_id in (None, binding.id)]
-    require(target_id is None or bindings, "Target is not defined in code")
+    require(target_id is None or bindings, "Target is not in the inventory")
 
     def collect(binding):
         try:
@@ -506,7 +482,7 @@ def summary_of(record):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["import", "products", "servers", "targets", "vaults", "releases", "template", "submit",
+    parser.add_argument("action", choices=["import", "sites", "fixtures", "servers", "targets", "vaults", "releases", "template", "submit",
                                            "status", "jobs", "state", "check", "reconcile", "vitals", "stats", "topology",
                                            "branches", "commits", "build", "logs"])
     parser.add_argument("--root", required=True)
@@ -527,10 +503,13 @@ def main():
     args = parser.parse_args()
     root = Path(args.root).resolve()
     try:
+        inventory.install(root)
         if args.action == "import":
             result = import_bundle(root, args.archive, args.bundle)
-        elif args.action == "products":
-            result = products(root)
+        elif args.action == "sites":
+            result = latest_sites(root)
+        elif args.action == "fixtures":
+            result = inventory.fixtures()
         elif args.action == "servers":
             result = fleet.servers()
         elif args.action == "targets":

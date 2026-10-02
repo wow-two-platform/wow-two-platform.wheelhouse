@@ -3,11 +3,18 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+import catalog
 import fleet
 import transport
 
 
 class FleetTests(unittest.TestCase):
+    def setUp(self):
+        # Targets name products; these tests take the local server's fixture products as the inventory's.
+        products = patch.object(catalog, 'PRODUCTS', catalog.LOCAL_PRODUCTS)
+        products.start()
+        self.addCleanup(products.stop)
+
     def test_external_json_cannot_register_a_host(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -15,7 +22,7 @@ class FleetTests(unittest.TestCase):
             (root / 'targets/injected.json').write_text(json.dumps({'ssh': {'host': 'unreviewed'}}))
             with patch.object(fleet, 'SERVERS', ()), patch.object(fleet, 'TARGETS', ()):
                 self.assertEqual([], transport.targets(root))
-                with self.assertRaisesRegex(ValueError, 'not defined in code'):
+                with self.assertRaisesRegex(ValueError, 'not in the inventory'):
                     fleet.resolve_target(root, 'injected')
 
     def test_provider_and_environment_require_supported_enums(self):
@@ -31,7 +38,7 @@ class FleetTests(unittest.TestCase):
                               'platform')
         with patch.object(fleet, 'SERVERS', (server,)), patch.object(fleet, 'TARGETS', (target,)):
             config = fleet.resolve_target(Path('/data/deployments'), target.id)
-            self.assertEqual('Hetzner', config['provider'])
+            self.assertEqual('hetzner', config['provider'])
             self.assertEqual('vps.example.net', config['ssh']['host'])
             self.assertEqual('/data/deployments/ssh/pilot/identity', config['ssh']['keyFile'])
             self.assertEqual('test', config['target']['environment'])
@@ -43,13 +50,13 @@ class FleetTests(unittest.TestCase):
             import os
             os.environ.pop('WHEELHOUSE_REHEARSAL', None)
             self.assertNotIn('foreverpin-dev', [target.id for target in fleet.active_targets()])
-            with self.assertRaisesRegex(ValueError, 'not defined in code'):
+            with self.assertRaisesRegex(ValueError, 'not in the inventory'):
                 fleet.resolve_target(Path('/data/deployments'), 'foreverpin-dev')
         with patch.dict('os.environ', {'WHEELHOUSE_REHEARSAL': '1'}):
             self.assertEqual(['foreverpin-dev', 'foreverpin-test', 'foreverpin-prod', 'wheelhouse-dev'],
                              [target.id for target in fleet.active_targets()])
             config = fleet.resolve_target(Path('/data/deployments'), 'foreverpin-dev')
-            self.assertEqual(('Local', 2222, 'dev', 'local'),
+            self.assertEqual(('local', 2222, 'dev', 'local'),
                              (config['provider'], config['ssh']['port'], config['target']['environment'],
                               config['serverId']))
 
@@ -126,7 +133,7 @@ class FleetTests(unittest.TestCase):
     def test_vault_needs_a_host_defined_in_code(self):
         orphan = fleet.Vault('pilot-vault', 'Pilot vault', 'missing', 'http://secrets-vault:8080')
         with patch.object(fleet, 'SERVERS', ()), patch.object(fleet, 'VAULTS', (orphan,)):
-            with self.assertRaisesRegex(ValueError, 'not defined in code'):
+            with self.assertRaisesRegex(ValueError, 'not in the inventory'):
                 fleet.vaults()
 
     def test_duplicate_server_ids_are_rejected(self):

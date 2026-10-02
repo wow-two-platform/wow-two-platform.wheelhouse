@@ -1,11 +1,16 @@
-"""Reviewed fleet definitions. Adding a provider, VPS or binding requires a code change."""
+"""Servers, targets and vaults as the control plane's inventory names them. The database owns them; the runner reads
+the snapshot the control plane exports (see inventory.py), and the local server adds its own fixtures.
+
+Credentials never travel in the inventory: SSH identities live under <root>/ssh/<server-id>/ and vault administrator
+passwords under <root>/vaults/<vault-id>/password, placed by the operator. A server row without them reaches nothing,
+and its known_hosts pin refuses a host that changed under the same name."""
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 import os
 from pathlib import Path
 import re
-from catalog import product as defined_product
+from catalog import product as defined_product, rehearsal
 from runner import SLUG, require
 
 VAULT_URL = re.compile(r"https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?")
@@ -13,8 +18,8 @@ HOST = re.compile(r"(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-
 
 
 class VpsProvider(str, Enum):
-    HETZNER = "Hetzner"
-    LOCAL = "Local"
+    HETZNER = "hetzner"
+    LOCAL = "local"
 
 
 class DeploymentEnvironment(str, Enum):
@@ -74,11 +79,9 @@ class Vault:
     url: str
 
 
-# Populate these only with verified host details during the VPS wiring session.
-# SSH identities live under <inventory>/ssh/<server-id>/; runtime secrets stay on the target.
+# Installed from the inventory snapshot; empty until the control plane has exported one.
 SERVERS: tuple[Server, ...] = ()
 TARGETS: tuple[Target, ...] = ()
-# Administrator credentials live under <inventory>/vaults/<vault-id>/password.
 VAULTS: tuple[Vault, ...] = ()
 
 # The local server from engineering/deployment/rehearsal. Its settings paths are identical inside the target
@@ -109,21 +112,24 @@ LOCAL_TARGETS = tuple(
 LOCAL_VAULTS = (Vault("local-vault", "Local vault", "local", "http://vault:8080" if IN_RIG else "http://127.0.0.1:18201"),)
 
 
-def rehearsal():
-    # An explicit operator switch for the local server; never set in a deployed control plane.
-    return os.environ.get("WHEELHOUSE_REHEARSAL") in ("1", "network")
+def with_fixtures(inventory, fixtures):
+    """The inventory, plus the local server's fixtures whose IDs it lacks; a database row always wins."""
+    if not rehearsal():
+        return inventory
+    known = {item.id for item in inventory}
+    return inventory + tuple(item for item in fixtures if item.id not in known)
 
 
 def active_servers():
-    return SERVERS + (LOCAL_SERVERS if rehearsal() else ())
+    return with_fixtures(SERVERS, LOCAL_SERVERS)
 
 
 def active_targets():
-    return TARGETS + (LOCAL_TARGETS if rehearsal() else ())
+    return with_fixtures(TARGETS, LOCAL_TARGETS)
 
 
 def active_vaults():
-    return VAULTS + (LOCAL_VAULTS if rehearsal() else ())
+    return with_fixtures(VAULTS, LOCAL_VAULTS)
 
 
 def vaults():
@@ -133,7 +139,7 @@ def vaults():
     result = []
     for vault in catalog:
         require(SLUG.fullmatch(vault.id) and VAULT_URL.fullmatch(vault.url), "Unsupported vault")
-        require(any(server.id == vault.server_id for server in active_servers()), "Server is not defined in code")
+        require(any(server.id == vault.server_id for server in active_servers()), "Server is not in the inventory")
         result.append({"id": vault.id, "name": vault.name, "serverId": vault.server_id, "url": vault.url})
     return result
 
@@ -188,11 +194,11 @@ def resolve_target(root, identifier):
     catalog = active_targets()
     require(len({target.id for target in catalog}) == len(catalog), "Duplicate target ID")
     target = next((item for item in catalog if item.id == identifier), None)
-    require(target is not None and SLUG.fullmatch(target.id), "Target is not defined in code")
+    require(target is not None and SLUG.fullmatch(target.id), "Target is not in the inventory")
     defined_product(target.product)
     require(isinstance(target.environment, DeploymentEnvironment), "Unsupported environment")
     server = next((item for item in active_servers() if item.id == target.server_id), None)
-    require(server is not None, "Server is not defined in code")
+    require(server is not None, "Server is not in the inventory")
     identity = Path(root) / "ssh" / server.id
     return {"serverId": server.id, "provider": server.provider.value,
             "acceptsCandidates": accepts_candidates(target), "acceptsTestBuilds": accepts_test_builds(target),

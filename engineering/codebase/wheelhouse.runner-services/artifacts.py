@@ -1,4 +1,4 @@
-"""Discovery of completed release assets and per-commit candidate builds from code-owned public repositories."""
+"""Discovery of completed release assets and per-commit candidate builds from the inventory's public repositories."""
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -39,13 +39,16 @@ class Source:
     default_branch: str = "main"
 
 
-# Every release source comes from the product catalog; a product without one deploys hand-imported bundles only.
-SOURCES = tuple(Source(product.slug, product.repository, product.release.asset, product.release.images,
-                       workflow=product.release.workflow, default_branch=product.default_branch)
-                for product in catalog.PRODUCTS if product.release is not None)
+def sources():
+    """Every release source comes from the product inventory; a product without one deploys hand-imported bundles."""
+    return tuple(Source(product.slug, product.repository, product.release.asset, product.release.images,
+                        workflow=product.release.workflow, default_branch=product.default_branch)
+                 for product in catalog.products() if product.release is not None)
+
+
 VERSION = re.compile(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?")
 CANDIDATE = re.compile(r"bundle-([a-f0-9]{40})")
-WORKFLOW = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}\.ya?ml")
+WORKFLOW = catalog.WORKFLOW
 BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}")
 API = "https://api.github.com/repos/"
 MAX_ARCHIVE = 3 * 1024 * 1024
@@ -108,7 +111,7 @@ def post(url, body):
 
 
 def source_of(product):
-    source = next((item for item in SOURCES if item.product == product), None)
+    source = next((item for item in sources() if item.product == product), None)
     require(source is not None, "Product has no approved release source")
     return source
 
@@ -140,7 +143,7 @@ def candidates(source):
 
 def available(root=None):
     result = []
-    for source in SOURCES:
+    for source in sources():
         require(source.provider is ArtifactProvider.GITHUB_RELEASES, "Unsupported artifact provider")
         # A bounded recent catalog; old deployed bundles remain in the target recovery journal.
         try:
@@ -292,7 +295,7 @@ def branches(product):
 def commits(product, branch):
     """A branch's recent commits, each with its build when one exists."""
     repository = catalog.product(product).repository
-    source = next((item for item in SOURCES if item.product == product), None)
+    source = next((item for item in sources() if item.product == product), None)
     require(isinstance(branch, str) and BRANCH.fullmatch(branch), "Invalid branch")
     listing = json.loads(fetch(API + repository + "/commits?per_page=30&sha=" + quote(branch, safe="")))
     built = {item["commit"]: item["id"] for item in candidates(source)} if source else {}

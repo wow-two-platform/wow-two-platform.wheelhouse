@@ -270,7 +270,7 @@ class TransportTests(unittest.TestCase):
         self.assertEqual("pilot", result["targets"][1]["serverId"])
         self.assertTrue(result["targets"][1]["reason"].startswith("SSH connection refused"))
         with patch.object(transport.fleet, "active_targets", return_value=bindings):
-            with self.assertRaisesRegex(ValueError, "not defined in code"):
+            with self.assertRaisesRegex(ValueError, "not in the inventory"):
                 transport.vitals(self.root, "missing")
 
     def test_logs_read_one_service_through_the_runner_and_bound_the_request(self):
