@@ -125,11 +125,12 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Item | Type | Notes |
 |---|---|---|
 | Move the frame onto the SDK `AppShell` and `Navbar` | check | `AppLayout.vue` hand-builds the region-scrolling frame the SDK now ships |
-| Replace the E2E `TestAuth` with the SDK's `AddTestAuth` header gate | check | Keep anonymous → 401 and admin → 200 |
 | Replace the local `Stub*` clients with the SDK testing fakes | check | `Tests.E2E/Harness` |
-| Derive the integration key repository from the SDK `EfRepository` | check | Products, servers, targets and vaults moved in v0.3; keep the key's `CreatedAt`/`Id` ordering |
 | Extract the "allowlisted session or scoped key" policy to the backend SDK | check | `Api/Auth/ProductsReadAuthorizationHandler.cs` proves it |
 | Extract the vault admin client to the backend SDK | check | v0.3 proves it |
+| Extract the action-header guard to the backend SDK | check | `Api/Filters/RequireActionAttribute.cs`: a resource filter that answers 400 without the named header |
+| Extract an in-memory `IRepository` fake to the SDK testing package | check | `Tests.Unit/Fakes/InMemoryRepository.cs` |
+| UI SDK rows field over `useFieldArray` | feature | `presentation/common/components/RowsField.vue`: headings, a row per record, list-level errors |
 | Extract repository tree and file reads to the backend SDK GitHub client | check | `Infrastructure/Products/GitHubProductIconSource.cs` calls the REST API inline |
 | UI SDK `Table` sticky-header option | feature | `TableStyles` pins an opaque head meanwhile |
 | UI SDK `AppShell` page-header actions slot | feature | `PageActions` teleports them meanwhile |
