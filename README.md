@@ -68,4 +68,4 @@ Container startup requires an explicit database password and owner login; see
 
 The original design spec lives in the workspace at `wow-two-ws/ideas/wheelhouse-spec.md`.
 Unbuilt work: [backlog](engineering/planning/backlog.md). Design: [architecture](engineering/architecture/architecture.md).
-Fleet definitions and release-source integrations are code-owned; there is no Add VPS UI.
+Products, servers, environments and vaults are edited in the console; credentials stay files on the control host.

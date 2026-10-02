@@ -3,7 +3,7 @@
 ## What is this
 
 **Wheelhouse** — the internal product ops & deploy control plane for the micro-SaaS portfolio. Deploys
-product release bundles to code-owned VPS targets over SSH (Docker + ingress). Domain governance,
+product release bundles to the VPS targets its inventory defines, over SSH (Docker + ingress). Domain governance,
 secret rotation and fleet monitoring remain planned capabilities. Single-user; **never exposed publicly**.
 Named DryDock until 2026-09-26; history before then says DryDock.
 
@@ -32,11 +32,11 @@ Backend layers: `Domain` (entities/enums) → `Application` (SDK mediator CQRS +
 
 ## Core domains (the 5 things Wheelhouse manages)
 
-Products · Servers · Deployments · Domains · Secrets. **Products** (code-owned `catalog.py`; the operator records
-the lifecycle; integrations read `/api/products` with scoped keys) and **Servers** (read-only code-owned fleet) are
-wired end-to-end. Deployments use the independent runner and published artifact
+Products · Servers · Deployments · Domains · Secrets. The **inventory** — products, servers, targets and vaults — lives
+in PostgreSQL and is edited in the console; the API exports it to `<runner root>/inventory.json` for the runner.
+Integrations read `/api/products` with scoped keys. Deployments use the independent runner and published artifact
 catalog, with history, live rollout steps, site probes, read-only checks, log reads and reconciliation. **Secrets** are
-administered in code-owned vaults through the vault console (write-only values). Domains remain a scaffold model.
+administered in inventory vaults through the vault console (write-only values). Domains remain a scaffold model.
 Every audited command (`IAuditedCommand`) lands in the hash-chained `audit_entries` trail; never put a value in one.
 
 ## Build & run
@@ -89,11 +89,11 @@ Reserve unit for I/O-free logic; everything user-facing is covered e2e. Full rul
 
 ## Beta SDK usage (per workspace direction)
 
-- **Frontend → `@wow-two-beta/ui-vue` (`0.0.9`, in `apps/web/package.json`).** Use its components (Button, Card,
+- **Frontend → `@wow-two-beta/ui-vue` (`0.0.12`, in `apps/web/package.json`).** Use its components (Button, Card,
   Badge, Heading, Text, EmptyState, Alert, Spinner, TextInput, …) before hand-rolling. Tailwind v4 wiring: `index.css`
   imports `tailwindcss` + `@wow-two-beta/ui-vue/styles.css` and `@source`s the package's `dist` so its
   utility classes are generated. Shared capability gaps belong in the SDK. Product composition stays local.
-- **Backend → `WoW.Two.Sdk.Backend.Beta` (adopted, `10.0.62-beta`).** `v0.2` migrated every layer onto
+- **Backend → `WoW.Two.Sdk.Backend.Beta` (adopted, `10.0.63-beta`).** `v0.2` migrated every layer onto
   the SDK: host floor (`AddApiDefaults`/`UseApiDefaults`), mediator + results + validation, identity
   (GitHub OAuth + cookie + allowlist/default-deny + scoped API keys), the bespoke SQL
   migrator, and `…Beta.Testing` for the test harness. Products hold business logic only; new infra proves
@@ -111,11 +111,12 @@ Auth/multi-tenant/billing (single-user — bind to Tailscale).
 
 ## Fleet and artifact policy
 
-Products are defined in `engineering/codebase/wheelhouse.runner-services/catalog.py`; providers and individual VPS
-bindings in `fleet.py`.
-Provider/environment choices use enums; no dynamic provider plugins or Add VPS UI/API.
-`artifacts.py` owns approved release sources. Wheelhouse deploys published releases and per-commit builds; it starts a
-product's build workflow only for a commit that has no build, and never builds on a target host.
+Products, servers, targets and vaults are database rows edited in the console; the runner reads the exported
+`inventory.json` snapshot. Credentials stay operator-placed files (`ssh/<server>/`, `vaults/<vault>/password`), never
+rows. Provider/environment choices use enums; no dynamic provider plugins. The local rig's fixtures stay in
+`catalog.py`/`fleet.py` and seed the database on the rig only. A product's release source is part of its row.
+Wheelhouse deploys published releases and per-commit builds; it starts a product's build workflow only for a commit
+that has no build, and never builds on a target host.
 Environments are `dev`, `test` and `prod`; dev takes any build, test takes releases and `test` branch builds, and
 prod only a release that succeeded on test (a typed target ID skips that). Every product builds through the shared
 `publish` workflow in `wow-two-platform.pipelines`: `main` releases `vX.Y.Z`, other branches build candidates.

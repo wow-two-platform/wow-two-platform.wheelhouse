@@ -1,6 +1,6 @@
 # Wheelhouse — Context
 
-*Last updated: 2026-09-29*
+*Last updated: 2026-10-02*
 
 ## Current state
 
@@ -25,8 +25,9 @@ redirect and editor, real provider callbacks, persisted codes and cookie keys, a
 
 - GitHub Actions builds and publishes artifacts; Wheelhouse only starts a product's build for a commit that has none.
 - Every product builds through the shared publish workflow; a push to `main` releases `vX.Y.Z`.
-- Providers and individual VPS bindings are defined in code; selectable provider/environment values use enums.
-- No Add VPS UI, dynamic integration registry or server mutation API.
+- The inventory — products, servers, environments, vaults — lives in the database and is edited in the console;
+  provider/environment values use enums; no dynamic integration registry. Decided 2026-10-02.
+- SSH identities, pinned host keys and vault passwords stay files on the control host, never database rows.
 - Runtime secrets are mounted separately. Product artifacts remain identical across environments.
 - Image rollback requires schema compatibility; database recovery is an explicit operation.
 - Secrets Vault stays a separate service; Wheelhouse is its central console and never reads values back.

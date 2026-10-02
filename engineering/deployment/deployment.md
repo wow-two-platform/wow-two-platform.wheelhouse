@@ -1,6 +1,6 @@
 # Deployment operations
 
-*Last updated: 2026-09-29*
+*Last updated: 2026-10-02*
 
 ## Ownership and current boundary
 
@@ -84,14 +84,15 @@ The runtime runs as `app` and uses PostgreSQL, not SQLite.
 
 ## Runner installation and inventory
 
-The image includes `/app/runner/{runner,transport,fleet,artifacts}.py`.
-`fleet.py` is the reviewed source of provider enums, VPS identities and deployment bindings.
-No `targets/*.json` file or database server row can add an executable target.
-The UI and server API are read-only; adding a host requires a code change and a new Wheelhouse image.
+The image includes `/app/runner/{runner,transport,inventory,catalog,fleet,artifacts}.py`.
+The runner reads products, servers, targets and vaults from `inventory.json`, which the API rewrites from its database
+at startup and after every change; Servers and Products in the console edit them. A row reaches nothing until the
+operator places its credential files below.
 
 Mount a protected persistent directory at `/data/deployments` containing:
 
 ```text
+inventory.json            ← written by the API; never edit by hand
 ssh/<server-id>/identity
 ssh/<server-id>/known_hosts
 vaults/<vault-id>/password
@@ -101,24 +102,15 @@ observed/
 reconciled/
 ```
 
-The checked-in fleet starts empty. During wiring, add verified `Server` and `Target` values in `fleet.py`.
-For example only (these are not enabled hosts):
-
-```python
-SERVERS = (Server("pilot-host", "Pilot host", VpsProvider.HETZNER,
-                  "vps.example.net", "hel1"),)
-TARGETS = (Target("foreverpin-prod", "pilot-host", "foreverpin",
-                  DeploymentEnvironment.PROD,
-                  (("management", "/srv/secrets/foreverpin-prod/management.json"),
-                   ("redirect", "/srv/secrets/foreverpin-prod/redirect.json")),
-                  "platform", sites=(("app", "app.example.net"), ("go", "go.example.net"))),)
-```
+A new database starts with ForeverPin and Wheelhouse as products and no server. During wiring, add the verified host
+under Servers (slug, address, SSH user and port, ingress), place its `ssh/<slug>/` files, then add each environment
+under Products (server, settings files per service, smoke checks, site hosts).
 
 Add a real redirect smoke probe to the target after the stable pilot code exists.
 The default root is `/srv/wheelhouse`; secret values never enter source, bundles or the browser.
 IDs are stable lowercase slugs; never reuse a host ID for a different machine.
 
-`artifacts.py` declares approved public GitHub repositories and exact service image repositories.
+A product's release source on its inventory row names the approved public repository and exact service image repositories.
 The catalog lists only published versioned release assets with completed upload and checksum metadata.
 Wheelhouse validates the archive, bundle contents and tag/source commit when a release is selected.
 A GHCR pull remains the definitive image-availability check before container replacement.
@@ -252,7 +244,8 @@ active secrets older than 90 days, and tokens expired, expiring within 14 days o
 
 ## Secrets vaults
 
-`fleet.py` declares each vault's id, host and private management URL; the browser never sees or chooses the URL.
+Servers in the console declare each vault's slug, host and private management URL; the browser never chooses the URL,
+and the status list never shows it.
 Wheelhouse signs in with the administrator password at `<inventory>/vaults/<vault-id>/password`, a protected mount,
 and keeps the one-hour session in memory. The console writes values and never reads them back.
 A minted product token is returned once, with `Cache-Control: no-store`, and only its metadata remains afterwards.
@@ -376,13 +369,13 @@ A service's recent container output is readable on request through `logs`; Docke
 5. Start Traefik and PostgreSQL on the private platform network; Traefik's file provider reads `/srv/wheelhouse/ingress`.
 6. Create distinct least-privilege databases/users for every product/environment.
 7. Write protected runtime settings and registry credentials.
-8. Name each prod site's host on its target in `fleet.py`; the runner routes it after a verified rollout.
-   Set the server's `Ingress.private_probe` to the private entry point's address so private sites are probed too.
+8. Name each prod site's host on its environment under Products; the runner routes it after a verified rollout.
+   Set the server's private probe to the private entry point's address so private sites are probed too.
 9. Add the ingress IP to `Deployment:TrustedProxies` in both app settings; no trust-all proxy setting.
 10. Bootstrap Wheelhouse privately or use the operator command from a workstation.
 11. Deploy test, verify real URLs and provider callbacks, restore a backup, promote the same image digests to prod.
 
-Existing product containers keep serving without Wheelhouse. A new VPS requires a reviewed fleet code change and Wheelhouse rebuild; it uses the same product release.
+Existing product containers keep serving without Wheelhouse. A new VPS is a Servers entry plus its credential files; it uses the same product release.
 Data relocation remains a separately planned copy/restore/cutover operation.
 
 ## Backups and launch gates

@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-09-30*
+*Last updated: 2026-10-02*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -9,9 +9,9 @@ Every unbuilt item; top of each group = next. The active version is the newest f
 
 | Feature | State | Boundary today |
 |---|---|---|
-| Product catalog | shipped v0.3 | Identity in the runner's `catalog.py`; the operator records the lifecycle; environments, sites and vault namespaces |
+| Product catalog | shipped v0.3 | Products, their environments and release sources edited in the console; lifecycle; sites and vault namespaces |
 | Integration keys | shipped v0.3 | Scoped, revocable keys; `catalog:read` reads `/api/products`, nothing else |
-| Server inventory | shipped v0.3 | Read-only hosts and provider filters; definitions in code |
+| Server inventory | shipped v0.3 | Servers and their vaults edited in the console; credentials stay files on the control host |
 | Environments | shipped v0.3 | `dev`, `test` and `prod` per product on one host; the local server runs all three |
 | Release catalog | shipped v0.3 | Published releases and per-commit builds from approved repositories; a build starts for a commit without one |
 | Deployment execution | shipped v0.3 | Pinned SSH, serialized rollout, health gates, prod only after test, live rollout steps, durable outcomes |
@@ -27,7 +27,7 @@ Every unbuilt item; top of each group = next. The active version is the newest f
 | Data | planned | Platform PostgreSQL per host, managed backups and verified restores; a backup runbook exists |
 | Costs and capacity | planned | Provider billing and placement views; a manual host budget exists |
 
-Dynamic provider plugins and UI-based VPS registration are excluded by product decision.
+Dynamic provider plugins are excluded by product decision; a provider is an enum member plus its integration.
 
 ---
 
@@ -65,7 +65,7 @@ Dynamic provider plugins and UI-based VPS registration are excluded by product d
 | Render a target's settings from the vault at deploy time | feature | Mounted setting files today |
 | Vault consumer in the backend SDK | feature | Startup resolution, bounded timeout, fail-closed; unblocks ForeverPin adoption |
 | Scoped management credential for Wheelhouse | check | Vault-side change; replaces the shared administrator password |
-| Mint expiring product tokens | feature | Vault API change: mint accepts only a name today; hygiene already flags expiry |
+| Mint expiring product tokens | feature | The vault takes an expiry and rotates since its v0.3; the gateway still sends a name only |
 
 ---
 
@@ -101,7 +101,7 @@ Dynamic provider plugins and UI-based VPS registration are excluded by product d
 
 | Item | Type | Notes |
 |---|---|---|
-| Ownership and kill-gate metrics on the catalog | feature | Identity lives in `catalog.py` since v0.3; metrics need cost and usage feeds |
+| Ownership and kill-gate metrics on the catalog | feature | Products are database rows since v0.3; metrics need cost and usage feeds |
 | Second provider and a placement view | feature | Provider enum plus integration in code |
 | Cost per product and host | feature | Feeds the micro-SaaS kill gates |
 | Host view with capacity and a portfolio matrix | feature | Beside the per-environment service map |
@@ -124,11 +124,10 @@ Dynamic provider plugins and UI-based VPS registration are excluded by product d
 
 | Item | Type | Notes |
 |---|---|---|
-| Delete the local copies of published UI SDK parts | check | `CanvasArea`, skeleton slots, `useRefresh`, `RefreshButton` internals and per-modal height classes; pinned `0.0.9` ships them |
 | Move the frame onto the SDK `AppShell` and `Navbar` | check | `AppLayout.vue` hand-builds the region-scrolling frame the SDK now ships |
 | Replace the E2E `TestAuth` with the SDK's `AddTestAuth` header gate | check | Keep anonymous → 401 and admin → 200 |
 | Replace the local `Stub*` clients with the SDK testing fakes | check | `Tests.E2E/Harness` |
-| Derive the server, product metadata and integration key repositories from the SDK `EfRepository` | check | Keep the `Exists*` predicates and `CreatedAt`/`Id` ordering |
+| Derive the integration key repository from the SDK `EfRepository` | check | Products, servers, targets and vaults moved in v0.3; keep the key's `CreatedAt`/`Id` ordering |
 | Extract the "allowlisted session or scoped key" policy to the backend SDK | check | `Api/Auth/ProductsReadAuthorizationHandler.cs` proves it |
 | Extract the vault admin client to the backend SDK | check | v0.3 proves it |
 | Extract repository tree and file reads to the backend SDK GitHub client | check | `Infrastructure/Products/GitHubProductIconSource.cs` calls the REST API inline |
@@ -142,10 +141,9 @@ Dynamic provider plugins and UI-based VPS registration are excluded by product d
 
 | Item | Type | Notes |
 |---|---|---|
-| Retire the placeholder server, deployment, domain and secret tables | issue | Unused since the code-owned fleet |
-| Drop the legacy `products` table | issue | Unread since migration 006; its statuses seeded `product_metadata` |
+| Retire the placeholder deployment, domain and secret tables | issue | Deployments return with the outcome follower (Point 12); domains and secrets stay elsewhere |
 | Shape-keeping first loads on the remaining pages | feature | Workspace, Deployments, Servers, Products and Activity still show block skeletons on a first load |
-| Rename the runner's `fleet.py` and `rehearse.py` | check | The screen says Servers and local server; `catalog.py` split out in v0.3 |
+| Rename the runner's `fleet.py` and `rehearse.py` | check | The screen says Servers and local server; both now hold shapes and rig fixtures only |
 | Stamp applied migrations with the product version | issue | `MigrationOptions.Version` keeps the SDK default `v1.0` |
 | Rename backend tests to `{Unit}_Should{Expectation}_When{Condition}` | check | Tests older than the v0.3 catalog predate the testing convention's naming rule |
 | Adopt the product template's ESLint, Prettier config and `format:check` gates | check | 86 app files predate a formatter config; format once in a dedicated commit |

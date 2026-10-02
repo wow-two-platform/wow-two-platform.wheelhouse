@@ -1,12 +1,12 @@
 # Wheelhouse architecture
 
-*Last updated: 2026-09-30*
+*Last updated: 2026-10-02*
 
 ## Runtime
 
 A .NET 10 host serves the private administration API and Vue workspace.
-PostgreSQL stores product lifecycles, integration keys, the audit trail and vitals; bespoke SQL migrations run on
-startup. GitHub cookie authentication and an owner allowlist protect administration; a scoped integration key reads
+PostgreSQL stores the inventory (products, servers, targets, vaults), integration keys, the audit trail and vitals;
+bespoke SQL migrations run on startup. GitHub cookie authentication and an owner allowlist protect administration; a scoped integration key reads
 the product catalog and nothing else. Production requires a nonempty owner allowlist.
 
 ```mermaid
@@ -15,7 +15,9 @@ flowchart LR
   CI --> Bundle[Release manifest + Compose]
   Bundle --> Release[GitHub release asset or bundle artifact]
   Release --> Dock[Private Wheelhouse dashboard/API]
-  Fleet[Code-owned provider and host catalog] --> Dock
+  Inventory[(PostgreSQL inventory)] --> Dock
+  Dock --> Snapshot[Inventory snapshot file]
+  Snapshot --> SSH
   Dock --> SSH[Pinned OpenSSH adapter]
   Operator[Operator CLI] --> SSH
   SSH --> Runner[Target-owned Python runner]
@@ -29,16 +31,15 @@ flowchart LR
 
 | Layer | Responsibility |
 |---|---|
-| Domain | Product, server, deployment, domain and secret models |
-| Application | Catalog, lifecycle, integration key, audit, vault and deployment use cases |
-| Infrastructure | SDK integration clients and bounded runner-process adapter |
+| Domain | Product, server, target, vault, deployment, domain and secret models |
+| Application | Inventory, lifecycle, integration key, audit, vault and deployment use cases |
+| Infrastructure | SDK integration clients, the inventory snapshot exporter and the bounded runner-process adapter |
 | Persistence | PostgreSQL EF mapping, repositories and bespoke migration files |
 | API | Host wiring, authorization, request validation, controllers and SPA serving |
-| Python runner | Code-owned product catalog, fleet and vaults, release discovery, bundle validation, SSH, rollout, checks and recovery |
-| Vault gateway | Administers catalog vaults over their management API; values are write-only |
+| Python runner | Inventory snapshot reads, release discovery, bundle validation, SSH, rollout, checks and recovery |
+| Vault gateway | Administers inventory vaults over their management API; values are write-only |
 
-The pre-existing server/deployment/domain/secret database models are retained for compatibility.
-The current server API reads the code-owned fleet; it cannot create or delete hosts.
+The placeholder deployment, domain and secret tables remain unused.
 The deployment execution journal lives on each target, with a durable local submission index.
 
 ## Release contract
@@ -72,8 +73,8 @@ no zero-downtime promise.
 
 ## Artifacts and registry
 
-`artifacts.py` declares approved repositories, archive names and service-to-image mappings in code.
-The catalog lists published releases with a complete, checksummed asset and per-commit bundle artifacts;
+A product's release source — repository, archive name, build workflow and service-to-image mappings — is part of its
+inventory row; `artifacts.py` approves only those. The release catalog lists published releases with a complete, checksummed asset and per-commit bundle artifacts;
 drafts and incomplete assets never appear. Discovery covers the 100 newest releases per source; deployed bundles
 stay in each target's journal. Selection downloads and validates the archive, its checksum, source commit and approved
 image names before any target changes. Wheelhouse dispatches a product's build workflow only for a commit that has
@@ -86,23 +87,33 @@ A read-only GitHub token (`Deployment:GitHubTokenFile` / `WHEELHOUSE_GITHUB_TOKE
 and is stripped from cross-origin redirects. Release rules for every product:
 [deploy descriptor](../../../../../conventions/deployment/descriptor/deploy-descriptor.md) § *Builds and versions*.
 
-## Fleet
+## Inventory
 
-`fleet.py` declares providers, hosts and environment bindings in code; mounted files hold credentials only.
-No JSON file, database row or HTTP call can register a host or provider. A new VPS is a reviewed fleet change and a
-Wheelhouse rebuild; a new provider also needs an enum member and its integration. Product images never change
-with the host. Every product runs `dev`, `test` and `prod` on one host, separated by Compose project, network alias,
+PostgreSQL is the source of truth for products, servers, targets (one product environment on one server) and vaults.
+The console edits them; every change is an audited command. The API exports the four tables to
+`<runner root>/inventory.json` at startup and after each change — atomically, owner-only, one write at a time — and
+the runner reads only that snapshot, refusing a malformed one whole. The operator CLI keeps working from the last
+snapshot while the API is down.
+
+Credentials never enter the database. A server's SSH identity and pinned host key (`ssh/<server>/identity`,
+`known_hosts`) and a vault's administrator password (`vaults/<vault>/password`) are files the operator places on
+the control host: a new row reaches nothing until its files exist, and a changed host address fails its pinned key.
+Provider and environment values stay enums; a new provider needs an enum member and its integration. A product or
+server that a target or vault still uses cannot be deleted. Product images never change with the host.
+
+On the local rig the runner holds the local server's fixtures. The API seeds them at startup: fixture products only
+where the database lacks them, the local server, its targets and vault rewritten on every start, since their hosts,
+ports and paths depend on where Wheelhouse runs. Fixtures never apply outside the rig. Every product runs `dev`, `test` and `prod` on one host, separated by Compose project, network alias,
 database, settings files and hostnames. Moving a stateful product needs a backup, a write freeze, a verified restore
 and an explicit cutover; a second host definition does not make a service redundant.
 
 ## Product catalog
 
-A product's identity lives in `wheelhouse.runner-services/catalog.py`, reviewed code like the fleet: slug, name,
-description, repository, default branch and an optional release source. Adding a product is a code change; the
-runner refuses a target or release source for a product the catalog lacks. The database keeps only what the operator
-records without a review — the lifecycle (idea, building, live, paused, killed) — keyed by slug.
+A product is one inventory row: slug, name, description, repository, default branch, an optional release source and
+the operator's lifecycle (idea, building, live, paused, killed). The slug never changes once created; the runner
+refuses a target or release source for a product the snapshot lacks.
 
-`/api/products` joins the two: each product's environments come from its fleet targets, each environment's sites from
+`/api/products` joins the inventory: each product's environments come from its targets, each environment's sites from
 the newest rollout this control plane saw succeed (no target is contacted), and its vault namespace is
 `{product}-{environment}` on its server's first vault. The response carries no targets, releases or deployment state,
 so an integration reads products without deployment concepts. The runner read is cached for 30 seconds.
@@ -128,7 +139,7 @@ Delegating builds and deploys to an agent follows the same seams, so the MCP ser
 ## Secrets vaults
 
 Secrets Vault stays a separate service and repository; Wheelhouse is its central management console.
-The gateway resolves a vault id through the code-owned catalog, signs in with a mounted administrator credential,
+The gateway resolves a vault id through the inventory, signs in with a mounted administrator credential,
 and forwards namespace, secret, state and token operations. It never requests secret values.
 Products keep reading secrets from their own vault on the private network, so an unavailable Wheelhouse
 cannot interrupt runtime reads. See the vault's own security analysis for the global-console trust boundary.

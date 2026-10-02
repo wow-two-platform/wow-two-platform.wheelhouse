@@ -1,6 +1,6 @@
 # Feature completeness — vectors, reliability and shipping Wheelhouse
 
-*Last updated: 2026-09-30*
+*Last updated: 2026-10-02*
 
 What Wheelhouse needs before it is complete and reliable enough to run the portfolio: the five vectors the product
 named (topology, secrets, domains, portfolio, service map), the reliability properties, how Wheelhouse ships itself,
@@ -15,6 +15,7 @@ and 25.
 - [x] Second sweep: runner housekeeping, write guards, test layers and contracts (S19-S25).
 - [x] Service map built in v0.3 iteration 12: sites, platform needs, versions, environments compared with promotion.
 - [x] Third sweep: version stamps, version docs, SDK pins and dependency advisories (S26-S29); [next versions](next-versions.md).
+- [x] Fourth sweep: outcome tracking, alert rules, runner reads, startup order, contracts and pins (S30-S43); every suite passed on 2026-10-01.
 - [ ] Points decided.
 - [ ] Version tracks written from the decided points.
 
@@ -24,11 +25,11 @@ and 25.
 
 | Vector | Built | Missing |
 |---|---|---|
-| Deployments | `dev`/`test`/`prod` targets, releases and commit builds, prod gate, locks, health gates, rollback, reconcile, history, site routes, live rollout steps, site probes, image cleanup | Notifications, stop/start, teardown, a release catalog view |
+| Deployments | `dev`/`test`/`prod` targets, releases and commit builds, prod gate, locks, health gates, rollback, reconcile, history, site routes, live rollout steps, site probes, image cleanup, a release catalog view | Notifications, stop/start, teardown, outcomes recorded without a page open |
 | Topology | Traefik ingress on the local server, one `platform` network, per-environment databases created by `rehearse.py` | Host preparation, platform PostgreSQL with a database and role per target, derived settings, per-target networks, backups |
 | Secrets | Vault console: namespaces, write-only values, product tokens, rotation hygiene; required-key checks on settings files | Settings rendering, deploy-time tokens, SDK vault consumer, expiring tokens, Wheelhouse's own credentials at rest |
 | Domains | Site hosts per target (named or pattern); `ManagedDomain` placeholder entity | Inventory, registrar sync, DNS plan and apply, expiry tracking, preview wildcard |
-| Portfolio | Product create, edit and delete (slug, name, repository, status) in the database | One product catalog, lifecycle actions, cost, capacity, onboarding |
+| Portfolio | Products, environments, servers and vaults edited in the console and exported to the runner; the lifecycle record; `/api/products` for scoped integration keys | Lifecycle actions, cost, capacity, onboarding |
 | Service map | Per-target map on a pan-and-zoom canvas: services, networks, volumes, dependencies, container vitals, sites, platform needs, versions; environments compared with promotion | Host view, portfolio matrix |
 | Operations | Host and container vitals with 30 days of trends, 30-day deploy metrics, one attention list, service log reads, an ingress check | Alerts, notifications, uptime probes |
 | Wheelhouse itself | Production image, CI on every push, its own `deploy.yml` and release workflow, the audit trail, a local self-deploy | A host, bootstrap, backups |
@@ -119,8 +120,8 @@ A VPS target reads hand-placed settings files; Wheelhouse checks their keys but 
 | Capacity and placement | Each host's memory budget against the declared limits of its targets; the view shows which host has room |
 | Onboarding | Zero-to-live: `create-repo` scaffold with `deploy.yml` and CI, a catalog entry, the first dev deploy |
 
-Adding a product today takes three edits (`artifacts.py`, `fleet.py`, the database row), a Wheelhouse rebuild,
-hand-placed settings files and a manual database. At the portfolio's target of 50–100 launches, onboarding cost dominates.
+Adding a product today takes two console forms (the product, each environment), hand-placed settings files and a
+manual database. At the portfolio's target of 50–100 launches, onboarding cost dominates.
 
 ---
 
@@ -210,6 +211,20 @@ Placement options:
 | S27 | Applied migrations are stamped `v1.0`, the SDK default, not the product version | `MigrationOptions.Version` is never set | Adoption version |
 | S28 | Nine transitive backend packages carry advisories, five of them high | `dotnet list package --vulnerable --include-transitive` on the API | Adoption version |
 | S29 | v0.3 missed the Studio workspace and base map and still described the retired sidebar | `v0.3.md` Iterations 2 and 12 | v0.3 ✓ |
+| S30 | A rollout's outcome is recorded only while a page polls it | Only `transport.status` writes `observed/`; its one caller is `GET /api/deployments/{id}`, which the console polls; the API hosts `VitalsSampler` alone | Point 12 |
+| S31 | An unpolled rollout stays `queued` in history and stats, publishes no catalog sites and leaves the test pass to an SSH read | `transport.jobs`, `stats`, `latest_sites`, `test_pass`; read from code, since all 27 local rollouts were followed | Point 12 |
+| S32 | The submission index is JSON files parsed in full on every history, stats and catalog read, a second store to back up | `transport.jobs(root, limit=None)`; the `deployments` table stays an unused placeholder | Point 12 |
+| S33 | A deploy's audit entry records its submission, never its outcome | `DeploymentStartCommand` is audited when the submit returns `queued` | Point 12 |
+| S34 | Attention rules run in the browser, so nothing can alert without a page open | `apps/web/src/domain/overview/AttentionRules.ts` | Point 13 |
+| S35 | The backend SDK cannot send a Telegram message | `Comms/` holds Email, Sms, Push and WhatsApp; Telegram is an OTP handler and a webhook validator | Point 13 |
+| S36 | A service that starts beside its database fails its startup migration | Docker restart on 2026-10-01: ForeverPin `management` crashed twice on `57P03`, then started; the `wheelhouse:local` and `drydock:local` consoles stayed at 97% CPU, unhealthy, never restarted | Point 14 |
+| S37 | No published release has passed through the runner | ForeverPin has no GitHub release and runs a copied workflow that pins `release.py` by blob; bundles are `linux/amd64`, the local server is `linux/arm64`, and `preflight` refuses a mismatch | Points 10, 15 |
+| S38 | No automated test crosses the API, the runner, SSH and Docker | E2E uses `StubDeploymentGateway`; runner tests inject a Docker factory; the rig runs by hand; v0.3 holds 46 manual checks | Point 15 |
+| S39 | The deployment API passes the runner's JSON through untyped | Controllers return `ApiResponse<JsonElement>`; the console's zod schemas mirror Python dictionaries (S24); MCP tools would have no schema | Point 16 |
+| S40 | Each read costs a Python process and an SSH session per target; host vitals are read once per target, not per server | `DeploymentGateway.RunAsync`, `transport.vitals`, `useTargetStates`; the gateway times out at 110 seconds | Point 17 |
+| S41 | Eleven more venture repositories carry a `deploy.yml`; the catalog names ForeverPin and Wheelhouse | The inventory; the eleven have no commit, remote or workflow; only Wheelhouse calls the shared publish workflow | Point 18 |
+| S42 | Pins and notes lag their sources | Backend SDK `10.0.62` against `10.0.63`; UI SDK `0.0.9` against `0.0.12`; the vault mints with an expiry and rotates since its v0.3, yet the backlog says it mints by name only | Point 19 ✓ |
+| S43 | The agreed product-scoped structure is unbuilt | Routes stay tool-scoped; `WorkspacePage.vue` holds 1,079 lines | Point 20 |
 
 ---
 
@@ -221,12 +236,12 @@ to the SDKs, so each wave below takes the next odd version when it opens.
 
 | Wave | Scope | Needs |
 |---|---|---|
-| Foundation | Rollout steps, site probes, log reads, ingress check, image cleanup, audit trail, CI: done in v0.3. Left: product catalog, placeholder cleanup | Point 1 |
+| Foundation | Rollout steps, site probes, log reads, ingress check, image cleanup, audit trail, CI, product catalog: done in v0.3. Left: placeholder cleanup | Point 12 |
 | Topology | Host preparation, platform services, databases per target, derived settings, networks, lifecycle, capacity gate, backups and restore drill | Topology points 5–11, 15, 23 |
 | Secrets | Settings rendering, deploy-time tokens, SDK vault consumer, expiring tokens, required-secret preflight, credentials at rest, SSH key rotation, GitHub App | Points 2, 3, 9 |
 | Domains | Inventory and registrar sync, DNS plan and apply, preview wildcard, certificate and domain expiry, pinned domains | Points 4, 5; topology point 25 |
-| Portfolio and map | Service map sites, needs and versions plus environment compare: done in v0.3. Left: portfolio matrix, release catalog, lifecycle actions, cost, capacity view, onboarding, host view | Point 1 |
-| Operations | Vitals history: done in v0.3. Left: alerts, notifications, an audit checkpoint, candidate image cleanup | Point 6 |
+| Portfolio and map | Service map sites, needs and versions plus environment compare: done in v0.3. Left: portfolio matrix, lifecycle actions, cost, capacity view, onboarding, host view | Point 18 |
+| Operations | Vitals history: done in v0.3. Left: an outcome follower, server-side attention rules, alerts, notifications, an audit checkpoint, candidate image cleanup | Points 12, 13 |
 | Live | Control host, Tailscale, OAuth app, bootstrap, self-deploy, first product host, ForeverPin live | Points 7, 8 |
 
 The next version, v0.4, is the Adoption version for v0.3: its stable blocks (the vault admin client, the action-header
@@ -247,3 +262,17 @@ Decide top to bottom; a parent settles before its children.
 7. [ ] Wheelhouse host: a separate control VPS on Tailscale; the laptop CLI stays the break-glass path.
 8. [x] Repository visibility: private before `fleet.py` holds real host addresses.
 9. [ ] GitHub access: one GitHub App replaces the sign-in `repo` scope and the runner's token file.
+10. [ ] Real host timing: one hand-wired `linux/amd64` test host now, or only after the Topology wave.
+11. [ ] Next version: Adoption first as the dev cycle orders, or Operations first with the re-pins folded in.
+12. [ ] Outcome follower: the API follows every rollout to its end and keeps deployments in PostgreSQL; the target journal stays the authority.
+13. [ ] Alerts: attention rules move into the API, the console renders them, and a Telegram sender lands in the SDK `Comms` first.
+14. [ ] Startup: the SDK migrator waits, bounded, for a database that is still starting.
+15. [ ] CI rig: an `amd64` runner deploys the built bundle to an SSH target container; a browser tier drives the console.
+16. [ ] Runner contract: typed models at the gateway, one schema for the API, the console and MCP tools.
+17. [ ] Runner reads: one SSH session reads every project on a server.
+18. [ ] Onboarding slice: database provisioning and derived settings before the third product.
+19. [x] Re-pin both SDKs before the joint verification, so the frame is verified once.
+20. [ ] Product-scoped workspace after the first host.
+21. [ ] MCP endpoint after Points 12 and 16.
+22. [x] Inventory in PostgreSQL: products, environments, servers and vaults are rows edited in the console; the runner
+    reads an exported snapshot; credentials stay files on the control host.

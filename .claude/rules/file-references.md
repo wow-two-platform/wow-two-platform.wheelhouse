@@ -32,8 +32,8 @@
 |---|---|
 | `Wheelhouse.Api` | HTTP host — control-plane controllers; single-host SPA serving |
 | `Wheelhouse.Application` | Use cases — mediator handlers, repository abstractions, DTOs |
-| `Wheelhouse.Domain` | Entities (product metadata, integration keys, audit, operations, legacy Server/Deployment/ManagedDomain/SecretEntry) + enums |
-| `Wheelhouse.Infrastructure` | Adapters — runner process gateway, runner product catalog, vault admin client, icon source, settings |
+| `Wheelhouse.Domain` | Entities (products, servers, targets, vaults, integration keys, audit, operations, legacy Deployment/ManagedDomain/SecretEntry) + enums |
+| `Wheelhouse.Infrastructure` | Adapters — runner process gateway, inventory snapshot exporter and rig seed, vault admin client, icon source, settings |
 | `Wheelhouse.Persistence` | EF Core + Postgres context, repositories, hand-authored SQL migrations |
 | `Wheelhouse.Tests.Unit` | **Unit** tier — pure logic (validators, icon paths, runner and vault adapters); Docker-free |
 | `Wheelhouse.Tests.Integration` | **Integration** tier — EF model below the pipeline over the SDK `RelationalTestDb`, no HTTP; PG↔SQLite |
@@ -48,8 +48,9 @@
 ### `codebase/wheelhouse.runner-services/` (Python)
 | File | What it is |
 |---|---|
-| `catalog.py` | Code-owned products: identity, repository, release source |
-| `fleet.py` | Code-owned providers, servers, targets, vaults |
+| `inventory.py` | Reads the API-exported `inventory.json` into the catalog and fleet |
+| `catalog.py` | Product shape and validation; the local rig's fixture products |
+| `fleet.py` | Server, target and vault shapes; the local rig's fixtures |
 | `artifacts.py` | Approved release sources and catalog |
 | `transport.py` | Operator CLI + SSH adapter used by the API |
 | `runner.py` | Target-side executor: locks, health gates, recovery |
