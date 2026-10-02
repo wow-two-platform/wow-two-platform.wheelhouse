@@ -106,3 +106,17 @@ export function failureReason(
   }
   return error?.message ?? "";
 }
+
+/** Every reason a write was refused: the management API's detail, then each field's validation message. */
+export function failureMessages(error: { readonly message: string } | null | undefined): string[] {
+  const problem = (
+    error as { readonly problem?: Readonly<Record<string, unknown>> | null } | null | undefined
+  )?.problem;
+  const fields = problem?.["errors"];
+  const messages =
+    fields && typeof fields === "object"
+      ? Object.values(fields as Record<string, unknown>).flatMap((value) =>
+          Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [])
+      : [];
+  return messages.length > 0 ? messages : [failureReason(error)].filter((text) => text.length > 0);
+}

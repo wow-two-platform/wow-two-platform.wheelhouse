@@ -1,7 +1,14 @@
+<script lang="ts">
+/** The new-product form is opened from the route toolbar. */
+export interface ProductsPanelProps {
+  readonly creating: boolean;
+}
+</script>
+
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
-import { ChevronRight, ExternalLink, KeyRound, Package, Search } from "lucide-vue-next";
+import { ChevronRight, ExternalLink, KeyRound, Package, Pencil, Plus, Search } from "lucide-vue-next";
 import { Button, CopyButton } from "@wow-two-beta/ui-vue/presentation/actions";
 import { Badge } from "@wow-two-beta/ui-vue/presentation/display";
 import {
@@ -17,12 +24,19 @@ import {
   SelectPickerValue,
 } from "@wow-two-beta/ui-vue/presentation/forms";
 import { useProducts } from "@/application/products";
+import { useServers } from "@/application/servers";
+import { useTargets } from "@/application/targets";
 import { ProductLifecycle } from "@/domain/products";
+import type { InventoryTarget } from "@/domain/targets";
 import RepositoryActions from "./RepositoryActions.vue";
 import ProductIcon from "./ProductIcon.vue";
+import ProductFormModal from "./ProductFormModal.vue";
+import TargetFormModal from "./TargetFormModal.vue";
 
-/** Presents the code-owned catalog with a contextual inspector; only the lifecycle changes here. */
+/** Presents the portfolio's products with a contextual inspector: their definition, lifecycle and environments. */
 defineOptions({ name: "ProductsPanel" });
+const props = defineProps<ProductsPanelProps>();
+const emit = defineEmits<{ "update:creating": [value: boolean] }>();
 
 /** @internal Each lifecycle's label and badge, in portfolio order. */
 const Lifecycles = [
@@ -33,7 +47,11 @@ const Lifecycles = [
   { value: ProductLifecycle.Killed, label: "Killed", variant: "danger" },
 ] as const;
 
-const { products, loading, error, reload, setLifecycle } = useProducts();
+const productOperations = useProducts();
+const { products, loading, error, reload, setLifecycle } = productOperations;
+const servers = useServers();
+const editing = ref(false);
+const targetForm = ref<{ open: boolean; target: InventoryTarget | null }>({ open: false, target: null });
 const search = ref("");
 const selectedSlug = ref<string | null>(null);
 const saving = ref(false);
@@ -65,6 +83,18 @@ watch(
 watch(selectedSlug, () => {
   saveError.value = null;
 });
+const targets = useTargets(selectedSlug);
+const productForm = computed(() => props.creating || editing.value);
+/** Each environment's published sites and vault namespace, from the product's own projection. */
+const environmentOf = (target: InventoryTarget) =>
+  selected.value?.environments.find((environment) => environment.name === target.environment) ?? null;
+
+/** Closes the product form, whichever opened it. */
+function closeProductForm(open: boolean): void {
+  if (open) return;
+  editing.value = false;
+  emit("update:creating", false);
+}
 
 /** Looks up a lifecycle's label and badge. @internal */
 function lifecycle(value: ProductLifecycle) {
@@ -158,9 +188,7 @@ async function changeLifecycle(value: string | null): Promise<void> {
           <Package :size="28" />
         </div>
         <h2 class="text-xl font-semibold">No products yet</h2>
-        <p class="max-w-sm text-sm text-muted-foreground">
-          Products are defined in the runner's <code>catalog.py</code>.
-        </p>
+        <Button @click="emit('update:creating', true)">New product</Button>
       </div>
       <div v-else-if="visibleProducts.length === 0" class="py-8 text-center">
         <Search :size="24" class="mx-auto mb-3 text-muted-foreground" />
@@ -224,7 +252,11 @@ async function changeLifecycle(value: string | null): Promise<void> {
               />
             </p>
           </div>
-          <div class="w-44">
+          <div class="flex w-56 items-start gap-2">
+            <Button variant="outline" tone="neutral" size="sm" aria-label="Edit product" @click="editing = true">
+              <Pencil :size="14" />
+            </Button>
+            <div class="min-w-0 flex-1">
             <SelectPicker
               :model-value="selected.lifecycle"
               :get-option-label="(value) => lifecycle(value as ProductLifecycle).label"
@@ -249,6 +281,7 @@ async function changeLifecycle(value: string | null): Promise<void> {
             >
               {{ saveError }}
             </p>
+            </div>
           </div>
         </div>
         <dl class="my-6 grid gap-x-8 gap-y-6 text-sm">
@@ -264,21 +297,26 @@ async function changeLifecycle(value: string | null): Promise<void> {
             </dd>
           </div>
           <div class="min-w-0">
-            <dt class="mb-2 text-xs text-muted-foreground">Environments</dt>
-            <dd v-if="selected.environments.length === 0" class="text-muted-foreground">
-              No fleet target runs it yet.
+            <dt class="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+              Environments
+              <Button size="sm" variant="ghost" @click="targetForm = { open: true, target: null }">
+                <template #leading><Plus :size="14" /></template>Add environment
+              </Button>
+            </dt>
+            <dd v-if="targets.targets.value.length === 0" class="text-muted-foreground">
+              No environment yet.
             </dd>
             <dd v-else>
               <ul class="divide-y divide-border rounded-xl border border-border">
                 <li
-                  v-for="environment in selected.environments"
-                  :key="environment.name"
-                  class="grid gap-2 p-3 sm:grid-cols-[6rem_minmax(0,1fr)_minmax(0,14rem)] sm:items-center"
+                  v-for="target in targets.targets.value"
+                  :key="target.slug"
+                  class="grid gap-2 p-3 sm:grid-cols-[6rem_minmax(0,1fr)_minmax(0,12rem)_auto] sm:items-center"
                 >
-                  <span class="text-sm font-medium">{{ environment.name }}</span>
+                  <span class="text-sm font-medium" :title="target.slug">{{ target.environment }}</span>
                   <span class="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
                     <a
-                      v-for="site in environment.sites"
+                      v-for="site in environmentOf(target)?.sites ?? []"
                       :key="site.name"
                       :href="site.url"
                       target="_blank"
@@ -288,23 +326,30 @@ async function changeLifecycle(value: string | null): Promise<void> {
                       ><span class="truncate">{{ site.name }}</span
                       ><ExternalLink :size="12" class="shrink-0"
                     /></a>
-                    <span
-                      v-if="environment.sites.length === 0"
-                      class="text-muted-foreground"
-                      >Not rolled out yet</span
+                    <span v-if="!(environmentOf(target)?.sites.length)" class="text-muted-foreground"
+                      >{{ target.server }} · not rolled out yet</span
                     >
                   </span>
                   <span
-                    v-if="environment.secrets"
+                    v-if="environmentOf(target)?.secrets"
                     class="flex min-w-0 items-center gap-1 font-mono text-xs text-muted-foreground"
-                    :title="`Vault ${environment.secrets.vault}`"
+                    :title="`Vault ${environmentOf(target)?.secrets?.vault}`"
                   >
                     <KeyRound :size="12" class="shrink-0" />
                     <RouterLink to="/secrets" class="truncate hover:text-foreground">{{
-                      environment.secrets.namespace
+                      environmentOf(target)?.secrets?.namespace
                     }}</RouterLink>
                   </span>
                   <span v-else class="text-xs text-muted-foreground">No vault</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    tone="neutral"
+                    :aria-label="`Edit ${target.slug}`"
+                    @click="targetForm = { open: true, target }"
+                  >
+                    <Pencil :size="14" />
+                  </Button>
                 </li>
               </ul>
             </dd>
@@ -322,4 +367,21 @@ async function changeLifecycle(value: string | null): Promise<void> {
       </div>
     </section>
   </div>
+
+  <ProductFormModal
+    :open="productForm"
+    :product="props.creating ? null : selected"
+    :operations="productOperations"
+    @update:open="closeProductForm"
+    @saved="(slug) => (selectedSlug = slug)"
+  />
+  <TargetFormModal
+    v-if="selected"
+    :open="targetForm.open"
+    :product="selected.slug"
+    :target="targetForm.target"
+    :servers="servers.data.value ?? []"
+    :operations="targets"
+    @update:open="(open) => (targetForm = { ...targetForm, open })"
+  />
 </template>

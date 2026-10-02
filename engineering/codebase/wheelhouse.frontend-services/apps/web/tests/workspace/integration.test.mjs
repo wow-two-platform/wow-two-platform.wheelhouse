@@ -13,6 +13,7 @@ const bundle = await build({
       export { authApi } from './src/integration/auth';
       export { secretsApi } from './src/integration/secrets';
       export { serversApi } from './src/integration/servers';
+      export { targetsApi } from './src/integration/targets';
       export { auditApi } from './src/integration/audit';
       export { AuditArea, AuditExtensions } from './src/domain/audit';
       export { compareEnvironments } from './src/domain/deployments/EnvironmentComparison';
@@ -37,6 +38,7 @@ const {
   authApi,
   secretsApi,
   serversApi,
+  targetsApi,
   auditApi,
   AuditArea,
   AuditExtensions,
@@ -70,6 +72,7 @@ const product = {
   description: "A test product.",
   lifecycle: "building",
   repository: { name: "owner/repository", url: "https://github.com/owner/repository", defaultBranch: "main" },
+  release: { asset: "test-release.tar.gz", workflow: null, images: [{ service: "api", image: "ghcr.io/owner/test/api" }] },
   iconUrl: "/api/products/test/icon",
   environments: [
     { name: "dev", sites: [{ name: "app", url: "https://dev.example.com", exposure: "public" }],
@@ -93,6 +96,43 @@ test("serializes a lifecycle write once with its action and same-origin cookie c
   assert.equal(captured.options.credentials, "same-origin");
   assert.equal(captured.options.headers.get("X-Wheelhouse-Action"), "lifecycle");
   assert.deepEqual(JSON.parse(captured.options.body), { lifecycle: "live" });
+});
+
+test("writes inventory rows with their own actions and decodes what the server stored", async () => {
+  const server = { slug: "hel1", name: "Helsinki", provider: "hetzner", host: "vps.example.net", region: "hel1",
+    sshUser: "deploy", sshPort: 22, ingress: { scheme: "https", port: null, entryPoints: ["websecure"],
+      privateEntryPoints: [], certResolver: "letsencrypt", pattern: null, probe: null, privateProbe: null } };
+  const target = { slug: "test-dev", product: "test", server: "hel1", environment: "dev", network: "platform",
+    root: "/srv/wheelhouse", settings: [{ service: "api", path: "/srv/settings/test/api.json" }],
+    smokeChecks: [{ service: "api", path: "/health", status: 200 }], sites: [{ site: "app", host: "dev.example.com" }] };
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    if (options.method === "DELETE") return new Response(null, { status: 204 });
+    return json({ data: url.startsWith("/api/servers") ? server : url.startsWith("/api/targets") ? target : product });
+  };
+  const { slug: _, ...serverBody } = server;
+  assert.deepEqual((await serversApi.createServer(server)).value, server);
+  assert.deepEqual((await serversApi.updateServer("hel1", serverBody)).value, server);
+  assert.deepEqual((await targetsApi.updateTarget("test-dev", target)).value, target);
+  assert.equal((await secretsApi.deleteVault("hel1-vault")).ok, true);
+  assert.equal((await productsApi.deleteProduct("test")).ok, true);
+  assert.deepEqual(
+    requests.map(({ url, options }) => [url, options.method, options.headers.get("X-Wheelhouse-Action")]),
+    [
+      ["/api/servers", "POST", "server"],
+      ["/api/servers/hel1", "PUT", "server"],
+      ["/api/targets/test-dev", "PUT", "target"],
+      ["/api/vaults/hel1-vault", "DELETE", "vault"],
+      ["/api/products/test", "DELETE", "product"],
+    ],
+  );
+  assert.equal("slug" in JSON.parse(requests[1].options.body), false);
+
+  globalThis.fetch = async () => json({ data: [{ ...target, environment: "staging" }] });
+  const refused = await targetsApi.listTargets("test");
+  assert.equal(refused.ok, false);
+  assert.equal(refused.failure.code, "protocol");
 });
 
 test("creates and revokes integration keys with explicit actions and reads the secret once", async () => {

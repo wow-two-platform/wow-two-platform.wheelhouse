@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { RouterLink } from 'vue-router';
-import { Server as ServerIcon } from 'lucide-vue-next';
+import { KeyRound, Pencil, Plus, Server as ServerIcon } from 'lucide-vue-next';
+import { Button } from '@wow-two-beta/ui-vue/presentation/actions';
 import {
   Badge,
   Table,
@@ -18,19 +19,41 @@ import {
   SelectPickerContent,
   SelectPickerItem,
 } from '@wow-two-beta/ui-vue/presentation/forms';
-import { useServers, useServerVitals, useVitalsHistory } from '@/application/servers';
+import { useServerChanges, useServers, useServerVitals, useVitalsHistory } from '@/application/servers';
+import { useVaultDefinitions } from '@/application/secrets';
 import { useDeploymentTargets } from '@/application/deployments';
 import { useRefresh } from '@/bootstrap/query';
-import { ServerExtensions, TrendRanges, VpsProvider, hostTrend, type TrendRange } from '@/domain/servers';
+import {
+  ServerExtensions,
+  TrendRanges,
+  VpsProvider,
+  VpsProviderLabels,
+  hostTrend,
+  type Server,
+  type TrendRange,
+} from '@/domain/servers';
+import type { VaultDefinition } from '@/domain/secrets';
 import { Measures } from '@/domain/common';
 import { Panel, LoadState, PageActions, RefreshButton } from '@/presentation/common/components';
 import PortfolioAttention from '../components/PortfolioAttention.vue';
 import ResourceMeter from '../components/ResourceMeter.vue';
 import TrendLine from '../components/TrendLine.vue';
+import ServerFormModal from '../components/ServerFormModal.vue';
+import VaultFormModal from '../components/VaultFormModal.vue';
 
-/** Presents the code-owned servers and their current, timestamped resource readings. */
+/** Presents the inventory's servers, their vaults and their current, timestamped resource readings. */
 defineOptions({ name: 'ServersPage' });
 const servers = useServers();
+const serverChanges = useServerChanges();
+const vaults = useVaultDefinitions();
+const serverForm = ref<{ open: boolean; server: Server | null }>({ open: false, server: null });
+const vaultForm = ref<{ open: boolean; server: string; vault: VaultDefinition | null }>({
+  open: false,
+  server: '',
+  vault: null,
+});
+/** The vaults that run on one server. */
+const vaultsOn = (server: string) => vaults.vaults.value.filter((vault) => vault.server === server);
 const vitals = useServerVitals();
 const targets = useDeploymentTargets();
 /** Each target opens in the workspace under its product, whose catalog slug the target names. */
@@ -58,10 +81,12 @@ const trendWindow = computed(() => {
 </script>
 <template>
   <div class="space-y-6">
-    <PageActions
-      ><RefreshButton size="md" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh"
-    /></PageActions
-    >
+    <PageActions>
+      <RefreshButton size="md" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
+      <Button :is-disabled="serverForm.open" @click="serverForm = { open: true, server: null }">
+        <template #leading><Plus :size="16" /></template>Add server
+      </Button>
+    </PageActions>
     <PortfolioAttention />
     <div class="flex flex-wrap items-center justify-between gap-3">
       <p class="text-sm text-muted-foreground">
@@ -72,7 +97,11 @@ const trendWindow = computed(() => {
         }}
       </p>
       <div class="w-48">
-        <SelectPicker v-model="provider" is-clearable clear-label="All providers"
+        <SelectPicker
+          v-model="provider"
+          is-clearable
+          clear-label="All providers"
+          :get-option-label="(value) => VpsProviderLabels[value as VpsProvider]"
           ><SelectPickerTrigger aria-label="Provider"
             ><SelectPickerValue placeholder="All providers" /></SelectPickerTrigger
           ><SelectPickerContent
@@ -80,7 +109,7 @@ const trendWindow = computed(() => {
               v-for="value in Object.values(VpsProvider)"
               :key="value"
               :item-key="value"
-              :label="value" /></SelectPickerContent
+              :label="VpsProviderLabels[value]" /></SelectPickerContent
         ></SelectPicker>
       </div>
     </div>
@@ -96,33 +125,42 @@ const trendWindow = computed(() => {
       :error="servers.error.value"
       :has-data="Boolean(servers.data.value)"
       :empty="!visible.length"
-      empty-title="No configured hosts"
-      empty-description="No server matches this provider. Servers are defined in reviewed configuration."
+      empty-title="No servers"
+      :empty-description="provider ? 'No server matches this provider.' : 'Add one to deploy to it.'"
       @retry="servers.refetch"
     >
       <div class="grid items-start gap-5 2xl:grid-cols-2">
         <Panel
           v-for="server in visible"
-          :key="server.id"
+          :key="server.slug"
           :title="server.name"
-          :description="`${server.host} · ${server.region} · SSH ${server.sshUser}`"
+          :description="`${server.host} · ${server.region} · SSH ${server.sshUser}${server.sshPort === 22 ? '' : `:${server.sshPort}`}`"
         >
-          <template #actions
-            ><Badge>{{ server.provider }}</Badge></template
-          >
-          <div v-if="ServerExtensions.hostOf(groups.get(server.id) ?? [])" class="mb-5 grid gap-3 sm:grid-cols-2">
+          <template #actions>
+            <Badge>{{ VpsProviderLabels[server.provider] }}</Badge>
+            <Button
+              size="sm"
+              variant="ghost"
+              tone="neutral"
+              :aria-label="`Edit ${server.name}`"
+              @click="serverForm = { open: true, server }"
+            >
+              <Pencil :size="14" />
+            </Button>
+          </template>
+          <div v-if="ServerExtensions.hostOf(groups.get(server.slug) ?? [])" class="mb-5 grid gap-3 sm:grid-cols-2">
             <ResourceMeter
               label="CPU load"
-              :value="ServerExtensions.loadPercent(ServerExtensions.hostOf(groups.get(server.id) ?? [])!)"
+              :value="ServerExtensions.loadPercent(ServerExtensions.hostOf(groups.get(server.slug) ?? [])!)"
               :refreshing="refresh.refreshing.value"
             />
             <ResourceMeter
               label="Memory"
-              :value="ServerExtensions.memoryPercent(ServerExtensions.hostOf(groups.get(server.id) ?? [])!)"
+              :value="ServerExtensions.memoryPercent(ServerExtensions.hostOf(groups.get(server.slug) ?? [])!)"
               :refreshing="refresh.refreshing.value"
             />
             <ResourceMeter
-              v-for="disk in ServerExtensions.hostOf(groups.get(server.id) ?? [])?.disks"
+              v-for="disk in ServerExtensions.hostOf(groups.get(server.slug) ?? [])?.disks"
               :key="disk.path"
               :label="`Disk · ${disk.path}`"
               :value="ServerExtensions.diskPercent(disk)"
@@ -155,23 +193,49 @@ const trendWindow = computed(() => {
             <div v-else class="grid gap-3 sm:grid-cols-3">
               <TrendLine
                 label="CPU load"
-                :points="hostTrend(history.data.value ?? [], server.id, 'loadPercent')"
+                :points="hostTrend(history.data.value ?? [], server.slug, 'loadPercent')"
                 v-bind="trendWindow"
               />
               <TrendLine
                 label="Memory"
-                :points="hostTrend(history.data.value ?? [], server.id, 'memoryPercent')"
+                :points="hostTrend(history.data.value ?? [], server.slug, 'memoryPercent')"
                 v-bind="trendWindow"
               />
               <TrendLine
                 label="Fullest disk"
-                :points="hostTrend(history.data.value ?? [], server.id, 'diskPercent')"
+                :points="hostTrend(history.data.value ?? [], server.slug, 'diskPercent')"
                 v-bind="trendWindow"
               />
             </div>
           </section>
+          <section class="mb-5" :aria-label="`${server.name} vaults`">
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <h3 class="text-xs font-medium text-muted-foreground">Vaults</h3>
+              <Button size="sm" variant="ghost" @click="vaultForm = { open: true, server: server.slug, vault: null }">
+                <template #leading><Plus :size="14" /></template>Add vault
+              </Button>
+            </div>
+            <ul v-if="vaultsOn(server.slug).length" class="divide-y divide-border rounded-xl border border-border">
+              <li v-for="vault in vaultsOn(server.slug)" :key="vault.slug" class="flex items-center gap-3 p-3 text-sm">
+                <KeyRound :size="14" class="shrink-0 text-muted-foreground" />
+                <span class="font-medium">{{ vault.name }}</span>
+                <span class="min-w-0 truncate font-mono text-xs text-muted-foreground">{{ vault.url }}</span>
+                <Button
+                  class="ml-auto"
+                  size="sm"
+                  variant="ghost"
+                  tone="neutral"
+                  :aria-label="`Edit ${vault.name}`"
+                  @click="vaultForm = { open: true, server: server.slug, vault }"
+                >
+                  <Pencil :size="14" />
+                </Button>
+              </li>
+            </ul>
+            <p v-else class="text-sm text-muted-foreground">{{ vaults.loading.value ? 'Reading vaults…' : 'No vault.' }}</p>
+          </section>
           <section
-            v-for="target in groups.get(server.id) ?? []"
+            v-for="target in groups.get(server.slug) ?? []"
             :key="target.targetId"
             class="mt-4 border-t border-border pt-4"
           >
@@ -244,12 +308,25 @@ const trendWindow = computed(() => {
                   <p class="text-xs text-muted-foreground">{{ target.id }}</p></TableCell
                 ><TableCell>{{ target.product }}</TableCell
                 ><TableCell>{{ target.host }}</TableCell
-                ><TableCell>{{ target.provider }}</TableCell></TableRow
+                ><TableCell>{{ VpsProviderLabels[target.provider as VpsProvider] ?? target.provider }}</TableCell></TableRow
               ></TableBody
             ></Table
           >
         </div>
       </LoadState>
     </Panel>
+    <ServerFormModal
+      :open="serverForm.open"
+      :server="serverForm.server"
+      :operations="serverChanges"
+      @update:open="(open) => (serverForm = { ...serverForm, open })"
+    />
+    <VaultFormModal
+      :open="vaultForm.open"
+      :server="vaultForm.server"
+      :vault="vaultForm.vault"
+      :operations="vaults"
+      @update:open="(open) => (vaultForm = { ...vaultForm, open })"
+    />
   </div>
 </template>

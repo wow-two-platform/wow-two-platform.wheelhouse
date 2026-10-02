@@ -3,12 +3,23 @@ import { TargetCondition } from "@/domain/deployments";
 import { VpsProvider } from "@/domain/servers";
 
 export const ServerSchema = z.object({
-  id: z.string(),
+  slug: z.string(),
   name: z.string(),
   provider: z.enum(VpsProvider),
   host: z.string(),
   region: z.string(),
   sshUser: z.string(),
+  sshPort: z.number().int(),
+  ingress: z.object({
+    scheme: z.enum(["http", "https"]),
+    port: z.number().int().nullable(),
+    entryPoints: z.array(z.string()),
+    privateEntryPoints: z.array(z.string()),
+    certResolver: z.string().nullable(),
+    pattern: z.string().nullable(),
+    probe: z.string().nullable(),
+    privateProbe: z.string().nullable(),
+  }),
 });
 const nullableNumber = z.number().finite().nullable();
 const HostSchema = z.object({

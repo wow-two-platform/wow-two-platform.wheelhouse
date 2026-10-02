@@ -36,7 +36,20 @@ export interface ProductRepository {
   defaultBranch: string;
 }
 
-/** A product as the code-owned catalog defines it, with the lifecycle the operator records. */
+/** One service's image repository. */
+export interface ReleaseImage {
+  service: string;
+  image: string;
+}
+
+/** Where a product's published releases and commit builds come from. */
+export interface ProductRelease {
+  asset: string;
+  workflow: string | null;
+  images: ReleaseImage[];
+}
+
+/** A product as the database defines it, with the lifecycle the operator records. */
 export interface Product {
   /** The product's identifier everywhere: targets, releases and URLs. */
   slug: string;
@@ -44,6 +57,18 @@ export interface Product {
   description: string;
   lifecycle: ProductLifecycle;
   repository: ProductRepository;
+  /** Null when only hand-imported bundles deploy. */
+  release: ProductRelease | null;
   iconUrl: string;
   environments: ProductEnvironment[];
+}
+
+/** A product's editable definition; the slug is fixed once the product exists. */
+export interface SaveProductRequest {
+  slug?: string;
+  name: string;
+  description: string;
+  repository: string;
+  defaultBranch: string;
+  release: ProductRelease | null;
 }

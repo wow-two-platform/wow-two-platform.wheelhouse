@@ -1,12 +1,15 @@
+import { z } from "zod";
 import type {
   MintedToken,
+  SaveVaultRequest,
   SecretMetadata,
+  VaultDefinition,
   VaultHygiene,
   VaultNamespace,
   VaultSummary,
   VaultToken,
 } from "@/domain/secrets";
-import { requestData } from "@/integration/common";
+import { requestData, requestEmpty } from "@/integration/common";
 import {
   AcknowledgementSchema,
   MintedTokenSchema,
@@ -20,12 +23,23 @@ import {
 const segment = encodeURIComponent;
 const base = (vault: string) => `/api/vaults/${segment(vault)}`;
 
+const VaultDefinitionSchema = z.object({ slug: z.string(), name: z.string(), server: z.string(), url: z.string() });
+
 /** Vault administration through Wheelhouse; every write carries the vault action header. */
 export const secretsApi = {
   listVaults: (signal?: AbortSignal) =>
     requestData<VaultSummary[]>("/api/vaults", VaultSummarySchema.array(), {
       signal,
     }),
+
+  listDefinitions: (signal?: AbortSignal) =>
+    requestData<VaultDefinition[]>("/api/vaults/definitions", VaultDefinitionSchema.array(), { signal }),
+  createVault: (body: SaveVaultRequest, signal?: AbortSignal) =>
+    requestData<VaultDefinition>("/api/vaults", VaultDefinitionSchema, { method: "POST", body, signal, action: "vault" }),
+  updateVault: (slug: string, body: SaveVaultRequest, signal?: AbortSignal) =>
+    requestData<VaultDefinition>(base(slug), VaultDefinitionSchema, { method: "PUT", body, signal, action: "vault" }),
+  deleteVault: (slug: string, signal?: AbortSignal) =>
+    requestEmpty(base(slug), { method: "DELETE", signal, action: "vault" }),
 
   getHygiene: (vault: string, signal?: AbortSignal) =>
     requestData<VaultHygiene>(`${base(vault)}/hygiene`, VaultHygieneSchema, {

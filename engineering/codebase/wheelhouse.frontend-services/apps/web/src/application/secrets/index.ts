@@ -12,3 +12,4 @@ export {
   useTokenChanges,
 } from "./useVaultChanges";
 export { useVaultsHygiene } from "./useVaultsHygiene";
+export { useVaultDefinitions, type VaultOperations } from "./useVaultDefinitions";
