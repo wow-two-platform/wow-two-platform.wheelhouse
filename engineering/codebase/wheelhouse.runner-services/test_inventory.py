@@ -51,24 +51,34 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(((), (), (), ()), (catalog.PRODUCTS, fleet.SERVERS, fleet.TARGETS, fleet.VAULTS))
 
     def test_a_snapshot_installs_products_servers_targets_and_vaults(self):
-        self.write(SNAPSHOT)
-        inventory.install(self.root)
-        with patch.dict(os.environ, NO_RIG):
-            self.assertEqual(['pilot'], [item.slug for item in catalog.products()])
-            self.assertEqual([{'id': 'hel1', 'name': 'Helsinki', 'provider': 'hetzner', 'host': 'vps.example.net',
-                               'region': 'hel1', 'sshUser': 'deploy'}], fleet.servers())
-            self.assertEqual(['hel1-vault'], [item['id'] for item in fleet.vaults()])
-            resolved = fleet.resolve_target(self.root, 'pilot-prod')
-        self.assertEqual({'app': 'pilot.example.com'}, resolved['target']['ingress']['hosts'])
-        self.assertEqual({'api': '/srv/settings/pilot/api.json'}, resolved['target']['settings'])
-        self.assertTrue(resolved['requiresTestPass'])
-        self.assertEqual(str(self.root / 'ssh' / 'hel1' / 'identity'), resolved['ssh']['keyFile'])
+        for provider in ('hetzner', 'ovhcloud'):
+            with self.subTest(provider=provider):
+                document = json.loads(json.dumps(SNAPSHOT))
+                document['servers'][0]['provider'] = provider
+                self.write(document)
+                inventory.install(self.root)
+                with patch.dict(os.environ, NO_RIG):
+                    self.assertEqual(['pilot'], [item.slug for item in catalog.products()])
+                    self.assertEqual([{'id': 'hel1', 'name': 'Helsinki', 'provider': provider, 'host': 'vps.example.net',
+                                       'region': 'hel1', 'sshUser': 'deploy'}], fleet.servers())
+                    self.assertEqual(['hel1-vault'], [item['id'] for item in fleet.vaults()])
+                    resolved = fleet.resolve_target(self.root, 'pilot-prod')
+                self.assertEqual(provider, resolved['provider'])
+                self.assertEqual(('vps.example.net', 'deploy', 22),
+                                 (resolved['ssh']['host'], resolved['ssh']['user'], resolved['ssh']['port']))
+                self.assertEqual({'app': 'pilot.example.com'}, resolved['target']['ingress']['hosts'])
+                self.assertEqual({'api': '/srv/settings/pilot/api.json'}, resolved['target']['settings'])
+                self.assertTrue(resolved['requiresTestPass'])
+                self.assertFalse(resolved['needsConfirmation'])
+                self.assertEqual(str(self.root / 'ssh' / 'hel1' / 'identity'), resolved['ssh']['keyFile'])
 
     def test_a_malformed_snapshot_is_refused_whole(self):
         catalog.PRODUCTS = ()
         broken = json.loads(json.dumps(SNAPSHOT))
         broken['targets'][0]['smoke'][0]['status'] = '200'
-        for document in (broken, {**SNAPSHOT, 'version': 2}, {**SNAPSHOT, 'servers': {}}, ['not', 'an', 'object']):
+        unsupported = json.loads(json.dumps(SNAPSHOT))
+        unsupported['servers'][0]['provider'] = 'unsupported'
+        for document in (broken, unsupported, {**SNAPSHOT, 'version': 2}, {**SNAPSHOT, 'servers': {}}, ['not', 'an', 'object']):
             self.write(document)
             with self.assertRaises(ValueError):
                 inventory.install(self.root)

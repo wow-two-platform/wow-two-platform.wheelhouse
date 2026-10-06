@@ -135,6 +135,29 @@ test("writes inventory rows with their own actions and decodes what the server s
   assert.equal(refused.failure.code, "protocol");
 });
 
+test("round trips supported server providers and rejects an unknown provider", async () => {
+  for (const provider of ["hetzner", "local", "ovhcloud"]) {
+    const server = { slug: "pilot", name: "Pilot", provider, host: "vps.example.net", region: "pilot",
+      sshUser: "deploy", sshPort: 22, ingress: { scheme: "https", port: null, entryPoints: ["websecure"],
+        privateEntryPoints: [], certResolver: "letsencrypt", pattern: null, probe: null, privateProbe: null } };
+    const bodies = [];
+    globalThis.fetch = async (_url, options) => {
+      if (options.body) bodies.push(JSON.parse(options.body));
+      return json({ data: options.method === "GET" ? [server] : server });
+    };
+    const { slug, ...update } = server;
+    assert.deepEqual((await serversApi.createServer(server)).value, server);
+    assert.deepEqual((await serversApi.updateServer(slug, update)).value, server);
+    assert.deepEqual((await serversApi.listServers()).value, [server]);
+    assert.deepEqual(bodies.map((body) => body.provider), [provider, provider]);
+
+    globalThis.fetch = async () => json({ data: [{ ...server, provider: "unsupported" }] });
+    const refused = await serversApi.listServers();
+    assert.equal(refused.ok, false);
+    assert.equal(refused.failure.code, "protocol");
+  }
+});
+
 test("creates and revokes integration keys with explicit actions and reads the secret once", async () => {
   const key = { id: "key-id", name: "Claude", prefix: "wh_abcdefgh", scopes: ["catalog:read"], createdBy: "max",
     createdAt: "2026-09-30T00:00:00Z", lastUsedAt: null, revokedAt: null };

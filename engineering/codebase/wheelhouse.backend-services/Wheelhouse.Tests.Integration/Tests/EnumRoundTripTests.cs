@@ -26,11 +26,14 @@ public sealed class EnumRoundTripTests(WheelhouseTestDb db) : IAsyncLifetime
     /// <inheritdoc />
     public Task DisposeAsync() => Task.CompletedTask;
 
-    [Fact]
-    public async Task InventoryEnums_ShouldBeStoredAsSnakeCaseTextAndReadBack_WhenRecorded()
+    [Theory]
+    [InlineData(VpsProvider.Hetzner, "hetzner")]
+    [InlineData(VpsProvider.Local, "local")]
+    [InlineData(VpsProvider.Ovhcloud, "ovhcloud")]
+    public async Task InventoryEnums_ShouldBeStoredAsSnakeCaseTextAndReadBack_WhenRecorded(VpsProvider provider, string storedProvider)
     {
         var product = InventoryRows.Product("pilot") with { Lifecycle = ProductLifecycle.Live };
-        var server = InventoryRows.Server("hel1") with { Provider = VpsProvider.Local };
+        var server = InventoryRows.Server("hel1") with { Provider = provider };
         await using (var ctx = db.NewContext())
         {
             ctx.Products.Add(product);
@@ -40,12 +43,12 @@ public sealed class EnumRoundTripTests(WheelhouseTestDb db) : IAsyncLifetime
         }
 
         (await ReadAsync("select lifecycle from products where slug = 'pilot'")).Should().Be("live");
-        (await ReadAsync("select provider from servers where slug = 'hel1'")).Should().Be("local");
+        (await ReadAsync("select provider from servers where slug = 'hel1'")).Should().Be(storedProvider);
         (await ReadAsync("select environment from targets where slug = 'pilot-prod'")).Should().Be("prod");
 
         await using var read = db.NewContext();
         (await read.Products.SingleAsync()).Lifecycle.Should().Be(ProductLifecycle.Live);
-        (await read.Servers.SingleAsync()).Provider.Should().Be(VpsProvider.Local);
+        (await read.Servers.SingleAsync()).Provider.Should().Be(provider);
         (await read.Targets.SingleAsync()).Environment.Should().Be(DeploymentEnvironment.Prod);
     }
 

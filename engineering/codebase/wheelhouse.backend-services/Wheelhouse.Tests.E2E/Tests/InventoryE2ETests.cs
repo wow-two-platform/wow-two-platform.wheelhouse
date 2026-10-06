@@ -93,20 +93,29 @@ public sealed class InventoryE2ETests(WheelhouseAppFixture fixture) : Wheelhouse
             .Should().Equal("foreverpin");
     }
 
-    [Fact]
-    public async Task CreateServer_ShouldReturn201AndReachTheSnapshot_WhenTheOperatorAddsOne()
+    [Theory]
+    [InlineData("hetzner")]
+    [InlineData("local")]
+    [InlineData("ovhcloud")]
+    public async Task CreateServer_ShouldReturn201AndReachTheSnapshot_WhenTheOperatorAddsOne(string provider)
     {
         var response = await ActionClient("server").PostJsonAsync("api/servers", new
         {
-            slug = "hel2", name = "Helsinki 2", provider = "hetzner", host = "hel2.example.net", region = "hel1",
+            slug = "extra-host", name = "Extra host", provider, host = "extra.example.net", region = "pilot",
             ingress = new { pattern = "{site}-{product}.{environment}.preview.example" },
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var server = Snapshot().GetProperty("servers").EnumerateArray().Single(item => item.GetProperty("id").GetString() == "hel2");
-        (server.GetProperty("provider").GetString(), server.GetProperty("sshUser").GetString(), server.GetProperty("sshPort").GetInt32())
-            .Should().Be(("hetzner", "deploy", 22));
-        server.GetProperty("ingress").GetProperty("entryPoints")[0].GetString().Should().Be("websecure");
+        (await response.ReadEnvelopeAsync<ServerResponse>()).Provider.Should().Be(provider);
+        var servers = await (await AdminClient.GetAsync("api/servers")).ReadEnvelopeAsync<IReadOnlyList<ServerResponse>>();
+        servers.Single(server => server.Slug == "extra-host").Provider.Should().Be(provider);
+        servers.Where(server => server.Slug != "extra-host").Should().OnlyContain(server => server.Provider == "hetzner");
+        var snapshotServer = Snapshot().GetProperty("servers").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "extra-host");
+        (snapshotServer.GetProperty("provider").GetString(), snapshotServer.GetProperty("sshUser").GetString(),
+                snapshotServer.GetProperty("sshPort").GetInt32())
+            .Should().Be((provider, "deploy", 22));
+        snapshotServer.GetProperty("ingress").GetProperty("entryPoints")[0].GetString().Should().Be("websecure");
     }
 
     [Fact]

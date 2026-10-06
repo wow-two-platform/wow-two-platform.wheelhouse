@@ -8,4 +8,7 @@ public enum VpsProvider
 
     /// <summary>The local server Wheelhouse rehearses deployments on.</summary>
     Local,
+
+    /// <summary>Refers to an OVHcloud virtual server.</summary>
+    Ovhcloud,
 }
