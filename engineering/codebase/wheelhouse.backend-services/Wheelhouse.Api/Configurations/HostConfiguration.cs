@@ -1,4 +1,5 @@
 using Wheelhouse.Api.Auth;
+using Wheelhouse.Api.Mcp;
 using WoW.Two.Sdk.Backend.Beta.Meta;
 using WoW.Two.Sdk.Backend.Beta.Web.Hosting;
 
@@ -20,7 +21,8 @@ public static class HostConfiguration
             .AddInfrastructureLayer()
             .AddApplicationLayer()
             .AddAuthentication()
-            .AddApiServices();
+            .AddApiServices()
+            .AddWheelhouseMcp();
 
         return builder;
     }
@@ -41,6 +43,7 @@ public static class HostConfiguration
         app.UseWheelhouseAuth();
 
         app.MapControllers();
+        app.MapWheelhouseMcp();
 
         // SDK SPA fallback: an unmatched /api/* 404s as JSON (never falls through to the SPA shell — an HTML body for an
         // API path is cacheable and breaks clients), every other unmatched route falls back to index.html. Both anonymous.

@@ -7,6 +7,9 @@ public static class IntegrationScopeConstants
     /// namespaces.</summary>
     public const string CatalogRead = "catalog:read";
 
+    /// <summary>Holds the scope for read-only MCP fleet, deployment and health observations.</summary>
+    public const string DeploymentsRead = "deployments:read";
+
     /// <summary>Holds every scope a key can be created with.</summary>
-    public static readonly IReadOnlyList<string> All = [CatalogRead];
+    public static readonly IReadOnlyList<string> All = [CatalogRead, DeploymentsRead];
 }

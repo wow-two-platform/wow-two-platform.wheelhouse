@@ -1,12 +1,14 @@
 /** What an integration key may reach, each with the line the console shows beside it. */
 export const IntegrationScope = {
   CatalogRead: 'catalog:read',
+  DeploymentsRead: 'deployments:read',
 } as const;
 export type IntegrationScope = (typeof IntegrationScope)[keyof typeof IntegrationScope];
 
 /** The scopes a key can be created with, in the order the console offers them. */
 export const IntegrationScopes: readonly { value: IntegrationScope; description: string }[] = [
   { value: IntegrationScope.CatalogRead, description: 'Read products, their lifecycle, sites and vault namespaces.' },
+  { value: IntegrationScope.DeploymentsRead, description: 'Read servers, targets, deployment status and health through MCP.' },
 ];
 
 /** A key another program presents to read Wheelhouse; never its secret. */
