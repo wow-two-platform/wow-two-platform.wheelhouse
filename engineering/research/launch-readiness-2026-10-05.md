@@ -5,7 +5,7 @@
 The first remote deployment is **Wheelhouse dev** on the purchased OVH VPS. Separate test and prod
 environments are deferred. Local startup and adopted MCP authorization tests are verified; remote hosting,
 real OAuth and an authenticated external MCP client remain unverified. OVH has delivered the VPS and reports
-it Active; authenticated SSH and the current Wheelhouse image publication remain open. Public ForeverPin launch remains separate.
+it Active; authenticated SSH and the first live dev rollout remain open. Public ForeverPin launch remains separate.
 
 This is a dated readiness analysis. The [backlog](../planning/backlog.md) and
 [v0.3 track](../planning/version-track/v0.3/v0.3.md) remain the capability and acceptance records.
@@ -14,9 +14,18 @@ The user approved pushing the pending work and implementing automatic main-to-de
 The [delivery workflow and bootstrap runbook](../deployment/deployment.md#automatic-wheelhouse-dev-delivery)
 now define the executable path: one main push tests its tip SHA, publishes through the shared workflow,
 then deploys the verified bundle over pinned SSH. Multiple commits in one push do not multiply builds.
-Local verification passed 217 runner tests and five host-configuration tests. Authenticated VPS access,
-GitHub environment secrets, private HTTPS/OAuth and live rollout acceptance remain open; CI reports
-deployment disabled until the actual host configuration is ready.
+Local verification passed 217 runner tests and five host-configuration tests. The approved push sent fourteen
+commits together (`02ac3df..7613d15`), creating one
+[delivery run](https://github.com/wow-two-platform/wow-two-platform.wheelhouse/actions/runs/37503369037).
+Backend, frontend and runner CI passed; the shared publisher produced
+[v0.3.5](https://github.com/wow-two-platform/wow-two-platform.wheelhouse/releases/tag/v0.3.5)
+from `7613d15d04c4fe77adfef37ca697343deb720d21`.
+
+The GitHub `dev` environment now permits only `main`. Dedicated CI key, host and account secrets are
+configured, with `DEV_DEPLOY_ENABLED=false`. The key is not yet authorized on the VPS, and the independently
+verified host-key secret is still missing. Authenticated VPS access, private HTTPS/OAuth, target registry
+access and live rollout acceptance remain open. The successful workflow explicitly skipped remote deployment;
+it does not establish a running hosted app.
 
 ## First remote environment — dev, October 6
 
@@ -154,7 +163,7 @@ does not complete authentication compatibility; keep cloud ChatGPT integration a
 - Provider-specified SSH username, initial access and a verified host fingerprint; the assigned address is known.
 - Approved tailnet enrollment, actual private hostname and enrolled client devices.
 - OAuth application credentials, callback registration and owner login.
-- Published current source, target registry pull access and verified image digest.
+- Target registry pull access and a verified running image digest; current source is published as `v0.3.5`.
 - Backup destination, retention, recovery credentials and a completed restore.
 - Real browser login, trusted TLS, runner readiness, MCP client calls and persistence after restart.
 
@@ -385,5 +394,5 @@ calls, a verified current release and working recovery. A passing local build, o
 response or successful image publication alone does not meet that bar.
 
 The VPS is delivered and Active in OVH, with an assigned address; authenticated SSH remains unverified.
-Private hostname/enrollment, OAuth, current publication, registry access and recovery inputs remain open.
+Private hostname/enrollment, OAuth, registry access and recovery inputs remain open; `v0.3.5` publication passed.
 These dependencies determine the first remote dev deployment date; separate test/prod setup is deferred.
