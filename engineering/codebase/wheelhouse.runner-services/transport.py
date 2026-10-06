@@ -2,9 +2,13 @@
 """SSH adapter used by Wheelhouse and the operator CLI. Inventory and bundles are trusted local files."""
 import argparse
 import base64
+import contextlib
 from concurrent.futures import ThreadPoolExecutor
 import datetime
+import fcntl
 import json
+import math
+import os
 from pathlib import Path
 import re
 import shlex
@@ -12,16 +16,20 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import uuid
 import fleet
 import artifacts
 import inventory
-from runner import (PROXIES, SLUG, CommandFailed, Rejected, now, reason, rejection, require, read_json,
+from runner import (PROXIES, SLUG, TERMINAL, CommandFailed, Rejected, now, reason, rejection, require, read_json,
                     write_json, validate_bundle, validate_target, empty_topology)
 
 RUNNER = Path(__file__).with_name("runner.py")
 # A site address a rollout recorded: http(s), a host, an optional port and path.
 SITE_URL = re.compile(r"https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[^\s]*)?")
+FOLLOW_SECONDS = 10
+FOLLOW_MAX_BACKOFF = 300
+FOLLOW_BATCH_SIZE = 2  # Each SSH read is bounded at 30 seconds; leave room inside the API's 110-second budget.
 
 SSH_FAILURES = (("Host key verification failed", "SSH host key verification failed"),
                 ("Permission denied", "SSH authentication failed"),
@@ -244,22 +252,148 @@ def submit(root, target_id, bundle_id, actor, confirm=None, skip_test_pass=False
     return {"id": request_id, "targetId": target_id, "bundleId": bundle_id, "status": record["status"]}
 
 
-def status(root, job_id):
+@contextlib.contextmanager
+def observation_lock(path):
+    """Never wait behind another observer, including a stalled SSH read. Kernel locks die with the process."""
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with path.open("a") as stream:
+        os.chmod(path, 0o600)
+        try:
+            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(stream, fcntl.LOCK_UN)
+
+
+def observed_outcome(root, record):
+    """The target journal supplies outcomes; an explicit reconciliation receipt wins concurrent older reads."""
+    try:
+        observed = read_json(root / "observed" / (record["id"] + ".json"))
+        if not isinstance(observed, dict):
+            observed = {}
+    except (ValueError, OSError):
+        observed = {}
+    remote_id = record.get("remoteJobId")
+    if isinstance(remote_id, str):
+        try:
+            require(str(uuid.UUID(remote_id)) == remote_id, "Invalid deployment receipt")
+            reconciled = read_json(root / "reconciled" / (remote_id + ".json"))
+            if (isinstance(reconciled, dict) and reconciled.get("id") == remote_id
+                    and reconciled.get("status") == "interrupted" and finalized(reconciled)):
+                observed.update(reconciled, id=record["id"], remoteJobId=remote_id, targetId=record.get("targetId"))
+        except (ValueError, OSError):
+            pass
+    return observed
+
+
+def finalized(record):
+    # The worker saves failed while rolling back, and succeeded while pruning, before its final save.
+    return (isinstance(record.get("status"), str) and record["status"] in TERMINAL
+            and instant(record.get("completedAt")) is not None)
+
+
+def refresh_status(root, job_id, force=False):
+    """Observe one target journal. None means another observer owns this job; never submit or reconcile it."""
     require(str(uuid.UUID(job_id)) == job_id, "Invalid deployment id")
+    with observation_lock(root / "following" / (job_id + ".lock")) as acquired:
+        if not acquired:
+            return None
+        record = read_json(root / "jobs" / (job_id + ".json"))
+        observed = observed_outcome(root, record)
+        if finalized(observed) and not force:
+            return observed
+        if "remoteJobId" not in record:
+            result = {"id": job_id, "status": "unknown", "targetId": record["targetId"]}
+        else:
+            require(isinstance(record["remoteJobId"], str)
+                    and str(uuid.UUID(record["remoteJobId"])) == record["remoteJobId"], "Invalid deployment receipt")
+            ssh_config = record.get("ssh")
+            if ssh_config is None:
+                ssh_config = fleet.resolve_target(root, record["targetId"])["ssh"]
+            remote = record["remote"]
+            command = shlex.join(["python3", remote + "/runner.py", "status", "--target", remote + "/target.json",
+                                  "--job", record["remoteJobId"]])
+            result = json.loads(Ssh(ssh_config).run(command))
+            require(isinstance(result, dict) and result.get("id") == record["remoteJobId"],
+                    "Unexpected deployment status identity")
+            require(isinstance(result.get("status"), str) and result["status"] in TERMINAL | {"queued", "running", "unknown"},
+                    "Unexpected deployment status")
+            result.update(remoteJobId=result["id"], id=job_id, targetId=record["targetId"])
+        # Reconciliation may have completed during the SSH read. Its durable target receipt wins.
+        latest = observed_outcome(root, record)
+        if finalized(latest) and (not finalized(result)
+                or latest.get("reconciledBy")
+                or (latest.get("status") == "interrupted" and result.get("status") != "interrupted")
+                or (result.get("status") != "interrupted"
+                    and instant(latest["completedAt"]) > instant(result["completedAt"]))):
+            result = latest
+        write_json(root / "observed" / (job_id + ".json"), result)
+        return result
+
+
+def status(root, job_id):
+    # Explicit reads can discover operator recovery performed directly on the target, outside this control plane.
+    result = refresh_status(root, job_id, force=True)
+    if result is not None:
+        return result
+    # A browser never waits for the follower's SSH call. It receives the last complete observation.
     record = read_json(root / "jobs" / (job_id + ".json"))
-    if "remoteJobId" not in record:
-        return {"id": job_id, "status": "unknown", "targetId": record["targetId"]}
-    ssh_config = record.get("ssh")
-    if ssh_config is None:
-        ssh_config = fleet.resolve_target(root, record["targetId"])["ssh"]
-    remote = record["remote"]
-    command = shlex.join(["python3", remote + "/runner.py", "status", "--target", remote + "/target.json",
-                          "--job", record["remoteJobId"]])
-    result = json.loads(Ssh(ssh_config).run(command))
-    result["remoteJobId"] = result["id"]
-    result["id"] = job_id
-    result["targetId"] = record["targetId"]
-    write_json(root / "observed" / (job_id + ".json"), result)
+    return observed_outcome(root, record) or {"id": job_id, "targetId": record["targetId"],
+                                             "status": record.get("status", "unknown")}
+
+
+def follow(root, clock=time.time):
+    """A bounded, restartable observation pass over all local submissions; never execute a deployment."""
+    result = {"checked": 0, "unavailable": 0, "busy": 0}
+    with observation_lock(root / "following" / "pass.lock") as acquired:
+        if not acquired:
+            return {**result, "busy": 1}
+        due = []
+        for job in jobs(root, limit=None):
+            if finalized(job):
+                continue
+            path = root / "following" / (job["id"] + ".json")
+            try:
+                record = read_json(root / "jobs" / (job["id"] + ".json"))
+                has_receipt = isinstance(record, dict) and bool(record.get("remoteJobId"))
+            except (ValueError, OSError):
+                continue
+            try:
+                previous = read_json(path)
+                next_attempt = float(previous["nextAttemptAt"])
+                require(math.isfinite(next_attempt), "Invalid observation schedule")
+                failures = min(30, max(0, int(previous.get("failures", 0))))
+                if has_receipt and previous.get("hasReceipt") is False:
+                    next_attempt, failures = 0, 0
+            except (ValueError, KeyError, TypeError, OverflowError, OSError):
+                next_attempt, failures = 0, 0
+            if next_attempt <= clock():
+                due.append((next_attempt, job["submittedAt"], job["id"], failures, has_receipt))
+        for _, _, job_id, failures, has_receipt in sorted(due)[:FOLLOW_BATCH_SIZE]:
+            path = root / "following" / (job_id + ".json")
+            # Persist a short lease before I/O so repeated process crashes cannot hammer an unreachable target.
+            write_json(path, {"nextAttemptAt": clock() + 90, "failures": failures, "hasReceipt": has_receipt})
+            try:
+                outcome = refresh_status(root, job_id)
+                if outcome is None:
+                    result["busy"] += 1
+                else:
+                    result["checked"] += 1
+                if outcome is not None and outcome.get("status") == "unknown":
+                    failures += 1
+                    delay = min(FOLLOW_MAX_BACKOFF, FOLLOW_SECONDS * 2 ** min(failures - 1, 5))
+                else:
+                    failures, delay = 0, FOLLOW_SECONDS
+            except (ValueError, OSError, KeyError, TypeError, CommandFailed):
+                # Preserve the last target observation; a transport failure is not a deployment failure.
+                result["unavailable"] += 1
+                failures += 1
+                delay = min(FOLLOW_MAX_BACKOFF, FOLLOW_SECONDS * 2 ** min(failures - 1, 5))
+            write_json(path, {"nextAttemptAt": clock() + delay, "failures": failures, "hasReceipt": has_receipt})
     return result
 
 
@@ -269,13 +403,14 @@ def jobs(root, limit=50):
     for path in (root / "jobs").glob("*.json") if (root / "jobs").is_dir() else ():
         try:
             record = read_json(path)
+            require(isinstance(record, dict) and isinstance(record.get("id"), str), "Invalid job record")
             require(str(uuid.UUID(record["id"])) == record["id"] == path.stem, "Invalid job record")
-        except (ValueError, KeyError, OSError):
+        except (ValueError, KeyError, TypeError, OSError):
             continue
-        observed_path = root / "observed" / path.name
-        observed = read_json(observed_path) if observed_path.is_file() else {}
-        submitted = record.get("submittedAt") or datetime.datetime.fromtimestamp(
-            path.stat().st_mtime, datetime.timezone.utc).isoformat()
+        observed = observed_outcome(root, record)
+        submitted = record.get("submittedAt")
+        if not isinstance(submitted, str) or not submitted:
+            submitted = datetime.datetime.fromtimestamp(path.stat().st_mtime, datetime.timezone.utc).isoformat()
         item = {"id": record["id"], "targetId": record.get("targetId"), "bundleId": record.get("bundleId"),
                 "release": record.get("release") or observed.get("release") or record.get("bundleId"),
                 "actor": record.get("actor"), "submittedAt": submitted,
@@ -483,7 +618,7 @@ def summary_of(record):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["import", "sites", "fixtures", "servers", "targets", "vaults", "releases", "template", "submit",
-                                           "status", "jobs", "state", "check", "reconcile", "vitals", "stats", "topology",
+                                           "status", "jobs", "follow", "state", "check", "reconcile", "vitals", "stats", "topology",
                                            "branches", "commits", "build", "logs"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
@@ -531,6 +666,8 @@ def main():
             result = artifacts.request_build(args.product, args.commit)
         elif args.action == "jobs":
             result = jobs(root)
+        elif args.action == "follow":
+            result = follow(root)
         elif args.action == "state":
             result = target_state(root, args.target)
         elif args.action == "topology":

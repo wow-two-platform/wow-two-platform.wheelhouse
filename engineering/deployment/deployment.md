@@ -206,6 +206,13 @@ every settings file and the target's lock state; each failure names the rule or 
 - Reconciling records who acknowledged the rollout under `<inventory>/reconciled/`.
 
 The API reads its runner settings from the `Deployment` section: `TransportPath`, `Root`, `Python` and `GitHubTokenFile`.
+A background follower observes durable deployment submissions every `Deployment:FollowSeconds` (default 10;
+0 disables it). Each pass reads at most two due target journals, with a 30-second SSH limit per read. Transport
+failures retain the last outcome; failed or unknown reads back off up to five minutes. Retry timing survives a control-plane
+restart in `<runner root>/following/`; it never submits, retries or reconciles a deployment. A terminal status is
+final only when `completedAt` is present, after rollback or cleanup. Explicit status reads can still observe a later
+target-side acknowledgement. Preserve `jobs/`, `observed/`, `reconciled/` and `following/` with the runner root.
+
 A background sampler reads every target's vitals each `Operations:VitalsSampleMinutes` (default 5; 0 turns it off),
 stores load, memory, the fullest disk and container health in `vitals_samples`, and deletes readings older than 30 days.
 

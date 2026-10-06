@@ -75,6 +75,7 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
                     ["ConnectionStrings:Wheelhouse"] = _postgres.ConnectionString,
                     // Tests run sampling passes explicitly; the background sampler stays off.
                     ["Operations:VitalsSampleMinutes"] = "0",
+                    ["Deployment:FollowSeconds"] = "0",
                 })),
             ConfigureServicesHook = services =>
             {

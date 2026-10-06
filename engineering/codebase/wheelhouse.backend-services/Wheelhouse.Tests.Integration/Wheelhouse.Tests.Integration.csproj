@@ -35,6 +35,8 @@
     <ItemGroup>
         <ProjectReference Include="..\Wheelhouse.Persistence\Wheelhouse.Persistence.csproj"/>
         <ProjectReference Include="..\Wheelhouse.Domain\Wheelhouse.Domain.csproj"/>
+        <!-- Observation-loop lifecycle and real runner-process cancellation below HTTP. -->
+        <ProjectReference Include="..\Wheelhouse.Infrastructure\Wheelhouse.Infrastructure.csproj"/>
     </ItemGroup>
 
     <ItemGroup>

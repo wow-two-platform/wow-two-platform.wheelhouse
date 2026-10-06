@@ -16,7 +16,7 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
     public Task<AppResult<JsonElement>> ReadAsync(string resource, string? id, CancellationToken ct) =>
         resource switch
         {
-            "sites" or "fixtures" or "targets" or "releases" or "jobs" => RunAsync([resource], ct),
+            "sites" or "fixtures" or "targets" or "releases" or "jobs" or "follow" => RunAsync([resource], ct),
             "status" when Guid.TryParse(id, out _) => RunAsync(["status", "--job", id], ct),
             "state" when id is not null => RunAsync(["state", "--target", id], ct),
             "topology" when id is not null => RunAsync(["topology", "--target", id], ct),
@@ -60,6 +60,7 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
 
     private async Task<AppResult<JsonElement>> RunAsync(string[] arguments, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         if (!File.Exists(settings.TransportPath))
             return AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("Deployment runner is not installed."));
 
@@ -103,7 +104,15 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
         }
         catch (OperationCanceledException)
         {
-            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            try
+            {
+                if (!process.HasExited) process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+                // The process may exit between the state check and cancellation.
+            }
+            ct.ThrowIfCancellationRequested();
             return AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("Deployment response timed out. Reconcile target state before retrying."));
         }
         catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or JsonException or IOException)

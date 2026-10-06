@@ -80,6 +80,7 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<IInventorySnapshot, Wheelhouse.Infrastructure.Inventory.InventorySnapshotExporter>();
         builder.Services.AddScoped<Wheelhouse.Infrastructure.Inventory.LocalRigSeedService>();
         builder.Services.AddHostedService<Wheelhouse.Infrastructure.Inventory.InventoryStartupService>();
+        builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.DeploymentOutcomeFollower>();
         builder.Services.AddScoped<ITargetSites, Wheelhouse.Infrastructure.Products.RunnerTargetSites>();
 
         // Vault administration: inventory endpoints only, no redirects or cookies, bounded calls.
