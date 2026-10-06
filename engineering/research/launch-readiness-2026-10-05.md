@@ -2,12 +2,158 @@
 
 *Last updated: 2026-10-06 — Asia/Samarkand*
 
-Private Wheelhouse hosting today appears feasible, subject to account provisioning, production authentication,
-an immutable release containing current work, and live acceptance. Local startup and adopted MCP authorization tests are verified. Production hosting
-and an authenticated external MCP client are not verified. Public ForeverPin launch has additional product and recovery gates.
+The first remote deployment is **Wheelhouse dev** on the purchased OVH VPS. Separate test and prod
+environments are deferred. Local startup and adopted MCP authorization tests are verified; remote hosting,
+real OAuth and an authenticated external MCP client remain unverified. OVH has delivered the VPS and reports
+it Active; authenticated SSH and the current Wheelhouse image publication remain open. Public ForeverPin launch remains separate.
 
 This is a dated readiness analysis. The [backlog](../planning/backlog.md) and
 [v0.3 track](../planning/version-track/v0.3/v0.3.md) remain the capability and acceptance records.
+
+## First remote environment — dev, October 6
+
+### Confirmed scope and provider state
+
+Use one target, `wheelhouse-dev`, with one Compose project and a dedicated `wheelhouse_dev` database/user.
+The environment name selects deployment policy: dev accepts candidate builds or releases. It does not require
+ASP.NET's Development runtime. Keep `ASPNETCORE_ENVIRONMENT=Production` and rehearsal disabled on the VPS:
+the [Development settings](../codebase/wheelhouse.backend-services/Wheelhouse.Api/appsettings.Development.json)
+point at the local rehearsal and loopback database; the
+[Production authentication guard](../codebase/wheelhouse.backend-services/Wheelhouse.Api/Auth/AuthConfigurationExtensions.cs)
+requires an owner allowlist. No test-pass override is needed for a dev target.
+
+During this review, the paid order moved from delivery in progress to **Your order is available**.
+The VPS dashboard now reports **Active**, Ubuntu 26.04, Beauharnois in Canada (`os-bhs6`),
+VPS-1 2027, 2 vCPU, 4 GB RAM and 40 GB disk. Its assigned hostname and IPv4/IPv6 addresses
+are available in the provider console; host identifiers are not copied into this public-repository analysis.
+Standard automated backup, no commitment, automatic renewal and the next payment date of November 6
+are shown. The checked order total was $5.35 for one month at the displayed tax.
+Provider status verifies delivery; SSH login, host fingerprint and installed application state remain unverified.
+
+### Install and persist
+
+| Location | Install or configure | Purpose and boundary |
+|---|---|---|
+| VPS OS | Security updates, OpenSSH, protected deployment account, Python 3 | Bootstrap and execute the existing target runner; Docker access is host-privileged |
+| VPS OS | Official Docker Engine and Compose v2 | Run released `linux/amd64` images; verify Ubuntu 26.04 support and packages during installation |
+| VPS OS | Tailscale and persistent Serve configuration | Private administration and HTTPS; laptop/phone enrollment remains open |
+| Platform Compose | PostgreSQL 16 with persistent storage | Existing repository baseline; dedicated dev database/user, no public port |
+| Platform Compose | Traefik file provider on the external `platform` network | Read runner-generated routes from `/srv/wheelhouse/ingress` |
+| Product bundle | Wheelhouse `console`, declared 512 MiB cap | Contains SPA, .NET runtime, Python runner and SSH client |
+| Persistent state | Database, `/data/keys`, `/data/deployments`, host target state and protected configuration | Preserve login cookies, inventory, integration keys, deployment jobs and recovery evidence |
+| Recovery | Encrypted off-provider backup and a tested restore | Provider daily backup is additional protection, not the sole recovery path |
+
+GitHub builds the SPA and container through the existing
+[descriptor](../deployment/deploy.yml) and [Dockerfile](../deployment/Dockerfile).
+Do not install Node, Vite, the .NET SDK or file watchers on the VPS. The first host does not need Kubernetes,
+a broker, Valkey or a separate vault service. Measure memory, disk and rollout peaks before adding products.
+The [local Compose file](../deployment/docker-compose.yml) is a verification stack, not the remote deployment contract.
+
+### Private access
+
+```text
+Laptop / phone enrolled in the same tailnet
+  -> https://<actual-node>.<actual-tailnet>.ts.net:443
+  -> Tailscale Serve on the VPS
+  -> http://127.0.0.1:<private-port> (Traefik's loopback-published private entrypoint)
+  -> http://wheelhouse-dev-console:8080 (Docker platform network)
+  -> PostgreSQL (internal network only)
+```
+
+Bootstrap SSH uses the delivered public address and provider-specified account. OVH's
+[first-connection guide](https://support.us.ovhcloud.com/hc/en-us/articles/360009253639-Getting-started-with-a-VPS)
+describes the delivery credentials; verify the host fingerprint through the provider console.
+Establish and test ordinary OpenSSH over Tailscale, with the runner's existing identity and pinned
+`known_hosts`, before narrowing public SSH. Retain provider-console recovery access.
+No Docker API, database or Wheelhouse application port should be publicly published.
+
+[Docker port publishing](https://docs.docker.com/engine/network/port-publishing/) and
+[Ubuntu installation guidance](https://docs.docker.com/engine/install/ubuntu/) require attention to binding
+and firewall behavior: published container traffic can bypass UFW. Bind the private ingress explicitly to
+loopback and test reachability from outside the tailnet after configuration.
+[Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) supplies private HTTPS;
+Tailscale Funnel is not part of this plan.
+
+The existing [route renderer](../codebase/wheelhouse.runner-services/runner.py) supports this layout:
+set server ingress `scheme=https`, `port=null` (or 443), `privateEntryPoints=["private"]`,
+`certResolver=null`, and both `probe` and `privateProbe` to `http://127.0.0.1:<private-port>`.
+The runner's general readiness check uses `probe`; private site checks use `privateProbe`.
+Set the target's `console`
+site to the actual Tailscale DNS hostname. Traefik's `private` entrypoint serves plain HTTP behind Serve;
+it has no default TLS. There is no `private_tls` inventory field.
+
+Preserve the original host and HTTPS scheme through both proxy hops. Configure Traefik's
+[forwarded-header trust](https://doc.traefik.io/traefik/reference/install-configuration/entrypoints/)
+for Serve's observed source address, which may be a Docker gateway rather than loopback.
+Set `Deployment:TrustedProxies` to the exact Traefik address visible to the app; do not use trust-all.
+The app's one-hop forwarding limit does not establish the original client IP through both hops.
+Verify real redirects and cookies; a successful route probe is insufficient.
+
+### Bootstrap using the current deployment method
+
+1. Verify the delivered host's architecture and SSH identity, and establish recoverable administrator access.
+2. Install the host dependencies and create the platform network, PostgreSQL and private ingress.
+3. Create the dev database/user and protected console settings. Supply the connection string, OAuth client,
+   owner allowlist, `AllowedHosts` including the real hostname and `localhost`, and exact trusted proxies.
+   Preserve UID `1654` readability for settings and write access to cookie keys as documented in
+   [runner installation](../deployment/deployment.md#runner-installation-and-inventory).
+4. Register the OAuth callback `https://<actual-node>.<actual-tailnet>.ts.net/api/identity/callback`.
+   The enrolled user's browser must reach this private callback. Keep secrets out of source, terminal output and chat.
+5. Publish the intended current source and verify both CI and the separate image-publication workflow.
+   Download its release bundle, verify source/checksum metadata, and prove the VPS can pull the exact image digest.
+   Configure a read-only registry credential if the package remains private.
+6. Copy the reviewed target `runner.py` and verified bundle to the VPS. Prepare a protected target JSON with
+   product `wheelhouse`, environment `dev`, root `/srv/wheelhouse`, service settings, private ingress,
+   and `variables.PLATFORM_NETWORK="platform"`. Generated Compose needs that explicit variable;
+   the runner does not inherit arbitrary ambient environment variables.
+   Use the existing runner's `validate`, `check`, `launch` and `status` actions to bootstrap without the dashboard.
+   Accept bootstrap only after `status=succeeded` and a nonempty `completedAt`.
+   Terminal labels can appear before rollback or cleanup finishes; launching alone does not establish success.
+7. Sign in and register the OVH server and remote dev target through the console. Set the product's public
+   release repository and permitted image repositories: the fresh Wheelhouse product row has no release source.
+   Place the runner's SSH identity and verified `known_hosts` in persistent `/data/deployments/ssh/<server-id>/`.
+   Let the API generate `inventory.json`; do not hand-edit that API-owned export.
+8. Perform an ordinary console-driven dev rollout. Verify completion with the browser closed, restart the
+   control plane, and confirm inventory, integration keys, cookie keys and target state survive.
+9. Restore an encrypted backup into an empty database and verify useful records before accepting unattended operation.
+
+The runner already provides locks, image pull before replacement, health gates, target journals and recovery.
+Automatic image rollback is allowed only when the release declares schema compatibility; the current published
+manifest has `rollbackCompatible:false`. Database restore is a separate operator action. One-command host
+bootstrap, backup automation and external alerts remain backlog work, not required new deployment engines.
+
+### MCP acceptance
+
+Use the same private hostname with `/mcp`, and create a scoped integration key from an authenticated owner session.
+Verify initialization, tool listing, a catalog read, a deployment read, missing-key rejection and revoked-key rejection.
+The [MCP runbook](../deployment/mcp.md) defines the implemented stateless Streamable HTTP and Bearer-key contract.
+
+For a locally executing Codex client on the tailnet, the
+[official MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) supports an HTTP URL and
+`bearer_token_env_var`. Keep the token in the client's protected environment, not committed configuration.
+Phone browser access to the UI and cloud ChatGPT MCP access are different acceptance checks.
+
+Cloud ChatGPT needs a reachable transport and compatible authentication. An
+[OpenAI Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) can supply an
+outbound private transport, subject to account/workspace eligibility and permissions. The documented
+[ChatGPT custom MCP setup](https://developers.openai.com/api/docs/guides/custom-mcp-server) offers OAuth,
+no authentication and mixed authentication; it does not establish support for this server's arbitrary static
+Bearer-key configuration. Wheelhouse currently has no MCP OAuth discovery. Tunnel setup alone therefore
+does not complete authentication compatibility; keep cloud ChatGPT integration as separate work.
+
+### Outstanding inputs and live checks
+
+- Provider-specified SSH username, initial access and a verified host fingerprint; the assigned address is known.
+- Approved tailnet enrollment, actual private hostname and enrolled client devices.
+- OAuth application credentials, callback registration and owner login.
+- Published current source, target registry pull access and verified image digest.
+- Backup destination, retention, recovery credentials and a completed restore.
+- Real browser login, trusted TLS, runner readiness, MCP client calls and persistence after restart.
+
+The runner's site checks report warnings and skip certificate validation for HTTPS routing probes.
+Independently verify trusted TLS and real application workflows. A health response does not prove this list.
+
+---
 
 ## Verified baseline — October 5
 
@@ -55,7 +201,15 @@ only checks database connectivity.
   succeeded for that older commit. This does not validate unpublished inventory or MCP changes.
 - The repository remains public. Its visibility was verified through the GitHub API.
 
-Publish and verify the intended source before selecting a production release. The
+On October 6, a fresh GitHub read still found remote `main` at `02ac3df` and latest release `v0.3.4`.
+Local `main` was `0d1cb9f`, twelve implementation/documentation commits ahead before this analysis update.
+Those unpublished commits include the MCP endpoint, OVH inventory support and durable outcome follower.
+Package visibility could not be read with the current GitHub credential; a real target pull remains required.
+Native automatic approval previously rejected the publication-triggering push because the implementation request
+did not authorize that exact external release action. Explicit publication approval remains unanswered;
+this analysis does not claim a new release was published.
+
+Publish and verify the intended source before selecting the first remote dev release. The
 [descriptor](../deployment/deploy.yml#L6) publishes `linux/amd64`; the ARM rehearsal does not prove the
 published x86 image deploys successfully.
 
@@ -71,9 +225,9 @@ the older rationale about real hosts living in `fleet.py` no longer describes cu
 
 ### Private host and authentication
 
-- Select and provision an x86 host; configure private administration and persistent storage.
+- Establish access to the delivered OVH VPS; configure private administration and persistent storage for dev.
 - Prepare Docker/Compose, Python, PostgreSQL, protected runner files, pinned SSH and private ingress.
-- Register the production GitHub OAuth callback for the actual private HTTPS hostname.
+- Register the remote dev GitHub OAuth callback for the actual private HTTPS hostname.
 - Configure the owner allowlist and verify the real login/callback/session flow.
 - Verify registry pull access, the mounted GitHub credential and the actual chosen release.
 - Preserve the database, cookie keys, runner inventory, job records and recovery credentials across replacement.
@@ -142,17 +296,17 @@ do not prevent starting a private Wheelhouse control plane.
 
 ---
 
-## Server recommendation — monthly billing, checked October 6
+## Purchased server and earlier comparison — October 6
 
-Choose **OVHcloud VPS-1 2027 with No commitment** for the private Wheelhouse control plane and read-only MCP.
-Keep development and testing local. The screenshot's `$4.54/month` is the discounted twelve-month option:
+The user purchased **OVHcloud VPS-1 2027 with No commitment** for the initial private dev deployment.
+Separate test/prod environments remain deferred. The earlier screenshot's `$4.54/month` was the twelve-month option:
 `$54.48` payable before tax. The [worldwide public catalog](https://ca.api.ovh.com/1.0/order/catalog/public/vps?ovhSubsidiary=WS)
 separately lists `default` billing at `$5.35`, commitment zero, interval one month, setup zero.
-Select **No commitment** in the [configurator](https://www.ovhcloud.com/en/vps/configurator/), and confirm the
-review total is for one month. The current cart has not been changed or submitted.
+The completed order was checked as one month, Canada-East-Beauharnois and Ubuntu 26.04;
+the current delivery status is recorded above. Purchase completion does not establish server readiness.
 
-All alternatives below are x86, two vCPUs and 4 GB RAM. Prices exclude tax. Availability and account acceptance
-are separate from a published catalog; no provider account or server was created.
+The following comparison records the earlier October 6 shopping research, not an open purchasing decision.
+All alternatives are x86, two vCPUs and 4 GB RAM. Prices exclude tax; their capacity and account acceptance were unverified.
 
 | Option | Monthly price | Storage | Billing and practical boundary |
 |---|---:|---:|---|
@@ -175,10 +329,9 @@ more expensive at `€19.99` / `$23.59` including IPv4; its public page also rep
 quotes are stale. DigitalOcean's [current pricing](https://www.digitalocean.com/pricing/droplets) verifies the
 2-vCPU, 4-GiB, 80-GiB plan at `$24` and capped usage billing.
 
-Singapore, Mumbai and Europe are plausible locations for Uzbekistan; actual connection latency is unmeasured.
-OVH catalog region choices do not establish available capacity. Standard backup covers the previous day;
-the catalog's one-day backup charge has an offsetting promotion, whose application still needs the final checkout.
-Seven-day retention adds `$1.40/month`. Provider snapshots do not replace an encrypted off-provider restore test.
+The purchased region is Canada-East-Beauharnois; actual connection latency from Uzbekistan is unmeasured.
+The order includes standard daily backup. Earlier research found seven-day retention adds `$1.40/month`;
+that add-on was not selected. Provider snapshots do not replace an encrypted off-provider restore test.
 
 Capacity is an estimate. Wheelhouse declares 512 MB; three ForeverPin environments alone declare 3.375 GiB,
 before PostgreSQL, vault, ingress and OS. Four GB is a control-plane starting point. One low-traffic product
@@ -209,20 +362,20 @@ acceptance on the selected host; it does not add mutation tools to the read-only
 
 ## Same-day sequence and completion evidence
 
-1. Verify the existing native login in a browser; preserve the running local services.
-2. Connect an actual MCP client using an operator-issued scoped integration key.
-3. Choose monthly/no-commitment billing; confirm the exact quote, region and account acceptance.
-4. Register the selected provider and target; OVH support is already implemented and locally verified.
-5. Publish the intended Wheelhouse source and verify CI/release assets.
-6. Provision the x86 host and private access; configure persistent PostgreSQL, keys, inventory, SSH and OAuth.
-7. Bootstrap the same immutable release; check real login, private ingress, MCP reads and runner readiness.
-8. Complete one supervised deployment, follow its terminal result, restart and verify persistence.
-9. Restore an encrypted off-provider backup; record the verified service URL, release digest and recovery result.
+1. Establish authenticated SSH to the delivered host and verify its architecture and host identity.
+2. Establish private access and install the host/platform dependencies for one dev environment.
+3. Obtain explicit approval for the pending publication-triggering push; verify CI and the resulting immutable bundle.
+4. Configure persistent PostgreSQL, keys, runner state, SSH and the real private OAuth callback.
+5. Bootstrap `wheelhouse-dev` with the existing runner and verify owner login.
+6. Register the real server, dev target and product release source; check runner and registry access.
+7. Connect a local MCP client through Tailscale using an operator-issued scoped key.
+8. Complete a supervised dev rollout, follow its terminal result, restart and verify persistence.
+9. Restore an encrypted off-provider backup; record the service URL, release digest and recovery result.
 
 Completion means a reachable private host, a real authenticated user session, successful MCP initialization/tool
 calls, a verified current release and working recovery. A passing local build, old deployment record, HTTP health
 response or successful image publication alone does not meet that bar.
 
-The user is selecting monthly billing before purchasing a starter VPS. Production access hostname/OAuth setup and the backup
-destination/recovery targets remain open. Account verification or unavailable capacity can move the live-host
-portion beyond today even when the code and local checks finish.
+The VPS is delivered and Active in OVH, with an assigned address; authenticated SSH remains unverified.
+Private hostname/enrollment, OAuth, current publication, registry access and recovery inputs remain open.
+These dependencies determine the first remote dev deployment date; separate test/prod setup is deferred.
