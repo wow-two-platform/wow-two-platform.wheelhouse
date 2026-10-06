@@ -1,6 +1,6 @@
 # Deployment operations
 
-*Last updated: 2026-10-02*
+*Last updated: 2026-10-06*
 
 ## Ownership and current boundary
 
@@ -53,8 +53,9 @@ with its settings keys, `keys` and `deployments` volumes, a private `console` si
 
 | Workflow | Runs on | Does |
 |---|---|---|
-| `.github/workflows/ci.yml` | Every push and pull request | Backend tiers (building the SPA into `wwwroot`), runner tests with the bundle contract against the pinned generator, frontend tests and build |
-| `.github/workflows/publish-docker-image.yml` | Every push, or a dispatched commit | Calls the shared `publish` workflow in `wow-two-platform.pipelines`: `main` releases `vX.Y.Z` with the asset `wheelhouse-release.tar.gz`; other branches publish a `bundle-<sha>` artifact |
+| `.github/workflows/ci.yml` | Called by delivery; directly on pull requests | Backend tiers, runner/CI contracts, host-bootstrap checks and frontend tests/build |
+| `.github/workflows/publish-docker-image.yml` | Every push, or a dispatched commit | Tests the selected SHA, calls shared publication, then calls dev deployment for a main push |
+| `.github/workflows/deploy-dev.yml` | Called after successful main publication | Resolves the tested bundle and deploys over pinned SSH when host wiring is enabled |
 
 A local build proves the path without GitHub:
 
@@ -62,6 +63,83 @@ A local build proves the path without GitHub:
 python3 ../wow-two-platform.pipelines/generator/release.py build --repo . --checkout \
   --platform linux/arm64 --registry 127.0.0.1:15000/wheelhouse --output /tmp/wheelhouse-bundle
 ```
+
+## Automatic Wheelhouse dev delivery
+
+The first remote target is `wheelhouse-dev`; separate test and prod provisioning remains deferred.
+Use the reviewed [VPS bootstrap](vps/vps.md) for Ubuntu 26.04 and private HTTPS.
+
+```text
+one main push (one or many commits)
+  -> verify its final SHA: backend, runner, frontend
+  -> check that SHA is still main
+  -> shared publish@v0.1.0 builds changed services once and publishes the immutable bundle
+  -> resolve that tested bundle, check main again
+  -> pinned SSH -> existing durable runner -> container/digest + trusted HTTPS checks
+```
+
+[GitHub push events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push)
+select the tip commit; no job iterates the pushed commit list. Ten commits in one push produce one delivery run,
+one shared publication invocation, and at most one console image build. Tests compile the application too;
+"one build" here means one container publication, not eliminating test compilation.
+
+Separate pushes share one branch-level concurrency group. It uses `cancel-in-progress:false` and
+[`queue:max`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency)
+so a newer push never cancels an active target operation. Up to 100 runs can wait. Queue arrival order is not
+commit order: a SHA superseded before publication or immediately before launch is skipped. Once a target
+rollout starts, it finishes; a later main push follows. Manual reruns of old SHAs cannot roll dev backwards.
+
+The shared publication workflow remains the sole image builder. Documentation-only pushes may publish no
+new release. [Bundle resolution](../codebase/wheelhouse.runner-services/ci_artifacts.py) prefers an exact
+source match; otherwise it requires an ancestral release and the pinned generator's proof that descriptor
+and every console build input are unchanged. It verifies the asset digest, tag/source agreement, archive,
+approved image repository and `linux/amd64`. The original bundle is retained: the receipt separately records
+the tested push SHA and actual image-source SHA. It never deploys a moving image tag or blindly picks latest.
+
+### Wiring the GitHub dev environment
+
+Use a dedicated restricted CI SSH key for the deployment account. The initial GitHub-hosted runner connects
+to the verified public SSH address; the web UI, database and MCP remain private. This workflow does not yet
+join a tailnet, so `DEV_SSH_HOST` must be reachable by the GitHub-hosted runner. The bootstrap runbook describes
+later ephemeral Tailscale CI access. No self-hosted GitHub runner is installed on the application VPS.
+
+| GitHub `dev` environment value | Kind | Meaning |
+|---|---|---|
+| `DEV_SSH_HOST` | Secret | Verified SSH address reachable from GitHub-hosted runners |
+| `DEV_SSH_USER` | Secret | Dedicated `wheelhouse-deploy` account |
+| `DEV_SSH_KEY` | Secret | Dedicated private key; its public half must already be authorized |
+| `DEV_SSH_KNOWN_HOSTS` | Secret | Host-key line independently checked through OVH; no trust-on-first-use scan |
+| `DEV_SSH_PORT` | Variable | Optional; defaults to `22` |
+| `DEV_DEPLOY_ENABLED` | Variable | Set `true` only after host, private HTTPS, OAuth and registry wiring |
+
+Until enabled, the workflow reports explicitly that deployment was not performed. Enabled runs fail on
+missing configuration. Limit the environment's deployment branch to `main`; test/prod values are not used.
+GitHub's job token reads release metadata. GHCR credentials and application secrets live on the VPS under
+the deployment account; they are not copied into build arguments or CI logs.
+
+### Reruns and completion
+
+[CI execution](../codebase/wheelhouse.runner-services/ci_deploy.py) uploads a run/attempt-specific bundle,
+`runner.py` and a small [target adapter](../codebase/wheelhouse.runner-services/ci_remote.py).
+The target configuration stays at `/srv/wheelhouse/config/wheelhouse-dev.json`.
+The adapter records intent before calling the existing `runner.launch`; it does not implement Compose deployment.
+The existing runner detaches on the VPS, so replacing Wheelhouse or losing the SSH connection does not own its lifetime.
+
+Each GitHub run ID has a persistent receipt under `/srv/wheelhouse/ci/receipts`. A rerun resumes observation
+of that original job. A lost launch reply can recover from the matching target journal; an ambiguous intent
+fails closed instead of launching another deployment. Failed or interrupted mutations require the existing
+reconciliation/recovery procedure; rerunning CI never silently retries them. Uploads/receipts are retained
+for diagnosis; include them in bounded host retention work once the first deployment is accepted.
+
+CI requires `status=succeeded` and a nonempty `completedAt`, then verifies the current job, running image
+digests and health, trusted private HTTPS readiness, and unauthenticated MCP rejection. Route-probe warnings
+cannot substitute for these checks. Real owner OAuth login, authenticated MCP reads/revocation, restart
+persistence and off-provider restore remain separate acceptance checks. A timed-out CI observer reports
+failure while the durable target job remains authoritative; inspect it before any new submission.
+
+GitHub currently supports `queue:max`; local actionlint `1.7.12` does not yet parse that field. Validate YAML
+duplicates/structure and use actionlint with only that documented field omitted in a temporary copy;
+GitHub workflow acceptance remains the definitive check for this field.
 
 ## Local packaging
 

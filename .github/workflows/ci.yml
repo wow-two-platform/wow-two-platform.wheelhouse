@@ -1,18 +1,19 @@
-# Runs every test tier on each push and pull request. The backend build also builds the SPA into wwwroot,
+# Called once by push delivery, and directly for pull requests. The backend builds the SPA into wwwroot,
 # which the SPA-serving E2E tests read.
 name: ci
 
 on:
-  push:
-    branches: ['**']
   pull_request:
+  workflow_call:
+    inputs:
+      commit:
+        description: Immutable commit selected by the delivery workflow
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   backend:
@@ -20,6 +21,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit || github.sha }}
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: engineering/codebase/wheelhouse.backend-services/global.json
@@ -36,6 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.commit || github.sha }}
           fetch-depth: 0
       # The bundle contract test runs the release generator at the tag the publish workflow pins.
       - uses: actions/checkout@v4
@@ -50,6 +54,11 @@ jobs:
       - run: python -m unittest discover -s engineering/codebase/wheelhouse.runner-services -v
         env:
           WHEELHOUSE_PIPELINES: ${{ github.workspace }}/.pipelines
+      - name: Verify VPS bootstrap without changing a host
+        run: |
+          python -m unittest discover -s engineering/deployment/vps -v
+          bash -n engineering/deployment/vps/bootstrap.sh
+          WHEELHOUSE_DEPLOY_UID=1000 WHEELHOUSE_DEPLOY_GID=1000 docker compose -f engineering/deployment/vps/platform.compose.yml config --quiet
 
   frontend:
     runs-on: ubuntu-latest
@@ -59,6 +68,8 @@ jobs:
         working-directory: engineering/codebase/wheelhouse.frontend-services
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: engineering/codebase/wheelhouse.frontend-services/.nvmrc

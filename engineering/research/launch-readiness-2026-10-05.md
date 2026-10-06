@@ -10,6 +10,14 @@ it Active; authenticated SSH and the current Wheelhouse image publication remain
 This is a dated readiness analysis. The [backlog](../planning/backlog.md) and
 [v0.3 track](../planning/version-track/v0.3/v0.3.md) remain the capability and acceptance records.
 
+The user approved pushing the pending work and implementing automatic main-to-dev deployment on October 6.
+The [delivery workflow and bootstrap runbook](../deployment/deployment.md#automatic-wheelhouse-dev-delivery)
+now define the executable path: one main push tests its tip SHA, publishes through the shared workflow,
+then deploys the verified bundle over pinned SSH. Multiple commits in one push do not multiply builds.
+Local verification passed 217 runner tests and five host-configuration tests. Authenticated VPS access,
+GitHub environment secrets, private HTTPS/OAuth and live rollout acceptance remain open; CI reports
+deployment disabled until the actual host configuration is ready.
+
 ## First remote environment — dev, October 6
 
 ### Confirmed scope and provider state
@@ -205,9 +213,9 @@ On October 6, a fresh GitHub read still found remote `main` at `02ac3df` and lat
 Local `main` was `0d1cb9f`, twelve implementation/documentation commits ahead before this analysis update.
 Those unpublished commits include the MCP endpoint, OVH inventory support and durable outcome follower.
 Package visibility could not be read with the current GitHub credential; a real target pull remains required.
-Native automatic approval previously rejected the publication-triggering push because the implementation request
-did not authorize that exact external release action. Explicit publication approval remains unanswered;
-this analysis does not claim a new release was published.
+The user explicitly approved the publication-triggering push and dev CI implementation on October 6,
+resolving the earlier automatic approval rejection. Release success still requires a completed live workflow;
+local implementation and authorization alone do not establish publication or deployment.
 
 Publish and verify the intended source before selecting the first remote dev release. The
 [descriptor](../deployment/deploy.yml#L6) publishes `linux/amd64`; the ARM rehearsal does not prove the
@@ -364,7 +372,7 @@ acceptance on the selected host; it does not add mutation tools to the read-only
 
 1. Establish authenticated SSH to the delivered host and verify its architecture and host identity.
 2. Establish private access and install the host/platform dependencies for one dev environment.
-3. Obtain explicit approval for the pending publication-triggering push; verify CI and the resulting immutable bundle.
+3. Push the approved delivery workflow and pending source; verify CI and the resulting immutable bundle.
 4. Configure persistent PostgreSQL, keys, runner state, SSH and the real private OAuth callback.
 5. Bootstrap `wheelhouse-dev` with the existing runner and verify owner login.
 6. Register the real server, dev target and product release source; check runner and registry access.

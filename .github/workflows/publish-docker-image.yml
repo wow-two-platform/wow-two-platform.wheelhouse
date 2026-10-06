@@ -2,7 +2,8 @@
 #   main          → release vX.Y.Z (X.Y from the newest version-track folder), bundle on the GitHub release
 #   dev / test    → pre-release under dev-latest / test-latest; other branches → candidate sha-<commit>
 #   workflow_dispatch → a candidate for one commit that has no build yet
-# Rules: wow-two-ws/conventions/deployment/descriptor/deploy-descriptor.md § Builds and versions.
+# One push event tests/builds its final SHA once, regardless of its commit count.
+# Dev deployment is enabled only after the VPS and environment secrets are provisioned.
 name: publish-docker-image
 
 on:
@@ -19,8 +20,51 @@ permissions:
   packages: write
   actions: read
 
+concurrency:
+  group: delivery-${{ github.repository }}-${{ inputs.commit || github.ref }}
+  cancel-in-progress: false
+  queue: max
+
 jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+    with:
+      commit: ${{ inputs.commit || github.sha }}
+
+  current:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      eligible: ${{ steps.head.outputs.eligible }}
+    steps:
+      - name: Skip superseded main pushes and old reruns
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          eligible=true
+          if [ "$EVENT" = push ] && [ "$REF" = refs/heads/main ]; then
+            head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+            [ "$COMMIT" = "$head" ] || eligible=false
+          fi
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
+          [ "$eligible" = true ] || echo 'Superseded main push: publication and deployment skipped.' >> "$GITHUB_STEP_SUMMARY"
+
   publish:
+    needs: current
+    if: needs.current.outputs.eligible == 'true'
     uses: wow-two-platform/wow-two-platform.pipelines/.github/workflows/publish.yml@v0.1.0
     with:
       commit: ${{ inputs.commit }}
+
+  deploy-dev:
+    needs: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/deploy-dev.yml
+    secrets: inherit

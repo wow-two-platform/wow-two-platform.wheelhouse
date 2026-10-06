@@ -1,0 +1,9 @@
+{
+  "Identity": {
+    "GitHub": {
+      "ClientId": "",
+      "ClientSecret": ""
+    },
+    "AllowedGitHubLogins": []
+  }
+}

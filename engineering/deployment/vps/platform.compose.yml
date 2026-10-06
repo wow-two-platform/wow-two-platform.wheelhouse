@@ -1,0 +1,66 @@
+# Host platform only. The product is deployed from its immutable release bundle by runner.py.
+name: wheelhouse-platform
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/bootstrap/postgres-password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./.secrets/postgres-password:/run/bootstrap/postgres-password:ro
+      - ./.secrets/wheelhouse-dev.sql:/docker-entrypoint-initdb.d/10-wheelhouse-dev.sql:ro
+    networks:
+      platform:
+        ipv4_address: 172.30.0.3
+        aliases: [wheelhouse-postgres]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d wheelhouse_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    mem_limit: 512m
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+  ingress:
+    image: traefik:v3.5
+    user: ${WHEELHOUSE_DEPLOY_UID:?Set WHEELHOUSE_DEPLOY_UID}:${WHEELHOUSE_DEPLOY_GID:?Set WHEELHOUSE_DEPLOY_GID}
+    command:
+      - --providers.file.directory=/etc/traefik/routes
+      - --providers.file.watch=true
+      - --entryPoints.private.address=:8080
+      - --entryPoints.private.forwardedHeaders.trustedIPs=127.0.0.1/32,172.30.0.1/32
+      - --ping=true
+      - --ping.entryPoint=private
+      - --log.level=INFO
+    ports:
+      - 127.0.0.1:18080:8080
+    volumes:
+      - ../ingress:/etc/traefik/routes:ro
+    networks:
+      platform:
+        ipv4_address: 172.30.0.2
+    healthcheck:
+      test: [CMD, traefik, healthcheck, --ping]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+networks:
+  platform:
+    name: platform
+    external: true
+volumes:
+  postgres:
