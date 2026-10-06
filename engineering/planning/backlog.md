@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-10-02*
+*Last updated: 2026-10-06*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -10,7 +10,8 @@ Every unbuilt item; top of each group = next. The active version is the newest f
 | Feature | State | Boundary today |
 |---|---|---|
 | Product catalog | shipped v0.3 | Products, their environments and release sources edited in the console; lifecycle; sites and vault namespaces |
-| Integration keys | shipped v0.3 | Scoped, revocable keys; `catalog:read` reads `/api/products`, nothing else |
+| Integration keys | shipped v0.3 | Scoped, revocable keys; `catalog:read` reads `/api/products`; catalog and deployment scopes authorize read-only MCP tools |
+| MCP reads | shipped v0.3 | Private stateless endpoint; project/fleet reads, scoped discovery and immediate revocation |
 | Server inventory | shipped v0.3 | Servers and their vaults edited in the console; credentials stay files on the control host |
 | Environments | shipped v0.3 | `dev`, `test` and `prod` per product on one host; the local server runs all three |
 | Release catalog | shipped v0.3 | Published releases and per-commit builds from approved repositories; a build starts for a commit without one |
@@ -114,8 +115,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| MCP endpoint for Claude and Codex | feature | Tools over the existing handlers; the backend SDK `Ai/Mcp` module is empty today |
-| Build, deploy and log scopes for integration keys | feature | `builds:write`, `deployments:read`, `deployments:write`, `logs:read`; prod keeps the typed target ID |
+| Build, deploy and log tools for agents | feature | `builds:write`, `deployments:write`, `logs:read`; prod keeps the typed target ID; read-only MCP is implemented |
 | Key expiry and rotation reminders | feature | Keys live until revoked today |
 
 ---
@@ -142,7 +142,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Retire the placeholder deployment, domain and secret tables | issue | Deployments return with the outcome follower (Point 12); domains and secrets stay elsewhere |
+| Retire the placeholder deployment, domain and secret tables | issue | Outcome following uses durable runner files; deployment database ownership remains separate; domains and secrets stay elsewhere |
 | Shape-keeping first loads on the remaining pages | feature | Workspace, Deployments, Servers, Products and Activity still show block skeletons on a first load |
 | Rename the runner's `fleet.py` and `rehearse.py` | check | The screen says Servers and local server; both now hold shapes and rig fixtures only |
 | Stamp applied migrations with the product version | issue | `MigrationOptions.Version` keeps the SDK default `v1.0` |

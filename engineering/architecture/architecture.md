@@ -122,19 +122,34 @@ so an integration reads products without deployment concepts. The runner read is
 
 Another program — an app, a script, Claude or Codex — reads Wheelhouse with an integration key: the SDK `ApiKey`
 scheme with the `wh_` marker. Only the secret's SHA-256 and a display prefix are stored; the secret is shown once;
-a key can be revoked and shows its last use. A key grants scopes, `catalog:read` today, and reaches only endpoints
+a key can be revoked and shows its last use. A key grants scopes, `catalog:read` or `deployments:read`, and reaches only endpoints
 whose policy names the key scheme; every other endpoint stays cookie-only through the default-deny fallback, and
 key management is the operator's alone. A key's actions audit as `key:{name}`.
 
-Delegating builds and deploys to an agent follows the same seams, so the MCP server is an adapter, not a rewrite:
+The private `/mcp` endpoint uses the SDK's stateless Streamable HTTP host (`Ai/Mcp`). Every request authenticates
+with a Bearer integration key; browser cookies are excluded. Tool discovery and invocation both enforce scopes.
+`catalog:read` lists projects; `deployments:read` lists servers, targets and deployment history and reads target
+state, readiness, vitals and control-plane health. Tools call existing mediator queries. Their response projections
+omit credential paths, settings paths and secret namespaces. The [MCP runbook](../deployment/mcp.md) owns connection
+details. No initial tool writes, builds, deploys, reconciles, reads logs or reveals secrets.
 
-- Tools map one to one onto the application's mediator requests: products, releases and builds, build start,
-  deploy, target check and log reads.
-- The MCP endpoint authenticates with the same keys; each tool requires a scope — `builds:write`,
-  `deployments:read`, `deployments:write` and `logs:read` join `catalog:read`.
-- Gates stay in the handlers and the runner, so an agent meets them too: prod takes only a release that passed test,
-  and prod still needs its typed target ID in the call.
-- The MCP host module belongs in the backend SDK (`Ai/Mcp`); Wheelhouse registers its tools.
+Future mutation tools require explicit scopes and the same handler/runner gates as the console: prod takes only a
+release that passed test, and bypassing that gate requires its typed target ID. They remain backlog work.
+
+## Deployment outcome observation
+
+The target journal owns a rollout's state. The control plane keeps durable submissions in `jobs/` and their latest
+observations in `observed/`; history and statistics read that projection. A cancellable hosted follower asks the
+existing process gateway for bounded observation passes. It scans all submissions, persists retry timing in
+`following/`, and resumes after restart without launching work. Browser status reads share a nonblocking per-job
+lock; competing reads get the last complete observation. Unique atomic temporary files prevent concurrent writers
+from sharing a temporary pathname. Explicit reconciliation receipts take precedence over earlier observations.
+
+A terminal status without `completedAt` is still being finalized: the worker may be rolling back or cleaning up.
+The follower stops observing only completed outcomes. Explicit status reads can refresh a completed failure after
+direct target-side acknowledgement. Transport failures and unknown receipts do not become rollout failures or
+automatic retries. Missing receipts still require operator recovery. This projection does not introduce deployment
+database ownership or mutation MCP tools.
 
 ## Secrets vaults
 
