@@ -1,6 +1,6 @@
 # Wheelhouse launch readiness — 2026-10-05
 
-*Last updated: 2026-10-06 — Asia/Samarkand*
+*Last updated: 2026-10-08 — Asia/Samarkand*
 
 The first remote deployment is **Wheelhouse dev** on the purchased OVH VPS. Separate test and prod
 environments are deferred. Local startup and adopted MCP authorization tests are verified; remote hosting,
@@ -43,8 +43,9 @@ During this review, the paid order moved from delivery in progress to **Your ord
 The VPS dashboard now reports **Active**, Ubuntu 26.04, Beauharnois in Canada (`os-bhs6`),
 VPS-1 2027, 2 vCPU, 4 GB RAM and 40 GB disk. Its assigned hostname and IPv4/IPv6 addresses
 are available in the provider console; host identifiers are not copied into this public-repository analysis.
-Standard automated backup, no commitment, automatic renewal and the next payment date of November 6
-are shown. The checked order total was $5.35 for one month at the displayed tax.
+Standard automated backup, no commitment and the next payment date of November 6 are shown.
+On October 8 the user switched renewal to manual: renew before November 6, or the VPS lapses.
+The checked order total was $5.35 for one month at the displayed tax.
 Provider status verifies delivery; SSH login, host fingerprint and installed application state remain unverified.
 
 ### Install and persist

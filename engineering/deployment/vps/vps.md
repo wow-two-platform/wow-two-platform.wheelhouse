@@ -1,6 +1,6 @@
 # Wheelhouse dev VPS
 
-*Last updated: 2026-10-06*
+*Last updated: 2026-10-08*
 
 This bootstrap prepares one private `wheelhouse-dev` target on Ubuntu 26.04 amd64.
 GitHub builds the image; the existing [runner](../../codebase/wheelhouse.runner-services/runner.py)
@@ -24,6 +24,8 @@ Review a partial failure before retrying; never delete a populated PostgreSQL vo
 ## Initial administrator access
 
 1. Obtain the delivered SSH username and initial login through the OVH account/delivery instructions.
+   The VPS-delivery email names the administrator `ubuntu`; its credential is separate from the OVH account.
+   OVH's support email address rejects messages; use authenticated support tickets or the phone line.
 2. Compare the SSH host fingerprint against the OVH console before accepting a connection.
    A network `ssh-keyscan` alone is not independent verification. Use a verified `known_hosts` file.
 3. Sign in with the verified identity and preserve provider-console recovery access.
