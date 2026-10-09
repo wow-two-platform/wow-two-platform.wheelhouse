@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-10-06*
+*Last updated: 2026-10-09*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -38,7 +38,8 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 |---|---|---|
 | Prepare a VPS for deployments with one command | feature | Traefik (file provider on `/srv/wheelhouse/ingress`), PostgreSQL, `platform` network, deploy account, protected root, firewall |
 | Wire the first VPS: host, pinned SSH, ingress and domains | feature | Needs the wiring inputs under Open decisions |
-| Deploy ForeverPin to the first VPS and watch its redirect | check | Live editor, create and scan; restart; redirect monitoring and headroom |
+| Add a second VPS for products once Wheelhouse dev runs | check | User decision 2026-10-09: the Wheelhouse host stays control-plane only (no public 80/443); products get their own host |
+| Deploy ForeverPin to the products VPS and watch its redirect | check | Live editor, create and scan; restart; redirect monitoring and headroom |
 | Choose the shared preview domain for dev and test hosts | check | Topology point 25; one wildcard DNS record per environment |
 | Start and stop an environment from Wheelhouse | feature | Topology point 15; `compose stop/start` under the target lock |
 | Encrypted off-provider backups with a restore drill | feature | Product databases, key volumes, Wheelhouse state; decryption keys held off-host |
