@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-10-09*
+*Last updated: 2026-10-13*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -37,13 +37,15 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Item | Type | Notes |
 |---|---|---|
 | Prepare a VPS for deployments with one command | feature | Traefik (file provider on `/srv/wheelhouse/ingress`), PostgreSQL, `platform` network, deploy account, protected root, firewall |
-| Wire the first VPS: host, pinned SSH, ingress and domains | feature | Needs the wiring inputs under Open decisions |
+| Decide how Wheelhouse dev and prod split the product environments | check | Dev runs since 2026-10-13. Options: one prod console for every product environment, or dev for dev/test and prod for prod. Separate databases either way |
+| Accept the hosted console: owner sign-in, restart persistence, authenticated MCP | check | After Wheelhouse prod is live (user 2026-10-13); dev already passed CI's rollout, HTTPS and anonymous-MCP checks |
+| Give Wheelhouse a GitHub token for catalog reads across every org | feature | `Deployment:GitHubTokenFile` is unset, so reads are anonymous and rate-limited; prefer a GitHub App installed on each org |
 | Add a second VPS for products once Wheelhouse dev runs | check | User decision 2026-10-09: the Wheelhouse host stays control-plane only (no public 80/443); products get their own host |
+| Wire the products VPS: host, pinned SSH, public ingress and domains | feature | The control-plane VPS was wired 2026-10-13 through `vps/vps.md`; reuse it with public ingress |
 | Deploy ForeverPin to the products VPS and watch its redirect | check | Live editor, create and scan; restart; redirect monitoring and headroom |
 | Choose the shared preview domain for dev and test hosts | check | Topology point 25; one wildcard DNS record per environment |
 | Start and stop an environment from Wheelhouse | feature | Topology point 15; `compose stop/start` under the target lock |
-| Encrypted off-provider backups with a restore drill | feature | Product databases, key volumes, Wheelhouse state; decryption keys held off-host |
-| Host Wheelhouse privately and let it deploy itself | feature | CI and its release workflow exist; needs a control host (completeness Point 7) |
+| Encrypted off-provider backups with a restore drill | feature | Product databases, key volumes, Wheelhouse state; decryption keys held off-host. OVH's daily VPS backup is the only copy today. Multi-cloud replication and failover are on the table (user 2026-10-13) |
 | Retire `rehearse.py console` for the self-deployed console | check | `rehearse.py self` deploys Wheelhouse to `wheelhouse-dev`; it needs an OAuth app and the inventory mount |
 
 ---

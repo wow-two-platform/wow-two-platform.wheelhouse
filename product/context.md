@@ -1,6 +1,6 @@
 # Wheelhouse — Context
 
-*Last updated: 2026-10-02*
+*Last updated: 2026-10-13*
 
 ## Current state
 
@@ -16,7 +16,11 @@ Every product runs `dev`, `test` and `prod` on one host; dev takes any commit's 
 Each rollout records its steps, requests its sites through the ingress and removes images old releases alone used.
 Every operator action lands in a hash-chained audit trail. CI tests every push; Wheelhouse releases through the shared pipeline.
 The local server (SSH target, Traefik, vault) exercises all of it end to end at `*.localhost:18080`.
-Live VPS wiring and a Wheelhouse host remain open.
+Since 2026-10-13 Wheelhouse dev runs on the OVH control-plane VPS, reachable only inside the operator's tailnet
+over Tailscale Serve HTTPS. Every `main` push tests, publishes and deploys it; the first run
+([38422336103](https://github.com/wow-two-platform/wow-two-platform.wheelhouse/actions/runs/38422336103)) verified
+the rollout, trusted HTTPS and anonymous MCP rejection. The public address answers only key-based SSH.
+Owner sign-in, restart persistence, authenticated MCP and off-provider backups remain open.
 
 The essential milestone closes when a published ForeverPin release runs on a reviewed VPS with a working public
 redirect and editor, real provider callbacks, persisted codes and cookie keys, and a verified backup.
@@ -35,6 +39,8 @@ redirect and editor, real provider callbacks, persisted codes and cookie keys, a
 - All environments of a product share one host; Compose projects, networks, databases and hostnames separate them.
 - Products describe services, builds and sites in one `deploy.yml`; a service keeps the version it last changed in.
 - The audit trail records actions, never values; its chain shows edits, not truncation of the newest entries.
+- Wheelhouse stays private: a tailnet with Tailscale Serve HTTPS, no public domain or port. Decided 2026-10-09.
+- The control-plane VPS hosts only platform apps; products get a separate VPS. Decided 2026-10-09.
 
 Contracts and boundaries: [architecture](../engineering/architecture/architecture.md). Unbuilt work and open
 decisions: [backlog](../engineering/planning/backlog.md).

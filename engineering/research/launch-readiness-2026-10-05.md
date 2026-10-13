@@ -1,11 +1,14 @@
 # Wheelhouse launch readiness — 2026-10-05
 
-*Last updated: 2026-10-08 — Asia/Samarkand*
+*Last updated: 2026-10-13 — Asia/Samarkand*
 
 The first remote deployment is **Wheelhouse dev** on the purchased OVH VPS. Separate test and prod
 environments are deferred. Local startup and adopted MCP authorization tests are verified; remote hosting,
 real OAuth and an authenticated external MCP client remain unverified. OVH has delivered the VPS and reports
 it Active; authenticated SSH and the first live dev rollout remain open. Public ForeverPin launch remains separate.
+
+**Update 2026-10-13:** Wheelhouse dev is deployed and reachable inside the tailnet; current state lives in
+[product context](../../product/context.md) and the [backlog](../planning/backlog.md) § Hosting.
 
 This is a dated readiness analysis. The [backlog](../planning/backlog.md) and
 [v0.3 track](../planning/version-track/v0.3/v0.3.md) remain the capability and acceptance records.
