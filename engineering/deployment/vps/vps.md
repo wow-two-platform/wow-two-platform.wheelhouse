@@ -1,6 +1,6 @@
 # Wheelhouse dev VPS
 
-*Last updated: 2026-10-09*
+*Last updated: 2026-10-13*
 
 This bootstrap prepares one private `wheelhouse-dev` target on Ubuntu 26.04 amd64.
 GitHub builds the image; the existing [runner](../../codebase/wheelhouse.runner-services/runner.py)
@@ -27,6 +27,8 @@ Review a partial failure before retrying; never delete a populated PostgreSQL vo
    The VPS-delivery email names the administrator `ubuntu`; its credential is separate from the OVH account.
    The account is in OVHcloud's Canada region: sign in at <https://manager.ca.ovhcloud.com/>.
    The EU sign-in (`auth.eu.ovhcloud.com`) rejects the same credentials as an invalid account or password.
+   `www.ovh.com/manager` redirects to the EU portal; bookmark the
+   [Canada sign-in](https://auth.ca.ovhcloud.com/signin/?onsuccess=https%3A%2F%2Fmanager.ca.ovhcloud.com%2F%23%2Fhub%2F).
    OVH's support email address rejects messages; use authenticated support tickets or the phone line.
 2. Compare the SSH host fingerprint against the OVH console before accepting a connection.
    A network `ssh-keyscan` alone is not independent verification. Use a verified `known_hosts` file.
