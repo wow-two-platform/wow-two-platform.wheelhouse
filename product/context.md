@@ -50,6 +50,9 @@ redirect and editor, real provider callbacks, persisted codes and cookie keys, a
   private HTTPS port 443, dev on 8443. The sample app is `wow-two-platform.wheelhouse-canary`. Decided 2026-10-14.
 - The canary lives permanently on the control-plane VPS beside both consoles, so the platform and its test app are
   always ready. Decided 2026-10-14.
+- Only Wheelhouse prod deploys products, in every environment; dev never holds the products host's key. A flow a
+  product needs tested is first added to the canary and exercised from dev. The canary stays tailnet-only; the
+  control-plane host opens no public port. Decided 2026-10-15.
 - A push that publishes no new release verifies the running dev release instead of restarting it.
 - A product's name, description, homepage and per-service text are a manifest in its own repository
   (`product/product.json`); the database keeps a cache keyed by the commit it was read from, replaced only by a newer
