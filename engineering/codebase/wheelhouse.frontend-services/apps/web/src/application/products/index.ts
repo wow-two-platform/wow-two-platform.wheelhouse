@@ -23,6 +23,11 @@ export function useProducts() {
     ) => productsApi.updateLifecycle(slug, value, signal),
     invalidates: () => [ProductKeys.list],
   });
+  const refreshIdentity = useAppMutation({
+    mutationFn: (slug: string, { signal }) => productsApi.refreshIdentity(slug, signal),
+    invalidates: () => [ProductKeys.list],
+    meta: { suppressGlobalError: true },
+  });
   const create = useAppMutation({
     mutationFn: (body: SaveProductRequest, { signal }) => productsApi.createProduct(body, signal),
     invalidates,
@@ -51,6 +56,7 @@ export function useProducts() {
     },
     setLifecycle: (slug: string, value: ProductLifecycle) =>
       lifecycle.mutateAsync({ slug, value }),
+    refreshIdentity: (slug: string) => refreshIdentity.mutateAsync(slug),
     create: (body: SaveProductRequest) => create.mutateAsync(body),
     update: (slug: string, body: SaveProductRequest) => update.mutateAsync({ slug, body }),
     remove: (slug: string) => remove.mutateAsync(slug),

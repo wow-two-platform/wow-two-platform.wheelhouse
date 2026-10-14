@@ -3,17 +3,25 @@ using Wheelhouse.Domain.Products.Enums;
 namespace Wheelhouse.Application.Products.Models;
 
 /// <summary>Represents a product as integrations read it: identity, lifecycle, release source and where each
-/// environment is reached — no targets, servers or deployment state.</summary>
+/// environment is reached — no targets, servers or deployment state. The identity is the cached manifest of the
+/// product's repository when it has a valid one.</summary>
 public sealed record ProductDto
 {
     /// <summary>Gets the product's identifier.</summary>
     public required string Slug { get; init; }
 
-    /// <summary>Gets the display name.</summary>
+    /// <summary>Gets the display name, from the product's manifest when it has a valid one, else from its own row.</summary>
     public required string Name { get; init; }
 
-    /// <summary>Gets one line on what the product does.</summary>
+    /// <summary>Gets one line on what the product does, from the same source as the name.</summary>
     public required string Description { get; init; }
+
+    /// <summary>Gets the product's public address, or <c>null</c> when its manifest gives none or it has no manifest.</summary>
+    public string? Homepage { get; init; }
+
+    /// <summary>Gets where the name, description and homepage come from, and what the repository says about the
+    /// product's services.</summary>
+    public required ProductIdentityDto Identity { get; init; }
 
     /// <summary>Gets where the product stands in the portfolio.</summary>
     public required ProductLifecycle Lifecycle { get; init; }

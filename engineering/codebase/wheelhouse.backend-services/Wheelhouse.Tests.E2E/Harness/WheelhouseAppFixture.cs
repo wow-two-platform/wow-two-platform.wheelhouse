@@ -11,7 +11,7 @@ namespace Wheelhouse.Tests.E2E.Harness;
 /// Owns the single in-process Wheelhouse.Api host the whole E2E run drives, backed by an ephemeral Postgres
 /// container. The container + between-test reset are owned by the SDK <see cref="PostgresFixture"/> (Testcontainers
 /// + Respawn); this fixture stays the only Wheelhouse-specific piece — it knows the connection-string key, the
-/// test-auth + runner/vault/icon stub wiring, and composes the host on top of the SDK <see cref="WebApiTestHost{TEntryPoint}"/>.
+/// test-auth + runner/vault/icon/manifest stub wiring, and composes the host on top of the SDK <see cref="WebApiTestHost{TEntryPoint}"/>.
 /// </summary>
 /// <remarks>
 /// Lifecycle: start the Postgres fixture → build the host (its <c>InitializeAsync()</c> runs the bespoke SQL migrator,
@@ -40,6 +40,9 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
 
     /// <summary>The shared icon stub — add files with <see cref="StubProductIconSource.Add"/> to serve a repository's icons.</summary>
     public StubProductIconSource ProductIcons { get; } = new();
+
+    /// <summary>The shared manifest stub — push a commit with <see cref="StubProductManifestSource.Push(string, string, string)"/> to give a repository its manifest.</summary>
+    public StubProductManifestSource ProductManifests { get; } = new();
 
     /// <summary>A fresh anonymous client (no admin header) — protected endpoints return 401.</summary>
     public HttpClient CreateAnonymousClient() => Host.CreateClient();
@@ -88,6 +91,10 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
                 // Product icons come from the stub, never from GitHub.
                 services.RemoveAll<Wheelhouse.Application.Abstractions.IProductIconSource>();
                 services.AddSingleton<Wheelhouse.Application.Abstractions.IProductIconSource>(ProductIcons);
+
+                // Product manifests come from the stub too; a repository nobody pushed to has none and cannot be read.
+                services.RemoveAll<Wheelhouse.Application.Abstractions.IProductManifestSource>();
+                services.AddSingleton<Wheelhouse.Application.Abstractions.IProductManifestSource>(ProductManifests);
             },
         };
 
@@ -129,6 +136,7 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     {
         Deployments.StartRefusal = null;
         ProductIcons.Clear();
+        ProductManifests.Clear();
     }
 }
 

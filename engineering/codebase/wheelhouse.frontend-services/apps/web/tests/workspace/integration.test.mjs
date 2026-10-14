@@ -73,6 +73,8 @@ const product = {
   lifecycle: "building",
   repository: { name: "owner/repository", url: "https://github.com/owner/repository", defaultBranch: "main" },
   release: { asset: "test-release.tar.gz", workflow: null, images: [{ service: "api", image: "ghcr.io/owner/test/api" }] },
+  homepage: null,
+  identity: { source: "record", commit: null, problem: null, services: [] },
   iconUrl: "/api/products/test/icon",
   environments: [
     { name: "dev", sites: [{ name: "app", url: "https://dev.example.com", exposure: "public" }],

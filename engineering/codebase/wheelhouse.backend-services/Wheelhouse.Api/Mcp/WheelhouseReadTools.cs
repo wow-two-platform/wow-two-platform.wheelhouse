@@ -33,7 +33,7 @@ public sealed partial class WheelhouseReadTools(ISender sender, WheelhouseDbCont
         var products = Read(await sender.SendAsync(new ProductGetAllQuery(), ct));
         return products.Select(product => new
         {
-            product.Slug, product.Name, product.Description, product.Lifecycle, product.Repository, product.Release,
+            product.Slug, product.Name, product.Description, product.Homepage, product.Lifecycle, product.Repository, product.Release,
             Environments = product.Environments.Select(environment => new { environment.Name, environment.Sites })
         }).ToArray();
     }

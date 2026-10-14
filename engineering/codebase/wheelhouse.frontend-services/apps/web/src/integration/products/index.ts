@@ -1,11 +1,20 @@
 import { z } from "zod";
-import { ProductLifecycle, type Product, type SaveProductRequest } from "@/domain/products";
+import { ProductIdentitySource, ProductLifecycle, type Product, type SaveProductRequest } from "@/domain/products";
 import { requestData, requestEmpty } from "@/integration/common";
 
 const ProductSchema = z.object({
   slug: z.string(),
   name: z.string(),
   description: z.string(),
+  homepage: z.string().nullable(),
+  identity: z.object({
+    source: z.enum(ProductIdentitySource),
+    commit: z.string().nullable(),
+    problem: z.string().nullable(),
+    services: z.array(
+      z.object({ service: z.string(), name: z.string().nullable(), description: z.string().nullable() }),
+    ),
+  }),
   lifecycle: z.enum(ProductLifecycle),
   repository: z.object({
     name: z.string(),
@@ -47,6 +56,11 @@ export const productsApi = {
     }),
   deleteProduct: (slug: string, signal?: AbortSignal) =>
     requestEmpty(`/api/products/${encodeURIComponent(slug)}`, { method: "DELETE", signal, action: "product" }),
+  /** Reads the product's manifest again now; the host checks the branch head without waiting for the remembered one. */
+  refreshIdentity: (slug: string, signal?: AbortSignal) =>
+    requestData<Product>(`/api/products/${encodeURIComponent(slug)}/identity/refresh`, ProductSchema, {
+      method: "POST", signal, action: "refresh",
+    }),
   updateLifecycle: (
     slug: string,
     lifecycle: ProductLifecycle,

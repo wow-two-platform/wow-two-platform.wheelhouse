@@ -41,6 +41,8 @@ public sealed record VaultResponse(string Slug, string Name, string Server, stri
 /// <param name="Repository">Its source repository.</param>
 /// <param name="IconUrl">The path of its icon.</param>
 /// <param name="Environments">Its environments, dev to prod.</param>
+/// <param name="Homepage">Its public address, when its manifest gives one.</param>
+/// <param name="Identity">Where its name, description and homepage come from.</param>
 public sealed record ProductResponse(
     string Slug,
     string Name,
@@ -48,7 +50,26 @@ public sealed record ProductResponse(
     string Lifecycle,
     ProductRepositoryResponse Repository,
     string IconUrl,
-    IReadOnlyList<ProductEnvironmentResponse> Environments);
+    IReadOnlyList<ProductEnvironmentResponse> Environments,
+    string? Homepage = null,
+    ProductIdentityResponse? Identity = null);
+
+/// <summary>Response shape for where a catalog product's identity text comes from.</summary>
+/// <param name="Source"><c>manifest</c> or <c>record</c> (string-serialized enum).</param>
+/// <param name="Commit">The commit the manifest was read from.</param>
+/// <param name="Problem">Why the repository's newest manifest is ignored.</param>
+/// <param name="Services">The name and description the manifest gives each service.</param>
+public sealed record ProductIdentityResponse(
+    string Source,
+    string? Commit,
+    string? Problem,
+    IReadOnlyList<ProductServiceResponse> Services);
+
+/// <summary>Response shape for the name and description a manifest gives one service.</summary>
+/// <param name="Service">The service's key in <c>deploy.yml</c>.</param>
+/// <param name="Name">Its display name.</param>
+/// <param name="Description">What it does.</param>
+public sealed record ProductServiceResponse(string Service, string? Name, string? Description);
 
 /// <summary>Response shape for a catalog product's repository.</summary>
 /// <param name="Name">The repository, as <c>owner/name</c>.</param>

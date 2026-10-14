@@ -52,6 +52,7 @@ public static class HostConfigurationExtensions
             o => o.ConnectionStringConfigKey = WheelhouseDatabase.ConnectionStringConfigKey);
 
         builder.Services.AddScoped<IProductsRepository, ProductsRepository>();
+        builder.Services.AddScoped<IProductManifestsRepository, EfProductManifests>();
         builder.Services.AddScoped<IServersRepository, ServersRepository>();
         builder.Services.AddScoped<ITargetsRepository, TargetsRepository>();
         builder.Services.AddScoped<IVaultsRepository, VaultsRepository>();
@@ -66,7 +67,8 @@ public static class HostConfigurationExtensions
     }
 
     /// <summary>Registers the infrastructure layer — the SDK time provider, the runner gateway, the inventory snapshot and
-    /// its startup export, the vault client, and the OAuth-token source the icon reads use.</summary>
+    /// its startup export, the vault client, the OAuth-token source and the GitHub repository reader the icon and
+    /// manifest reads share.</summary>
     public static WebApplicationBuilder AddInfrastructureLayer(this WebApplicationBuilder builder)
     {
         builder.Services.AddTimeProviders();
@@ -93,14 +95,16 @@ public static class HostConfigurationExtensions
         // The integration clients read the signed-in admin's OAuth token off the current request.
         builder.Services.AddHttpContextAccessTokenProvider();
         builder.Services.AddMemoryCache();
-        builder.Services.AddHttpClient(Wheelhouse.Infrastructure.Products.GitHubProductIconSource.ClientName, client =>
+        builder.Services.AddHttpClient(Wheelhouse.Infrastructure.Products.GitHubRepositoryReader.ClientName, client =>
         {
             client.BaseAddress = new Uri("https://api.github.com/");
             client.Timeout = TimeSpan.FromSeconds(10);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("Wheelhouse");
             client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
         });
+        builder.Services.AddScoped<Wheelhouse.Infrastructure.Products.GitHubRepositoryReader>();
         builder.Services.AddScoped<IProductIconSource, Wheelhouse.Infrastructure.Products.GitHubProductIconSource>();
+        builder.Services.AddScoped<IProductManifestSource, Wheelhouse.Infrastructure.Products.GitHubProductManifestSource>();
 
         return builder;
     }
@@ -114,6 +118,7 @@ public static class HostConfigurationExtensions
         builder.Services.AddMediatorInterceptor(typeof(Wheelhouse.Application.Audit.Interceptors.AuditRecordingInterceptor<,>));
         builder.Services.AddMediatorInterceptor(typeof(Wheelhouse.Application.Inventory.Interceptors.InventoryExportingInterceptor<,>));
         builder.Services.AddMediatorValidatingInterceptor();
+        builder.Services.AddScoped<Wheelhouse.Application.Products.Services.ProductIdentityService>();
         builder.Services.AddScoped<Wheelhouse.Application.Products.Services.ProductsProjectionService>();
         builder.Services.AddScoped<Wheelhouse.Application.Targets.Services.TargetsProjectionService>();
         builder.Services.AddHttpContextAccessor();

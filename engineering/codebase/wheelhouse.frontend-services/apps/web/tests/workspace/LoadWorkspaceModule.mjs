@@ -15,6 +15,7 @@ export function product(overrides = {}) {
   return { slug: 'foreverpin', name: 'ForeverPin', description: 'Styled QR codes.', lifecycle: 'building',
     repository: { name: 'sulton-max/10x-venture-forever-pin', url: 'https://github.com/sulton-max/10x-venture-forever-pin',
       defaultBranch: 'main' },
+    homepage: null, identity: { source: 'record', commit: null, problem: null, services: [] },
     iconUrl: '/api/products/foreverpin/icon', environments: [], ...overrides };
 }
 

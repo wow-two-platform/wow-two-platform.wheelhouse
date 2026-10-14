@@ -106,6 +106,19 @@ public sealed class ProductsController(ISender sender, IErrorHttpStatusCodeMappe
             ok => Ok(ApiResponse<ProductDto>.Ok(ok.Data)),
             fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
 
+    /// <summary>Reads the product's manifest again now: checks the repository's branch head without waiting for the
+    /// remembered one, and re-reads <c>product/product.json</c> when the head is a commit the cache has not seen.
+    /// Answers with the product; 503 when the branch cannot be read from GitHub.</summary>
+    [HttpPost("{slug}/identity/refresh")]
+    [RequireAction("refresh")]
+    [ProducesResponseType<ApiResponse<ProductDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> RefreshIdentity([RegularExpression(Slug)] string slug, CancellationToken ct) =>
+        (await sender.SendAsync(new ProductIdentityRefreshCommand { Slug = slug }, ct)).Match<IActionResult>(
+            ok => Ok(ApiResponse<ProductDto>.Ok(ok.Data)),
+            fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+
     /// <summary>Removes a product no target runs any more.</summary>
     [HttpDelete("{slug}")]
     [RequireAction("product")]

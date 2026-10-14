@@ -28,6 +28,9 @@ public sealed class WheelhouseDbContext(DbContextOptions<WheelhouseDbContext> op
     /// <summary>Gets the portfolio's products.</summary>
     public DbSet<ProductEntity> Products => Set<ProductEntity>();
 
+    /// <summary>Gets the cached manifests of the products' repositories — one row per product.</summary>
+    public DbSet<ProductManifestEntity> ProductManifests => Set<ProductManifestEntity>();
+
     /// <summary>Gets the hosts Wheelhouse deploys to.</summary>
     public DbSet<ServerEntity> Servers => Set<ServerEntity>();
 

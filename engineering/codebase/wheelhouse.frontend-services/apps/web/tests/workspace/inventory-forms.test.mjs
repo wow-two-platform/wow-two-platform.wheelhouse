@@ -32,6 +32,8 @@ const product = {
   lifecycle: "building",
   repository: { name: "owner/forever-pin", url: "https://github.com/owner/forever-pin", defaultBranch: "main" },
   release: { asset: "foreverpin-release.tar.gz", workflow: null, images: [{ service: "api", image: "ghcr.io/owner/api" }] },
+  homepage: null,
+  identity: { source: "record", commit: null, problem: null, services: [] },
   iconUrl: "/api/products/foreverpin/icon",
   environments: [],
 };

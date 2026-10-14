@@ -1,11 +1,10 @@
-using System.Net;
 using System.Text;
 using AwesomeAssertions;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Wheelhouse.Application.Products;
 using Wheelhouse.Infrastructure.Products;
-using WoW.Two.Sdk.Backend.Beta.Integrations;
+using Wheelhouse.Tests.Unit.Fakes;
 
 namespace Wheelhouse.Tests.Unit.Products;
 
@@ -26,8 +25,8 @@ public sealed class GitHubProductIconSourceTests
     public GitHubProductIconSourceTests()
     {
         _github.Raw[Head] = Encoding.ASCII.GetBytes(First);
-        _source = new GitHubProductIconSource(
-            new SingleClientFactory(_github), new FixedToken("token"), _cache, NullLogger<GitHubProductIconSource>.Instance);
+        _source = new GitHubProductIconSource(new GitHubRepositoryReader(
+            new SingleClientFactory(_github), new FixedToken("token"), _cache, NullLogger<GitHubRepositoryReader>.Instance));
     }
 
     private static string File(string path, string commit) => $"repos/owner/pilot/contents/{path}?ref={commit}";
@@ -86,7 +85,7 @@ public sealed class GitHubProductIconSourceTests
 
         _github.Raw[Head] = Encoding.ASCII.GetBytes(Second);
         // The head entry lives HeadFor; removing it stands in for that expiry.
-        _cache.Remove($"product-icon-head:{Repository}@main");
+        _cache.Remove($"github-head:{Repository}@main");
         var paths = await _source.ListAsync(Repository, "main", CancellationToken.None);
 
         paths.Should().BeEquivalentTo("product/brand/icons/short-colored-dark.png");
@@ -133,41 +132,5 @@ public sealed class GitHubProductIconSourceTests
         var icon = await _source.ReadAsync(Repository, "main", "product/brand/icons/short-colored-dark.png", CancellationToken.None);
 
         icon.Should().BeNull();
-    }
-
-    private sealed class FixedToken(string token) : IAccessTokenService
-    {
-        public Task<string?> GetAccessTokenAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>(token);
-    }
-
-    private sealed class SingleClientFactory(HttpMessageHandler handler) : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false)
-        {
-            BaseAddress = new Uri("https://api.github.com/"),
-        };
-    }
-
-    private sealed class ScriptedGitHub : HttpMessageHandler
-    {
-        public Dictionary<string, string> Json { get; } = [];
-
-        public Dictionary<string, byte[]> Raw { get; } = [];
-
-        public List<string> Requests { get; } = [];
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            var key = request.RequestUri!.PathAndQuery.TrimStart('/');
-            Requests.Add(key);
-            if (Json.TryGetValue(key, out var json))
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(json, Encoding.UTF8, "application/json"),
-                });
-            return Task.FromResult(Raw.TryGetValue(key, out var bytes)
-                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) }
-                : new HttpResponseMessage(HttpStatusCode.NotFound));
-        }
     }
 }

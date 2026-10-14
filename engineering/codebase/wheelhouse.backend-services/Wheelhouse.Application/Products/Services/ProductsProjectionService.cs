@@ -5,15 +5,25 @@ using Wheelhouse.Domain.Products.Entities;
 
 namespace Wheelhouse.Application.Products.Services;
 
-/// <summary>Provides products as integrations read them, joined with their environments, the vault namespace each
-/// environment's settings belong in, and the sites its newest rollout published.</summary>
-public sealed class ProductsProjectionService(ITargetsRepository targets, IVaultsRepository vaults, ITargetSites sites)
+/// <summary>Provides products as integrations read them, joined with their identity, their environments, the vault
+/// namespace each environment's settings belong in, and the sites its newest rollout published.</summary>
+public sealed class ProductsProjectionService(
+    ITargetsRepository targets, IVaultsRepository vaults, ITargetSites sites, ProductIdentityService identities)
 {
-    /// <summary>Projects products for integrations.</summary>
+    /// <summary>Projects products for integrations, refreshing the identity of any whose branch head moved.</summary>
     /// <param name="products">The stored products, in the order to return them.</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The products integrations read.</returns>
-    public async Task<IReadOnlyList<ProductDto>> ProjectAsync(IReadOnlyList<ProductEntity> products, CancellationToken ct)
+    public async Task<IReadOnlyList<ProductDto>> ProjectAsync(IReadOnlyList<ProductEntity> products, CancellationToken ct) =>
+        await ProjectAsync(products, await identities.ResolveAsync(products, ct), ct);
+
+    /// <summary>Projects products for integrations with identities already resolved.</summary>
+    /// <param name="products">The stored products, in the order to return them.</param>
+    /// <param name="resolved">Each product's identity, keyed by product identifier.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The products integrations read.</returns>
+    public async Task<IReadOnlyList<ProductDto>> ProjectAsync(
+        IReadOnlyList<ProductEntity> products, IReadOnlyDictionary<Guid, ProductIdentity> resolved, CancellationToken ct)
     {
         var allTargets = await targets.GetAllAsync(ct);
         // A server's first vault, by slug, holds its products' settings.
@@ -24,7 +34,7 @@ public sealed class ProductsProjectionService(ITargetsRepository targets, IVault
         return
         [
             .. products.Select(product => ProductMapper.Map(
-                product, allTargets.Where(target => target.ProductId == product.Id), vaultByServer, published)),
+                product, resolved[product.Id], allTargets.Where(target => target.ProductId == product.Id), vaultByServer, published)),
         ];
     }
 
@@ -34,4 +44,12 @@ public sealed class ProductsProjectionService(ITargetsRepository targets, IVault
     /// <returns>The product integrations read.</returns>
     public async Task<ProductDto> ProjectAsync(ProductEntity product, CancellationToken ct) =>
         (await ProjectAsync([product], ct))[0];
+
+    /// <summary>Projects one product for integrations with its identity already resolved.</summary>
+    /// <param name="product">The stored product.</param>
+    /// <param name="identity">What the product is called and described as.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The product integrations read.</returns>
+    public async Task<ProductDto> ProjectAsync(ProductEntity product, ProductIdentity identity, CancellationToken ct) =>
+        (await ProjectAsync([product], new Dictionary<Guid, ProductIdentity> { [product.Id] = identity }, ct))[0];
 }

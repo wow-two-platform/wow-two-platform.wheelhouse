@@ -24,9 +24,17 @@ import {
   SelectPickerValue,
 } from "@wow-two-beta/ui-vue/presentation/forms";
 import { useProducts } from "@/application/products";
+import { failureReason } from "@/integration/common";
+import { RefreshButton } from "@/presentation/common/components";
 import { useServers } from "@/application/servers";
 import { useTargets } from "@/application/targets";
-import { ProductLifecycle } from "@/domain/products";
+import {
+  ProductLifecycle,
+  homepageLinkOf,
+  identityProblemOf,
+  serviceIdentitiesOf,
+  shortCommitOf,
+} from "@/domain/products";
 import type { InventoryTarget } from "@/domain/targets";
 import RepositoryActions from "./RepositoryActions.vue";
 import ProductIcon from "./ProductIcon.vue";
@@ -56,6 +64,8 @@ const search = ref("");
 const selectedSlug = ref<string | null>(null);
 const saving = ref(false);
 const saveError = ref<string | null>(null);
+const refreshing = ref(false);
+const refreshError = ref<string | null>(null);
 const visibleProducts = computed(() => {
   const term = search.value.trim().toLocaleLowerCase();
   return products.value.filter((product) =>
@@ -79,9 +89,10 @@ watch(
   },
   { immediate: true },
 );
-/** Clears a stale save failure when the inspected product changes. */
+/** Clears a stale save or refresh failure when the inspected product changes. */
 watch(selectedSlug, () => {
   saveError.value = null;
+  refreshError.value = null;
 });
 const targets = useTargets(selectedSlug);
 const productForm = computed(() => props.creating || editing.value);
@@ -99,6 +110,20 @@ function closeProductForm(open: boolean): void {
 /** Looks up a lifecycle's label and badge. @internal */
 function lifecycle(value: ProductLifecycle) {
   return Lifecycles.find((item) => item.value === value) ?? Lifecycles[1];
+}
+
+/** Reads the product's manifest again now; a repository GitHub cannot be read for leaves the cached copy and says so. */
+async function refreshIdentity(): Promise<void> {
+  const product = selected.value;
+  if (!product || refreshing.value) return;
+  refreshing.value = true;
+  refreshError.value = null;
+  try {
+    const result = await productOperations.refreshIdentity(product.slug);
+    if (!result.ok) refreshError.value = failureReason(result.failure);
+  } finally {
+    refreshing.value = false;
+  }
 }
 
 /** Records the chosen lifecycle once the server accepts it. */
@@ -240,6 +265,14 @@ async function changeLifecycle(value: string | null): Promise<void> {
             <p class="mt-2 max-w-prose text-sm text-muted-foreground">
               {{ selected.description }}
             </p>
+            <a
+              v-if="homepageLinkOf(selected)"
+              :href="homepageLinkOf(selected)?.href"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline"
+              >{{ homepageLinkOf(selected)?.host }}<ExternalLink :size="12" class="shrink-0"
+            /></a>
             <p
               class="mt-2 flex items-center gap-1 font-mono text-xs text-muted-foreground"
             >
@@ -252,7 +285,13 @@ async function changeLifecycle(value: string | null): Promise<void> {
               />
             </p>
           </div>
-          <div class="flex w-56 items-start gap-2">
+          <div class="flex w-64 items-start gap-2">
+            <RefreshButton
+              icon-only
+              label="Refresh from repository"
+              :refreshing="refreshing"
+              @refresh="refreshIdentity"
+            />
             <Button variant="outline" tone="neutral" size="sm" aria-label="Edit product" @click="editing = true">
               <Pencil :size="14" />
             </Button>
@@ -284,6 +323,10 @@ async function changeLifecycle(value: string | null): Promise<void> {
             </div>
           </div>
         </div>
+        <div v-if="identityProblemOf(selected) || refreshError" class="mt-4 space-y-2">
+          <Alert v-if="identityProblemOf(selected)" severity="warning" :description="identityProblemOf(selected) ?? ''" />
+          <p v-if="refreshError" role="alert" class="text-xs text-destructive">{{ refreshError }}</p>
+        </div>
         <dl class="my-6 grid gap-x-8 gap-y-6 text-sm">
           <div class="min-w-0">
             <dt class="mb-2 text-xs text-muted-foreground">
@@ -294,6 +337,33 @@ async function changeLifecycle(value: string | null): Promise<void> {
                 :repository="selected.repository.name"
                 :runner-product="selected.slug"
               />
+            </dd>
+          </div>
+          <div v-if="serviceIdentitiesOf(selected).length" class="min-w-0">
+            <dt class="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+              Services
+              <span
+                v-if="shortCommitOf(selected.identity.commit)"
+                class="font-mono"
+                :title="`${selected.repository.defaultBranch} at ${selected.identity.commit}`"
+                >{{ shortCommitOf(selected.identity.commit) }}</span
+              >
+            </dt>
+            <dd>
+              <ul class="divide-y divide-border rounded-xl border border-border">
+                <li
+                  v-for="service in serviceIdentitiesOf(selected)"
+                  :key="service.service"
+                  class="flex items-start gap-3 p-3"
+                >
+                  <ProductIcon :product-slug="selected.slug" :service="service.service" :name="service.label" size="sm" />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate text-sm font-medium">{{ service.label }}</span>
+                    <span v-if="service.description" class="block text-xs text-muted-foreground">{{ service.description }}</span>
+                  </span>
+                  <span class="font-mono text-xs text-muted-foreground">{{ service.service }}</span>
+                </li>
+              </ul>
             </dd>
           </div>
           <div class="min-w-0">

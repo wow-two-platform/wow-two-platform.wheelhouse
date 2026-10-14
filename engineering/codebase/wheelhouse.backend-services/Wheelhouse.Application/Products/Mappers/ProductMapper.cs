@@ -8,21 +8,38 @@ namespace Wheelhouse.Application.Products.Mappers;
 /// <summary>Maps a stored product and its targets to the product integrations read, and a release source both ways.</summary>
 internal static class ProductMapper
 {
-    /// <summary>Maps a product, its targets, each server's vault and the published sites to the product's projection.</summary>
+    /// <summary>Maps a product, its identity, its targets, each server's vault and the published sites to the product's
+    /// projection.</summary>
     /// <param name="product">The stored product.</param>
+    /// <param name="identity">What the product is called and described as.</param>
     /// <param name="targets">The product's targets.</param>
     /// <param name="vaults">Each server's vault slug, by server identifier.</param>
     /// <param name="sites">Each target's published sites, by target slug.</param>
     /// <returns>The product integrations read.</returns>
     public static ProductDto Map(
         ProductEntity product,
+        ProductIdentity identity,
         IEnumerable<TargetEntity> targets,
         IReadOnlyDictionary<Guid, string> vaults,
         IReadOnlyDictionary<string, IReadOnlyList<ProductSiteModel>> sites) => new()
     {
         Slug = product.Slug,
-        Name = product.Name,
-        Description = product.Description,
+        Name = identity.Name,
+        Description = identity.Description,
+        Homepage = identity.Homepage,
+        Identity = new ProductIdentityDto
+        {
+            Source = identity.Source,
+            Commit = identity.Commit,
+            Problem = identity.Problem,
+            Services =
+            [
+                .. identity.Services.Select(service => new ProductServiceDto
+                {
+                    Service = service.Service, Name = service.Name, Description = service.Description,
+                }),
+            ],
+        },
         Lifecycle = product.Lifecycle,
         Repository = new ProductRepositoryDto
         {

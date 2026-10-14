@@ -38,6 +38,21 @@ public sealed class McpE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBas
     }
 
     [Fact]
+    public async Task CatalogKey_ListsTheManifestIdentity_WhenARepositoryCarriesOne()
+    {
+        Fixture.ProductManifests.Push(
+            "sulton-max/10x-venture-forever-pin",
+            "{ \"manifest\": 1, \"name\": \"Forever Pin\", \"description\": \"From the repository.\", \"homepage\": \"https://foreverpin.example\" }");
+        var key = await CreateKeyAsync("catalog:read");
+        using var client = KeyClient(key.Secret);
+
+        using var projects = await CallAsync(client, "list_projects");
+
+        projects.RootElement.GetProperty("result").ToString()
+            .Should().Contain("Forever Pin").And.Contain("From the repository.").And.Contain("https://foreverpin.example");
+    }
+
+    [Fact]
     public async Task FleetKey_OnlyDiscoversReadOnlyFleetTools()
     {
         var key = await CreateKeyAsync("deployments:read");

@@ -12,7 +12,7 @@ export interface ProductFormModalProps {
 </script>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { Field, SwitchField, TextAreaInput, TextInput } from "@wow-two-beta/ui-vue/presentation/forms";
@@ -31,6 +31,7 @@ import {
   productFormSchema,
   productRequestOf,
 } from "@/application/products/ProductForms";
+import { identityNoteOf, isIdentityReadOnly } from "@/domain/products";
 import { failureReason } from "@/integration/common";
 import { DeleteConfirm, RowsField } from "@/presentation/common/components";
 
@@ -41,6 +42,9 @@ const emit = defineEmits<{ "update:open": [open: boolean]; saved: [slug: string]
 defineSlots<{}>();
 
 const removeError = ref("");
+/** Name, description and homepage come from the repository's manifest, so the form shows them without editing. */
+const identityReadOnly = computed(() => isIdentityReadOnly(props.product));
+const identityNote = computed(() => identityNoteOf(props.product));
 const form = useAppForm({
   defaultValues: productFormOf(null),
   schema: productFormSchema,
@@ -95,12 +99,20 @@ async function remove(): Promise<void> {
               <TextInput v-model="field.value" autocomplete="off" placeholder="foreverpin" @blur="field.onBlur" />
             </Field>
           </form.Field>
+          <p v-if="identityNote" class="text-xs text-muted-foreground">{{ identityNote }}</p>
           <form.Field name="name" is-required v-slot="field">
-            <Field label="Name"><TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" /></Field>
+            <Field label="Name" :is-read-only="identityReadOnly">
+              <TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" />
+            </Field>
           </form.Field>
           <form.Field name="description" v-slot="field">
-            <Field label="Description"><TextAreaInput v-model="field.value" :rows="2" @blur="field.onBlur" /></Field>
+            <Field label="Description" :is-read-only="identityReadOnly">
+              <TextAreaInput v-model="field.value" :rows="2" @blur="field.onBlur" />
+            </Field>
           </form.Field>
+          <Field v-if="product?.homepage" label="Homepage" is-read-only>
+            <TextInput :model-value="product.homepage" autocomplete="off" />
+          </Field>
           <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
             <form.Field name="repository" is-required v-slot="field">
               <Field label="Repository">

@@ -1,0 +1,29 @@
+using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Products;
+
+namespace Wheelhouse.Infrastructure.Products;
+
+/// <summary>Reads a product's manifest file from its GitHub repository through the shared
+/// <see cref="GitHubRepositoryReader"/>: the branch head, then <see cref="ProductManifestParser.Path"/> at a commit. The
+/// path is fixed, so no tree is listed; a commit's verdict on the file is kept for good.</summary>
+public sealed class GitHubProductManifestSource(GitHubRepositoryReader reader) : IProductManifestSource
+{
+    /// <inheritdoc />
+    public Task<string?> HeadAsync(string repository, string branch, bool fresh, CancellationToken ct) =>
+        reader.HeadAsync(repository, branch, fresh, ct);
+
+    /// <inheritdoc />
+    public async Task<ProductManifestFile> ReadAsync(string repository, string commit, CancellationToken ct)
+    {
+        var file = await reader.ReadAsync(repository, commit, ProductManifestParser.Path, ProductManifestParser.MaxBytes, ct);
+        return new ProductManifestFile(
+            file.Status switch
+            {
+                RepositoryFileStatus.Found => ProductManifestFileStatus.Found,
+                RepositoryFileStatus.Missing => ProductManifestFileStatus.Missing,
+                RepositoryFileStatus.TooLarge => ProductManifestFileStatus.TooLarge,
+                _ => ProductManifestFileStatus.Unreadable,
+            },
+            file.Content);
+    }
+}
