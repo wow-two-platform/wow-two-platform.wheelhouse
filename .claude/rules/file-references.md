@@ -7,6 +7,7 @@
 | Question about | Read |
 |---|---|
 | What it is, positioning | `product/product.md` |
+| Identity Wheelhouse reads: name, description, homepage, service names | `product/product.json` |
 | Current state, decisions, essential milestone | `product/context.md` |
 | Flows | `product/flows/flows.md` |
 | Brand assets, logo usage and sizes, the `icons/` set the console resolves | `product/brand/brand.md` |
@@ -33,7 +34,7 @@
 | `Wheelhouse.Api` | HTTP host — control-plane controllers; single-host SPA serving |
 | `Wheelhouse.Application` | Use cases — mediator handlers, repository abstractions, DTOs |
 | `Wheelhouse.Domain` | Entities (products, servers, targets, vaults, integration keys, audit, operations, legacy Deployment/ManagedDomain/SecretEntry) + enums |
-| `Wheelhouse.Infrastructure` | Adapters — runner process gateway, inventory snapshot exporter and rig seed, vault admin client, icon source, settings |
+| `Wheelhouse.Infrastructure` | Adapters — runner process gateway, inventory snapshot exporter and rig seed, vault admin client, GitHub repository reader (icons, `product.json`), settings |
 | `Wheelhouse.Persistence` | EF Core + Postgres context, repositories, hand-authored SQL migrations |
 | `Wheelhouse.Tests.Unit` | **Unit** tier — pure logic (validators, icon paths, runner and vault adapters); Docker-free |
 | `Wheelhouse.Tests.Integration` | **Integration** tier — EF model below the pipeline over the SDK `RelationalTestDb`, no HTTP; PG↔SQLite |

@@ -1,6 +1,6 @@
 # Wheelhouse — Context
 
-*Last updated: 2026-10-14*
+*Last updated: 2026-10-15*
 
 ## Current state
 
@@ -51,6 +51,10 @@ redirect and editor, real provider callbacks, persisted codes and cookie keys, a
 - The canary lives permanently on the control-plane VPS beside both consoles, so the platform and its test app are
   always ready. Decided 2026-10-14.
 - A push that publishes no new release verifies the running dev release instead of restarting it.
+- A product's name, description, homepage and per-service text are a manifest in its own repository
+  (`product/product.json`); the database keeps a cache keyed by the commit it was read from, replaced only by a newer
+  commit, refreshed on read (head re-checked at most every 5 minutes) and by an explicit Refresh. The console shows
+  manifest values read-only; editing them from the console waits for the GitHub App. Decided 2026-10-15.
 
 Contracts and boundaries: [architecture](../engineering/architecture/architecture.md). Unbuilt work and open
 decisions: [backlog](../engineering/planning/backlog.md).

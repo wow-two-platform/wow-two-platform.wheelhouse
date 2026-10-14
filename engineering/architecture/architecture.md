@@ -1,6 +1,6 @@
 # Wheelhouse architecture
 
-*Last updated: 2026-10-14*
+*Last updated: 2026-10-15*
 
 ## Runtime
 
@@ -111,12 +111,37 @@ and an explicit cutover; a second host definition does not make a service redund
 
 A product is one inventory row: slug, name, description, repository, default branch, an optional release source and
 the operator's lifecycle (idea, building, live, paused, killed). The slug never changes once created; the runner
-refuses a target or release source for a product the snapshot lacks.
+refuses a target or release source for a product the snapshot lacks. While the repository carries a valid manifest,
+its name, description and homepage replace the row's ([product identity](#product-identity)).
 
-`/api/products` joins the inventory: each product's environments come from its targets, each environment's sites from
+`/api/products` joins the inventory and the product identity: each product's environments come from its targets, each environment's sites from
 the newest rollout this control plane saw succeed (no target is contacted), and its vault namespace is
 `{product}-{environment}` on its server's first vault. The response carries no targets, releases or deployment state,
 so an integration reads products without deployment concepts. The runner read is cached for 30 seconds.
+
+### Product identity
+
+A product's name, description, homepage and per-service name and description are text in `product/product.json` in its
+repository (the [product manifest convention](../../../../../conventions/design/identity/product-manifest.md); service
+keys are the `services:` keys of `deploy.yml`). The database holds only a projection: one `product_manifests` row per
+product with the manifest values, the repository and branch, and the commit they were read from. A save never writes
+the manifest; the repository is where identity is edited.
+
+- A row is replaced only by a copy read at a newer commit. Nothing expires it on a timer.
+- On a read, `ProductIdentityService` compares the branch head with the row's commit; a different head reads the file
+  at that commit. The head comes from `GitHubRepositoryReader`, which keeps it 5 minutes, so GitHub is asked at most
+  that often per branch; a commit's file verdict is kept per commit.
+- `POST /api/products/{slug}/identity/refresh` (action header `refresh`, audited as `product.refresh`) reads the head
+  again now and answers with the product; it answers 503 when GitHub cannot serve the branch, and the row stays.
+- A newer commit with no manifest drops the row; the product reads as its own row again. A row also goes when the
+  product's repository or branch changes, and with the product.
+- An invalid, oversized or unparsable manifest is ignored whole: the previous row stays and `identity.problem` carries
+  one operator-safe reason, never file content beyond a shortened key name. An unreadable repository changes nothing.
+- `/api/products` and the `list_projects` tool return the effective name, description and homepage plus
+  `identity { source, commit, problem, services }`; `source` is `manifest` or `record`.
+- While a manifest governs, a save leaves the row's own name and description as they are, and the console shows name,
+  description and homepage read-only with a note that they are edited in the repository. A push webhook from a future
+  GitHub App and writes from Wheelhouse feed the same commit-keyed row.
 
 ### Product icons
 
@@ -127,7 +152,8 @@ order. `GET /api/products/{slug}/icon` and `GET /api/products/{slug}/services/{s
 (`light`|`dark`), `form` (`full`|`short`) and `color` (`colored`|`monochrome`), default `light`, `short`, `colored`.
 `ProductIconPaths` computes the candidate paths; the host reads the branch's newest commit (re-read every 5 minutes),
 lists that commit's tree once (a commit never changes, so its listing and files stay cached until the branch moves),
-keeps only the files an icon can come from, picks the first candidate that exists, then the web
+keeps only the files an icon can come from — the icon and manifest sources share `GitHubRepositoryReader`'s head and
+per-commit caches — picks the first candidate that exists, then the web
 app's `favicon-dark`/`favicon`, and answers not found when nothing resolves, so the console shows its monogram. The
 console asks for the theme of its active color mode and asks again when the mode changes. A file above 256 KiB is not
 read, and every response is a download with `nosniff`, so a repository's SVG never runs on the console's origin.

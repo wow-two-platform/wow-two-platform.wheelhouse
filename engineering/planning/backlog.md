@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-10-14*
+*Last updated: 2026-10-15*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -9,7 +9,7 @@ Every unbuilt item; top of each group = next. The active version is the newest f
 
 | Feature | State | Boundary today |
 |---|---|---|
-| Product catalog | shipped v0.3 | Products, their environments and release sources edited in the console; lifecycle; sites and vault namespaces |
+| Product catalog | shipped v0.3 | Products, their environments and release sources edited in the console; lifecycle; sites and vault namespaces; name, description and homepage read from the repository's manifest |
 | Integration keys | shipped v0.3 | Scoped, revocable keys; `catalog:read` reads `/api/products`; catalog and deployment scopes authorize read-only MCP tools |
 | MCP reads | shipped v0.3 | Private stateless endpoint; project/fleet reads, scoped discovery and immediate revocation |
 | Server inventory | shipped v0.3 | Servers and their vaults edited in the console; credentials stay files on the control host |
@@ -105,7 +105,9 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Decide where a product's name, description and homepage live: the database or a manifest in the repository | check | User 2026-10-14: icons are settled as files at `product/brand/icons/` per the product icons convention, not manifest entries or rows; the identity text is open |
+| Add `product/product.json` to ForeverPin, every other product repository and the product template | feature | Decided 2026-10-15: identity text is a manifest in the repository ([convention](../../../../../conventions/design/identity/product-manifest.md)); Wheelhouse and the canary carry one; until a repo does, its row supplies the name and description |
+| Edit a product's identity from the console by committing its manifest | feature | Needs the GitHub App (Hosting group); the console shows manifest-sourced name, description and homepage read-only meanwhile |
+| Refresh a product's manifest on push | feature | A GitHub App push webhook feeds the same commit-keyed row; the 5-minute head check and the Refresh action stay as fallbacks |
 | Add the icon set to ForeverPin and every other product repository | feature | Each product repo carries `product/brand/icons/` per the convention; until then Wheelhouse shows its web app favicon or a monogram |
 | Ship Wheelhouse's monochrome icon variants | check | The approved artwork keeps a gray fold in every variant; a one-ink export needs a brand decision |
 | Ownership and kill-gate metrics on the catalog | feature | Products are database rows since v0.3; metrics need cost and usage feeds |
@@ -137,7 +139,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Extract the action-header guard to the backend SDK | check | `Api/Filters/RequireActionAttribute.cs`: a resource filter that answers 400 without the named header |
 | Extract an in-memory `IRepository` fake to the SDK testing package | check | `Tests.Unit/Fakes/InMemoryRepository.cs` |
 | UI SDK rows field over `useFieldArray` | feature | `presentation/common/components/RowsField.vue`: headings, a row per record, list-level errors |
-| Extract repository tree and file reads to the backend SDK GitHub client | check | `Infrastructure/Products/GitHubProductIconSource.cs` calls the REST API inline |
+| Extract repository tree and file reads to the backend SDK GitHub client | check | `Infrastructure/Products/GitHubRepositoryReader.cs` calls the REST API inline for icons and manifests |
 | UI SDK `Table` sticky-header option | feature | `TableStyles` pins an opaque head meanwhile |
 | UI SDK `AppShell` page-header actions slot | feature | `PageActions` teleports them meanwhile |
 | Move the Wheelhouse palette into the UI SDK theme registry | check | Lives in `bootstrap/index.css` today |
