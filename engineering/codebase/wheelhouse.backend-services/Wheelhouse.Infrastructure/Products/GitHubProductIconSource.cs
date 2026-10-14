@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Wheelhouse.Application.Abstractions;
@@ -9,12 +10,12 @@ using WoW.Two.Sdk.Backend.Beta.Integrations;
 namespace Wheelhouse.Infrastructure.Products;
 
 /// <summary>Reads a product's icon files from its GitHub repository with the signed-in operator's token, cached per
-/// repository and branch.</summary>
+/// commit.</summary>
 /// <remarks>
-/// Two REST reads: the branch's recursive tree, kept to the files an icon can come from, and a chosen file's raw bytes.
-/// Which file is chosen is the icon convention's decision, made by the caller. A repository without icons, or one that
-/// cannot be read, is cached briefly, so the product shows its monogram without a GitHub call per page. Inline until
-/// the SDK GitHub client reads repository trees and files.
+/// Three REST reads: the branch's newest commit, that commit's recursive tree kept to the files an icon can come from,
+/// and a chosen file's raw bytes. A commit's tree and files never change, so they stay cached until the branch moves on;
+/// only the branch head is re-read, every few minutes, so a pushed icon shows soon after. Which file is chosen is the
+/// icon convention's decision, made by the caller. Inline until the SDK GitHub client reads repository trees and files.
 /// </remarks>
 public sealed partial class GitHubProductIconSource(
     IHttpClientFactory clients,
@@ -25,47 +26,86 @@ public sealed partial class GitHubProductIconSource(
     /// <summary>The named client, configured for the GitHub REST API.</summary>
     public const string ClientName = "github-files";
 
-    private static readonly TimeSpan FoundFor = TimeSpan.FromHours(6);
-    private static readonly TimeSpan MissingFor = TimeSpan.FromMinutes(30);
+    /// <summary>How long a branch head is trusted before it is read again; a pushed icon shows within this time.</summary>
+    public static readonly TimeSpan HeadFor = TimeSpan.FromMinutes(5);
+
+    private static readonly TimeSpan CommitFor = TimeSpan.FromDays(1);
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<string>> ListAsync(string repository, string branch, CancellationToken ct)
     {
-        var key = $"product-icon-paths:{repository}@{branch}";
+        var token = await tokens.GetAccessTokenAsync(ct);
+        var commit = await HeadAsync(repository, branch, token, ct);
+        if (commit is null)
+            return [];
+
+        var key = $"product-icon-paths:{repository}@{commit}";
         if (cache.TryGetValue(key, out IReadOnlyList<string>? cached) && cached is not null)
             return cached;
 
-        var token = await tokens.GetAccessTokenAsync(ct);
-        var paths = await ListTreeAsync(repository, branch, token, ct);
-        // Without the operator's token only public repositories answer, so a miss then is no verdict on the repository.
-        if (paths.Count > 0 || !string.IsNullOrWhiteSpace(token))
-            cache.Set(key, paths, paths.Count == 0 ? MissingFor : FoundFor);
+        var paths = await ListTreeAsync(repository, commit, token, ct);
+        if (paths is null)
+            return [];
+        cache.Set(key, paths, CommitFor);
         return paths;
     }
 
     /// <inheritdoc />
     public async Task<ProductIconImage?> ReadAsync(string repository, string branch, string path, CancellationToken ct)
     {
-        var key = $"product-icon:{repository}@{branch}:{path}";
+        var token = await tokens.GetAccessTokenAsync(ct);
+        var commit = await HeadAsync(repository, branch, token, ct);
+        if (commit is null)
+            return null;
+
+        var key = $"product-icon:{repository}@{commit}:{path}";
         if (cache.TryGetValue(key, out ProductIconImage? cached))
             return cached;
 
-        var token = await tokens.GetAccessTokenAsync(ct);
-        var icon = await ReadFileAsync(repository, branch, path, token, ct);
-        if (icon is not null || !string.IsNullOrWhiteSpace(token))
-            cache.Set(key, icon, icon is null ? MissingFor : FoundFor);
+        var (icon, answered) = await ReadFileAsync(repository, commit, path, token, ct);
+        if (answered)
+            cache.Set(key, icon, CommitFor);
         return icon;
     }
 
-    private async Task<IReadOnlyList<string>> ListTreeAsync(string repository, string branch, string? token, CancellationToken ct)
+    /// <summary>Reads the branch's newest commit, kept for <see cref="HeadFor"/>; an unreadable branch is kept as
+    /// long, so a product without access shows its monogram without a GitHub call per page.</summary>
+    private async Task<string?> HeadAsync(string repository, string branch, string? token, CancellationToken ct)
+    {
+        var key = $"product-icon-head:{repository}@{branch}";
+        if (cache.TryGetValue(key, out string? cached))
+            return cached;
+
+        string? commit = null;
+        try
+        {
+            using var request = Request(
+                $"repos/{repository}/commits/{Uri.EscapeDataString(branch)}", token, "application/vnd.github.sha");
+            using var response = await clients.CreateClient(ClientName).SendAsync(request, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                var text = (await response.Content.ReadAsStringAsync(ct)).Trim();
+                commit = CommitPattern().IsMatch(text) ? text : null;
+            }
+        }
+        catch (Exception exception) when (IsUnreadable(exception, ct))
+        {
+            LogUnreadable(logger, repository, exception.GetType().Name);
+        }
+
+        cache.Set(key, commit, HeadFor);
+        return commit;
+    }
+
+    /// <summary>Lists the commit's icon candidates, or <see langword="null"/> when GitHub gave no tree.</summary>
+    private async Task<IReadOnlyList<string>?> ListTreeAsync(string repository, string commit, string? token, CancellationToken ct)
     {
         try
         {
             using var tree = await GetJsonAsync(
-                clients.CreateClient(ClientName), token,
-                $"repos/{repository}/git/trees/{Uri.EscapeDataString(branch)}?recursive=1", ct);
+                clients.CreateClient(ClientName), token, $"repos/{repository}/git/trees/{commit}?recursive=1", ct);
             if (tree is null || !tree.RootElement.TryGetProperty("tree", out var entries) || entries.ValueKind != JsonValueKind.Array)
-                return [];
+                return null;
 
             return
             [
@@ -80,28 +120,30 @@ public sealed partial class GitHubProductIconSource(
         catch (Exception exception) when (IsUnreadable(exception, ct))
         {
             LogUnreadable(logger, repository, exception.GetType().Name);
-            return [];
+            return null;
         }
     }
 
-    private async Task<ProductIconImage?> ReadFileAsync(string repository, string branch, string path, string? token, CancellationToken ct)
+    /// <summary>Reads one file at a commit; <c>Answered</c> is false when GitHub gave no verdict, so nothing is cached.</summary>
+    private async Task<(ProductIconImage? Icon, bool Answered)> ReadFileAsync(
+        string repository, string commit, string path, string? token, CancellationToken ct)
     {
         try
         {
             using var request = Request(
-                $"repos/{repository}/contents/{EscapePath(path)}?ref={Uri.EscapeDataString(branch)}", token, "application/vnd.github.raw");
+                $"repos/{repository}/contents/{EscapePath(path)}?ref={commit}", token, "application/vnd.github.raw");
             using var response = await clients.CreateClient(ClientName)
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!response.IsSuccessStatusCode)
-                return null;
+                return (null, response.StatusCode == System.Net.HttpStatusCode.NotFound);
 
             var bytes = await ReadBoundedAsync(response.Content, ct);
-            return bytes is null ? null : new ProductIconImage(bytes, ProductIconPaths.ContentType(path), path);
+            return (bytes is null ? null : new ProductIconImage(bytes, ProductIconPaths.ContentType(path), path), true);
         }
         catch (Exception exception) when (IsUnreadable(exception, ct))
         {
             LogUnreadable(logger, repository, exception.GetType().Name);
-            return null;
+            return (null, false);
         }
     }
 
@@ -145,6 +187,9 @@ public sealed partial class GitHubProductIconSource(
     }
 
     private static string EscapePath(string path) => string.Join('/', path.Split('/').Select(Uri.EscapeDataString));
+
+    [GeneratedRegex("^[0-9a-f]{40}$")]
+    private static partial Regex CommitPattern();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "The icon of {Repository} could not be read ({Reason}).")]
     private static partial void LogUnreadable(ILogger logger, string repository, string reason);

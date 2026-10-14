@@ -125,8 +125,9 @@ Icons are repository files, never rows: the
 (`product/brand/icons/{form}-{color}-{theme}.{svg|png}`, and `…/services/{service}/…` per service) and the fallback
 order. `GET /api/products/{slug}/icon` and `GET /api/products/{slug}/services/{service}/icon` take `theme`
 (`light`|`dark`), `form` (`full`|`short`) and `color` (`colored`|`monochrome`), default `light`, `short`, `colored`.
-`ProductIconPaths` computes the candidate paths; the host lists the product's branch tree once (cached 6 hours, 30
-minutes when empty), keeps only the files an icon can come from, picks the first candidate that exists, then the web
+`ProductIconPaths` computes the candidate paths; the host reads the branch's newest commit (re-read every 5 minutes),
+lists that commit's tree once (a commit never changes, so its listing and files stay cached until the branch moves),
+keeps only the files an icon can come from, picks the first candidate that exists, then the web
 app's `favicon-dark`/`favicon`, and answers not found when nothing resolves, so the console shows its monogram. The
 console asks for the theme of its active color mode and asks again when the mode changes. A file above 256 KiB is not
 read, and every response is a download with `nosniff`, so a repository's SVG never runs on the console's origin.

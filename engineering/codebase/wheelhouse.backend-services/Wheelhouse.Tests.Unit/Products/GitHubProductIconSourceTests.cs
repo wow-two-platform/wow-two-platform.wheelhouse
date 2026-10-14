@@ -10,21 +10,27 @@ using WoW.Two.Sdk.Backend.Beta.Integrations;
 namespace Wheelhouse.Tests.Unit.Products;
 
 /// <summary>Tests for <see cref="GitHubProductIconSource"/> over a scripted GitHub: it keeps only the files an icon can
-/// come from, reads one file's bytes, refuses an oversized file and answers from its cache.</summary>
+/// come from, reads one file's bytes, refuses an oversized file, caches per commit and follows a moved branch.</summary>
 public sealed class GitHubProductIconSourceTests
 {
     private const string Repository = "owner/pilot";
-    private const string Tree = "repos/owner/pilot/git/trees/main?recursive=1";
+    private const string Head = "repos/owner/pilot/commits/main";
+    private static readonly string First = new('a', 40);
+    private static readonly string Second = new('b', 40);
+    private static readonly string Tree = $"repos/owner/pilot/git/trees/{First}?recursive=1";
 
     private readonly ScriptedGitHub _github = new();
+    private readonly MemoryCache _cache = new(new MemoryCacheOptions());
     private readonly GitHubProductIconSource _source;
 
     public GitHubProductIconSourceTests()
     {
+        _github.Raw[Head] = Encoding.ASCII.GetBytes(First);
         _source = new GitHubProductIconSource(
-            new SingleClientFactory(_github), new FixedToken("token"), new MemoryCache(new MemoryCacheOptions()),
-            NullLogger<GitHubProductIconSource>.Instance);
+            new SingleClientFactory(_github), new FixedToken("token"), _cache, NullLogger<GitHubProductIconSource>.Instance);
     }
+
+    private static string File(string path, string commit) => $"repos/owner/pilot/contents/{path}?ref={commit}";
 
     private static string TreeJson(params (string Path, long Size)[] blobs) =>
         "{\"tree\":[" + string.Join(',', blobs.Select(blob => $"{{\"type\":\"blob\",\"path\":\"{blob.Path}\",\"size\":{blob.Size}}}")) +
@@ -59,6 +65,34 @@ public sealed class GitHubProductIconSourceTests
     }
 
     [Fact]
+    public async Task ListAsync_ShouldReturnNothing_WhenTheBranchCannotBeRead()
+    {
+        _github.Raw.Remove(Head);
+        _github.Json[Tree] = TreeJson(("product/brand/icons/short-colored-dark.png", 4_000));
+
+        var paths = await _source.ListAsync(Repository, "main", CancellationToken.None);
+
+        paths.Should().BeEmpty();
+        _github.Requests.Should().NotContain(request => request.Contains("git/trees"));
+    }
+
+    [Fact]
+    public async Task ListAsync_ShouldListTheNewCommit_WhenTheBranchMovesOnAfterItsHeadExpires()
+    {
+        _github.Json[Tree] = TreeJson(("product/brand/icons/short-colored-light.png", 4_000));
+        _github.Json[$"repos/owner/pilot/git/trees/{Second}?recursive=1"] =
+            TreeJson(("product/brand/icons/short-colored-dark.png", 4_000));
+        await _source.ListAsync(Repository, "main", CancellationToken.None);
+
+        _github.Raw[Head] = Encoding.ASCII.GetBytes(Second);
+        // The head entry lives HeadFor; removing it stands in for that expiry.
+        _cache.Remove($"product-icon-head:{Repository}@main");
+        var paths = await _source.ListAsync(Repository, "main", CancellationToken.None);
+
+        paths.Should().BeEquivalentTo("product/brand/icons/short-colored-dark.png");
+    }
+
+    [Fact]
     public async Task ListAsync_ShouldAskGitHubOnce_WhenTheSameRepositoryIsListedAgain()
     {
         _github.Json[Tree] = TreeJson(("product/brand/icons/short-colored-dark.png", 4_000));
@@ -67,12 +101,13 @@ public sealed class GitHubProductIconSourceTests
         await _source.ListAsync(Repository, "main", CancellationToken.None);
 
         _github.Requests.Count(request => request.Contains("git/trees")).Should().Be(1);
+        _github.Requests.Count(request => request == Head).Should().Be(1);
     }
 
     [Fact]
     public async Task ReadAsync_ShouldReturnTheBytesAndMediaType_WhenTheFileExists()
     {
-        _github.Raw["repos/owner/pilot/contents/product/brand/icons/short-colored-dark.svg?ref=main"] = "<svg/>"u8.ToArray();
+        _github.Raw[File("product/brand/icons/short-colored-dark.svg", First)] = "<svg/>"u8.ToArray();
 
         var icon = await _source.ReadAsync(Repository, "main", "product/brand/icons/short-colored-dark.svg", CancellationToken.None);
 
@@ -85,7 +120,7 @@ public sealed class GitHubProductIconSourceTests
     [Fact]
     public async Task ReadAsync_ShouldReturnNothing_WhenTheFileExceedsTheLimit()
     {
-        _github.Raw["repos/owner/pilot/contents/product/brand/icons/full-colored-light.png?ref=main"] = new byte[ProductIconPaths.MaxBytes + 1];
+        _github.Raw[File("product/brand/icons/full-colored-light.png", First)] = new byte[ProductIconPaths.MaxBytes + 1];
 
         var icon = await _source.ReadAsync(Repository, "main", "product/brand/icons/full-colored-light.png", CancellationToken.None);
 
