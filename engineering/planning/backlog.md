@@ -38,7 +38,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 |---|---|---|
 | Prepare a VPS for deployments with one command | feature | Traefik (file provider on `/srv/wheelhouse/ingress`), PostgreSQL, `platform` network, deploy account, protected root, firewall |
 | Accept the hosted console: owner sign-in, restart persistence, authenticated MCP | check | After Wheelhouse prod is live (user 2026-10-13); dev already passed CI's rollout, HTTPS and anonymous-MCP checks |
-| Give Wheelhouse a GitHub token for catalog reads across every org | feature | `Deployment:GitHubTokenFile` is unset, so reads are anonymous and rate-limited; prefer a GitHub App installed on each org |
+| Give Wheelhouse a GitHub App installed on every org | feature | User decision 2026-10-14: reads, commits (identity edits), workflow runs and repository renames. Today catalog reads are anonymous and icons use the operator's expiring sign-in token |
 | Add a second VPS for products once Wheelhouse dev runs | check | User decision 2026-10-09: the Wheelhouse host stays control-plane only (no public 80/443); products get their own host |
 | Wire the products VPS: host, pinned SSH, public ingress and domains | feature | The control-plane VPS was wired 2026-10-13 through `vps/vps.md`; reuse it with public ingress |
 | Deploy ForeverPin to the products VPS and watch its redirect | check | Live editor, create and scan; restart; redirect monitoring and headroom |

@@ -48,6 +48,8 @@ redirect and editor, real provider callbacks, persisted codes and cookie keys, a
   Wheelhouse dev is its test instance and deploys only a sample app. Decided 2026-10-14.
 - CI promotes Wheelhouse to prod after an approval; Wheelhouse never deploys itself. Prod answers on the
   private HTTPS port 443, dev on 8443. The sample app is `wow-two-platform.wheelhouse-canary`. Decided 2026-10-14.
+- The canary lives permanently on the control-plane VPS beside both consoles, so the platform and its test app are
+  always ready. Decided 2026-10-14.
 - A push that publishes no new release verifies the running dev release instead of restarting it.
 
 Contracts and boundaries: [architecture](../engineering/architecture/architecture.md). Unbuilt work and open
