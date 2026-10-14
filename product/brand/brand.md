@@ -1,6 +1,6 @@
 # Wheelhouse brand assets
 
-*Last updated: 2026-09-29*
+*Last updated: 2026-10-14*
 
 > Selected **Soft folds** identity: a rounded paper boat replacing the initial W.
 
@@ -108,8 +108,32 @@ above, after checking each against the manifest; an isolated replay matches byte
 
 ---
 
+## Icon set
+
+The [icon export script](../../engineering/scripts/export-icon-set.py) copies four approved exports byte for byte,
+after checking each against the manifest, into [`icons/`](icons) under the
+[product icons](../../../../../conventions/design/identity/product-icons.md) names. The console and any other
+Wheelhouse consumer resolve a product's icon from these paths.
+
+| Icon file | Approved export |
+|---|---|
+| `icons/short-colored-light.png` | Standalone boat, black |
+| `icons/short-colored-dark.png` | Standalone boat, white |
+| `icons/full-colored-light.png` | Default wordmark, black |
+| `icons/full-colored-dark.png` | Default wordmark, white |
+
+- `colored` is the approved artwork: ink plus the gray lower facet, which every approved variant keeps
+- `monochrome` variants are not shipped: a one-ink export recolors the gray fold, which needs a brand decision
+- a `monochrome` request falls back to the `colored` file of the same theme
+- mint, attributed wordmarks and the app tile have no slot in the icon matrix and stay brand exports
+- Wheelhouse has one service, so it carries no `services/` folder; its service shows these icons
+- the web app's tab and touch icons remain the separate `public/` files in [Application](#application)
+
+---
+
 ## Continuation
 
 - [Identity adoption handoff](handoff/handoff.md): adopted convention, exact parent provenance and remaining work
 - [Exploration archive](exploration/exploration.md): previous directions and complete comparison boards
 - [Export script](../../engineering/scripts/export-brand-logos.py): reproduces all ten PNGs, both review sheets and the manifest
+- [Icon export script](../../engineering/scripts/export-icon-set.py): reproduces the four `icons/` files from the manifest-checked exports

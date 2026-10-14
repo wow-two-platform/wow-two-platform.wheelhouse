@@ -105,8 +105,9 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Define an app manifest with name, description, homepage and icon variants | feature | User 2026-10-14: icons in light/dark, full/short and colored/monochrome; Wheelhouse reads it per product; the schema becomes a wow-two convention |
-| Fix the product rail showing Wheelhouse's light icon on the dark theme | fix | The manifest's dark variant resolves it; until then the rail picks one icon for both themes |
+| Decide where a product's name, description and homepage live: the database or a manifest in the repository | check | User 2026-10-14: icons are settled as files at `product/brand/icons/` per the product icons convention, not manifest entries or rows; the identity text is open |
+| Add the icon set to ForeverPin and every other product repository | feature | Each product repo carries `product/brand/icons/` per the convention; until then Wheelhouse shows its web app favicon or a monogram |
+| Ship Wheelhouse's monochrome icon variants | check | The approved artwork keeps a gray fold in every variant; a one-ink export needs a brand decision |
 | Ownership and kill-gate metrics on the catalog | feature | Products are database rows since v0.3; metrics need cost and usage feeds |
 | Second provider and a placement view | feature | Provider enum plus integration in code |
 | Cost per product and host | feature | Feeds the micro-SaaS kill gates |

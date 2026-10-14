@@ -9,7 +9,7 @@
 | What it is, positioning | `product/product.md` |
 | Current state, decisions, essential milestone | `product/context.md` |
 | Flows | `product/flows/flows.md` |
-| Brand assets, logo usage and sizes | `product/brand/brand.md` |
+| Brand assets, logo usage and sizes, the `icons/` set the console resolves | `product/brand/brand.md` |
 | Features, deferred work, open decisions | `engineering/planning/backlog.md` |
 | Per-version progress (newest folder = active version) | `engineering/planning/version-track/v{X.Y}/v{X.Y}.md` |
 | Runtime, release contract, execution, artifacts, fleet, catalog, integrations and agents, workspace | `engineering/architecture/architecture.md` |
@@ -21,7 +21,7 @@
 | Feature completeness, decision Points, sweep | `engineering/research/feature-completeness.md` |
 | Deployment topology, environments, sites, builds | `engineering/research/deployment-topology.md` |
 | Parked UI directions (Claude boards) | `engineering/research/design-directions/design-directions.md` |
-| Brand and app logo export scripts | `engineering/scripts/export-brand-logos.py` · `export-app-icons.py` |
+| Brand, app logo and icon-set export scripts | `engineering/scripts/export-brand-logos.py` · `export-app-icons.py` · `export-icon-set.py` |
 
 ## Source projects (`engineering/codebase/`)
 

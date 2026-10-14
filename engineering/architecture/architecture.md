@@ -1,6 +1,6 @@
 # Wheelhouse architecture
 
-*Last updated: 2026-10-02*
+*Last updated: 2026-10-14*
 
 ## Runtime
 
@@ -117,6 +117,19 @@ refuses a target or release source for a product the snapshot lacks.
 the newest rollout this control plane saw succeed (no target is contacted), and its vault namespace is
 `{product}-{environment}` on its server's first vault. The response carries no targets, releases or deployment state,
 so an integration reads products without deployment concepts. The runner read is cached for 30 seconds.
+
+### Product icons
+
+Icons are repository files, never rows: the
+[product icons convention](../../../../../conventions/design/identity/product-icons.md) fixes their paths
+(`product/brand/icons/{form}-{color}-{theme}.{svg|png}`, and `…/services/{service}/…` per service) and the fallback
+order. `GET /api/products/{slug}/icon` and `GET /api/products/{slug}/services/{service}/icon` take `theme`
+(`light`|`dark`), `form` (`full`|`short`) and `color` (`colored`|`monochrome`), default `light`, `short`, `colored`.
+`ProductIconPaths` computes the candidate paths; the host lists the product's branch tree once (cached 6 hours, 30
+minutes when empty), keeps only the files an icon can come from, picks the first candidate that exists, then the web
+app's `favicon-dark`/`favicon`, and answers not found when nothing resolves, so the console shows its monogram. The
+console asks for the theme of its active color mode and asks again when the mode changes. A file above 256 KiB is not
+read, and every response is a download with `nosniff`, so a repository's SVG never runs on the console's origin.
 
 ## Integrations and agents
 
