@@ -1,10 +1,10 @@
 # Wheelhouse dev VPS
 
-*Last updated: 2026-10-13*
+*Last updated: 2026-10-14*
 
-This bootstrap prepares one private `wheelhouse-dev` target on Ubuntu 26.04 amd64.
-GitHub builds the image; the existing [runner](../../codebase/wheelhouse.runner-services/runner.py)
-deploys its immutable bundle over pinned SSH. Test and prod environments remain deferred.
+This bootstrap prepares the private control-plane host on Ubuntu 26.04 amd64: `wheelhouse-prod` and
+`wheelhouse-dev` side by side, each with its own database and sign-in. GitHub builds the image; the existing
+[runner](../../codebase/wheelhouse.runner-services/runner.py) deploys its immutable bundle over pinned SSH.
 
 ## Files and boundaries
 
@@ -62,7 +62,7 @@ before bootstrap; do not silently reuse another network. The console trusts only
 Enroll the VPS in the operator's actual tailnet, with ordinary OpenSSH retained:
 
 ```sh
-sudo tailscale up --hostname=wheelhouse-dev --accept-dns=true --accept-routes=false
+sudo tailscale up --hostname=wheelhouse --accept-dns=true --accept-routes=false
 tailscale status
 ```
 
@@ -74,6 +74,7 @@ CI identities. Configure persistent private HTTPS:
 
 ```sh
 sudo tailscale serve --bg --https=443 http://127.0.0.1:18080
+sudo tailscale serve --bg --https=8443 http://127.0.0.1:18082
 sudo tailscale serve status
 ```
 
@@ -81,16 +82,20 @@ Tailnet HTTPS may require enabling certificates in its admin console. Use Serve,
 Install/enroll Tailscale on the laptop and phone used to open the UI. The traffic path is:
 
 ```text
-Enrolled client -> private HTTPS :443 -> Tailscale Serve
- -> 127.0.0.1:18080 -> Traefik :8080 -> wheelhouse-dev-console:8080
+Enrolled client -> private HTTPS :443  -> Tailscale Serve -> 127.0.0.1:18080 -> Traefik private :8080
+ -> wheelhouse-prod-console:8080
+Enrolled client -> private HTTPS :8443 -> Tailscale Serve -> 127.0.0.1:18082 -> Traefik dev :8082
+ -> wheelhouse-dev-console:8080
 ```
+
+Both consoles share one hostname; Traefik keeps them apart by entry point, so their routes never collide.
 
 Traefik trusts forwarded headers only from loopback and the configured Docker gateway.
 Verify the actual source address, HTTPS redirects and secure cookies on this host.
 Traefik runs as the deployment UID/GID recorded in `platform/host.env`, so it can read runner-owned
 mode-0600 routes without privileged capabilities. Its filesystem and route bind are read-only.
 
-Only `127.0.0.1:18080` is published. Neither PostgreSQL nor the console has a public host port.
+Only `127.0.0.1:18080` and `127.0.0.1:18082` are published. Neither PostgreSQL nor the console has a public host port.
 [Docker-published ports](https://docs.docker.com/engine/network/port-publishing/) require explicit binding;
 UFW alone is insufficient. Verify external denial of app/database ports over IPv4 and IPv6.
 Narrow public SSH only after a second verified private SSH session and provider-console recovery succeed.
@@ -99,39 +104,43 @@ Narrow public SSH only after a second verified private SSH session and provider-
 
 Copy `identity.example.json` to a private location accessible to `wheelhouse-deploy`, mode `0600`.
 Fill its OAuth client and allowed owner login, without putting the file or values into source/logs.
-Register the exact callback in the OAuth application:
+Each environment has its own OAuth application and identity file. Register the exact callbacks:
 
 ```text
-https://<actual-node>.<actual-tailnet>.ts.net/api/identity/callback
+prod  https://<actual-node>.<actual-tailnet>.ts.net/api/identity/callback
+dev   https://<actual-node>.<actual-tailnet>.ts.net:8443/api/identity/callback
 ```
 
-Run the generator as the deployment account, substituting the actual private hostname:
+Run the generator as the deployment account for dev first, then prod, substituting the actual hostname:
 
 ```sh
-sudo -u wheelhouse-deploy python3 /srv/wheelhouse/bootstrap/prepare.py \
+sudo -u wheelhouse-deploy python3 /srv/wheelhouse/bootstrap/prepare.py --environment dev \
   --identity-file /protected/path/identity.json \
+  --hostname '<actual-node>.<actual-tailnet>.ts.net'
+sudo -u wheelhouse-deploy python3 /srv/wheelhouse/bootstrap/prepare.py --environment prod \
+  --identity-file /protected/path/identity-prod.json \
   --hostname '<actual-node>.<actual-tailnet>.ts.net'
 ```
 
 The input's parent directories must permit the deployment account to reach it. No password is printed.
-The generator creates independent random database-admin and application passwords on the VPS.
-Initialization grants `wheelhouse_dev` ownership of its database, with no superuser, role-creation
-or database-creation privileges. PostgreSQL initialization runs only on an empty data volume.
+Dev initializes PostgreSQL: independent random database-admin and application passwords, applied only to an
+empty data volume. Prod joins the running database through `docker compose exec`, its SQL on stdin.
+Each environment's role owns only its database, with no superuser, role-creation or database-creation privileges.
 
 | Path | Handling |
 |---|---|
 | `/srv/wheelhouse/platform/.secrets/` | Mode `0700`; database initialization files readable only through private host paths/mounts |
-| `/srv/wheelhouse/config/console.json` | Contains OAuth and DB credentials; read-only file inside mode `0700` directory |
-| `/srv/wheelhouse/config/wheelhouse-dev.json` | Mode `0600`; target JSON for CI and the existing runner |
+| `/srv/wheelhouse/config/console.json` · `console-prod.json` | Dev and prod OAuth and DB credentials; read-only files inside a mode `0700` directory |
+| `/srv/wheelhouse/config/wheelhouse-dev.json` · `wheelhouse-prod.json` | Mode `0600`; target JSON for CI and the existing runner |
 | `/srv/wheelhouse/ingress/` | Runner-generated route files, mounted read-only by Traefik |
-| `/srv/wheelhouse/wheelhouse-dev/` | Runner deployment journals, current bundle and recovery state |
+| `/srv/wheelhouse/wheelhouse-dev/` · `wheelhouse-prod/` | Runner deployment journals, current bundle and recovery state |
 
 Container-mounted settings/init files are mode `0444` inside mode `0700` directories: host traversal is
 private while container UID `1654`/PostgreSQL can read the individual file bind. This matches the existing
 [runner settings contract](../deployment.md#runner-installation-and-inventory).
-The generated target has `variables.PLATFORM_NETWORK=platform` and both ingress probes set to
-`http://127.0.0.1:18080`. It does not replace the console's API-owned `inventory.json`.
-The deployed image defaults to ASP.NET `Production`; target `dev` selects artifact policy only.
+The generated target has `variables.PLATFORM_NETWORK=platform`; prod probes `http://127.0.0.1:18080` on the
+`private` entry point, dev probes `http://127.0.0.1:18082` on `dev` and publishes port 8443. It does not replace the console's API-owned `inventory.json`.
+The deployed image defaults to ASP.NET `Production` in both; the target environment selects artifact policy only.
 Rehearsal is explicitly disabled.
 
 ## Start the platform and deploy

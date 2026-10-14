@@ -56,6 +56,7 @@ with its settings keys, `keys` and `deployments` volumes, a private `console` si
 | `.github/workflows/ci.yml` | Called by delivery; directly on pull requests | Backend tiers, runner/CI contracts, host-bootstrap checks and frontend tests/build |
 | `.github/workflows/publish-docker-image.yml` | Every push, or a dispatched commit | Tests the selected SHA, calls shared publication, then calls dev deployment for a main push |
 | `.github/workflows/deploy-dev.yml` | Called after successful main publication | Resolves the tested bundle and deploys over pinned SSH when host wiring is enabled |
+| `.github/workflows/promote-prod.yml` | Dispatched with a release tag | Waits for the owner's approval, then deploys that dev-proven release to prod |
 
 A local build proves the path without GitHub:
 
@@ -143,6 +144,24 @@ failure while the durable target job remains authoritative; inspect it before an
 GitHub currently supports `queue:max`; local actionlint `1.7.12` does not yet parse that field. Validate YAML
 duplicates/structure and use actionlint with only that documented field omitted in a temporary copy;
 GitHub workflow acceptance remains the definitive check for this field.
+
+## Promoting Wheelhouse to prod
+
+Wheelhouse prod is the one console for every product environment; CI promotes it, and it never deploys itself.
+
+```text
+promote-prod (release tag, from main)
+  -> GitHub `prod` environment waits for the owner's approval
+  -> download exactly that release; verify asset digest, tag/source and approved image
+  -> refuse unless a wheelhouse-dev job ran that release to `succeeded` with `completedAt`
+  -> pinned SSH -> existing runner -> wheelhouse-prod -> the same digest, HTTPS and MCP checks as dev
+```
+
+- Run it from the Actions tab or `gh workflow run promote-prod.yml -f release=vX.Y.Z`.
+- Roll back by promoting the previous release; it qualifies because it once succeeded on dev.
+- Re-promoting the running release verifies it without a restart.
+- Migrations still run forward on start; a schema change that cannot roll back needs a reviewed recovery.
+- The `prod` environment allows only `main` and carries the same SSH secrets as `dev`: one host, one deploy account.
 
 ## Local packaging
 
