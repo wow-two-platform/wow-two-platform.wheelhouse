@@ -43,6 +43,8 @@ redirect and editor, real provider callbacks, persisted codes and cookie keys, a
 - The control-plane VPS hosts only platform apps; products get a separate VPS. Decided 2026-10-09.
 - Wheelhouse prod is the one console for every product environment; dev and prod never share a database.
   Wheelhouse dev is its test instance and deploys only a sample app. Decided 2026-10-14.
+- CI promotes Wheelhouse to prod after an approval; Wheelhouse never deploys itself. Prod answers on the
+  private HTTPS port 443, dev on 8443. The sample app is `wow-two-platform.wheelhouse-canary`. Decided 2026-10-14.
 - A push that publishes no new release verifies the running dev release instead of restarting it.
 
 Contracts and boundaries: [architecture](../engineering/architecture/architecture.md). Unbuilt work and open
