@@ -79,6 +79,8 @@ sudo tailscale serve status
 ```
 
 Tailnet HTTPS may require enabling certificates in its admin console. Use Serve, not Funnel.
+Serve keys its configuration by the node's full name: after renaming the node, run `sudo tailscale serve reset`
+and add both ports again, or TLS handshakes fail with "no webserver configured for name/port".
 Install/enroll Tailscale on the laptop and phone used to open the UI. The traffic path is:
 
 ```text
