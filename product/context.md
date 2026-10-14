@@ -1,6 +1,6 @@
 # Wheelhouse — Context
 
-*Last updated: 2026-10-13*
+*Last updated: 2026-10-14*
 
 ## Current state
 
@@ -41,6 +41,9 @@ redirect and editor, real provider callbacks, persisted codes and cookie keys, a
 - The audit trail records actions, never values; its chain shows edits, not truncation of the newest entries.
 - Wheelhouse stays private: a tailnet with Tailscale Serve HTTPS, no public domain or port. Decided 2026-10-09.
 - The control-plane VPS hosts only platform apps; products get a separate VPS. Decided 2026-10-09.
+- Wheelhouse prod is the one console for every product environment; dev and prod never share a database.
+  Wheelhouse dev is its test instance and deploys only a sample app. Decided 2026-10-14.
+- A push that publishes no new release verifies the running dev release instead of restarting it.
 
 Contracts and boundaries: [architecture](../engineering/architecture/architecture.md). Unbuilt work and open
 decisions: [backlog](../engineering/planning/backlog.md).

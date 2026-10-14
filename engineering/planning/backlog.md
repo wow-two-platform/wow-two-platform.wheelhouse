@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-10-13*
+*Last updated: 2026-10-14*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -37,7 +37,8 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Item | Type | Notes |
 |---|---|---|
 | Prepare a VPS for deployments with one command | feature | Traefik (file provider on `/srv/wheelhouse/ingress`), PostgreSQL, `platform` network, deploy account, protected root, firewall |
-| Decide how Wheelhouse dev and prod split the product environments | check | Dev runs since 2026-10-13. Options: one prod console for every product environment, or dev for dev/test and prod for prod. Separate databases either way |
+| Build a sample app that Wheelhouse dev deploys for acceptance | feature | Decided 2026-10-14: a mini frontend, backend and database with its own dev, test and prod; dev Wheelhouse targets only it |
+| Promote Wheelhouse releases from dev to prod | feature | Decided 2026-10-14: prod Wheelhouse, with its own database, operates every product environment; the promotion flow is under analysis |
 | Accept the hosted console: owner sign-in, restart persistence, authenticated MCP | check | After Wheelhouse prod is live (user 2026-10-13); dev already passed CI's rollout, HTTPS and anonymous-MCP checks |
 | Give Wheelhouse a GitHub token for catalog reads across every org | feature | `Deployment:GitHubTokenFile` is unset, so reads are anonymous and rate-limited; prefer a GitHub App installed on each org |
 | Add a second VPS for products once Wheelhouse dev runs | check | User decision 2026-10-09: the Wheelhouse host stays control-plane only (no public 80/443); products get their own host |
