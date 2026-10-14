@@ -8,10 +8,12 @@ using WoW.Two.Sdk.Backend.Beta.Integrations;
 
 namespace Wheelhouse.Infrastructure.Products;
 
-/// <summary>Reads a product's icon from its GitHub repository with the signed-in operator's token, cached per repository.</summary>
+/// <summary>Reads a product's icon files from its GitHub repository with the signed-in operator's token, cached per
+/// repository and branch.</summary>
 /// <remarks>
-/// Three REST reads: the default branch, the recursive tree and the chosen file's raw bytes. A missing or unreadable
-/// icon is cached briefly, so the product falls back to its monogram without a GitHub call per page. Inline until
+/// Two REST reads: the branch's recursive tree, kept to the files an icon can come from, and a chosen file's raw bytes.
+/// Which file is chosen is the icon convention's decision, made by the caller. A repository without icons, or one that
+/// cannot be read, is cached briefly, so the product shows its monogram without a GitHub call per page. Inline until
 /// the SDK GitHub client reads repository trees and files.
 /// </remarks>
 public sealed partial class GitHubProductIconSource(
@@ -27,62 +29,84 @@ public sealed partial class GitHubProductIconSource(
     private static readonly TimeSpan MissingFor = TimeSpan.FromMinutes(30);
 
     /// <inheritdoc />
-    public async Task<ProductIconImage?> FindAsync(string repository, CancellationToken ct)
+    public async Task<IReadOnlyList<string>> ListAsync(string repository, string branch, CancellationToken ct)
     {
-        var key = "product-icon:" + repository;
+        var key = $"product-icon-paths:{repository}@{branch}";
+        if (cache.TryGetValue(key, out IReadOnlyList<string>? cached) && cached is not null)
+            return cached;
+
+        var token = await tokens.GetAccessTokenAsync(ct);
+        var paths = await ListTreeAsync(repository, branch, token, ct);
+        // Without the operator's token only public repositories answer, so a miss then is no verdict on the repository.
+        if (paths.Count > 0 || !string.IsNullOrWhiteSpace(token))
+            cache.Set(key, paths, paths.Count == 0 ? MissingFor : FoundFor);
+        return paths;
+    }
+
+    /// <inheritdoc />
+    public async Task<ProductIconImage?> ReadAsync(string repository, string branch, string path, CancellationToken ct)
+    {
+        var key = $"product-icon:{repository}@{branch}:{path}";
         if (cache.TryGetValue(key, out ProductIconImage? cached))
             return cached;
 
         var token = await tokens.GetAccessTokenAsync(ct);
-        var icon = await ReadAsync(repository, token, ct);
-        // Without the operator's token only public repositories answer, so a miss then is no verdict on the repository.
+        var icon = await ReadFileAsync(repository, branch, path, token, ct);
         if (icon is not null || !string.IsNullOrWhiteSpace(token))
             cache.Set(key, icon, icon is null ? MissingFor : FoundFor);
         return icon;
     }
 
-    private async Task<ProductIconImage?> ReadAsync(string repository, string? token, CancellationToken ct)
+    private async Task<IReadOnlyList<string>> ListTreeAsync(string repository, string branch, string? token, CancellationToken ct)
     {
         try
         {
-            var client = clients.CreateClient(ClientName);
-
-            using var repo = await GetJsonAsync(client, token, $"repos/{repository}", ct);
-            var branch = repo is not null && repo.RootElement.TryGetProperty("default_branch", out var name)
-                ? name.GetString()
-                : null;
-            if (string.IsNullOrWhiteSpace(branch))
-                return null;
-
             using var tree = await GetJsonAsync(
-                client, token, $"repos/{repository}/git/trees/{Uri.EscapeDataString(branch)}?recursive=1", ct);
+                clients.CreateClient(ClientName), token,
+                $"repos/{repository}/git/trees/{Uri.EscapeDataString(branch)}?recursive=1", ct);
             if (tree is null || !tree.RootElement.TryGetProperty("tree", out var entries) || entries.ValueKind != JsonValueKind.Array)
-                return null;
+                return [];
 
-            var path = ProductIconPaths.Choose(entries.EnumerateArray()
-                .Where(entry => entry.TryGetProperty("type", out var type) && type.GetString() == "blob"
-                    && (!entry.TryGetProperty("size", out var size) || size.GetInt64() <= ProductIconPaths.MaxBytes)
-                    && entry.TryGetProperty("path", out var item) && item.ValueKind == JsonValueKind.String)
-                .Select(entry => entry.GetProperty("path").GetString()!));
-            if (path is null)
-                return null;
+            return
+            [
+                .. entries.EnumerateArray()
+                    .Where(entry => entry.TryGetProperty("type", out var type) && type.GetString() == "blob"
+                        && (!entry.TryGetProperty("size", out var size) || size.GetInt64() <= ProductIconPaths.MaxBytes)
+                        && entry.TryGetProperty("path", out var item) && item.ValueKind == JsonValueKind.String)
+                    .Select(entry => entry.GetProperty("path").GetString()!)
+                    .Where(ProductIconPaths.IsCandidate),
+            ];
+        }
+        catch (Exception exception) when (IsUnreadable(exception, ct))
+        {
+            LogUnreadable(logger, repository, exception.GetType().Name);
+            return [];
+        }
+    }
 
+    private async Task<ProductIconImage?> ReadFileAsync(string repository, string branch, string path, string? token, CancellationToken ct)
+    {
+        try
+        {
             using var request = Request(
                 $"repos/{repository}/contents/{EscapePath(path)}?ref={Uri.EscapeDataString(branch)}", token, "application/vnd.github.raw");
-            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var response = await clients.CreateClient(ClientName)
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!response.IsSuccessStatusCode)
                 return null;
 
             var bytes = await ReadBoundedAsync(response.Content, ct);
             return bytes is null ? null : new ProductIconImage(bytes, ProductIconPaths.ContentType(path), path);
         }
-        catch (Exception exception) when (
-            (exception is HttpRequestException or JsonException or TaskCanceledException) && !ct.IsCancellationRequested)
+        catch (Exception exception) when (IsUnreadable(exception, ct))
         {
             LogUnreadable(logger, repository, exception.GetType().Name);
             return null;
         }
     }
+
+    private static bool IsUnreadable(Exception exception, CancellationToken ct) =>
+        (exception is HttpRequestException or JsonException or TaskCanceledException) && !ct.IsCancellationRequested;
 
     private static async Task<JsonDocument?> GetJsonAsync(HttpClient client, string? token, string path, CancellationToken ct)
     {

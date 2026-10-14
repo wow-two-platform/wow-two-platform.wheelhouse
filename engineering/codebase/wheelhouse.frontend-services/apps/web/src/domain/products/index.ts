@@ -9,3 +9,12 @@ export {
   type ReleaseImage,
   type SaveProductRequest,
 } from './Product';
+export {
+  IconColor,
+  IconForm,
+  IconTheme,
+  monogramHue,
+  monogramOf,
+  productIconUrl,
+  type ProductIconOptions,
+} from './ProductIcon';

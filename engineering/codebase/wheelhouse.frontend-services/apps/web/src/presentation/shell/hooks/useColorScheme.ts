@@ -1,8 +1,21 @@
-import { computed, onScopeDispose, ref, watch } from 'vue';
+import { computed, onScopeDispose, readonly, ref, watch } from 'vue';
 
 /** Names the operator's persisted theme preference. */
 export const ColorScheme = { System: 'system', Light: 'light', Dark: 'dark' } as const;
 export type ColorScheme = (typeof ColorScheme)[keyof typeof ColorScheme];
+
+/** The theme the console shows once the scheme and the operating system's preference resolve. */
+export type ActiveTheme = 'light' | 'dark';
+
+/** Starts from the pre-paint script's result, so a theme-specific asset asks for the right variant on first render. @internal */
+const activeTheme = ref<ActiveTheme>(
+  typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+);
+
+/** The theme the console shows now, for anything that picks a theme-specific asset; follows every scheme change. */
+export function useActiveTheme() {
+  return readonly(activeTheme);
+}
 
 /** Applies the saved scheme while tracking operating-system changes. */
 export function useColorScheme() {
@@ -20,6 +33,7 @@ export function useColorScheme() {
     (dark) => {
       document.documentElement.classList.toggle('dark', dark);
       document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+      activeTheme.value = dark ? 'dark' : 'light';
     },
     { immediate: true },
   );

@@ -1,11 +1,19 @@
 <script lang="ts">
-/** A product's mark: the icon its repository carries, else a monogram tinted by its name. */
+import type { IconColor, IconForm } from "@/domain/products";
+
+/** A product's mark: the icon its repository carries for the active theme, else a monogram tinted by its name. */
 export interface ProductIconProps {
   /** The catalog slug; without one (a product outside the catalog) the monogram shows. */
   readonly productSlug?: string | null | undefined;
+  /** A service of the product, whose own icon is preferred; the product's icon answers when it has none. */
+  readonly service?: string | null | undefined;
   /** The product's name, for the monogram and its tint. */
   readonly name: string;
   readonly size?: "sm" | "md" | "lg";
+  /** The symbol alone beside a name, the symbol with its wordmark where the icon stands alone. */
+  readonly form?: IconForm | undefined;
+  /** The brand's colors, or one flat ink on a surface that tints its icons. */
+  readonly color?: IconColor | undefined;
 }
 
 /** @internal The box per size; the image keeps a small inset so edge-to-edge marks still breathe. */
@@ -16,52 +24,45 @@ const SizeClass = {
 } as const;
 </script>
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed } from "vue";
+import { useProductIcon } from "@/application/products/useProductIcon";
+import { useActiveTheme } from "@/presentation/shell";
 
-/** Renders the product's own icon, falling back to a stable tinted monogram so products stay distinguishable. */
+/** Renders the product's own icon for the active theme, falling back to a stable tinted monogram so products stay distinguishable. */
 defineOptions({ name: "ProductIcon" });
 const props = withDefaults(defineProps<ProductIconProps>(), { size: "md" });
 defineSlots<{}>();
 
-const failed = ref(false);
-/** A new product gets a fresh attempt at its icon. */
-watch(
-  () => props.productSlug,
-  () => {
-    failed.value = false;
-  },
-);
-const showsImage = computed(() => Boolean(props.productSlug) && !failed.value);
-const monogram = computed(
-  () => props.name.trim().slice(0, 1).toUpperCase() || "?",
-);
-/** The same name always lands on the same hue; mixing with theme tokens keeps it readable in light and dark. */
-const tint = computed(() => {
-  const hue = [...props.name].reduce(
-    (sum, character) => (sum * 31 + character.charCodeAt(0)) % 360,
-    17,
-  );
-  return {
-    backgroundColor: `color-mix(in oklch, hsl(${hue} 70% 50%) 18%, var(--color-card))`,
-    color: `color-mix(in oklch, hsl(${hue} 70% 40%) 75%, var(--color-foreground))`,
-  };
+const theme = useActiveTheme();
+const icon = useProductIcon({
+  slug: () => props.productSlug,
+  service: () => props.service,
+  name: () => props.name,
+  theme: () => theme.value,
+  form: () => props.form,
+  color: () => props.color,
 });
+/** Mixing with theme tokens keeps the tint readable in light and dark. */
+const tint = computed(() => ({
+  backgroundColor: `color-mix(in oklch, hsl(${icon.hue.value} 70% 50%) 18%, var(--color-card))`,
+  color: `color-mix(in oklch, hsl(${icon.hue.value} 70% 40%) 75%, var(--color-foreground))`,
+}));
 </script>
 <template>
   <span
     class="relative flex shrink-0 items-center justify-center overflow-hidden border border-border font-semibold"
-    :class="[SizeClass[props.size], showsImage ? 'bg-card' : '']"
-    :style="showsImage ? undefined : tint"
+    :class="[SizeClass[props.size], icon.src.value ? 'bg-card' : '']"
+    :style="icon.src.value ? undefined : tint"
     aria-hidden="true"
   >
     <img
-      v-if="showsImage"
-      :src="`/api/products/${encodeURIComponent(props.productSlug ?? '')}/icon`"
+      v-if="icon.src.value"
+      :src="icon.src.value"
       alt=""
       loading="lazy"
       class="size-full object-contain p-1"
-      @error="failed = true"
+      @error="icon.failed()"
     />
-    <template v-else>{{ monogram }}</template>
+    <template v-else>{{ icon.monogram.value }}</template>
   </span>
 </template>

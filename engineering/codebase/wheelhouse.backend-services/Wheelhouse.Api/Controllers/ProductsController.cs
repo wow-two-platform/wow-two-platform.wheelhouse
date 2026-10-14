@@ -42,22 +42,30 @@ public sealed class ProductsController(ISender sender, IErrorHttpStatusCodeMappe
             ok => Ok(ApiResponse<ProductDto>.Ok(ok.Data)),
             fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
 
-    /// <summary>Gets the icon a product's repository carries; not found when it carries none.</summary>
+    /// <summary>Gets the icon a product's repository carries for a theme, form and color, falling back along the icon
+    /// convention; not found when no file resolves, so the caller shows its monogram.</summary>
     [HttpGet("{slug}/icon")]
     [Authorize(Policy = AuthConfigurationExtensions.ProductsReadPolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetIcon([RegularExpression(Slug)] string slug, CancellationToken ct) =>
-        (await sender.SendAsync(new ProductIconQuery { Slug = slug }, ct)).Match<IActionResult>(
-            ok =>
-            {
-                Response.Headers.CacheControl = "private, max-age=3600";
-                Response.Headers.XContentTypeOptions = "nosniff";
-                // An <img> ignores the disposition; opening the URL on its own downloads the file instead of
-                // rendering it, so an SVG from a repository can never run script on this origin.
-                return File(ok.Data.Content, ok.Data.ContentType, "icon" + Path.GetExtension(ok.Data.Path));
-            },
-            fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+    public Task<IActionResult> GetIcon(
+        [RegularExpression(Slug)] string slug, [FromQuery] ProductIconApiRequest request, CancellationToken ct) =>
+        IconAsync(slug, null, request, ct);
+
+    /// <summary>Gets the icon one of a product's services carries, falling back to the product's own icon along the
+    /// icon convention; not found when no file resolves.</summary>
+    [HttpGet("{slug}/services/{service}/icon")]
+    [Authorize(Policy = AuthConfigurationExtensions.ProductsReadPolicy)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public Task<IActionResult> GetServiceIcon(
+        [RegularExpression(Slug)] string slug,
+        [RegularExpression(Slug)] string service,
+        [FromQuery] ProductIconApiRequest request,
+        CancellationToken ct) =>
+        IconAsync(slug, service, request, ct);
 
     /// <summary>Adds a product to the portfolio; it starts as building.</summary>
     [HttpPost]
@@ -121,4 +129,20 @@ public sealed class ProductsController(ISender sender, IErrorHttpStatusCodeMappe
             .Match<IActionResult>(
                 ok => Ok(ApiResponse<ProductDto>.Ok(ok.Data)),
                 fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+
+    private async Task<IActionResult> IconAsync(string slug, string? service, ProductIconApiRequest request, CancellationToken ct) =>
+        (await sender.SendAsync(new ProductIconQuery
+        {
+            Slug = slug,
+            Icon = new ProductIconRequest { Service = service, Theme = request.Theme, Form = request.Form, Color = request.Color },
+        }, ct)).Match<IActionResult>(
+            ok =>
+            {
+                Response.Headers.CacheControl = "private, max-age=3600";
+                Response.Headers.XContentTypeOptions = "nosniff";
+                // An <img> ignores the disposition; opening the URL on its own downloads the file instead of
+                // rendering it, so an SVG from a repository can never run script on this origin.
+                return File(ok.Data.Content, ok.Data.ContentType, "icon" + Path.GetExtension(ok.Data.Path));
+            },
+            fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
 }

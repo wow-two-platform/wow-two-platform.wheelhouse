@@ -38,7 +38,7 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     /// <summary>The shared vault stub — records the last change so tests can assert what Wheelhouse forwarded.</summary>
     public StubVaultGateway Vaults { get; } = new();
 
-    /// <summary>The shared icon stub — add a repository's icon to <see cref="StubProductIconSource.Icons"/> to serve it.</summary>
+    /// <summary>The shared icon stub — add files with <see cref="StubProductIconSource.Add"/> to serve a repository's icons.</summary>
     public StubProductIconSource ProductIcons { get; } = new();
 
     /// <summary>A fresh anonymous client (no admin header) — protected endpoints return 401.</summary>
@@ -128,7 +128,7 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     private void ResetStubs()
     {
         Deployments.StartRefusal = null;
-        ProductIcons.Icons.Clear();
+        ProductIcons.Clear();
     }
 }
 

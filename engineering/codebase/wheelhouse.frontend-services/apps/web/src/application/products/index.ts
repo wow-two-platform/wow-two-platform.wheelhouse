@@ -4,6 +4,8 @@ import type { ProductLifecycle, SaveProductRequest } from "@/domain/products";
 import { productsApi } from "@/integration/products";
 import { DeploymentKeys } from "@/application/deployments/DeploymentKeys";
 
+export { useProductIcon, type ProductIconSource } from "./useProductIcon";
+
 /** Query keys for products; inventory writes invalidate through these. */
 export const ProductKeys = { list: ["products"] as const };
 
