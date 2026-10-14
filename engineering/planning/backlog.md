@@ -76,8 +76,9 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Run each app's migrations as a rollout step and show their state | feature | User decision 2026-10-14: apps own their SQL; the runner migrates with the new image between pull and start; prod waits for test. The app database's own migration journal stays the authority; Wheelhouse reads it at deploy and keeps what it saw in the job history, never a second table. Rollback scripts run only on a confirmed operator action |
 | Mount a GitHub token that can start product builds | check | `WHEELHOUSE_GITHUB_TOKEN_FILE` with Actions write on each product; the Build button needs it |
-| Pull private GHCR images on targets | check | Wheelhouse's console image is private; a read-only pull token per target, or public images |
+| Pull private GHCR images on targets | check | Public images need no token (Wheelhouse's console is public since 2026-10-09); private ones need a read-only pull token per target |
 | Haven adopts `deploy.yml`, per-service versions and an edge health route | feature | Its Caddy edge has no health route; the runner requires one |
 | Show each service's version inside every product | feature | Haven shows its build version beside the logo; adopt across products |
 | Deploy a branch to its own temporary dev environment | feature | Topology point 17; from a code-owned template; later PR previews |
@@ -104,6 +105,8 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Define an app manifest with name, description, homepage and icon variants | feature | User 2026-10-14: icons in light/dark, full/short and colored/monochrome; Wheelhouse reads it per product; the schema becomes a wow-two convention |
+| Fix the product rail showing Wheelhouse's light icon on the dark theme | fix | The manifest's dark variant resolves it; until then the rail picks one icon for both themes |
 | Ownership and kill-gate metrics on the catalog | feature | Products are database rows since v0.3; metrics need cost and usage feeds |
 | Second provider and a placement view | feature | Provider enum plus integration in code |
 | Cost per product and host | feature | Feeds the micro-SaaS kill gates |
