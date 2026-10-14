@@ -132,7 +132,7 @@ Each environment's role owns only its database, with no superuser, role-creation
 | Path | Handling |
 |---|---|
 | `/srv/wheelhouse/platform/.secrets/` | Mode `0700`; database initialization files readable only through private host paths/mounts |
-| `/srv/wheelhouse/config/console.json` · `console-prod.json` | Dev and prod OAuth and DB credentials; read-only files inside a mode `0700` directory |
+| `/srv/wheelhouse/config/console-dev.json` · `console-prod.json` | Dev and prod OAuth and DB credentials; read-only files inside a mode `0700` directory |
 | `/srv/wheelhouse/config/wheelhouse-dev.json` · `wheelhouse-prod.json` | Mode `0600`; target JSON for CI and the existing runner |
 | `/srv/wheelhouse/ingress/` | Runner-generated route files, mounted read-only by Traefik |
 | `/srv/wheelhouse/wheelhouse-dev/` · `wheelhouse-prod/` | Runner deployment journals, current bundle and recovery state |

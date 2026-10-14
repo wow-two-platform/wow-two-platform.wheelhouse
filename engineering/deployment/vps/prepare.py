@@ -11,7 +11,7 @@ import sys
 
 # Dev and prod share one host and one private hostname; each has its own Traefik entry point and HTTPS port.
 ENVIRONMENTS = {
-    "dev": {"settings": "console.json", "entryPoint": "dev", "port": 8443, "probe": "http://127.0.0.1:18082"},
+    "dev": {"settings": "console-dev.json", "entryPoint": "dev", "port": 8443, "probe": "http://127.0.0.1:18082"},
     "prod": {"settings": "console-prod.json", "entryPoint": "private", "port": None, "probe": "http://127.0.0.1:18080"},
 }
 

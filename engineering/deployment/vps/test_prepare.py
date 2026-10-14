@@ -28,7 +28,7 @@ class PrepareTests(unittest.TestCase):
     def test_generated_target_satisfies_runner_contract_and_preserves_secrets(self):
         self.run_prepare()
         target = json.loads((self.root / "config/wheelhouse-dev.json").read_text())
-        config = json.loads((self.root / "config/console.json").read_text())
+        config = json.loads((self.root / "config/console-dev.json").read_text())
         runner_path = Path(__file__).resolve().parents[2] / "codebase/wheelhouse.runner-services/runner.py"
         spec = importlib.util.spec_from_file_location("vps_runner_contract", runner_path)
         runner = importlib.util.module_from_spec(spec)
@@ -49,7 +49,7 @@ class PrepareTests(unittest.TestCase):
         self.assertIn("PASSWORD '" + password + "'", sql)
         self.assertNotEqual(password, (self.root / "platform/.secrets/postgres-password").read_text().strip())
         self.assertEqual(0o700, (self.root / "config").stat().st_mode & 0o777)
-        self.assertEqual(0o444, (self.root / "config/console.json").stat().st_mode & 0o777)
+        self.assertEqual(0o444, (self.root / "config/console-dev.json").stat().st_mode & 0o777)
         self.assertEqual(0o600, (self.root / "config/wheelhouse-dev.json").stat().st_mode & 0o777)
 
     def test_prod_joins_the_running_database_with_its_own_credentials(self):
@@ -59,7 +59,7 @@ class PrepareTests(unittest.TestCase):
                         lambda root, name, password: created.append((name, password)))
         target = json.loads((self.root / "config/wheelhouse-prod.json").read_text())
         config = json.loads((self.root / "config/console-prod.json").read_text())
-        dev = json.loads((self.root / "config/console.json").read_text())
+        dev = json.loads((self.root / "config/console-dev.json").read_text())
         self.assertEqual("prod", target["environment"])
         self.assertEqual(str(self.root / "config/console-prod.json"), target["settings"]["console"])
         self.assertEqual((None, ["private"], "http://127.0.0.1:18080"),
@@ -86,13 +86,13 @@ class PrepareTests(unittest.TestCase):
 
     def test_repeat_and_partial_state_never_replace_credentials(self):
         self.run_prepare()
-        original = (self.root / "config/console.json").read_bytes()
+        original = (self.root / "config/console-dev.json").read_bytes()
         with self.assertRaises(ValueError):
             self.run_prepare()
         (self.root / "config/wheelhouse-dev.json").unlink()
         with self.assertRaises(ValueError):
             self.run_prepare()
-        self.assertEqual(original, (self.root / "config/console.json").read_bytes())
+        self.assertEqual(original, (self.root / "config/console-dev.json").read_bytes())
 
     def test_public_or_symlinked_input_is_refused_before_output(self):
         self.identity.chmod(0o644)
