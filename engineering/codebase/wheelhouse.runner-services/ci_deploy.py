@@ -82,10 +82,11 @@ def deploy(directory):
     if not is_current(commit):
         return {'status': 'superseded', 'testedCommit': commit}
     launched = json.loads(ssh.run(shlex.join([*command, 'launch', '--bundle', remote]), timeout=120))
-    print(json.dumps({'deployment': launched['id'], 'resumed': launched['resumed'],
+    unchanged = launched.get('unchanged', False)
+    print(json.dumps({'deployment': launched['id'], 'resumed': launched['resumed'], 'unchanged': unchanged,
                       'release': manifest['release'], 'sourceCommit': manifest['sourceCommit']}), flush=True)
     follow(ssh, command)
-    return json.loads(ssh.run(shlex.join([*command, 'verify']), timeout=120))
+    return {**json.loads(ssh.run(shlex.join([*command, 'verify']), timeout=120)), 'unchanged': unchanged}
 
 
 def main():
@@ -97,6 +98,8 @@ def main():
         if summary:
             with open(summary, 'a') as stream:
                 stream.write('Wheelhouse dev: `' + result.get('status', 'unknown') + '`\n')
+                if result.get('unchanged'):
+                    stream.write('No new release: the running release was verified without a restart.\n')
                 if result.get('verified'):
                     stream.write('Verified digest, container health, trusted HTTPS and anonymous MCP rejection.\n')
                     stream.write('Authenticated browser/MCP acceptance and backup restoration remain separate checks.\n')

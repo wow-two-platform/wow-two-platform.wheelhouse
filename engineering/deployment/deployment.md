@@ -1,6 +1,6 @@
 # Deployment operations
 
-*Last updated: 2026-10-06*
+*Last updated: 2026-10-14*
 
 ## Ownership and current boundary
 
@@ -130,6 +130,9 @@ of that original job. A lost launch reply can recover from the matching target j
 fails closed instead of launching another deployment. Failed or interrupted mutations require the existing
 reconciliation/recovery procedure; rerunning CI never silently retries them. Uploads/receipts are retained
 for diagnosis; include them in bounded host retention work once the first deployment is accepted.
+
+When the target already runs the resolved release and source commit, CI launches nothing: the receipt points at
+the running job and the same verification follows. A documentation-only push therefore never restarts the console.
 
 CI requires `status=succeeded` and a nonempty `completedAt`, then verifies the current job, running image
 digests and health, trusted private HTTPS readiness, and unauthenticated MCP rejection. Route-probe warnings

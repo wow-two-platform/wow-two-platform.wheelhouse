@@ -68,6 +68,31 @@ class CiRemoteTests(unittest.TestCase):
             self.start()
         self.launch.assert_called_once()
 
+    def test_unchanged_release_is_verified_without_a_restart(self):
+        running = {'id': 'running-job', 'release': 'v0.3.5', 'sourceCommit': 'a' * 40}
+        self.patch('state', return_value={'condition': 'ready', 'current': running})
+        self.assertEqual({'id': 'running-job', 'resumed': False, 'unchanged': True}, self.start())
+        self.assertEqual({'id': 'running-job', 'resumed': True}, self.start())
+        self.launch.assert_not_called()
+        self.check.assert_not_called()
+        with patch.object(runner, 'status', return_value={'id': 'running-job', 'status': 'succeeded',
+                                                        'completedAt': 'then'}), \
+                patch.object(runner, 'environment_for', return_value={}), \
+                patch.object(runner, 'Docker') as docker, \
+                patch.object(ci_remote, 'http_status', side_effect=[200, 401]):
+            self.assertTrue(ci_remote.verify(self.target_path, '123', self.commit)['verified'])
+            docker.return_value.verify.assert_called_once()
+
+    def test_new_release_or_unsettled_target_still_launches(self):
+        for state in ({'condition': 'ready', 'current': {'id': 'old', 'release': 'v0.3.4', 'sourceCommit': 'a' * 40}},
+                      {'condition': 'needs_reconciliation',
+                       'current': {'id': 'old', 'release': 'v0.3.5', 'sourceCommit': 'a' * 40}}):
+            with self.subTest(state=state['condition']), patch.object(runner, 'state', return_value=state):
+                ci_remote.receipt_path(self.target, '123').unlink(missing_ok=True)
+                self.launch.reset_mock()
+                self.assertFalse(self.start().get('unchanged', False))
+                self.launch.assert_called_once()
+
     def test_preflight_failure_does_not_write_intent_or_launch(self):
         self.check.return_value = {'ok': False}
         with self.assertRaisesRegex(runner.Rejected, 'Target readiness failed'):

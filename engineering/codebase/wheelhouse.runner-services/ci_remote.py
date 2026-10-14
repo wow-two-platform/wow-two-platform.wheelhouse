@@ -56,6 +56,15 @@ def launch_once(bundle, target_path, run_id, commit):
             saved['jobId'] = matches[0]['id']
             runner.write_json(receipt, saved)
             return {'id': saved['jobId'], 'resumed': True}
+        # A push that changes no release (docs only) verifies the running release instead of restarting it.
+        observed = runner.state(target)
+        running = observed.get('current') or {}
+        if (observed['condition'] == 'ready' and running.get('id')
+                and running.get('release') == manifest['release']
+                and running.get('sourceCommit') == manifest['sourceCommit']):
+            runner.write_json(receipt, {**wanted, 'bundle': str(Path(bundle).resolve()), 'createdAt': runner.now(),
+                                        'jobId': running['id'], 'unchanged': True})
+            return {'id': running['id'], 'resumed': False, 'unchanged': True}
         checks = runner.check(target, manifest)
         runner.require(checks.get('ok') is True, 'Target readiness failed; inspect runner check privately')
         # Persist intent first. A crash before launch is deliberately ambiguous and fails closed on rerun.
