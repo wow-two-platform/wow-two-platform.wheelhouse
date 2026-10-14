@@ -20,7 +20,10 @@ Since 2026-10-13 Wheelhouse dev runs on the OVH control-plane VPS, reachable onl
 over Tailscale Serve HTTPS. Every `main` push tests, publishes and deploys it; the first run
 ([38422336103](https://github.com/wow-two-platform/wow-two-platform.wheelhouse/actions/runs/38422336103)) verified
 the rollout, trusted HTTPS and anonymous MCP rejection. The public address answers only key-based SSH.
-Owner sign-in, restart persistence, authenticated MCP and off-provider backups remain open.
+Since 2026-10-14 Wheelhouse prod runs beside it on the same host, on the private HTTPS port 443, with its own
+database and sign-in; dev moved to port 8443. CI promoted `v0.3.7` to prod after the owner's approval
+([38523785166](https://github.com/wow-two-platform/wow-two-platform.wheelhouse/actions/runs/38523785166)).
+Restart persistence, authenticated MCP and off-provider backups remain open.
 
 The essential milestone closes when a published ForeverPin release runs on a reviewed VPS with a working public
 redirect and editor, real provider callbacks, persisted codes and cookie keys, and a verified backup.
