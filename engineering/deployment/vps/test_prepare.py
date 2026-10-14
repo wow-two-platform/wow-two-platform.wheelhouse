@@ -39,7 +39,8 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual("platform", runner.base_environment(target)["PLATFORM_NETWORK"])
         self.assertEqual("", config["Deployment"]["Rehearsal"])
         self.assertEqual(["172.30.0.2"], config["Deployment"]["TrustedProxies"])
-        self.assertEqual("http://127.0.0.1:18080", target["ingress"]["privateProbe"])
+        self.assertEqual("http://127.0.0.1:18082", target["ingress"]["privateProbe"])
+        self.assertEqual((8443, ["dev"]), (target["ingress"]["port"], target["ingress"]["privateEntryPoints"]))
         self.assertEqual(target["ingress"]["probe"], target["ingress"]["privateProbe"])
         connection = config["ConnectionStrings"]["Wheelhouse"]
         password = connection.rsplit("Password=", 1)[1]
@@ -50,6 +51,38 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(0o700, (self.root / "config").stat().st_mode & 0o777)
         self.assertEqual(0o444, (self.root / "config/console.json").stat().st_mode & 0o777)
         self.assertEqual(0o600, (self.root / "config/wheelhouse-dev.json").stat().st_mode & 0o777)
+
+    def test_prod_joins_the_running_database_with_its_own_credentials(self):
+        self.run_prepare()
+        created = []
+        prepare.prepare(self.root, self.identity, "wheelhouse.test-tailnet.ts.net", "prod",
+                        lambda root, name, password: created.append((name, password)))
+        target = json.loads((self.root / "config/wheelhouse-prod.json").read_text())
+        config = json.loads((self.root / "config/console-prod.json").read_text())
+        dev = json.loads((self.root / "config/console.json").read_text())
+        self.assertEqual("prod", target["environment"])
+        self.assertEqual(str(self.root / "config/console-prod.json"), target["settings"]["console"])
+        self.assertEqual((None, ["private"], "http://127.0.0.1:18080"),
+                         (target["ingress"]["port"], target["ingress"]["privateEntryPoints"],
+                          target["ingress"]["privateProbe"]))
+        self.assertEqual([("wheelhouse_prod", config["ConnectionStrings"]["Wheelhouse"].rsplit("Password=", 1)[1])],
+                         created)
+        self.assertIn("Database=wheelhouse_prod;Username=wheelhouse_prod;", config["ConnectionStrings"]["Wheelhouse"])
+        self.assertNotEqual(dev["ConnectionStrings"]["Wheelhouse"], config["ConnectionStrings"]["Wheelhouse"])
+        self.assertEqual(0o444, (self.root / "config/console-prod.json").stat().st_mode & 0o777)
+        self.assertEqual(0o600, (self.root / "config/wheelhouse-prod.json").stat().st_mode & 0o777)
+        with self.assertRaises(ValueError):
+            prepare.prepare(self.root, self.identity, "wheelhouse.test-tailnet.ts.net", "prod",
+                            lambda root, name, password: created.append((name, password)))
+        self.assertEqual(1, len(created))
+
+    def test_failed_prod_database_creation_writes_no_files(self):
+        def refused(root, name, password):
+            raise ValueError("Database creation failed")
+        with self.assertRaises(ValueError):
+            prepare.prepare(self.root, self.identity, "wheelhouse.test-tailnet.ts.net", "prod", refused)
+        self.assertFalse((self.root / "config/console-prod.json").exists())
+        self.assertFalse((self.root / "platform/.secrets/postgres-password").exists())
 
     def test_repeat_and_partial_state_never_replace_credentials(self):
         self.run_prepare()
