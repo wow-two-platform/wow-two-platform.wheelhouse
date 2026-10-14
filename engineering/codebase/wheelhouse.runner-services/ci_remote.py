@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dev-only CI adapter around the existing durable target runner; no deployment engine of its own."""
+"""CI adapter around the existing durable target runner for Wheelhouse dev and prod; no deployment engine of its own."""
 import argparse
 import fcntl
 import json
@@ -11,13 +11,30 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 import runner
 
+ENVIRONMENTS = ('dev', 'prod')
 
-def checked_target(path):
+
+def checked_target(path, environment='dev'):
     target = runner.read_json(path)
     runner.validate_target(target)
-    runner.require(target['product'] == 'wheelhouse' and target['environment'] == 'dev',
-                   'CI can deploy only wheelhouse-dev')
+    runner.require(environment in ENVIRONMENTS and target['product'] == 'wheelhouse'
+                   and target['environment'] == environment, 'CI can deploy only wheelhouse-dev or wheelhouse-prod')
     return target
+
+
+def project_root(target):
+    return Path(target['root']) / (target['product'] + '-' + target['environment'])
+
+
+def proven(dev_target_path, release):
+    """Prod takes only a release that completed successfully on dev; reruns and rollbacks reuse that record."""
+    target = checked_target(dev_target_path, 'dev')
+    runner.require(runner.RELEASE.fullmatch(release or ''), 'Invalid release')
+    for path in (project_root(target) / 'jobs').glob('*.json'):
+        job = runner.read_json(path)
+        if job.get('release') == release and job.get('status') == 'succeeded' and job.get('completedAt'):
+            return {'release': release, 'provenBy': job.get('id')}
+    raise runner.Rejected('The release has not succeeded on wheelhouse-dev')
 
 
 def identity(run_id, commit, manifest):
@@ -31,8 +48,8 @@ def receipt_path(target, run_id):
     return Path(target['root']) / 'ci' / 'receipts' / (run_id + '.json')
 
 
-def launch_once(bundle, target_path, run_id, commit):
-    target = checked_target(target_path)
+def launch_once(bundle, target_path, run_id, commit, environment='dev'):
+    target = checked_target(target_path, environment)
     manifest = runner.validate_bundle(bundle)
     runner.validate_target(target, manifest)
     wanted = identity(run_id, commit, manifest)
@@ -48,7 +65,7 @@ def launch_once(bundle, target_path, run_id, commit):
             if saved.get('jobId'):
                 return {'id': saved['jobId'], 'resumed': True}
             # A disconnect between launch and receipt publication must not submit another rollout.
-            jobs = Path(target['root']) / 'wheelhouse-dev' / 'jobs'
+            jobs = project_root(target) / 'jobs'
             matches = [runner.read_json(path) for path in jobs.glob('*.json')]
             matches = [job for job in matches if job.get('actor') == actor]
             runner.require(len(matches) == 1,
@@ -76,8 +93,8 @@ def launch_once(bundle, target_path, run_id, commit):
         return {'id': result['id'], 'resumed': False}
 
 
-def observe(target_path, run_id, commit):
-    target = checked_target(target_path)
+def observe(target_path, run_id, commit, environment='dev'):
+    target = checked_target(target_path, environment)
     runner.require(re.fullmatch(r'[1-9][0-9]{0,19}', run_id), 'Invalid GitHub run id')
     saved = runner.read_json(receipt_path(target, run_id))
     runner.require(saved['testedCommit'] == commit, 'Receipt does not match tested source')
@@ -99,17 +116,16 @@ def http_status(request):
         return error.code
 
 
-def verify(target_path, run_id, commit):
-    target = checked_target(target_path)
-    observed = observe(target_path, run_id, commit)
+def verify(target_path, run_id, commit, environment='dev'):
+    target = checked_target(target_path, environment)
+    observed = observe(target_path, run_id, commit, environment)
     runner.require(observed['status'] == 'succeeded' and observed['completedAt'],
                    'Deployment has not completed successfully')
     saved = runner.read_json(receipt_path(target, run_id))
     manifest = runner.validate_bundle(saved['bundle'])
     runner.require(all(saved.get(key) == value for key, value in identity(run_id, commit, manifest).items()),
                    'CI receipt bundle changed')
-    base = Path(target['root']) / 'wheelhouse-dev'
-    with runner.deployment_lock(base):
+    with runner.deployment_lock(project_root(target)):
         state = runner.state(target)
         runner.require(state['condition'] == 'ready' and state['current']['id'] == observed['id'],
                        'Target changed since this CI deployment')
@@ -134,19 +150,24 @@ def verify(target_path, run_id, commit):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['launch', 'status', 'verify'])
+    parser.add_argument('action', choices=['launch', 'status', 'verify', 'proven'])
     parser.add_argument('--target', required=True)
+    parser.add_argument('--environment', choices=ENVIRONMENTS, default='dev')
     parser.add_argument('--bundle')
-    parser.add_argument('--run-id', required=True)
-    parser.add_argument('--commit', required=True)
+    parser.add_argument('--release')
+    parser.add_argument('--run-id')
+    parser.add_argument('--commit')
     args = parser.parse_args()
     try:
-        if args.action == 'launch':
-            result = launch_once(args.bundle, args.target, args.run_id, args.commit)
+        runner.require(args.action == 'proven' or (args.run_id and args.commit), 'Give the GitHub run id and commit')
+        if args.action == 'proven':
+            result = proven(args.target, args.release)
+        elif args.action == 'launch':
+            result = launch_once(args.bundle, args.target, args.run_id, args.commit, args.environment)
         elif args.action == 'status':
-            result = observe(args.target, args.run_id, args.commit)
+            result = observe(args.target, args.run_id, args.commit, args.environment)
         else:
-            result = verify(args.target, args.run_id, args.commit)
+            result = verify(args.target, args.run_id, args.commit, args.environment)
         print(json.dumps(result))
         return 0
     except Exception as error:

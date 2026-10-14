@@ -1,0 +1,43 @@
+# Promotes one published release that already succeeded on wheelhouse-dev to wheelhouse-prod.
+# The prod environment requires the owner's approval; the job waits for it before touching the host.
+# Rollback is a promotion of the previous release. Wheelhouse never deploys itself from its console.
+name: promote-prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: The published release to promote, such as v0.3.6
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-prod-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pyyaml
+      - name: Promote the dev-proven release over pinned SSH
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROMOTE_RELEASE: ${{ inputs.release }}
+          DEV_SSH_HOST: ${{ secrets.DEV_SSH_HOST }}
+          DEV_SSH_USER: ${{ secrets.DEV_SSH_USER }}
+          DEV_SSH_PORT: ${{ vars.DEV_SSH_PORT || '22' }}
+          DEV_SSH_KEY: ${{ secrets.DEV_SSH_KEY }}
+          DEV_SSH_KNOWN_HOSTS: ${{ secrets.DEV_SSH_KNOWN_HOSTS }}
+        run: python3 engineering/codebase/wheelhouse.runner-services/ci_deploy.py

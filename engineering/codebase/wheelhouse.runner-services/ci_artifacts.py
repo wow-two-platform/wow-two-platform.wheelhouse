@@ -97,8 +97,17 @@ def equivalent_bundle(repo_root, generator_path, commit, bundle, manifest):
 
 def resolve_bundle(repository, commit, destination, repo_root, generator_path):
     """Materialize a verified bundle in a new directory; retain its actual sourceCommit on docs-only pushes."""
+    return _static_failures(_resolve_bundle, repository, commit, destination, repo_root, generator_path)
+
+
+def resolve_release(repository, tag, destination):
+    """Materialize exactly one published release, as promotion deploys the bundle dev already ran."""
+    return _static_failures(_resolve_release, repository, tag, destination)
+
+
+def _static_failures(resolve, *args):
     try:
-        return _resolve_bundle(repository, commit, destination, repo_root, generator_path)
+        return resolve(*args)
     except (Rejected, CommandFailed):
         raise
     except (OSError, ValueError, TypeError, KeyError, tarfile.TarError, subprocess.SubprocessError):
@@ -106,11 +115,51 @@ def resolve_bundle(repository, commit, destination, repo_root, generator_path):
         raise CommandFailed("Release bundle resolution failed") from None
 
 
+def _new_destination(destination):
+    destination = Path(destination)
+    require(not destination.exists() and not destination.is_symlink(), "Deployment bundle destination already exists")
+    return destination
+
+
+def _load(repository, root, candidate):
+    """Download, checksum and validate one candidate's bundle under a private temporary root."""
+    tag = candidate["release"]
+    payload = artifacts.fetch("https://github.com/" + repository + "/releases/download/"
+                              + quote(tag, safe="") + "/" + ASSET)
+    require("sha256:" + hashlib.sha256(payload).hexdigest() == candidate["assetDigest"], "Release asset changed")
+    archive = root / (tag + ".tar.gz")
+    archive.write_bytes(payload)
+    identifier = "release-" + hashlib.sha256(tag.encode()).hexdigest()[:32]
+    transport.import_bundle(root, archive, identifier)
+    bundle = root / "bundles" / identifier
+    manifest = validate_bundle(bundle)
+    require(manifest["product"] == "wheelhouse" and manifest["release"] == tag
+            and manifest.get("kind", "release") == "release"
+            and manifest["platform"] == "linux/amd64", "Unexpected deployment release")
+    require(manifest["sourceCommit"] == candidate["sourceCommit"], "Release source commit mismatch")
+    require(set(manifest["images"]) == {"console"}
+            and manifest["images"]["console"].split("@")[0] == IMAGE,
+            "Image is outside the approved repository")
+    return bundle, manifest
+
+
+def _resolve_release(repository, tag, destination):
+    require(repository == REPOSITORY, "Unapproved deployment repository")
+    require(isinstance(tag, str) and VERSION.fullmatch(tag), "Give a published release tag such as v0.3.6")
+    destination = _new_destination(destination)
+    selected = next((candidate for candidate in release_candidates(repository) if candidate["release"] == tag), None)
+    require(selected is not None, "The release is not a published Wheelhouse release")
+    with tempfile.TemporaryDirectory() as temporary:
+        bundle, manifest = _load(repository, Path(temporary), selected)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(bundle, destination)
+        return manifest
+
+
 def _resolve_bundle(repository, commit, destination, repo_root, generator_path):
     require(repository == REPOSITORY, "Unapproved deployment repository")
     require(isinstance(commit, str) and SHA.fullmatch(commit), "Give the full tested commit SHA")
-    destination = Path(destination)
-    require(not destination.exists() and not destination.is_symlink(), "Deployment bundle destination already exists")
+    destination = _new_destination(destination)
     require(Path(generator_path).is_file(), "Pinned release generator is missing")
     candidates = release_candidates(repository)
     with tempfile.TemporaryDirectory() as temporary:
@@ -118,27 +167,9 @@ def _resolve_bundle(repository, commit, destination, repo_root, generator_path):
         loaded = {}
 
         def load(candidate):
-            tag = candidate["release"]
-            if tag not in loaded:
-                payload = artifacts.fetch("https://github.com/" + repository + "/releases/download/"
-                                          + quote(tag, safe="") + "/" + ASSET)
-                require("sha256:" + hashlib.sha256(payload).hexdigest() == candidate["assetDigest"],
-                        "Release asset changed")
-                archive = root / (tag + ".tar.gz")
-                archive.write_bytes(payload)
-                identifier = "release-" + hashlib.sha256(tag.encode()).hexdigest()[:32]
-                transport.import_bundle(root, archive, identifier)
-                bundle = root / "bundles" / identifier
-                manifest = validate_bundle(bundle)
-                require(manifest["product"] == "wheelhouse" and manifest["release"] == tag
-                        and manifest.get("kind", "release") == "release"
-                        and manifest["platform"] == "linux/amd64", "Unexpected deployment release")
-                require(manifest["sourceCommit"] == candidate["sourceCommit"], "Release source commit mismatch")
-                require(set(manifest["images"]) == {"console"}
-                        and manifest["images"]["console"].split("@")[0] == IMAGE,
-                        "Image is outside the approved repository")
-                loaded[tag] = bundle, manifest
-            return loaded[tag]
+            if candidate["release"] not in loaded:
+                loaded[candidate["release"]] = _load(repository, root, candidate)
+            return loaded[candidate["release"]]
 
         def equivalent(candidate):
             bundle, manifest = load(candidate)

@@ -135,6 +135,30 @@ class CiRemoteTests(unittest.TestCase):
                                                         'reason': 'PRIVATE', 'sites': [{'url': 'PRIVATE'}]}):
             self.assertNotIn('PRIVATE', json.dumps(ci_remote.observe(self.target_path, '123', self.commit)))
 
+    def test_prod_takes_only_a_release_that_completed_on_dev(self):
+        jobs = Path(self.target['root']) / 'wheelhouse-dev/jobs'
+        with self.assertRaisesRegex(runner.Rejected, 'not succeeded on wheelhouse-dev'):
+            ci_remote.proven(self.target_path, 'v0.3.6')
+        runner.write_json(jobs / 'running.json', {'id': 'running', 'release': 'v0.3.6', 'status': 'succeeded'})
+        runner.write_json(jobs / 'failed.json', {'id': 'failed', 'release': 'v0.3.6', 'status': 'failed',
+                                                 'completedAt': 'then'})
+        with self.assertRaisesRegex(runner.Rejected, 'not succeeded on wheelhouse-dev'):
+            ci_remote.proven(self.target_path, 'v0.3.6')
+        runner.write_json(jobs / 'done.json', {'id': 'done', 'release': 'v0.3.6', 'status': 'succeeded',
+                                               'completedAt': 'then'})
+        self.assertEqual({'release': 'v0.3.6', 'provenBy': 'done'}, ci_remote.proven(self.target_path, 'v0.3.6'))
+        with self.assertRaisesRegex(runner.Rejected, 'not succeeded on wheelhouse-dev'):
+            ci_remote.proven(self.target_path, 'v0.3.7')
+
+    def test_prod_launch_uses_its_own_project_and_receipt(self):
+        prod = {**self.target, 'environment': 'prod'}
+        prod_path = self.root / 'prod.json'
+        prod_path.write_text(json.dumps(prod))
+        self.assertFalse(ci_remote.launch_once(self.bundle, prod_path, '456', self.commit, 'prod')['resumed'])
+        self.assertTrue(ci_remote.receipt_path(prod, '456').exists())
+        with self.assertRaisesRegex(runner.Rejected, 'only wheelhouse-dev or wheelhouse-prod'):
+            ci_remote.launch_once(self.bundle, prod_path, '789', self.commit, 'dev')
+
 
 class CiDriverTests(unittest.TestCase):
     def test_follow_waits_for_cleanup_not_only_terminal_label(self):
@@ -164,6 +188,41 @@ class CiDriverTests(unittest.TestCase):
         with patch.object(ci_deploy.artifacts, 'fetch', return_value=json.dumps({'object': {'sha': 'a' * 40}}).encode()):
             self.assertTrue(ci_deploy.is_current('a' * 40))
             self.assertFalse(ci_deploy.is_current('b' * 40))
+
+    def test_promotion_runs_only_from_the_dispatched_main_workflow(self):
+        base = {'GITHUB_REPOSITORY': 'wow-two-platform/wow-two-platform.wheelhouse', 'GITHUB_REF': 'refs/heads/main',
+                'GITHUB_SHA': 'a' * 40, 'GITHUB_RUN_ID': '1', 'GITHUB_RUN_ATTEMPT': '1', 'GH_TOKEN': 'token'}
+        for event, promote, message in (('push', 'v0.3.6', 'dispatched promotion'),
+                                        ('workflow_dispatch', '', 'Only main pushes')):
+            with self.subTest(event=event), tempfile.TemporaryDirectory() as directory, \
+                    patch.dict(ci_deploy.os.environ, {**base, 'GITHUB_EVENT_NAME': event, 'PROMOTE_RELEASE': promote},
+                               clear=True):
+                with self.assertRaisesRegex(runner.Rejected, message):
+                    ci_deploy.deploy(Path(directory))
+
+    def test_promotion_proves_the_release_on_dev_before_launching_prod(self):
+        env = {'GITHUB_REPOSITORY': 'wow-two-platform/wow-two-platform.wheelhouse', 'GITHUB_REF': 'refs/heads/main',
+               'GITHUB_EVENT_NAME': 'workflow_dispatch', 'PROMOTE_RELEASE': 'v0.3.6', 'GITHUB_SHA': 'a' * 40,
+               'GITHUB_RUN_ID': '7', 'GITHUB_RUN_ATTEMPT': '1', 'GH_TOKEN': 'token', 'DEV_SSH_HOST': 'host',
+               'DEV_SSH_USER': 'user', 'DEV_SSH_KEY': 'key', 'DEV_SSH_KNOWN_HOSTS': 'known'}
+        ssh = Mock()
+        ssh.run.side_effect = ['', '', json.dumps({'id': 'job', 'resumed': False}),
+                               json.dumps({'id': 'job', 'status': 'succeeded', 'completedAt': 'now'}),
+                               json.dumps({'id': 'job', 'status': 'succeeded', 'verified': True})]
+        manifest = {'release': 'v0.3.6', 'sourceCommit': 'b' * 40}
+        with tempfile.TemporaryDirectory() as directory, patch.dict(ci_deploy.os.environ, env, clear=True), \
+                patch.object(ci_deploy.ci_artifacts, 'resolve_release', return_value=manifest) as resolve, \
+                patch.object(ci_deploy, 'Ssh', return_value=ssh), \
+                patch.object(ci_deploy, 'is_current') as current:
+            result = ci_deploy.deploy(Path(directory))
+        resolve.assert_called_once()
+        current.assert_not_called()
+        commands = [call.args[0] for call in ssh.run.call_args_list]
+        self.assertIn('proven', commands[1])
+        self.assertIn('wheelhouse-dev.json', commands[1])
+        self.assertIn('wheelhouse-prod.json', commands[2])
+        self.assertIn('--environment prod', commands[2])
+        self.assertEqual('prod', result['environment'])
 
     def test_ci_credentials_are_private_files(self):
         with tempfile.TemporaryDirectory() as directory:
