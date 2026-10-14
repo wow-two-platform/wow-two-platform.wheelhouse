@@ -522,7 +522,7 @@ function openDeploy(job?: DeploymentJob): void {
               <div v-else class="mt-5 rounded-xl bg-muted/50 p-4">
                 <p class="text-sm font-medium">No environment yet</p>
                 <p class="mt-1 text-sm text-muted-foreground">
-                  No fleet target runs this product; targets are defined in the runner's <code>fleet.py</code>.
+                  Add one to this product in Products to deploy it.
                 </p>
                 <RouterLink
                   to="/products"
