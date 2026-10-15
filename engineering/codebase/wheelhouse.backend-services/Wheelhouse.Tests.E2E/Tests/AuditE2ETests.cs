@@ -153,6 +153,16 @@ public sealed class AuditE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EB
                 broken.GetProperty("reason").GetString()));
     }
 
+    [Fact]
+    public async Task ConcurrentActions_ChainEveryEntryToTheOneCommittedBefore()
+    {
+        var responses = await Task.WhenAll(Enumerable.Range(1, 8).Select(n => Deploy("pilot", $"v{n}")));
+        Assert.All(responses, response => Assert.Equal(HttpStatusCode.Accepted, response.StatusCode));
+
+        var verification = await Verification();
+        Assert.Equal((true, 8), (verification.GetProperty("intact").GetBoolean(), verification.GetProperty("entries").GetInt32()));
+    }
+
     private Task<HttpResponseMessage> Deploy(string target, string release)
     {
         var client = AdminClient;

@@ -1,8 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Wheelhouse.Application.Abstractions;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Errors;
+using WoW.Two.Sdk.Backend.Beta.Foundation.Results;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 
 namespace Wheelhouse.Application.Inventory.Interceptors;
 
@@ -19,9 +18,8 @@ public sealed class InventoryExportingInterceptor<TRequest, TResponse>(IServiceP
         if (request is not IInventoryCommand)
             return response;
 
-        // Only AppResult<T>.Failure carries an Error; a refused change leaves the snapshot as it was.
-        var error = response?.GetType().GetProperty(nameof(AppResult<object>.Failure.Error))?.GetValue(response) as AppError;
-        if (error is null)
+        // A refused change leaves the snapshot as it was.
+        if (response is not IResult { IsSuccess: false })
             await services.GetRequiredService<IInventorySnapshot>().ExportAsync(CancellationToken.None);
         return response;
     }

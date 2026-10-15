@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Audit;
 using Wheelhouse.Domain.Audit.Entities;
+using WoW.Two.Sdk.Backend.Beta.Data.EntityFrameworkCore.Locks.Extensions;
 using WoW.Two.Sdk.Backend.Beta.Foundation.Audit;
 using WoW.Two.Sdk.Backend.Beta.Foundation.Audit.Validators;
 
@@ -13,17 +14,14 @@ internal sealed class EfAuditTrail(
     WheelhouseDbContext db, IHashChainSealer<AuditEntry> sealer, IHashChainValidator<AuditEntry> validator, TimeProvider time)
     : IAuditTrail
 {
-    private const string PostgresProviderName = "Npgsql.EntityFrameworkCore.PostgreSQL";
-
-    // Any constant works; it only has to differ from other advisory locks the database uses.
-    private const long AppendLockKey = 0x57484155444954;
+    // Every append takes this one transaction lock, so the next entry reads the head the previous one committed.
+    private const string AppendLockKey = "audit:append";
 
     /// <inheritdoc />
     public async Task AppendAsync(AuditRecord record, CancellationToken ct = default)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        if (db.Database.ProviderName == PostgresProviderName)
-            await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", [AppendLockKey], ct);
+        await db.Database.AcquireTransactionLocksAsync([AppendLockKey], ct);
         var last = await db.AuditEntries.AsNoTracking().OrderByDescending(e => e.Sequence).FirstOrDefaultAsync(ct);
         var entry = new AuditEntry
         {

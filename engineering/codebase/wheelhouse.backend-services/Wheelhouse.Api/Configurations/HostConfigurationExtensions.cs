@@ -4,6 +4,7 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Infrastructure.Settings;
 using Wheelhouse.Persistence;
 using Wheelhouse.Persistence.Repositories;
+using WoW.Two.Sdk.Backend.Beta.Caching.Hybrid;
 using WoW.Two.Sdk.Backend.Beta.Data;
 using WoW.Two.Sdk.Backend.Beta.Data.Migrations.Bespoke;
 using WoW.Two.Sdk.Backend.Beta.Foundation.Audit;
@@ -120,6 +121,8 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Infrastructure.Inventory.LocalRigSeedService>();
         builder.Services.AddHostedService<Wheelhouse.Infrastructure.Inventory.InventoryStartupService>();
         builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.DeploymentOutcomeFollower>();
+        // The runner-sites read holds briefly in the SDK cache, in process.
+        builder.Services.AddHybridCaching();
         builder.Services.AddScoped<ITargetSites, Wheelhouse.Infrastructure.Products.RunnerTargetSites>();
 
         // Vault administration: inventory endpoints only, no redirects or cookies, bounded calls.
