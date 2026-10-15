@@ -25,8 +25,7 @@ import {
   Server,
 } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Badge, EmptyState } from "@wow-two-beta/ui-vue/presentation/display";
-import { Measures } from "@/domain/common";
+import { Badge, EmptyState, RelativeTime } from "@wow-two-beta/ui-vue/presentation/display";
 import { CanvasArea } from "@wow-two-beta/ui-vue/presentation/layout";
 import { TopologyAvailability } from "@/domain/topology";
 import {
@@ -190,7 +189,7 @@ function condition(value: string | null): string {
           </p>
           <p class="mt-1 break-all">
             {{ props.topology.release ?? "Verified release" }} · Read
-            {{ Measures.moment(props.topology.collectedAt) }}
+            <RelativeTime :value="props.topology.collectedAt" is-live />
           </p>
         </div>
         <div class="flex flex-wrap gap-1.5" aria-label="Map layers">
@@ -506,7 +505,7 @@ function condition(value: string | null): string {
             {{ selected.image ?? "Image not declared" }}
           </p>
           <p v-if="props.observedAt" class="mt-2 text-xs text-muted-foreground">
-            Runtime read {{ Measures.moment(props.observedAt) }}
+            Runtime read <RelativeTime :value="props.observedAt" />
           </p>
           <dl class="mt-4 grid gap-3 text-xs sm:grid-cols-2">
             <div>

@@ -17,6 +17,7 @@ import { RotateCcw } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import {
+  RelativeTime,
   Table,
   TableBody,
   TableCell,
@@ -25,7 +26,6 @@ import {
   TableRow,
 } from "@wow-two-beta/ui-vue/presentation/display";
 
-import { Measures } from "@/domain/common";
 import { JobStatus } from "@/domain/deployments";
 
 import JobStatusIndicator from "./JobStatusIndicator.vue";
@@ -55,13 +55,9 @@ const props = defineProps<HistoryTableProps>();
     </TableHead>
     <TableBody>
       <TableRow v-for="job in props.jobs" :key="job.id">
-        <TableCell
-          class="whitespace-nowrap text-xs text-muted-foreground"
-          :title="
-            job.submittedAt ? new Date(job.submittedAt).toLocaleString() : ''
-          "
-        >
-          {{ Measures.moment(job.submittedAt) }}
+        <TableCell class="whitespace-nowrap text-xs text-muted-foreground">
+          <RelativeTime v-if="job.submittedAt" :value="job.submittedAt" />
+          <template v-else>—</template>
         </TableCell>
         <TableCell class="font-mono text-xs">
           <button

@@ -18,6 +18,7 @@ import {
   Badge,
   DescriptionGroup,
   EmptyState,
+  RelativeTime,
 } from "@wow-two-beta/ui-vue/presentation/display";
 import {
   SearchInput,
@@ -806,7 +807,9 @@ function openDeploy(job?: DeploymentJob): void {
                       }}</span
                       ><span class="text-xs text-muted-foreground"
                         >{{ job.actor ?? "Operator" }} ·
-                        {{ Measures.moment(job.submittedAt) }}</span
+                        <RelativeTime v-if="job.submittedAt" :value="job.submittedAt" /><template v-else
+                          >—</template
+                        ></span
                       ></span
                     ><span class="text-xs capitalize text-muted-foreground">{{
                       DeploymentExtensions.label(job.status)

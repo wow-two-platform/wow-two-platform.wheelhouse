@@ -14,6 +14,7 @@ import { Plus } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import {
   Badge,
+  RelativeTime,
   Table,
   TableBody,
   TableCell,
@@ -24,7 +25,6 @@ import {
 import { StatusIndicator } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { ConfirmPopover } from "@wow-two-beta/ui-vue/presentation/overlays";
 import { useTokenChanges, useVaultTokens } from "@/application/secrets";
-import { Measures } from "@/domain/common";
 import { SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { LoadState } from "@/presentation/common/components";
 import MintTokenModal from "./MintTokenModal.vue";
@@ -141,16 +141,16 @@ async function confirmRevoke(): Promise<void> {
             <TableCell>{{ token.name }}</TableCell>
             <TableCell class="whitespace-nowrap text-xs text-muted-foreground">
               <SkeletonStateSlot
-                :title="new Date(token.createdAtUtc).toLocaleString()"
-                >{{ Measures.age(token.createdAtUtc) }}</SkeletonStateSlot
-              >
+                ><RelativeTime :value="token.createdAtUtc"
+              /></SkeletonStateSlot>
             </TableCell>
-            <TableCell class="text-xs text-muted-foreground">
-              <SkeletonStateSlot>{{
-                token.expiresAtUtc
-                  ? new Date(token.expiresAtUtc).toLocaleString()
-                  : "Never"
-              }}</SkeletonStateSlot>
+            <TableCell class="whitespace-nowrap text-xs text-muted-foreground">
+              <SkeletonStateSlot
+                ><RelativeTime v-if="token.expiresAtUtc" :value="token.expiresAtUtc" /><template
+                  v-else
+                  >Never</template
+                ></SkeletonStateSlot
+              >
             </TableCell>
             <TableCell>
               <span class="flex flex-wrap items-center gap-2">

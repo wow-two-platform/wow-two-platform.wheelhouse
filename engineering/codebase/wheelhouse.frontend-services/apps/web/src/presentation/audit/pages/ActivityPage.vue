@@ -4,6 +4,7 @@ import { ShieldAlert, ShieldCheck } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import {
   Badge,
+  RelativeTime,
   Table,
   TableBody,
   TableCell,
@@ -22,7 +23,6 @@ import {
 import { useAuditEntries, useAuditVerification } from "@/application/audit";
 import { useRefresh } from "@/bootstrap/query";
 import { AuditArea, AuditExtensions, AuditOutcome } from "@/domain/audit";
-import { Measures } from "@/domain/common";
 import { LoadState, PageActions, Panel, RefreshButton } from "@/presentation/common/components";
 
 /** Lists every operator action from the hash-chained audit trail, newest first, with the chain's verification. */
@@ -140,11 +140,10 @@ function newer(): void {
           </TableHead>
           <TableBody>
             <TableRow v-for="entry in visible" :key="entry.sequence">
-              <TableCell
-                class="whitespace-nowrap text-xs text-muted-foreground"
-                :title="`#${entry.sequence} · ${new Date(entry.occurredAt).toLocaleString()}`"
-                >{{ Measures.moment(entry.occurredAt) }}</TableCell
-              >
+              <TableCell class="whitespace-nowrap text-xs text-muted-foreground">
+                <RelativeTime class="block" :value="entry.occurredAt" />
+                <span class="mt-1 block font-mono">#{{ entry.sequence }}</span>
+              </TableCell>
               <TableCell class="text-xs">{{ entry.actor }}</TableCell>
               <TableCell>
                 <span class="block text-sm font-medium">{{ AuditExtensions.label(entry.action) }}</span>

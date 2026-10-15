@@ -5,6 +5,7 @@ import { KeyRound, Pencil, Plus, Server as ServerIcon } from 'lucide-vue-next';
 import { Button } from '@wow-two-beta/ui-vue/presentation/actions';
 import {
   Badge,
+  RelativeTime,
   Table,
   TableHead,
   TableBody,
@@ -90,11 +91,10 @@ const trendWindow = computed(() => {
     <PortfolioAttention />
     <div class="flex flex-wrap items-center justify-between gap-3">
       <p class="text-sm text-muted-foreground">
-        {{
-          vitals.data.value
-            ? `Read ${Measures.moment(vitals.data.value.collectedAt)} · updates every minute`
-            : 'Current resource readings from your configured hosts.'
-        }}
+        <template v-if="vitals.data.value"
+          >Read <RelativeTime :value="vitals.data.value.collectedAt" is-live /> · updates every minute</template
+        >
+        <template v-else>Current resource readings from your configured hosts.</template>
       </p>
       <div class="w-48">
         <SelectPicker
@@ -258,7 +258,9 @@ const trendWindow = computed(() => {
                   <p class="font-medium">{{ container.service }}</p>
                   <p class="mt-1 text-xs text-muted-foreground">
                     {{ ServerExtensions.containerLabel(container) }} · {{ container.restarts }} restarts · started
-                    {{ Measures.moment(container.startedAt) }}
+                    <RelativeTime v-if="container.startedAt" :value="container.startedAt" /><template v-else
+                      >—</template
+                    >
                   </p>
                 </div>
                 <div class="text-right text-xs tabular-nums">

@@ -4,6 +4,7 @@ import { KeyRound, Plus } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import {
   Badge,
+  RelativeTime,
   Table,
   TableBody,
   TableCell,
@@ -26,9 +27,9 @@ const creating = ref(false);
 const revokeError = ref<string | null>(null);
 const live = computed(() => keys.value.filter((key) => key.revokedAt === null).length);
 
-/** Formats an instant for the table, or a dash when absent. @internal */
-function when(value: string | null): string {
-  return value ? new Date(value).toLocaleString() : "—";
+/** Formats an instant for the revoked badge's tooltip. @internal */
+function when(value: string): string {
+  return new Date(value).toLocaleString();
 }
 
 /** Revokes only the explicitly confirmed key; a failure rejects, so the confirmation stays open beside its error. */
@@ -80,8 +81,10 @@ async function confirmRevoke(key: IntegrationKey): Promise<void> {
                 <Badge v-for="scope in key.scopes" :key="scope" size="sm" variant="neutral">{{ scope }}</Badge>
               </span>
             </TableCell>
-            <TableCell class="text-xs">{{ when(key.createdAt) }} · {{ key.createdBy }}</TableCell>
-            <TableCell class="text-xs">{{ when(key.lastUsedAt) }}</TableCell>
+            <TableCell class="text-xs"><RelativeTime :value="key.createdAt" /> · {{ key.createdBy }}</TableCell>
+            <TableCell class="text-xs"
+              ><RelativeTime v-if="key.lastUsedAt" :value="key.lastUsedAt" /><template v-else>—</template></TableCell
+            >
             <TableCell class="text-right">
               <Badge v-if="key.revokedAt" size="sm" variant="outline" :title="`Revoked ${when(key.revokedAt)}`">Revoked</Badge>
               <ConfirmPopover

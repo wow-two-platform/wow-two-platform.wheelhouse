@@ -90,10 +90,6 @@ const modals = Object.fromEntries(
   ),
 );
 aliases.set(
-  "@/domain/common",
-  asModule("export const Measures = { age: (value) => value };"),
-);
-aliases.set(
   "@/presentation/common/components",
   asModule(
     "const Stub = { render: () => null }; export { Stub as LoadState, Stub as SkeletonStateSlot };",

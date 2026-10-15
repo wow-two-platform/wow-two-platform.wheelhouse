@@ -11,6 +11,7 @@ import { computed } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 
 import {
+  RelativeTime,
   Sparkline,
   StatCard,
   Table,
@@ -237,11 +238,9 @@ function difference(
                   >{{ target.lastRelease }}</span
                 >
               </TableCell>
-              <TableCell
-                class="whitespace-nowrap text-xs text-muted-foreground"
-                :title="new Date(target.lastDeployAt).toLocaleString()"
-                >{{ Measures.moment(target.lastDeployAt) }}</TableCell
-              >
+              <TableCell class="whitespace-nowrap text-xs text-muted-foreground"
+                ><RelativeTime :value="target.lastDeployAt"
+              /></TableCell>
             </TableRow>
           </TableBody>
         </Table>

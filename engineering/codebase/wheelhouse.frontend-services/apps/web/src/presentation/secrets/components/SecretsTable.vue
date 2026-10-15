@@ -17,6 +17,7 @@ import { KeyRound, Plus } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import {
   Badge,
+  RelativeTime,
   Table,
   TableBody,
   TableCell,
@@ -29,7 +30,6 @@ import {
   StatusIndicator,
 } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { useSecretChanges, useVaultSecrets } from "@/application/secrets";
-import { Measures } from "@/domain/common";
 import { SecretState } from "@/domain/secrets";
 import { SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { LoadState } from "@/presentation/common/components";
@@ -154,9 +154,8 @@ function closeEditor(open: boolean): void {
             <TableCell class="whitespace-nowrap text-xs text-muted-foreground">
               <span class="flex flex-col items-start gap-1">
                 <SkeletonStateSlot
-                  :title="new Date(secret.updatedAtUtc).toLocaleString()"
-                  >{{ Measures.age(secret.updatedAtUtc) }}</SkeletonStateSlot
-                >
+                  ><RelativeTime :value="secret.updatedAtUtc"
+                /></SkeletonStateSlot>
                 <Badge v-if="overdue.has(secret.key)" variant="warning"
                   >rotation due</Badge
                 >

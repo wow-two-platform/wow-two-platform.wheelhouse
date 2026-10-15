@@ -5,6 +5,7 @@ import { Rocket } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import {
   Badge,
+  RelativeTime,
   Table,
   TableBody,
   TableCell,
@@ -22,7 +23,6 @@ import {
 
 import { useRefresh } from "@/bootstrap/query";
 import { useReleaseArtifacts } from "@/application/deployments";
-import { Measures } from "@/domain/common";
 import { LoadState, Panel } from "@/presentation/common/components";
 import { RefreshButton } from "@/presentation/common/components";
 
@@ -115,12 +115,10 @@ const visible = computed(() =>
               <span v-if="artifact.branch" class="mt-1 block text-muted-foreground">{{ artifact.branch }}</span>
             </TableCell>
             <TableCell class="whitespace-nowrap text-xs text-muted-foreground">
-              <span class="block" :title="new Date(artifact.publishedAt).toLocaleString()">{{
-                Measures.moment(artifact.publishedAt)
-              }}</span>
+              <RelativeTime class="block" :value="artifact.publishedAt" />
               <span v-if="artifact.expiresAt" class="mt-1 block"
-                >expires {{ Measures.moment(artifact.expiresAt) }}</span
-              >
+                >expires <RelativeTime :value="artifact.expiresAt"
+              /></span>
             </TableCell>
             <TableCell class="text-right">
               <Button
