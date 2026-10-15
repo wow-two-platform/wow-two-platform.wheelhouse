@@ -1,7 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Npgsql;
+using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Audit;
+using Wheelhouse.Domain.Audit.Enums;
 using Wheelhouse.Tests.E2E.Harness;
 
 namespace Wheelhouse.Tests.E2E.Tests;
@@ -151,6 +156,36 @@ public sealed class AuditE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EB
         Assert.Equal((false, 1L, "HashMismatch"),
             (broken.GetProperty("intact").GetBoolean(), broken.GetProperty("brokenSequence").GetInt64(),
                 broken.GetProperty("reason").GetString()));
+    }
+
+    [Fact]
+    public async Task Verification_PassesAnEarlierRowAndASubMicrosecondEntry_AfterTheDatabaseRoundTrip()
+    {
+        // Row 1 as the trail sealed it before SDK 10.0.65: a microsecond instant, hashed at its exact ticks.
+        await using (var connection = new NpgsqlConnection(Fixture.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var insert = new NpgsqlCommand(
+                "INSERT INTO audit_entries " +
+                "(id, sequence, previous_hash, hash, occurred_at_utc, actor, action, subject, outcome, detail, reason) " +
+                "VALUES ('6f1d6c1e-0a4b-4e57-9a51-2d1f3b5c7a90', 1, ''::bytea, @hash, '2026-10-01T09:15:30.123456Z', " +
+                "'test-admin', 'deployment.start', 'pilot', 'succeeded', 'v1', NULL)", connection);
+            insert.Parameters.AddWithValue("hash",
+                Convert.FromHexString("de5efce963e11e501d5753ed1452ed76c18296076ac97f5e3ac6f09ae4c112c1"));
+            await insert.ExecuteNonQueryAsync();
+        }
+
+        // Row 2 sealed now at a sub-microsecond instant; the database keeps it to the microsecond.
+        await using (var scope = Fixture.Host.Services.CreateAsyncScope())
+        {
+            var trail = scope.ServiceProvider.GetRequiredService<IAuditTrail>();
+            var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 8, 30, 0, TimeSpan.Zero).AddTicks(1_234_567));
+            var ticking = (IAuditTrail)ActivatorUtilities.CreateInstance(scope.ServiceProvider, trail.GetType(), clock);
+            await ticking.AppendAsync(new AuditRecord("test-admin", "deployment.start", "pilot", AuditOutcome.Succeeded, "v2", null));
+        }
+
+        var verification = await Verification();
+        Assert.Equal((true, 2), (verification.GetProperty("intact").GetBoolean(), verification.GetProperty("entries").GetInt32()));
     }
 
     [Fact]

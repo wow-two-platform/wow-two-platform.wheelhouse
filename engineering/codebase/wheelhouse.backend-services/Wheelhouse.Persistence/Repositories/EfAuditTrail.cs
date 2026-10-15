@@ -26,8 +26,8 @@ internal sealed class EfAuditTrail(
         var entry = new AuditEntry
         {
             Id = Guid.NewGuid(),
-            // Microsecond precision is what Postgres keeps; hashing the stored value keeps the chain verifiable.
-            OccurredAtUtc = TruncateToMicroseconds(time.GetUtcNow()),
+            // Postgres keeps microseconds; the SDK hashes timestamps at that precision, so the stored row verifies.
+            OccurredAtUtc = time.GetUtcNow(),
             Actor = record.Actor,
             Action = record.Action,
             Subject = record.Subject,
@@ -58,7 +58,4 @@ internal sealed class EfAuditTrail(
             ? new AuditVerification(true, entries.Count, null, null)
             : new AuditVerification(false, entries.Count, result.BrokenSequence, result.Reason.ToString());
     }
-
-    private static DateTimeOffset TruncateToMicroseconds(DateTimeOffset value) =>
-        new(value.Ticks - value.Ticks % 10, value.Offset);
 }
