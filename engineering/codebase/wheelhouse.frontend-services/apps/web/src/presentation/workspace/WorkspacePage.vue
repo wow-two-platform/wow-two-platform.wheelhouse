@@ -14,7 +14,11 @@ import {
   ShieldCheck,
 } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Badge, EmptyState } from "@wow-two-beta/ui-vue/presentation/display";
+import {
+  Badge,
+  DescriptionGroup,
+  EmptyState,
+} from "@wow-two-beta/ui-vue/presentation/display";
 import {
   SearchInput,
   SelectPicker,
@@ -22,6 +26,8 @@ import {
   SelectPickerValue,
   SelectPickerContent,
   SelectPickerItem,
+  ToggleGroup,
+  ToggleInput,
 } from "@wow-two-beta/ui-vue/presentation/forms";
 import { SkeletonState } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { useProducts } from "@/application/products";
@@ -176,6 +182,11 @@ const refresh = useRefresh(() =>
     ...(inspected.value?.kind === "deployment" ? [outcome.refetch()] : []),
   ]),
 );
+
+/** Switches the services view; pressing the active segment clears the group's value and keeps the view. @internal */
+function setServiceView(value: unknown): void {
+  if (value === "map" || value === "list") serviceView.value = value;
+}
 
 /** Clears declaration selection when the operator changes environments. */
 watch(
@@ -606,28 +617,19 @@ function openDeploy(job?: DeploymentJob): void {
                   <h3 class="flex items-center gap-2 text-sm font-semibold">
                     <Box :size="16" />Services
                   </h3>
-                  <div
-                    role="group"
+                  <ToggleGroup
+                    variant="segmented"
                     aria-label="Service view"
-                    class="flex gap-1 rounded-lg border border-border bg-card p-1"
+                    :model-value="serviceView"
+                    @update:model-value="setServiceView"
                   >
-                    <Button
-                      size="sm"
-                      :variant="serviceView === 'map' ? 'solid' : 'ghost'"
-                      :aria-pressed="serviceView === 'map'"
-                      @click="serviceView = 'map'"
+                    <ToggleInput value="map" size="sm"
+                      ><Network :size="14" />Map</ToggleInput
                     >
-                      <template #leading><Network :size="14" /></template>Map
-                    </Button>
-                    <Button
-                      size="sm"
-                      :variant="serviceView === 'list' ? 'solid' : 'ghost'"
-                      :aria-pressed="serviceView === 'list'"
-                      @click="serviceView = 'list'"
+                    <ToggleInput value="list" size="sm"
+                      ><List :size="14" />List</ToggleInput
                     >
-                      <template #leading><List :size="14" /></template>List
-                    </Button>
-                  </div>
+                  </ToggleGroup>
                 </div>
                 <LoadState
                   v-if="serviceView === 'map'"
@@ -855,27 +857,26 @@ function openDeploy(job?: DeploymentJob): void {
                   label="Container CPU"
                   :value="inspected.service.cpuPercent"
                 />
-                <dl class="space-y-3 text-sm">
-                  <div>
-                    <dt class="text-xs text-muted-foreground">Memory</dt>
-                    <dd>
-                      {{ Measures.bytes(inspected.service.memoryBytes) }} /
-                      {{ Measures.bytes(inspected.service.memoryLimitBytes) }}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt class="text-xs text-muted-foreground">Restarts</dt>
-                    <dd>{{ inspected.service.restarts }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-xs text-muted-foreground">Started</dt>
-                    <dd>{{ Measures.moment(inspected.service.startedAt) }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-xs text-muted-foreground">Exit code</dt>
-                    <dd>{{ inspected.service.exitCode ?? "Not reported" }}</dd>
-                  </div>
-                </dl>
+                <DescriptionGroup
+                  layout="stacked"
+                  density="lg"
+                  class="[&_dt]:text-xs"
+                  :items="[
+                    {
+                      label: 'Memory',
+                      value: `${Measures.bytes(inspected.service.memoryBytes)} / ${Measures.bytes(inspected.service.memoryLimitBytes)}`,
+                    },
+                    { label: 'Restarts', value: inspected.service.restarts },
+                    {
+                      label: 'Started',
+                      value: Measures.moment(inspected.service.startedAt),
+                    },
+                    {
+                      label: 'Exit code',
+                      value: inspected.service.exitCode ?? 'Not reported',
+                    },
+                  ]"
+                />
                 <Button
                   variant="outline"
                   is-full-width
@@ -913,20 +914,22 @@ function openDeploy(job?: DeploymentJob): void {
                   Outcome refresh failed. The last recorded submission remains
                   visible.
                 </p>
-                <dl class="space-y-3 text-sm">
-                  <div>
-                    <dt class="text-xs text-muted-foreground">Operator</dt>
-                    <dd>{{ inspectedJob.actor ?? "Unknown" }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-xs text-muted-foreground">Submitted</dt>
-                    <dd>{{ Measures.moment(inspectedJob.submittedAt) }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-xs text-muted-foreground">Completed</dt>
-                    <dd>{{ Measures.moment(inspectedJob.completedAt) }}</dd>
-                  </div>
-                </dl>
+                <DescriptionGroup
+                  layout="stacked"
+                  density="lg"
+                  class="[&_dt]:text-xs"
+                  :items="[
+                    { label: 'Operator', value: inspectedJob.actor ?? 'Unknown' },
+                    {
+                      label: 'Submitted',
+                      value: Measures.moment(inspectedJob.submittedAt),
+                    },
+                    {
+                      label: 'Completed',
+                      value: Measures.moment(inspectedJob.completedAt),
+                    },
+                  ]"
+                />
                 <p
                   v-if="inspectedJob.reason || inspectedJob.failure"
                   class="break-words rounded-lg bg-warning-soft p-3 text-sm text-warning-soft-foreground"
@@ -964,30 +967,23 @@ function openDeploy(job?: DeploymentJob): void {
                     {{ target.id }}
                   </p>
                 </div>
-                <dl class="space-y-4 text-sm">
-                  <div>
-                    <dt class="text-xs text-muted-foreground">Host</dt>
-                    <dd class="mt-1 break-all">{{ target.host }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-xs text-muted-foreground">Provider</dt>
-                    <dd class="mt-1">{{ target.provider }}</dd>
-                  </div>
-                  <div>
-                    <dt class="text-xs text-muted-foreground">
-                      Verified release
-                    </dt>
-                    <dd class="mt-1 break-all">
-                      {{ state.data.value?.current?.release ?? "Not verified" }}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt class="text-xs text-muted-foreground">Host uptime</dt>
-                    <dd class="mt-1">
-                      {{ Measures.duration(targetVitals?.host?.uptimeSeconds) }}
-                    </dd>
-                  </div>
-                </dl>
+                <DescriptionGroup
+                  layout="stacked"
+                  density="lg"
+                  class="gap-y-4 [&_dd]:break-all [&_dt]:text-xs"
+                  :items="[
+                    { label: 'Host', value: target.host },
+                    { label: 'Provider', value: target.provider },
+                    {
+                      label: 'Verified release',
+                      value: state.data.value?.current?.release ?? 'Not verified',
+                    },
+                    {
+                      label: 'Host uptime',
+                      value: Measures.duration(targetVitals?.host?.uptimeSeconds),
+                    },
+                  ]"
+                />
                 <div
                   v-if="
                     state.data.value?.condition ===
