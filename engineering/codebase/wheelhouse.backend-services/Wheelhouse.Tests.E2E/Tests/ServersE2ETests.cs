@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using AwesomeAssertions;
 using Wheelhouse.Tests.E2E.Harness;
 using Wheelhouse.Tests.E2E.Support;
@@ -30,11 +31,27 @@ public sealed class ServersE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     }
 
     [Fact]
-    public async Task Post_ShouldReturn400_WhenTheActionHeaderIsMissing()
+    public async Task Post_ShouldReturn400NamingTheHeader_WhenTheActionHeaderIsMissing()
     {
-        var response = await AdminClient.PostJsonAsync("api/servers",
-            new { slug = "hel2", name = "Helsinki 2", provider = "hetzner", host = "hel2.example.net", region = "hel1" });
+        var response = await AdminClient.PostJsonAsync("api/servers", NewServer);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = ((JsonElement)(await response.ReadProblemAsync()).Extensions["errors"]!)[0];
+        (error.GetProperty("code").GetString(), error.GetProperty("property").GetString())
+            .Should().Be(("ActionHeaderRequired", "X-Wheelhouse-Action"));
+    }
+
+    [Fact]
+    public async Task Post_ShouldReturn400_WhenTheActionComesInAnotherHeader()
+    {
+        var client = AdminClient;
+        client.DefaultRequestHeaders.Add("X-Requested-Action", "server");
+
+        var response = await client.PostJsonAsync("api/servers", NewServer);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    private static object NewServer =>
+        new { slug = "hel2", name = "Helsinki 2", provider = "hetzner", host = "hel2.example.net", region = "hel1" };
 }

@@ -19,6 +19,7 @@ using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Validation;
 using WoW.Two.Sdk.Backend.Beta.Meta;
 using WoW.Two.Sdk.Backend.Beta.Observability.HealthChecks;
+using WoW.Two.Sdk.Backend.Beta.Web.Antiforgery;
 using WoW.Two.Sdk.Backend.Beta.Web.DataProtection;
 using WoW.Two.Sdk.Backend.Beta.Web.Json;
 using WoW.Two.Sdk.Backend.Beta.Web.ProblemDetails;
@@ -30,6 +31,9 @@ public static class HostConfigurationExtensions
 {
     /// <summary>Holds the name that isolates Wheelhouse's Data Protection keys; sign-in cookies depend on it.</summary>
     private const string DataProtectionApplicationName = "Wheelhouse";
+
+    /// <summary>Holds the header every operator write carries its action name in; the console sends it.</summary>
+    public const string ActionHeaderName = "X-Wheelhouse-Action";
 
     /// <summary>Loads optional local settings overrides (gitignored) and keeps the cookie key ring on disk.</summary>
     public static WebApplicationBuilder AddSettings(this WebApplicationBuilder builder)
@@ -169,12 +173,14 @@ public static class HostConfigurationExtensions
         return builder;
     }
 
-    /// <summary>Registers API services — controllers + enum-as-string JSON via the SDK helper (OpenAPI is wired by <c>AddApiDefaults</c>).</summary>
+    /// <summary>Registers API services — controllers + enum-as-string JSON via the SDK helper (OpenAPI is wired by <c>AddApiDefaults</c>),
+    /// and the header every operator write names itself in, which the SDK action-header guard reads.</summary>
     public static WebApplicationBuilder AddApiServices(this WebApplicationBuilder builder)
     {
         builder.Services
             .AddControllers()
             .AddJsonStringEnums();
+        builder.Services.AddActionHeaderGuard(o => o.HeaderName = ActionHeaderName);
 
         return builder;
     }

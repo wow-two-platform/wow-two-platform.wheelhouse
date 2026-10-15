@@ -1,13 +1,13 @@
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.Text.Json;
-using Wheelhouse.Api.Filters;
 using Wheelhouse.Api.Requests;
 using Wheelhouse.Application.Deployments;
 using Wheelhouse.Application.Operations;
 using Microsoft.AspNetCore.Mvc;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Backend.Beta.Web.Antiforgery;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
 using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
 
@@ -50,7 +50,7 @@ public sealed class DeploymentsController(ISender sender) : ControllerBase
 
     /// <summary>Acknowledges an interrupted or failed rollout the operator has inspected.</summary>
     [HttpPost("targets/{target}/reconcile")]
-    [RequireAction("reconcile")]
+    [RequireActionHeader("reconcile")]
     public async Task<IActionResult> Reconcile(
         [RegularExpression(Slug)] string target, DeploymentReconcileRequest request, CancellationToken ct)
     {
@@ -95,7 +95,7 @@ public sealed class DeploymentsController(ISender sender) : ControllerBase
 
     /// <summary>Starts a build of a commit that has none; the build appears in the catalog once its workflow finishes.</summary>
     [HttpPost("products/{product}/builds")]
-    [RequireAction("build")]
+    [RequireActionHeader("build")]
     public async Task<IActionResult> Build(
         [RegularExpression(Slug)] string product, DeploymentBuildRequest request, CancellationToken ct)
     {
@@ -120,7 +120,7 @@ public sealed class DeploymentsController(ISender sender) : ControllerBase
 
     /// <summary>Queues a deployment; success is established by its later target status.</summary>
     [HttpPost]
-    [RequireAction("deploy")]
+    [RequireActionHeader("deploy")]
     public async Task<IActionResult> Start(DeploymentStartRequest request, CancellationToken ct)
     {
         var result = await sender.SendAsync(

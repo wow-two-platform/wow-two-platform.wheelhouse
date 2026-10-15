@@ -1,6 +1,5 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
-using Wheelhouse.Api.Filters;
 using Wheelhouse.Api.Requests;
 using Wheelhouse.Application.Vaults.Commands;
 using Wheelhouse.Application.Vaults.Models;
@@ -11,6 +10,7 @@ using Wheelhouse.Application.Vaults.Hygiene;
 using Microsoft.AspNetCore.Mvc;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Backend.Beta.Web.Antiforgery;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
 using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
 
@@ -41,7 +41,7 @@ public sealed class VaultsController(ISender sender) : ControllerBase
 
     /// <summary>Creates a namespace.</summary>
     [HttpPost("{vault}/namespaces")]
-    [RequireAction("vault")]
+    [RequireActionHeader("vault")]
     public Task<IActionResult> CreateNamespace(
         [RegularExpression(VaultRules.Vault)] string vault, VaultNamespaceCreateRequest request, CancellationToken ct) =>
         Change(vault, new NamespaceCreateChange { Namespace = request.Slug, Name = request.Name }, ct);
@@ -55,7 +55,7 @@ public sealed class VaultsController(ISender sender) : ControllerBase
 
     /// <summary>Writes a new secret version.</summary>
     [HttpPut("{vault}/secrets/{ns}/{key}")]
-    [RequireAction("vault")]
+    [RequireActionHeader("vault")]
     public Task<IActionResult> SetSecret(
         [RegularExpression(VaultRules.Vault)] string vault, [RegularExpression(VaultRules.Namespace)] string ns,
         [RegularExpression(VaultRules.Key)] string key, VaultSecretSetRequest request, CancellationToken ct) =>
@@ -63,7 +63,7 @@ public sealed class VaultsController(ISender sender) : ControllerBase
 
     /// <summary>Disables or re-enables a secret.</summary>
     [HttpPost("{vault}/secrets/{ns}/{key}/state")]
-    [RequireAction("vault")]
+    [RequireActionHeader("vault")]
     public Task<IActionResult> SetSecretState(
         [RegularExpression(VaultRules.Vault)] string vault, [RegularExpression(VaultRules.Namespace)] string ns,
         [RegularExpression(VaultRules.Key)] string key, VaultSecretStateRequest request, CancellationToken ct) =>
@@ -77,7 +77,7 @@ public sealed class VaultsController(ISender sender) : ControllerBase
 
     /// <summary>Mints a product token; the response is the only time the token is shown.</summary>
     [HttpPost("{vault}/namespaces/{ns}/tokens")]
-    [RequireAction("vault")]
+    [RequireActionHeader("vault")]
     public Task<IActionResult> MintToken(
         [RegularExpression(VaultRules.Vault)] string vault, [RegularExpression(VaultRules.Namespace)] string ns,
         VaultTokenMintRequest request, CancellationToken ct) =>
@@ -85,7 +85,7 @@ public sealed class VaultsController(ISender sender) : ControllerBase
 
     /// <summary>Revokes a product token.</summary>
     [HttpPost("{vault}/namespaces/{ns}/tokens/{tokenId:guid}/revoke")]
-    [RequireAction("vault")]
+    [RequireActionHeader("vault")]
     public Task<IActionResult> RevokeToken(
         [RegularExpression(VaultRules.Vault)] string vault, [RegularExpression(VaultRules.Namespace)] string ns,
         Guid tokenId, CancellationToken ct) =>
@@ -101,7 +101,7 @@ public sealed class VaultsController(ISender sender) : ControllerBase
 
     /// <summary>Adds a vault; it opens nothing until its administrator password is on the control host.</summary>
     [HttpPost]
-    [RequireAction("vault")]
+    [RequireActionHeader("vault")]
     [ProducesResponseType<ApiResponse<VaultDto>>(StatusCodes.Status201Created)]
     public async Task<IActionResult> Create(CreateVaultApiRequest request, CancellationToken ct) =>
         (await sender.SendAsync(new VaultCreateCommand
@@ -113,7 +113,7 @@ public sealed class VaultsController(ISender sender) : ControllerBase
 
     /// <summary>Changes a vault's definition; its slug stays.</summary>
     [HttpPut("{vault}")]
-    [RequireAction("vault")]
+    [RequireActionHeader("vault")]
     [ProducesResponseType<ApiResponse<VaultDto>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Update(
         [RegularExpression(VaultRules.Vault)] string vault, UpdateVaultApiRequest request, CancellationToken ct) =>
@@ -126,7 +126,7 @@ public sealed class VaultsController(ISender sender) : ControllerBase
 
     /// <summary>Stops administering a vault; the vault and its secrets stay where they run.</summary>
     [HttpDelete("{vault}")]
-    [RequireAction("vault")]
+    [RequireActionHeader("vault")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Delete([RegularExpression(VaultRules.Vault)] string vault, CancellationToken ct) =>
         (await sender.SendAsync(new VaultDeleteCommand { Slug = vault }, ct)).Match<IActionResult>(

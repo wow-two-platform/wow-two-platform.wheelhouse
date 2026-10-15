@@ -2,7 +2,6 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Wheelhouse.Api.Auth;
-using Wheelhouse.Api.Filters;
 using Wheelhouse.Api.Requests;
 using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Application.Products.Commands;
@@ -10,6 +9,7 @@ using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Products.Queries;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Backend.Beta.Web.Antiforgery;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
 using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
 
@@ -69,7 +69,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
 
     /// <summary>Adds a product to the portfolio; it starts as building.</summary>
     [HttpPost]
-    [RequireAction("product")]
+    [RequireActionHeader("product")]
     [ProducesResponseType<ApiResponse<ProductDto>>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -88,7 +88,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
 
     /// <summary>Changes a product's definition; its slug stays.</summary>
     [HttpPut("{slug}")]
-    [RequireAction("product")]
+    [RequireActionHeader("product")]
     [ProducesResponseType<ApiResponse<ProductDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -110,7 +110,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     /// remembered one, and re-reads <c>product/product.json</c> when the head is a commit the cache has not seen.
     /// Answers with the product; 503 when the branch cannot be read from GitHub.</summary>
     [HttpPost("{slug}/identity/refresh")]
-    [RequireAction("refresh")]
+    [RequireActionHeader("refresh")]
     [ProducesResponseType<ApiResponse<ProductDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
@@ -121,7 +121,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
 
     /// <summary>Removes a product no target runs any more.</summary>
     [HttpDelete("{slug}")]
-    [RequireAction("product")]
+    [RequireActionHeader("product")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -132,7 +132,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
 
     /// <summary>Records where a product stands in the portfolio.</summary>
     [HttpPut("{slug}/lifecycle")]
-    [RequireAction("lifecycle")]
+    [RequireActionHeader("lifecycle")]
     [ProducesResponseType<ApiResponse<ProductDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

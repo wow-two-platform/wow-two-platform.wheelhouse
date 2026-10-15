@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
-using Wheelhouse.Api.Filters;
 using Wheelhouse.Api.Requests;
 using Wheelhouse.Application.Integrations.Commands;
 using Wheelhouse.Application.Integrations.Models;
 using Wheelhouse.Application.Integrations.Queries;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Backend.Beta.Web.Antiforgery;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
 using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
 
@@ -26,7 +26,7 @@ public sealed class IntegrationKeysController(ISender sender) : ControllerBase
 
     /// <summary>Creates an integration key; the response carries its secret this once, never cached or stored.</summary>
     [HttpPost]
-    [RequireAction("key-create")]
+    [RequireActionHeader("key-create")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [ProducesResponseType<ApiResponse<IntegrationKeyWithSecretDto>>(StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -41,7 +41,7 @@ public sealed class IntegrationKeysController(ISender sender) : ControllerBase
 
     /// <summary>Revokes an integration key, so it never authenticates again.</summary>
     [HttpPost("{id:guid}/revoke")]
-    [RequireAction("key-revoke")]
+    [RequireActionHeader("key-revoke")]
     [ProducesResponseType<ApiResponse<IntegrationKeyDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Revoke(Guid id, CancellationToken ct)
