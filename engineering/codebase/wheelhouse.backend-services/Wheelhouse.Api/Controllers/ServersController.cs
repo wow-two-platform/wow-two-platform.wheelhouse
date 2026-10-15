@@ -6,7 +6,6 @@ using Wheelhouse.Application.Servers.Commands;
 using Wheelhouse.Application.Servers.Models;
 using Wheelhouse.Application.Servers.Queries;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 using WoW.Two.Sdk.Backend.Beta.Web.Antiforgery;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
 using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
@@ -24,9 +23,7 @@ public sealed class ServersController(ISender sender) : ControllerBase
     [HttpGet]
     [ProducesResponseType<ApiResponse<IReadOnlyList<ServerDto>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Get(CancellationToken ct) =>
-        (await sender.SendAsync(new ServerGetAllQuery(), ct)).Match<IActionResult>(
-            ok => Ok(ApiResponse<IReadOnlyList<ServerDto>>.Ok(ok.Data)),
-            fail => this.ToProblem(fail.Error));
+        this.ToActionResult(await sender.SendAsync(new ServerGetAllQuery(), ct));
 
     /// <summary>Adds a server; it reaches nothing until its SSH identity and pinned host key are on the control host.</summary>
     [HttpPost]
@@ -35,7 +32,7 @@ public sealed class ServersController(ISender sender) : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Create(CreateServerApiRequest request, CancellationToken ct) =>
-        (await sender.SendAsync(new ServerCreateCommand
+        this.ToActionResult(await sender.SendAsync(new ServerCreateCommand
         {
             Slug = request.Slug,
             Name = request.Name,
@@ -45,9 +42,7 @@ public sealed class ServersController(ISender sender) : ControllerBase
             SshUser = request.SshUser,
             SshPort = request.SshPort,
             Ingress = request.Ingress,
-        }, ct)).Match<IActionResult>(
-            ok => StatusCode(StatusCodes.Status201Created, ApiResponse<ServerDto>.Ok(ok.Data)),
-            fail => this.ToProblem(fail.Error));
+        }, ct), envelope => StatusCode(StatusCodes.Status201Created, envelope));
 
     /// <summary>Changes a server's definition; its slug stays.</summary>
     [HttpPut("{slug}")]
@@ -56,7 +51,7 @@ public sealed class ServersController(ISender sender) : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update([RegularExpression(Slug)] string slug, UpdateServerApiRequest request, CancellationToken ct) =>
-        (await sender.SendAsync(new ServerUpdateCommand
+        this.ToActionResult(await sender.SendAsync(new ServerUpdateCommand
         {
             Slug = slug,
             Name = request.Name,
@@ -66,9 +61,7 @@ public sealed class ServersController(ISender sender) : ControllerBase
             SshUser = request.SshUser,
             SshPort = request.SshPort,
             Ingress = request.Ingress,
-        }, ct)).Match<IActionResult>(
-            ok => Ok(ApiResponse<ServerDto>.Ok(ok.Data)),
-            fail => this.ToProblem(fail.Error));
+        }, ct));
 
     /// <summary>Removes a server no target or vault runs on any more.</summary>
     [HttpDelete("{slug}")]
@@ -77,7 +70,5 @@ public sealed class ServersController(ISender sender) : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete([RegularExpression(Slug)] string slug, CancellationToken ct) =>
-        (await sender.SendAsync(new ServerDeleteCommand { Slug = slug }, ct)).Match<IActionResult>(
-            _ => NoContent(),
-            fail => this.ToProblem(fail.Error));
+        this.ToActionResult(await sender.SendAsync(new ServerDeleteCommand { Slug = slug }, ct), _ => NoContent());
 }

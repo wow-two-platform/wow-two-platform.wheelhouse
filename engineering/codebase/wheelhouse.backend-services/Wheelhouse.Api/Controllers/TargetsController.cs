@@ -6,7 +6,6 @@ using Wheelhouse.Application.Targets.Commands;
 using Wheelhouse.Application.Targets.Models;
 using Wheelhouse.Application.Targets.Queries;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 using WoW.Two.Sdk.Backend.Beta.Web.Antiforgery;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
 using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
@@ -24,9 +23,7 @@ public sealed class TargetsController(ISender sender) : ControllerBase
     [HttpGet]
     [ProducesResponseType<ApiResponse<IReadOnlyList<TargetDto>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Get([FromQuery, RegularExpression(Slug)] string? product, CancellationToken ct) =>
-        (await sender.SendAsync(new TargetGetAllQuery { Product = product }, ct)).Match<IActionResult>(
-            ok => Ok(ApiResponse<IReadOnlyList<TargetDto>>.Ok(ok.Data)),
-            fail => this.ToProblem(fail.Error));
+        this.ToActionResult(await sender.SendAsync(new TargetGetAllQuery { Product = product }, ct));
 
     /// <summary>Adds an environment of a product on a server.</summary>
     [HttpPost]
@@ -35,7 +32,7 @@ public sealed class TargetsController(ISender sender) : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Create(CreateTargetApiRequest request, CancellationToken ct) =>
-        (await sender.SendAsync(new TargetCreateCommand
+        this.ToActionResult(await sender.SendAsync(new TargetCreateCommand
         {
             Slug = request.Slug,
             Product = request.Product,
@@ -46,9 +43,7 @@ public sealed class TargetsController(ISender sender) : ControllerBase
             Settings = request.Settings,
             SmokeChecks = request.SmokeChecks,
             Sites = request.Sites,
-        }, ct)).Match<IActionResult>(
-            ok => StatusCode(StatusCodes.Status201Created, ApiResponse<TargetDto>.Ok(ok.Data)),
-            fail => this.ToProblem(fail.Error));
+        }, ct), envelope => StatusCode(StatusCodes.Status201Created, envelope));
 
     /// <summary>Changes a target's definition; its slug stays.</summary>
     [HttpPut("{slug}")]
@@ -57,7 +52,7 @@ public sealed class TargetsController(ISender sender) : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update([RegularExpression(Slug)] string slug, UpdateTargetApiRequest request, CancellationToken ct) =>
-        (await sender.SendAsync(new TargetUpdateCommand
+        this.ToActionResult(await sender.SendAsync(new TargetUpdateCommand
         {
             Slug = slug,
             Product = request.Product,
@@ -68,9 +63,7 @@ public sealed class TargetsController(ISender sender) : ControllerBase
             Settings = request.Settings,
             SmokeChecks = request.SmokeChecks,
             Sites = request.Sites,
-        }, ct)).Match<IActionResult>(
-            ok => Ok(ApiResponse<TargetDto>.Ok(ok.Data)),
-            fail => this.ToProblem(fail.Error));
+        }, ct));
 
     /// <summary>Removes a target from the inventory; what runs on its host stays until torn down there.</summary>
     [HttpDelete("{slug}")]
@@ -78,7 +71,5 @@ public sealed class TargetsController(ISender sender) : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete([RegularExpression(Slug)] string slug, CancellationToken ct) =>
-        (await sender.SendAsync(new TargetDeleteCommand { Slug = slug }, ct)).Match<IActionResult>(
-            _ => NoContent(),
-            fail => this.ToProblem(fail.Error));
+        this.ToActionResult(await sender.SendAsync(new TargetDeleteCommand { Slug = slug }, ct), _ => NoContent());
 }

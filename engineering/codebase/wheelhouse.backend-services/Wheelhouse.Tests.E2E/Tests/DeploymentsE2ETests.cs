@@ -97,7 +97,7 @@ public sealed class DeploymentsE2ETests(WheelhouseAppFixture fixture) : Wheelhou
         client.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "deploy");
         var response = await client.PostAsJsonAsync("/api/deployments", new { target = "pilot", release = "v1" });
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-        Assert.NotNull(response.Headers.Location);
+        Assert.Matches("/api/deployments/[0-9a-f-]{36}$", response.Headers.Location!.ToString());
         Assert.Equal("pilot", Fixture.Deployments.LastTarget);
         Assert.Equal("v1", Fixture.Deployments.LastRelease);
     }

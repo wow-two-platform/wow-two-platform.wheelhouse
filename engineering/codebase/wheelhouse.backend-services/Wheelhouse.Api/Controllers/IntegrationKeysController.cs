@@ -4,7 +4,6 @@ using Wheelhouse.Application.Integrations.Commands;
 using Wheelhouse.Application.Integrations.Models;
 using Wheelhouse.Application.Integrations.Queries;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 using WoW.Two.Sdk.Backend.Beta.Web.Antiforgery;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
 using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
@@ -20,9 +19,7 @@ public sealed class IntegrationKeysController(ISender sender) : ControllerBase
     [HttpGet]
     [ProducesResponseType<ApiResponse<IReadOnlyList<IntegrationKeyDto>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Get(CancellationToken ct) =>
-        (await sender.SendAsync(new IntegrationKeyGetAllQuery(), ct)).Match<IActionResult>(
-            ok => Ok(ApiResponse<IReadOnlyList<IntegrationKeyDto>>.Ok(ok.Data)),
-            fail => this.ToProblem(fail.Error));
+        this.ToActionResult(await sender.SendAsync(new IntegrationKeyGetAllQuery(), ct));
 
     /// <summary>Creates an integration key; the response carries its secret this once, never cached or stored.</summary>
     [HttpPost]
@@ -34,9 +31,7 @@ public sealed class IntegrationKeysController(ISender sender) : ControllerBase
     public async Task<IActionResult> Create(CreateIntegrationKeyApiRequest request, CancellationToken ct)
     {
         var result = await sender.SendAsync(new IntegrationKeyCreateCommand { Name = request.Name, Scopes = request.Scopes }, ct);
-        return result.Match<IActionResult>(
-            ok => StatusCode(StatusCodes.Status201Created, ApiResponse<IntegrationKeyWithSecretDto>.Ok(ok.Data)),
-            fail => this.ToProblem(fail.Error));
+        return this.ToActionResult(result, envelope => StatusCode(StatusCodes.Status201Created, envelope));
     }
 
     /// <summary>Revokes an integration key, so it never authenticates again.</summary>
@@ -47,8 +42,6 @@ public sealed class IntegrationKeysController(ISender sender) : ControllerBase
     public async Task<IActionResult> Revoke(Guid id, CancellationToken ct)
     {
         var result = await sender.SendAsync(new IntegrationKeyRevokeCommand { Id = id }, ct);
-        return result.Match<IActionResult>(
-            ok => Ok(ApiResponse<IntegrationKeyDto>.Ok(ok.Data)),
-            fail => this.ToProblem(fail.Error));
+        return this.ToActionResult(result);
     }
 }

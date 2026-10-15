@@ -2,8 +2,6 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Wheelhouse.Application.Audit;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
-using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
 using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
@@ -19,14 +17,10 @@ public sealed class AuditController(ISender sender) : ControllerBase
     public async Task<IActionResult> List(
         [FromQuery, Range(1, 200)] int limit = 50, [FromQuery, Range(1, long.MaxValue)] long? before = null,
         CancellationToken ct = default) =>
-        Render(await sender.SendAsync(new AuditListQuery(limit, before), ct));
+        this.ToActionResult(await sender.SendAsync(new AuditListQuery(limit, before), ct));
 
     /// <summary>Recomputes the chain and reports whether every entry and link verifies.</summary>
     [HttpGet("verification")]
     public async Task<IActionResult> Verify(CancellationToken ct) =>
-        Render(await sender.SendAsync(new AuditVerifyQuery(), ct));
-
-    private IActionResult Render<T>(AppResult<T> result) where T : notnull => result.Match<IActionResult>(
-        ok => Ok(ApiResponse<T>.Ok(ok.Data)),
-        fail => this.ToProblem(fail.Error));
+        this.ToActionResult(await sender.SendAsync(new AuditVerifyQuery(), ct));
 }
