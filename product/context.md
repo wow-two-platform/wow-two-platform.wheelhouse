@@ -53,6 +53,8 @@ redirect and editor, real provider callbacks, persisted codes and cookie keys, a
 - Only Wheelhouse prod deploys products, in every environment; dev never holds the products host's key. A flow a
   product needs tested is first added to the canary and exercised from dev. The canary stays tailnet-only; the
   control-plane host opens no public port. Decided 2026-10-15.
+- Each canary environment gets its own tailnet name through a small Tailscale container (`canary-dev`, `canary-test`,
+  `canary`), each with its own trusted certificate; no path prefixes. Decided 2026-10-15.
 - A push that publishes no new release verifies the running dev release instead of restarting it.
 - A product's name, description, homepage and per-service text are a manifest in its own repository
   (`product/product.json`); the database keeps a cache keyed by the commit it was read from, replaced only by a newer
