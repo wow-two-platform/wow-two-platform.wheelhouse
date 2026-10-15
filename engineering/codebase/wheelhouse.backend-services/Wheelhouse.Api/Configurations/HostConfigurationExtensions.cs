@@ -11,6 +11,7 @@ using WoW.Two.Sdk.Backend.Beta.Integrations;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Validation;
 using WoW.Two.Sdk.Backend.Beta.Meta;
+using WoW.Two.Sdk.Backend.Beta.Web.DataProtection;
 using WoW.Two.Sdk.Backend.Beta.Web.Json;
 using WoW.Two.Sdk.Backend.Beta.Web.ProblemDetails;
 
@@ -19,18 +20,31 @@ namespace Wheelhouse.Api.Configurations;
 /// <summary>Per-concern host registration extensions for the Wheelhouse API.</summary>
 public static class HostConfigurationExtensions
 {
-    /// <summary>Loads optional local settings overrides (gitignored).</summary>
+    /// <summary>Holds the name that isolates Wheelhouse's Data Protection keys; sign-in cookies depend on it.</summary>
+    private const string DataProtectionApplicationName = "Wheelhouse";
+
+    /// <summary>Loads optional local settings overrides (gitignored) and keeps the cookie key ring on disk.</summary>
     public static WebApplicationBuilder AddSettings(this WebApplicationBuilder builder)
     {
         builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
-        builder.AddDeploymentHosting();
+
+        // Sign-in survives restarts and container replacement: keys live in DataProtection:KeyPath (the image sets
+        // /data/keys); startup fails outside Development without it.
+        var configuration = builder.Configuration;
+        builder.Services.AddPersistentDataProtection(o =>
+        {
+            o.ApplicationName = DataProtectionApplicationName;
+            o.KeyDirectory = configuration["DataProtection:KeyPath"];
+        });
         return builder;
     }
 
-    /// <summary>Configures the SDK boot floor for a single-user control plane — output cache, rate limiting, and OTLP export off; OpenAPI in development only —
+    /// <summary>Configures the SDK boot floor for a single-user control plane — output cache, rate limiting, and OTLP export off; OpenAPI in development only;
+    /// the SPA served inside the pipeline; forwarded headers trusted only from loopback and <c>Deployment:TrustedProxies</c> —
     /// and the opt-in HTTP ProblemDetails boundary, so every error the host writes is a problem document.</summary>
     public static WebApplicationBuilder AddPlatformDefaults(this WebApplicationBuilder builder)
     {
+        var proxies = builder.Configuration.GetSection("Deployment:TrustedProxies").Get<string[]>() ?? [];
         builder.AddApiDefaults(o =>
         {
             o.ServiceName = "wheelhouse";
@@ -38,6 +52,9 @@ public static class HostConfigurationExtensions
             o.EnableRateLimiting = false;
             o.EnableOtlpExporters = false;
             o.ExposeOpenApi = builder.Environment.IsDevelopment();
+            o.SpaHosting = static _ => { };
+            foreach (var proxy in proxies)
+                o.TrustedProxies.Add(proxy);
         });
         builder.Services.AddHttpProblemDetails();
         return builder;

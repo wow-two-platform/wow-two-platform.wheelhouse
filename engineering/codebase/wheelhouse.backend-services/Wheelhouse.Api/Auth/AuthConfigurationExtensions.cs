@@ -91,9 +91,10 @@ public static class AuthConfigurationExtensions
         return builder;
     }
 
-    /// <summary>Adds authentication and authorization middleware to the pipeline (call before MapControllers).</summary>
-    /// <param name="app">The web application.</param>
-    public static WebApplication UseWheelhouseAuth(this WebApplication app)
+    /// <summary>Adds authentication and authorization middleware; the SDK pipeline places it after routing and before
+    /// idempotency.</summary>
+    /// <param name="app">The application pipeline.</param>
+    public static IApplicationBuilder UseWheelhouseAuth(this IApplicationBuilder app)
     {
         app.UseAuthentication();
         app.UseAuthorization();
