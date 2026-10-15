@@ -1,6 +1,6 @@
 import {
   computed,
-  onScopeDispose,
+  shallowRef,
   toValue,
   watch,
   type MaybeRefOrGetter,
@@ -19,11 +19,14 @@ const PollMilliseconds = 3000;
 /** Follows a reactive submission ID until its target records a final outcome. */
 export function useDeploymentOutcome(id: MaybeRefOrGetter<string | null>) {
   const invalidate = useInvalidate();
+  /** Mirrors `pending` below; the query reads its options before `pending` exists. @internal */
+  const polling = shallowRef(false);
   const outcome = useAppQuery({
     key: () => DeploymentKeys.outcome(toValue(id) ?? ""),
     queryFn: ({ signal }) =>
       deploymentsApi.getOutcome(toValue(id) ?? "", signal),
     enabled: () => Boolean(toValue(id)),
+    refetchInterval: () => (polling.value ? PollMilliseconds : false),
     meta: { suppressGlobalError: true },
   });
   const pending = computed(
@@ -31,15 +34,11 @@ export function useDeploymentOutcome(id: MaybeRefOrGetter<string | null>) {
       outcome.data.value !== undefined &&
       DeploymentExtensions.isPending(outcome.data.value.status),
   );
-  let timer: ReturnType<typeof setInterval> | undefined;
 
   watch(
     pending,
     (active) => {
-      if (timer !== undefined) clearInterval(timer);
-      timer = active
-        ? setInterval(() => void outcome.refetch(), PollMilliseconds)
-        : undefined;
+      polling.value = active;
     },
     { immediate: true },
   );
@@ -63,8 +62,5 @@ export function useDeploymentOutcome(id: MaybeRefOrGetter<string | null>) {
     },
   );
 
-  onScopeDispose(() => {
-    if (timer !== undefined) clearInterval(timer);
-  });
   return { ...outcome, pending };
 }

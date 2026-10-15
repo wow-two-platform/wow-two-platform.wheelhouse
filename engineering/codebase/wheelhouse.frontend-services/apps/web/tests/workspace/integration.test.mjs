@@ -521,18 +521,9 @@ test("cancels pending private data across logout even when the transport resolve
   settle(json({ data: [product] }));
 });
 
-test("server vitals polling preserves an in-flight snapshot and stops after the last panel unmounts", async () => {
-  const originalInterval = globalThis.setInterval;
-  const originalClearInterval = globalThis.clearInterval;
-  const originalDocument = Object.getOwnPropertyDescriptor(
-    globalThis,
-    "document",
-  );
+test("server vitals poll every minute, never restart an in-flight snapshot and stop after the last panel unmounts", async () => {
   const snapshot = { collectedAt: "2026-09-26T00:00:00Z", targets: [] };
   const requests = [];
-  let poll;
-  let timers = 0;
-  let cleared = 0;
   const apps = [];
   const renderer = createRenderer({
     createElement: () => ({}),
@@ -547,17 +538,6 @@ test("server vitals polling preserves an in-flight snapshot and stops after the 
     nextSibling: () => null,
   });
   try {
-    Object.defineProperty(globalThis, "document", {
-      configurable: true,
-      value: { visibilityState: "visible" },
-    });
-    globalThis.setInterval = (callback, delay) => {
-      assert.equal(delay, 60_000);
-      timers++;
-      poll = callback;
-      return 123;
-    };
-    globalThis.clearInterval = () => cleared++;
     globalThis.fetch = (_url, options) =>
       new Promise((settle) =>
         requests.push({ signal: options.signal, settle }),
@@ -575,11 +555,18 @@ test("server vitals polling preserves an in-flight snapshot and stops after the 
       app.mount({});
       apps.push(app);
     }
-    assert.equal(timers, 1);
+    const query = queryClient
+      .getQueryCache()
+      .find({ queryKey: ["servers", "vitals"] });
+    assert.equal(query.observers.length, 2, "both panels share one read");
+    for (const observer of query.observers)
+      assert.equal(observer.options.refetchInterval, 60_000);
     const refresh = vitals.refetch();
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(requests.length, 1);
-    poll();
+    // An interval tick fetches through the observer's options, without `cancelRefetch`.
+    const tick = () => void query.fetch(query.observers[0].options);
+    tick();
     await nextTick();
     assert.equal(
       requests.length,
@@ -593,7 +580,7 @@ test("server vitals polling preserves an in-flight snapshot and stops after the 
     );
     requests[0].settle(json({ data: snapshot }));
     await refresh;
-    poll();
+    tick();
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(
       requests.length,
@@ -604,19 +591,14 @@ test("server vitals polling preserves an in-flight snapshot and stops after the 
     await new Promise((resolve) => setImmediate(resolve));
     apps.pop().unmount();
     assert.equal(
-      cleared,
-      0,
-      "another mounted panel still owns the shared timer",
+      query.observers.length,
+      1,
+      "another mounted panel still polls",
     );
     apps.pop().unmount();
-    assert.equal(cleared, 1);
+    assert.equal(query.observers.length, 0, "no panel left polling");
   } finally {
     for (const app of apps) app.unmount();
     queryClient.clear();
-    globalThis.setInterval = originalInterval;
-    globalThis.clearInterval = originalClearInterval;
-    if (originalDocument)
-      Object.defineProperty(globalThis, "document", originalDocument);
-    else delete globalThis.document;
   }
 });
