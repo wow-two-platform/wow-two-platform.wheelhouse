@@ -1,6 +1,6 @@
 # Wheelhouse — Frontend Development Guidelines
 
-*Last updated: 2026-09-29*
+*Last updated: 2026-10-15*
 
 Shared frontend conventions live in `wow-two-ws/conventions/development/frontend/`.
 This document records Wheelhouse-specific choices; the workspace design is in
@@ -9,7 +9,7 @@ This document records Wheelhouse-specific choices; the workspace design is in
 ## Stack
 
 - Vue 3 Composition API · Vue Router · Vite 6 · TypeScript (strict) · Tailwind v4 · Node 24 · pnpm workspace.
-- UI: published **`@wow-two-beta/ui-vue@0.0.9`**. Use its components, forms, queries and Result contracts. Shared capability gaps belong in the SDK; product composition stays here.
+- UI: published **`@wow-two-beta/ui-vue@0.0.12`**. Use its components, forms, queries and Result contracts. Shared capability gaps belong in the SDK; product composition stays here.
 - `bootstrap/index.css` imports `tailwindcss` and `@wow-two-beta/ui-vue/styles.css`; its `@source` includes SDK utilities.
 - `bootstrap/query.ts` and `bootstrap/form.ts` are the application adapter pins. Integration functions decode wire payloads with Zod and return SDK `Result<T, ApiFailure>` values.
 
@@ -28,6 +28,6 @@ This document records Wheelhouse-specific choices; the workspace design is in
 - Theme tokens live in `bootstrap/index.css` (`:root` and `.dark`); `public/theme.js` applies the remembered scheme before the first paint.
 - The Workspace route combines a product rail, environment/service surface and contextual inspector. Top navigation retains URL product/target selection. Invalid explicit selections remain unavailable rather than silently selecting another target.
 - Registry/runner association uses explicit bindings in `application/workspace/WorkspaceInventory.ts`. Registry lifecycle, observed runtime condition and deployment outcome remain separate facts.
-- Host vitals are current snapshots; the shared timer refreshes visible subscribers every 60 seconds. Deployment follow-up polls every three seconds. Neither implies retained host history.
+- Host vitals are current snapshots that the SDK query refetches every 60 seconds. Deployment follow-up refetches every three seconds while the tab is visible. Neither implies retained host history.
 - Deployments submit approved target/release IDs. Reconciliation submits the authoritative remote active rollout ID and requires exact typed target confirmation. API action headers remain explicit.
 - Clearing authentication invalidates the query session and HTTP request scope, preventing previous-session responses entering a replacement session.

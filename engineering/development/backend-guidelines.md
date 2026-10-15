@@ -1,6 +1,6 @@
 # Wheelhouse — Backend Development Guidelines
 
-*Last updated: 2026-09-29*
+*Last updated: 2026-10-15*
 
 > Defer to the shared conventions in `wow-two-ws/conventions/development/backend/` — do not restate them. This file
 > holds only Wheelhouse deltas.
@@ -10,8 +10,8 @@
 - **SDK:** every layer runs on `WoW2.Sdk.Backend.Beta` — host floor, mediator, `AppResult` / `AppError`, validation,
   identity, the GitHub and GHCR clients, the bespoke SQL migrator and the test harness. New infrastructure proves inline,
   then extracts to the SDK ([backlog](../planning/backlog.md) § SDK adoption).
-- **Controllers** send a request through `ISender`, `Match` the result and map a failure with
-  `IErrorHttpStatusCodeMapper.ToStatusCode`. No logic in the host.
+- **Controllers** send a request through `ISender`, `Match` the result and answer a failure with the SDK
+  `this.ToProblem(error)`. No logic in the host.
 - **Audited commands** implement `IAuditedCommand` and land in the hash-chained `audit_entries` trail; never put a value
   in one.
 - **Database:** PostgreSQL; hand-authored `Wheelhouse.Persistence/Migrations/{NNN-name}/{Apply,Rollback}.sql`, applied

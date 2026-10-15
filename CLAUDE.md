@@ -81,7 +81,7 @@ Reserve unit for I/O-free logic; everything user-facing is covered e2e. Full rul
 ## Conventions
 
 - **File-per-type**, slim `Program.cs` (delegates to `Api/Configurations/*`), SDK `AppResult` / `AppError`.
-  Controllers send requests via `ISender`, `Match` the result and map failures with `IErrorHttpStatusCodeMapper`.
+  Controllers send requests via `ISender`, `Match` the result and answer failures with the SDK `this.ToProblem(error)`.
 - **Ports:** HTTPS even (8210) + HTTP odd (8211), per the wow-two launch-profile rule.
 - **DB:** Postgres (Npgsql). Schema owned by the **bespoke SQL migrator**
   (`…Beta.Data.Migrations.Bespoke`) over hand-authored `Migrations/{NNN}/{Apply,Rollback}.sql`;

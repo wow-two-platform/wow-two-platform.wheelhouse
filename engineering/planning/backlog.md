@@ -204,32 +204,35 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 ## Console UI
 
-Found while wiring the canary through the dev console, 2026-10-15; the review iteration pulls them.
-
 | Item | Type | Notes |
 |---|---|---|
-| Fix New product opening prefilled with the selected product's values | fix | Name, description, repository, release and images arrive filled |
-| Fix select menus showing the fields behind them | fix | The open list is translucent over the form |
-| Fix dialogs showing the page behind them on narrow screens | fix | Seen on the deploy dialog at phone width |
 | Fix environments listing as dev, prod, test | fix | Order them dev, test, prod everywhere |
 | Fix a new server reading "Host vitals are unavailable" until a target exists | fix | Read host vitals from the server itself |
 
 ## SDK adoption
 
+Leftovers of the v0.4 sweep. Items marked *decision* wait on the owner.
+
 | Item | Type | Notes |
 |---|---|---|
-| Skeletons that take each component's exact shape | feature | User 2026-10-15: skeletons differ from the real blocks (radius, sizes); each component renders its own skeleton state with the same styling; belongs in the UI SDK `@wow-two-beta/ui-vue` |
-| Move the frame onto the SDK `AppShell` and `Navbar` | check | `AppLayout.vue` hand-builds the region-scrolling frame the SDK now ships |
-| Replace the local `Stub*` clients with the SDK testing fakes | check | `Tests.E2E/Harness` |
-| Extract the "allowlisted session or scoped key" policy to the backend SDK | check | `Api/Auth/ProductsReadAuthorizationHandler.cs` proves it |
-| Extract the vault admin client to the backend SDK | check | v0.3 proves it |
-| Extract the action-header guard to the backend SDK | check | `Api/Filters/RequireActionAttribute.cs`: a resource filter that answers 400 without the named header |
-| Extract an in-memory `IRepository` fake to the SDK testing package | check | `Tests.Unit/Fakes/InMemoryRepository.cs` |
-| UI SDK rows field over `useFieldArray` | feature | `presentation/common/components/RowsField.vue`: headings, a row per record, list-level errors |
-| Extract repository tree and file reads to the backend SDK GitHub client | check | `Infrastructure/Products/GitHubRepositoryReader.cs` calls the REST API inline for icons and manifests |
-| UI SDK `Table` sticky-header option | feature | `TableStyles` pins an opaque head meanwhile |
-| UI SDK `AppShell` page-header actions slot | feature | `PageActions` teleports them meanwhile |
-| Move the Wheelhouse palette into the UI SDK theme registry | check | Lives in `bootstrap/index.css` today |
+| Extract the vault admin client → SDK | engineering | *decision*: SDK `Integrations` or a client package from the secrets-vault repo; `Infrastructure/Vaults/VaultGateway.cs`, session cache with one retry on 401, plus a fake |
+| Extract the audited-command trail → SDK | engineering | *decision*: marker, interceptor, EF chain store with lock, paging and verify; the SDK has the primitives only |
+| Extract a periodic scoped job → SDK | engineering | `VitalsSampler`, `DeploymentOutcomeFollower`: interval, 0 = off, log and continue; SDK `Jobs/Core` is empty |
+| Extract a bounded process runner → SDK | engineering | `DeploymentGateway.cs`: timeout, kill tree, scrubbed environment, JSON stdout |
+| Extract OAuth sign-in, me and sign-out endpoints → SDK | engineering | `IdentityController.cs`; registration only when configured |
+| Extract an actor context → SDK | engineering | *decision*: session login or `key:{name}`; SDK `ICurrentUserService` is Guid-only |
+| Extract GitHub, image and hostname rules → SDK validation vocabulary | engineering | `InventoryPatternConstants.cs`, `InventoryRuleExtensions.cs`; the backend half of the shared vocabulary |
+| Adopt SDK token paging for the audit list | engineering | Wire change with the Activity page |
+| Extract atomic file write and an EF upsert → SDK | engineering | `InventorySnapshotExporter.cs`, `EfProductManifests.cs` |
+| Replace the local `Stub*` clients with SDK testing fakes | engineering | Waits on the vault and repository-reader extracts shipping fakes; the SDK fakes today cover clients Wheelhouse doesn't call |
+| Extract a data-state region → UI SDK | engineering | *decision*: `LoadState.vue` (17 uses): first load, refresh, error with data, empty |
+| Extract a selectable list → UI SDK | engineering | `ProductsPanel`, `WorkspacePage`, `NamespaceList`: leading, title, meta, trailing, skeleton rows |
+| Extract the rows field → UI SDK | engineering | `RowsField.vue` over `useFieldArray`; stacks on phones |
+| Extract a log viewer that follows the tail → UI SDK | engineering | `ServiceLogsModal.vue` |
+| Extract a schema decoder and problem reason → UI SDK HTTP client | engineering | `integration/common/client.ts` |
+| Extract a status strip and tone classes → UI SDK | engineering | `WorkspacePage.vue` |
+| Make the Sparkline time-based with thresholds → UI SDK | engineering | `TrendLine.vue` |
+| Move the Wheelhouse palette and glass presets → UI SDK theme registry | engineering | *decision*: `bootstrap/index.css`; shared platform look or app-local |
 
 ---
 
@@ -238,9 +241,7 @@ Found while wiring the canary through the dev console, 2026-10-15; the review it
 | Item | Type | Notes |
 |---|---|---|
 | Retire the placeholder deployment, domain and secret tables | issue | Outcome following uses durable runner files; deployment database ownership remains separate; domains and secrets stay elsewhere |
-| Shape-keeping first loads on the remaining pages | feature | Workspace, Deployments, Servers, Products and Activity still show block skeletons on a first load |
 | Rename the runner's `fleet.py` and `rehearse.py` | check | The screen says Servers and local server; both now hold shapes and rig fixtures only |
-| Stamp applied migrations with the product version | issue | `MigrationOptions.Version` keeps the SDK default `v1.0` |
 | Rename backend tests to `{Unit}_Should{Expectation}_When{Condition}` | check | Tests older than the v0.3 catalog predate the testing convention's naming rule |
 | Adopt the product template's ESLint, Prettier config and `format:check` gates | check | 86 app files predate a formatter config; format once in a dedicated commit |
 
