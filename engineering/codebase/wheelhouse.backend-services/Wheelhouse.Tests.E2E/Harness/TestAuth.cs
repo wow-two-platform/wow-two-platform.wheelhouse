@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Wheelhouse.Api.Auth;
+using Wheelhouse.Domain.Integrations.Constants;
 using WoW.Two.Sdk.Backend.Beta.Identity.ApiKeys;
 using WoW.Two.Sdk.Backend.Beta.Testing.Auth;
 
@@ -39,8 +40,7 @@ public static class TestAuthExtensions
             .SetFallbackPolicy(adminPolicy)
             // Catalog reads keep the real integration key scheme beside the test session.
             .AddPolicy(AuthConfigurationExtensions.ProductsReadPolicy, policy => policy
-                .AddAuthenticationSchemes(TestAuthHandler.SchemeName, ApiKeyAuthenticationDefaults.Scheme)
-                .AddRequirements(new ProductsReadRequirement()));
+                .RequireAllowlistedSessionOrApiKeyScope(IntegrationScopeConstants.CatalogRead, TestAuthHandler.SchemeName));
 
         return services;
     }

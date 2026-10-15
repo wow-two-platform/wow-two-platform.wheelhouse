@@ -1,6 +1,6 @@
+using Wheelhouse.Domain.Integrations.Constants;
 using Wheelhouse.Infrastructure.Settings;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authorization;
 using WoW.Two.Sdk.Backend.Beta.Foundation.Configuration;
 using WoW.Two.Sdk.Backend.Beta.Identity.ApiKeys;
 using WoW.Two.Sdk.Backend.Beta.Identity.Authorization;
@@ -80,13 +80,12 @@ public static class AuthConfigurationExtensions
         builder.Services.AddDefaultDenyAuthorization(CookieScheme, withAllowlist: true);
 
         // Integration keys: another program reads the catalog with a scoped key. A key reaches only an endpoint whose
-        // policy names the key scheme; the default-deny fallback above stays cookie-only.
+        // policy names the key scheme; the default-deny fallback above stays cookie-only. A catalog read admits the
+        // allowlisted session or a key granting catalog:read; a key never passes as a session.
         builder.Services.AddApiKeyAuthentication(keys => keys.Marker = KeyMarker);
-        builder.Services.AddSingleton<IAuthorizationHandler, ProductsReadAuthorizationHandler>();
         builder.Services.AddAuthorizationBuilder()
             .AddPolicy(ProductsReadPolicy, policy => policy
-                .AddAuthenticationSchemes(CookieScheme, ApiKeyAuthenticationDefaults.Scheme)
-                .AddRequirements(new ProductsReadRequirement()));
+                .RequireAllowlistedSessionOrApiKeyScope(IntegrationScopeConstants.CatalogRead, CookieScheme));
 
         return builder;
     }
