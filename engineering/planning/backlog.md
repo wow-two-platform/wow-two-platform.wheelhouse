@@ -196,6 +196,18 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 ---
 
+## Console UI
+
+Found while wiring the canary through the dev console, 2026-10-15; the review iteration pulls them.
+
+| Item | Type | Notes |
+|---|---|---|
+| Fix New product opening prefilled with the selected product's values | fix | Name, description, repository, release and images arrive filled |
+| Fix select menus showing the fields behind them | fix | The open list is translucent over the form |
+| Fix dialogs showing the page behind them on narrow screens | fix | Seen on the deploy dialog at phone width |
+| Fix environments listing as dev, prod, test | fix | Order them dev, test, prod everywhere |
+| Fix a new server reading "Host vitals are unavailable" until a target exists | fix | Read host vitals from the server itself |
+
 ## SDK adoption
 
 | Item | Type | Notes |
