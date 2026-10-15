@@ -13,18 +13,18 @@ public sealed record DeploymentSettings
     /// <summary>The API runs inside the rig and reaches the target and vault by service name.</summary>
     public const string RigNetwork = "network";
 
-    /// <summary>Gets the executable used for the Python runner.</summary>
-    public string Python { get; init; } = "python3";
-    /// <summary>Gets the installed SSH adapter path.</summary>
-    public string TransportPath { get; init; } = "/app/runner/transport.py";
-    /// <summary>Gets an optional mounted read-only GitHub catalog token path.</summary>
-    public string GitHubTokenFile { get; init; } = "";
-    /// <summary>Gets the protected inventory, release and audit root.</summary>
-    public string Root { get; init; } = "/data/deployments";
-    /// <summary>Gets how the local rehearsal rig is exposed: empty (off, always in a deployed control plane), <c>host</c> or <c>network</c>.</summary>
-    public string Rehearsal { get; init; } = RigOff;
-    /// <summary>Gets the rig's state folder as the Docker host sees it; needed only when the API runs inside the rig.</summary>
-    public string RehearsalState { get; init; } = "";
+    /// <summary>Gets or sets the executable used for the Python runner.</summary>
+    public string Python { get; set; } = "python3";
+    /// <summary>Gets or sets the installed SSH adapter path.</summary>
+    public string TransportPath { get; set; } = "/app/runner/transport.py";
+    /// <summary>Gets or sets an optional mounted read-only GitHub catalog token path.</summary>
+    public string GitHubTokenFile { get; set; } = "";
+    /// <summary>Gets or sets the protected inventory, release and audit root.</summary>
+    public string Root { get; set; } = "/data/deployments";
+    /// <summary>Gets or sets how the local rehearsal rig is exposed: empty (off, always in a deployed control plane), <c>host</c> or <c>network</c>.</summary>
+    public string Rehearsal { get; set; } = RigOff;
+    /// <summary>Gets or sets the rig's state folder as the Docker host sees it; needed only when the API runs inside the rig.</summary>
+    public string RehearsalState { get; set; } = "";
 
     /// <summary>Gets whether the local rehearsal rig is exposed.</summary>
     public bool IsLocalRig => Rehearsal is RigHost or RigNetwork;

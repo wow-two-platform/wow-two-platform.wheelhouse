@@ -1,9 +1,13 @@
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Wheelhouse.Application;
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Infrastructure.Settings;
 using Wheelhouse.Persistence;
 using Wheelhouse.Persistence.Repositories;
 using WoW.Two.Sdk.Backend.Beta.Data;
+using WoW.Two.Sdk.Backend.Beta.Data.Migrations.Bespoke;
 using WoW.Two.Sdk.Backend.Beta.Foundation.Audit;
+using WoW.Two.Sdk.Backend.Beta.Foundation.Options;
 using WoW.Two.Sdk.Backend.Beta.Foundation.Time;
 using WoW.Two.Sdk.Backend.Beta.Foundation.Validation;
 using WoW.Two.Sdk.Backend.Beta.Identity.ApiKeys;
@@ -11,6 +15,7 @@ using WoW.Two.Sdk.Backend.Beta.Integrations;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Validation;
 using WoW.Two.Sdk.Backend.Beta.Meta;
+using WoW.Two.Sdk.Backend.Beta.Observability.HealthChecks;
 using WoW.Two.Sdk.Backend.Beta.Web.DataProtection;
 using WoW.Two.Sdk.Backend.Beta.Web.Json;
 using WoW.Two.Sdk.Backend.Beta.Web.ProblemDetails;
@@ -69,7 +74,19 @@ public static class HostConfigurationExtensions
         // (ConnectionStrings:Wheelhouse) instead of the SDK default (DatabaseOptions:ConnectionString); env DB_CONNECTION still overrides.
         builder.Services.AddPostgresPersistence<WheelhouseDbContext>(
             builder.Configuration,
-            o => o.ConnectionStringConfigKey = WheelhouseDatabase.ConnectionStringConfigKey);
+            o =>
+            {
+                o.ConnectionStringConfigKey = WheelhouseDatabase.ConnectionStringConfigKey;
+                // Applied rows carry the product version they shipped in (vX.Y), not the SDK default v1.0.
+                o.ConfigureMigrations = migrations =>
+                    migrations.Version = MigrationVersionMapper.ToVersion(typeof(HostConfigurationExtensions).Assembly);
+            });
+
+        // /api/system/ready reports this check; /health stays liveness and skips readiness checks.
+        builder.Services.AddHealthChecks()
+            .AddDatabaseReadinessCheck<WheelhouseDbContext>(tags: [WheelhouseDatabase.ReadinessTag]);
+        builder.Services.Configure<HealthCheckOptions>(o =>
+            o.Predicate = check => !check.Tags.Contains(WheelhouseDatabase.ReadinessTag));
 
         builder.Services.AddScoped<IProductsRepository, ProductsRepository>();
         builder.Services.AddScoped<IProductManifestsRepository, EfProductManifests>();
@@ -92,7 +109,7 @@ public static class HostConfigurationExtensions
     public static WebApplicationBuilder AddInfrastructureLayer(this WebApplicationBuilder builder)
     {
         builder.Services.AddTimeProviders();
-        builder.Services.AddSingleton(DeploymentSettingsFor(builder));
+        builder.AddDeploymentSettings();
         builder.Services.AddSingleton<Wheelhouse.Infrastructure.Deployments.Parsers.RunnerFailureParser>();
         builder.Services.AddScoped<IDeploymentGateway, Wheelhouse.Infrastructure.Deployments.DeploymentGateway>();
         builder.Services.AddScoped<Wheelhouse.Application.Operations.VitalsSampling>();
@@ -158,25 +175,26 @@ public static class HostConfigurationExtensions
         return builder;
     }
 
-    // Relative runner paths resolve against the content root, so a local run points at the repository checkout.
-    private static Wheelhouse.Infrastructure.Settings.DeploymentSettings DeploymentSettingsFor(WebApplicationBuilder builder)
+    /// <summary>Binds the operator-owned runner paths from <c>Deployment</c> when first resolved, checks the rig switch at
+    /// boot, and resolves relative paths against the content root, so a local run points at the repository checkout.</summary>
+    private static WebApplicationBuilder AddDeploymentSettings(this WebApplicationBuilder builder)
     {
-        var settings = builder.Configuration.GetSection("Deployment")
-            .Get<Wheelhouse.Infrastructure.Settings.DeploymentSettings>() ?? new();
-        if (settings.Rehearsal is not (Wheelhouse.Infrastructure.Settings.DeploymentSettings.RigOff
-                or Wheelhouse.Infrastructure.Settings.DeploymentSettings.RigHost
-                or Wheelhouse.Infrastructure.Settings.DeploymentSettings.RigNetwork))
-            throw new InvalidOperationException("Deployment:Rehearsal must be empty, 'host' or 'network'.");
-
-        string Resolve(string path) => path.Length == 0 || Path.IsPathRooted(path)
-            ? path
-            : Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, path));
-        return settings with
+        var configuration = builder.Configuration;
+        builder.Services.AddValidatedOptions<DeploymentSettings>(
+            settings => configuration.GetSection("Deployment").Bind(settings),
+            options => options.Validate(
+                settings => settings.Rehearsal is DeploymentSettings.RigOff or DeploymentSettings.RigHost or DeploymentSettings.RigNetwork,
+                "Deployment:Rehearsal must be empty, 'host' or 'network'."));
+        builder.Services.AddOptions<DeploymentSettings>().PostConfigure<IHostEnvironment>((settings, environment) =>
         {
-            TransportPath = Resolve(settings.TransportPath),
-            Root = Resolve(settings.Root),
-            GitHubTokenFile = Resolve(settings.GitHubTokenFile),
-            RehearsalState = Resolve(settings.RehearsalState)
-        };
+            string Resolve(string path) => path.Length == 0 || Path.IsPathRooted(path)
+                ? path
+                : Path.GetFullPath(Path.Combine(environment.ContentRootPath, path));
+            settings.TransportPath = Resolve(settings.TransportPath);
+            settings.Root = Resolve(settings.Root);
+            settings.GitHubTokenFile = Resolve(settings.GitHubTokenFile);
+            settings.RehearsalState = Resolve(settings.RehearsalState);
+        });
+        return builder;
     }
 }

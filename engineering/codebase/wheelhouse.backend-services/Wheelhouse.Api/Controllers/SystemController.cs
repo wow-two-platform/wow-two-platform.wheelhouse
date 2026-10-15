@@ -1,6 +1,8 @@
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Wheelhouse.Api.Configurations;
 using Wheelhouse.Infrastructure.Settings;
 
 namespace Wheelhouse.Api.Controllers;
@@ -8,14 +10,16 @@ namespace Wheelhouse.Api.Controllers;
 /// <summary>Reports system status.</summary>
 [ApiController]
 [Route("api/system")]
-public sealed class SystemController(Wheelhouse.Persistence.WheelhouseDbContext database, DeploymentSettings deployment)
-    : ControllerBase
+public sealed class SystemController(HealthCheckService health, DeploymentSettings deployment) : ControllerBase
 {
-    /// <summary>Reports database readiness for deployment health gates.</summary>
+    /// <summary>Reports database readiness for deployment health gates, from the SDK database readiness check.</summary>
     [AllowAnonymous]
     [HttpGet("ready")]
     public async Task<IActionResult> Ready(CancellationToken ct) =>
-        await database.Database.CanConnectAsync(ct) ? Ok() : StatusCode(503);
+        (await health.CheckHealthAsync(check => check.Tags.Contains(WheelhouseDatabase.ReadinessTag), ct)).Status
+            == HealthStatus.Healthy
+            ? Ok()
+            : StatusCode(503);
 
     /// <summary>The running build's informational version: the product version plus the commit it was built from.</summary>
     private static readonly string Version = typeof(SystemController).Assembly
