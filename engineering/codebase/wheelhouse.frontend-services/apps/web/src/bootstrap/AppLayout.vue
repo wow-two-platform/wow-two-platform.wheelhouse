@@ -13,7 +13,7 @@ import { Badge } from '@wow-two-beta/ui-vue/presentation/display';
 import { AppNavLink } from '@wow-two-beta/ui-vue/router';
 import { useApiConnection } from '@/application/system';
 import { BrandWordmark, ProfileMenu } from '@/presentation/shell';
-import { AppPlaces, SettingsPlaces } from './routes';
+import { AppPlaces } from './routes';
 
 /** Combines the deployment desk's top navigation with a contextual studio workspace. */
 defineOptions({ name: 'AppLayout' });
@@ -22,7 +22,11 @@ const emit = defineEmits<{ signOut: [] }>();
 defineSlots<{ default(): unknown }>();
 const route = useRoute();
 const system = useApiConnection();
-const current = computed(() => [...AppPlaces, ...SettingsPlaces].find((place) => place.path === route.path));
+/** The page's title and description, from the matched route's handle. */
+const current = computed(() => ({
+  title: typeof route.meta.title === 'string' ? route.meta.title : undefined,
+  description: typeof route.meta.description === 'string' ? route.meta.description : undefined,
+}));
 const consoleVersion = __APP_VERSION__;
 /** A numbered build shows as `v0.3.4`; a local build shows `dev`. @internal */
 const versionLabel = /^\d/.test(consoleVersion) ? `v${consoleVersion}` : consoleVersion;
@@ -92,8 +96,8 @@ watch(
       <div class="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:py-8 xl:px-8">
         <header class="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 class="text-2xl font-semibold tracking-tight">{{ current?.label }}</h1>
-            <p class="mt-1 text-sm text-muted-foreground">{{ current?.description }}</p>
+            <h1 class="text-2xl font-semibold tracking-tight">{{ current.title }}</h1>
+            <p class="mt-1 text-sm text-muted-foreground">{{ current.description }}</p>
           </div>
           <div id="page-actions" class="flex flex-wrap items-center gap-2 empty:hidden" />
         </header>
