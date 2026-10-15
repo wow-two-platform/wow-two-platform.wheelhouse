@@ -16,7 +16,7 @@ export interface ProductIconProps {
   readonly color?: IconColor | undefined;
 }
 
-/** @internal The box per size; the image keeps a small inset so edge-to-edge marks still breathe. */
+/** @internal The rounding and monogram type per size; the image keeps a small inset so edge-to-edge marks still breathe. */
 const SizeClass = {
   sm: "size-8 rounded-lg text-xs",
   md: "size-10 rounded-lg text-sm",
@@ -27,8 +27,13 @@ const SizeClass = {
 import { computed } from "vue";
 import { useProductIcon } from "@/application/products/useProductIcon";
 import { useColorMode } from "@wow-two-beta/ui-vue/foundation/primitives";
+import { Avatar } from "@wow-two-beta/ui-vue/presentation/display";
 
-/** Renders the product's own icon for the active theme, falling back to a stable tinted monogram so products stay distinguishable. */
+/**
+ * Renders the product's own icon for the active theme on the SDK `Avatar`, falling back to a stable tinted monogram so
+ * products stay distinguishable. A refused image is recorded through the captured `error` event, so the monogram takes
+ * its tint and stays until the address changes.
+ */
 defineOptions({ name: "ProductIcon" });
 const props = withDefaults(defineProps<ProductIconProps>(), { size: "md" });
 defineSlots<{}>();
@@ -49,20 +54,15 @@ const tint = computed(() => ({
 }));
 </script>
 <template>
-  <span
-    class="relative flex shrink-0 items-center justify-center overflow-hidden border border-border font-semibold"
+  <Avatar
+    shape="square"
+    :size="props.size"
+    v-bind="icon.src.value ? { src: icon.src.value } : {}"
+    :fallback="icon.monogram.value"
+    alt=""
+    class="relative flex border border-border font-semibold [&>img]:object-contain [&>img]:p-1"
     :class="[SizeClass[props.size], icon.src.value ? 'bg-card' : '']"
     :style="icon.src.value ? undefined : tint"
-    aria-hidden="true"
-  >
-    <img
-      v-if="icon.src.value"
-      :src="icon.src.value"
-      alt=""
-      loading="lazy"
-      class="size-full object-contain p-1"
-      @error="icon.failed()"
-    />
-    <template v-else>{{ icon.monogram.value }}</template>
-  </span>
+    @error.capture="icon.failed()"
+  />
 </template>
