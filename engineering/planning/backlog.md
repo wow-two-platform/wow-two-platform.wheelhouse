@@ -196,6 +196,12 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 ---
 
+## Product views
+
+| Item | Type | Notes |
+|---|---|---|
+| Ability to see services grouped under their product and environment | feature | User 2026-10-15: products run several services. Servers nests server → target → containers, and the Deployments targets panel is a flat target list. Group both by product, then environment, then service. |
+
 ## Console UI
 
 Found while wiring the canary through the dev console, 2026-10-15; the review iteration pulls them.
