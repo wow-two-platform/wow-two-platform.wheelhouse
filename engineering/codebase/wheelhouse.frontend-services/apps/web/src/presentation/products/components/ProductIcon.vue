@@ -26,19 +26,19 @@ const SizeClass = {
 <script setup lang="ts">
 import { computed } from "vue";
 import { useProductIcon } from "@/application/products/useProductIcon";
-import { useActiveTheme } from "@/presentation/shell";
+import { useColorMode } from "@wow-two-beta/ui-vue/foundation/primitives";
 
 /** Renders the product's own icon for the active theme, falling back to a stable tinted monogram so products stay distinguishable. */
 defineOptions({ name: "ProductIcon" });
 const props = withDefaults(defineProps<ProductIconProps>(), { size: "md" });
 defineSlots<{}>();
 
-const theme = useActiveTheme();
+const colorMode = useColorMode();
 const icon = useProductIcon({
   slug: () => props.productSlug,
   service: () => props.service,
   name: () => props.name,
-  theme: () => theme.value,
+  theme: () => colorMode.mode,
   form: () => props.form,
   color: () => props.color,
 });

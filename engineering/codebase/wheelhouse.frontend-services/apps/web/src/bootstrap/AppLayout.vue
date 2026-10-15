@@ -11,7 +11,7 @@ import { computed, useTemplateRef, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import { Badge } from '@wow-two-beta/ui-vue/presentation/display';
 import { useApiConnection } from '@/application/system';
-import { BrandWordmark, ProfileMenu, useColorScheme } from '@/presentation/shell';
+import { BrandWordmark, ProfileMenu } from '@/presentation/shell';
 import { AppPlaces, SettingsPlaces } from './routes';
 
 /** Combines the deployment desk's top navigation with a contextual studio workspace. */
@@ -21,7 +21,6 @@ const emit = defineEmits<{ signOut: [] }>();
 defineSlots<{ default(): unknown }>();
 const route = useRoute();
 const system = useApiConnection();
-const theme = useColorScheme();
 const current = computed(() => [...AppPlaces, ...SettingsPlaces].find((place) => place.path === route.path));
 const consoleVersion = __APP_VERSION__;
 /** A numbered build shows as `v0.3.4`; a local build shows `dev`. @internal */
@@ -83,8 +82,6 @@ watch(
             :user="props.user"
             :connection="system.connection.value"
             :api-version="system.version.value"
-            :scheme="theme.scheme.value"
-            @scheme="theme.setScheme"
             @sign-out="emit('signOut')"
           />
         </div>

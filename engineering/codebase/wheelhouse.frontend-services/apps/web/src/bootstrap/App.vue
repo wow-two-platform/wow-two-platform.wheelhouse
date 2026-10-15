@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { RouterView, useRouter } from 'vue-router';
+import { ColorModeProvider } from '@wow-two-beta/ui-vue/foundation/primitives';
 import { useAuth } from '@/application/auth';
 import SignInScreen from '@/presentation/auth/SignInScreen.vue';
 import { BootSplash } from '@/presentation/shell';
@@ -11,6 +12,9 @@ const BootProgress = { Scripts: 35, Session: 70, Ready: 100 } as const;
 
 /** Holds the full bar long enough for its width transition to finish before the splash fades. */
 const SettleMs = 250;
+
+/** The key the pre-paint `public/theme.js` reads; the SDK provider persists `light`, `dark` or `system` there. */
+const ThemeStorageKey = 'wheelhouse.theme';
 
 /** Gates every private workspace route on the operator's GitHub session, behind the first-load splash. */
 defineOptions({ name: 'App' });
@@ -31,9 +35,11 @@ watch(progress, (value) => {
 });
 </script>
 <template>
-  <AppLayout v-if="auth.user.value" :user="auth.user.value" @sign-out="auth.signOut">
-    <RouterView />
-  </AppLayout>
-  <SignInScreen v-else-if="!auth.loading.value" :error="auth.error.value" @sign-in="auth.signIn" />
-  <BootSplash :is-open="booting" :value="progress" />
+  <ColorModeProvider :storage-key="ThemeStorageKey">
+    <AppLayout v-if="auth.user.value" :user="auth.user.value" @sign-out="auth.signOut">
+      <RouterView />
+    </AppLayout>
+    <SignInScreen v-else-if="!auth.loading.value" :error="auth.error.value" @sign-in="auth.signIn" />
+    <BootSplash :is-open="booting" :value="progress" />
+  </ColorModeProvider>
 </template>

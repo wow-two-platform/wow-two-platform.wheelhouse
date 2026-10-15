@@ -1,6 +1,5 @@
 <script lang="ts">
 import type { CurrentUser } from '@/domain/auth';
-import type { ColorScheme } from '../hooks/useColorScheme';
 
 /** Defines account controls for the top navigation bar. */
 export interface ProfileMenuProps {
@@ -8,12 +7,13 @@ export interface ProfileMenuProps {
   readonly connection: string;
   /** The API's informational version, once the status read answers. */
   readonly apiVersion?: string | null;
-  readonly scheme: ColorScheme;
 }
 </script>
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { Check, ChevronDown, KeyRound, LogOut, Monitor, Moon, Sun } from 'lucide-vue-next';
+import { useColorMode } from '@wow-two-beta/ui-vue/foundation/primitives';
 import { Avatar } from '@wow-two-beta/ui-vue/presentation/display';
 import {
   DropdownMenu,
@@ -21,14 +21,19 @@ import {
   DropdownMenuContent,
   MenuItem,
   MenuLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuSeparator,
 } from '@wow-two-beta/ui-vue/presentation/nav';
 
 /** Keeps appearance and account actions available from every workspace destination. */
 defineOptions({ name: 'ProfileMenu' });
 const props = defineProps<ProfileMenuProps>();
-const emit = defineEmits<{ scheme: [value: ColorScheme]; signOut: [] }>();
+const emit = defineEmits<{ signOut: [] }>();
 const router = useRouter();
+const colorMode = useColorMode();
+/** The appearance the operator chose: `system` while the mode follows the operating system. */
+const appearance = computed(() => (colorMode.followsSystem ? 'system' : colorMode.mode));
 const consoleVersion = __APP_VERSION__;
 /** Shortens a build's `+<commit>` suffix to seven characters. @internal */
 function short(version: string): string {
@@ -39,6 +44,12 @@ const schemes = [
   { value: 'dark', label: 'Dark', icon: Moon },
   { value: 'system', label: 'System', icon: Monitor },
 ] as const;
+
+/** Applies an appearance row; the SDK provider persists the choice. @internal */
+function choose(value: string | null): void {
+  if (value === 'system') colorMode.followSystem();
+  else if (value === 'light' || value === 'dark') colorMode.setMode(value);
+}
 </script>
 <template>
   <DropdownMenu placement="bottom-end">
@@ -63,11 +74,12 @@ const schemes = [
         Console {{ consoleVersion }} · API {{ props.apiVersion ? short(props.apiVersion) : '—' }}
       </p>
       <MenuSeparator />
-      <MenuLabel>Appearance</MenuLabel>
-      <MenuItem v-for="item in schemes" :key="item.value" @select="emit('scheme', item.value)">
-        <component :is="item.icon" :size="15" />{{ item.label }}
-        <Check v-if="props.scheme === item.value" :size="14" class="ml-auto" />
-      </MenuItem>
+      <MenuRadioGroup label="Appearance" :model-value="appearance" @update:model-value="choose">
+        <MenuRadioItem v-for="item in schemes" :key="item.value" :value="item.value">
+          <template #indicator="{ checked }"><Check v-if="checked" :size="14" /></template>
+          <component :is="item.icon" :size="15" />{{ item.label }}
+        </MenuRadioItem>
+      </MenuRadioGroup>
       <MenuSeparator />
       <MenuItem @select="router.push('/settings/keys')"><KeyRound :size="15" />Integration keys</MenuItem>
       <MenuSeparator />

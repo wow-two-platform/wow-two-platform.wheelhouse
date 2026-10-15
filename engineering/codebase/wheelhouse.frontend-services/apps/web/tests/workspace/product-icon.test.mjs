@@ -9,8 +9,7 @@ const bundle = await build({
     contents: `
       export * from './src/domain/products/ProductIcon';
       export { useProductIcon } from './src/application/products/useProductIcon';
-      export { useActiveTheme, useColorScheme } from './src/presentation/shell/hooks/useColorScheme';
-      export { effectScope, nextTick, ref } from 'vue';
+      export { ref } from 'vue';
     `,
     resolveDir: process.cwd(),
   },
@@ -24,36 +23,6 @@ const icons = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`
 );
 after(() => stop());
-
-// The browser globals the colour-scheme hook reads when it runs. They are set after the bundle loads: Vue's DOM
-// runtime probes `document` at load time and a fake one would break it.
-const media = {
-  matches: false,
-  listeners: new Set(),
-  addEventListener(_, listener) {
-    this.listeners.add(listener);
-  },
-  removeEventListener(_, listener) {
-    this.listeners.delete(listener);
-  },
-};
-const rootClasses = new Set();
-const stored = new Map();
-globalThis.window = { matchMedia: () => media };
-globalThis.document = {
-  documentElement: {
-    classList: {
-      contains: (name) => rootClasses.has(name),
-      toggle: (name, on) => (on ? rootClasses.add(name) : rootClasses.delete(name)),
-    },
-    style: {},
-  },
-};
-Object.defineProperty(globalThis, "localStorage", {
-  configurable: true,
-  writable: true,
-  value: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) },
-});
 
 const light = "/api/products/wheelhouse/icon?theme=light&form=short&color=colored";
 const dark = "/api/products/wheelhouse/icon?theme=dark&form=short&color=colored";
@@ -77,47 +46,17 @@ test("the monogram is the name's first letter and its tint is stable for a name"
   assert.ok(icons.monogramHue("Wheelhouse") >= 0 && icons.monogramHue("Wheelhouse") < 360);
 });
 
-test("the active theme follows the saved scheme and the operating system's preference", async () => {
-  const scope = icons.effectScope();
-  const scheme = scope.run(() => icons.useColorScheme());
-  const theme = icons.useActiveTheme();
-  assert.equal(theme.value, "light", "system without a dark preference is light");
-
-  scheme.setScheme("dark");
-  await icons.nextTick();
-  assert.equal(theme.value, "dark");
-  assert.equal(rootClasses.has("dark"), true);
-
-  scheme.setScheme("light");
-  await icons.nextTick();
-  assert.equal(theme.value, "light");
-
-  scheme.setScheme("system");
-  media.matches = true;
-  for (const listener of media.listeners) listener({ matches: true });
-  await icons.nextTick();
-  assert.equal(theme.value, "dark", "system follows the operating system");
-  scope.stop();
-});
-
-test("a product's icon asks for the variant of the active theme and asks again when the theme changes", async () => {
-  media.matches = false;
-  const scope = icons.effectScope();
-  const scheme = scope.run(() => icons.useColorScheme());
-  const theme = icons.useActiveTheme();
+test("a product's icon asks for the variant of the active theme and asks again when the theme changes", () => {
+  // The SDK colour-mode provider owns the scheme; the icon reads its mode through this getter.
+  const theme = icons.ref("light");
   const icon = icons.useProductIcon({ slug: () => "wheelhouse", name: () => "Wheelhouse", theme: () => theme.value });
-  scheme.setScheme("light");
-  await icons.nextTick();
   assert.equal(icon.src.value, light);
 
-  scheme.setScheme("dark");
-  await icons.nextTick();
+  theme.value = "dark";
   assert.equal(icon.src.value, dark, "the dark console must not keep the light icon");
 
-  scheme.setScheme("light");
-  await icons.nextTick();
+  theme.value = "light";
   assert.equal(icon.src.value, light);
-  scope.stop();
 });
 
 test("a refused address shows the monogram until the theme, service or product changes", () => {
