@@ -10,6 +10,7 @@ export interface AppLayoutProps {
 import { computed, useTemplateRef, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import { Badge } from '@wow-two-beta/ui-vue/presentation/display';
+import { AppNavLink } from '@wow-two-beta/ui-vue/router';
 import { useApiConnection } from '@/application/system';
 import { BrandWordmark, ProfileMenu } from '@/presentation/shell';
 import { AppPlaces, SettingsPlaces } from './routes';
@@ -60,18 +61,13 @@ watch(
           aria-label="Primary navigation"
           class="order-3 -mx-4 flex w-[calc(100%+2rem)] shrink-0 gap-1 overflow-x-auto px-4 pb-2 md:order-none md:mx-0 md:w-auto md:shrink md:flex-1 md:p-0"
         >
-          <RouterLink
+          <AppNavLink
             v-for="place in AppPlaces"
             :key="place.path"
             :to="{ path: place.path, query: route.query }"
-            :aria-current="route.path === place.path ? 'page' : undefined"
-            class="whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring"
-            :class="
-              route.path === place.path
-                ? 'bg-primary-soft text-primary-soft-foreground'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-            "
-            >{{ place.label }}</RouterLink
+            is-exact
+            class="w-auto shrink-0 whitespace-nowrap rounded-lg px-3 text-muted-foreground hover:text-foreground"
+            >{{ place.label }}</AppNavLink
           >
         </nav>
         <div class="ml-auto flex items-center gap-3">
