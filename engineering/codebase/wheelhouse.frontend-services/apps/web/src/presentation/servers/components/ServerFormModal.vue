@@ -12,7 +12,7 @@ export interface ServerFormModalProps {
 </script>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { ref } from "vue";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
 import {
@@ -33,7 +33,9 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
+  ModalSize,
 } from "@wow-two-beta/ui-vue/presentation/overlays";
+import { useFormDialogSession } from "@wow-two-beta/ui-vue/forms-engine";
 import { useAppForm } from "@/bootstrap/form";
 import {
   serverFieldPath,
@@ -67,16 +69,13 @@ const form = useAppForm({
   },
 });
 
-/** Starts each session from the server being edited, or a Hetzner default. */
-watch(
-  () => props.open,
-  (open) => {
-    if (!open) return;
-    removeError.value = "";
-    form.invalidateSession(serverFormOf(props.server));
-  },
-  { immediate: true, flush: "sync" },
-);
+/** Starts each session from the server being edited, or a Hetzner default, once the opening update has set both
+ * props. */
+useFormDialogSession(form, {
+  open: () => props.open,
+  initialValues: () => serverFormOf(props.server),
+  onOpen: () => (removeError.value = ""),
+});
 
 /** Removes the server once nothing runs on it. */
 async function remove(): Promise<void> {
@@ -90,7 +89,7 @@ async function remove(): Promise<void> {
 
 <template>
   <Modal :open="open" @update:open="emit('update:open', $event)">
-    <ModalContent class="w-[min(44rem,calc(100vw-2rem))]">
+    <ModalContent :size="ModalSize.Lg">
       <ModalHeader>
         <ModalTitle>{{ server ? `Edit ${server.name}` : "New server" }}</ModalTitle>
       </ModalHeader>

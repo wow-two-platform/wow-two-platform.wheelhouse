@@ -14,7 +14,7 @@ export interface VaultFormModalProps {
 </script>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { ref } from "vue";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { Field, TextInput } from "@wow-two-beta/ui-vue/presentation/forms";
@@ -26,6 +26,7 @@ import {
   ModalHeader,
   ModalTitle,
 } from "@wow-two-beta/ui-vue/presentation/overlays";
+import { useFormDialogSession } from "@wow-two-beta/ui-vue/forms-engine";
 import { useAppForm } from "@/bootstrap/form";
 import {
   vaultDefinitionFormOf,
@@ -57,16 +58,13 @@ const form = useAppForm({
   },
 });
 
-/** Starts each session from the vault being edited, or one named after its server. */
-watch(
-  () => props.open,
-  (open) => {
-    if (!open) return;
-    removeError.value = "";
-    form.invalidateSession(vaultDefinitionFormOf(props.vault, props.server));
-  },
-  { immediate: true, flush: "sync" },
-);
+/** Starts each session from the vault being edited, or one named after its server, once the opening update has
+ * set every prop. */
+useFormDialogSession(form, {
+  open: () => props.open,
+  initialValues: () => vaultDefinitionFormOf(props.vault, props.server),
+  onOpen: () => (removeError.value = ""),
+});
 
 /** Stops administering the vault; the vault and its secrets stay where they run. */
 async function remove(): Promise<void> {
@@ -80,7 +78,7 @@ async function remove(): Promise<void> {
 
 <template>
   <Modal :open="open" @update:open="emit('update:open', $event)">
-    <ModalContent class="w-[min(32rem,calc(100vw-2rem))]">
+    <ModalContent>
       <ModalHeader>
         <ModalTitle>{{ vault ? `Edit ${vault.name}` : "New vault" }}</ModalTitle>
       </ModalHeader>

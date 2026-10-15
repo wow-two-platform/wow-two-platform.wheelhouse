@@ -35,7 +35,9 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
+  ModalSize,
 } from "@wow-two-beta/ui-vue/presentation/overlays";
+import { useFormDialogSession } from "@wow-two-beta/ui-vue/forms-engine";
 import { useAppForm } from "@/bootstrap/form";
 import {
   suggestedTargetSlug,
@@ -69,16 +71,13 @@ const form = useAppForm({
   },
 });
 
-/** Starts each session from the target being edited, or a dev environment on the first server. */
-watch(
-  () => props.open,
-  (open) => {
-    if (!open) return;
-    removeError.value = "";
-    form.invalidateSession(targetFormOf(props.target, props.product, props.servers[0]?.slug ?? null));
-  },
-  { immediate: true, flush: "sync" },
-);
+/** Starts each session from the target being edited, or a dev environment on the first server, once the opening
+ * update has set every prop. */
+useFormDialogSession(form, {
+  open: () => props.open,
+  initialValues: () => targetFormOf(props.target, props.product, props.servers[0]?.slug ?? null),
+  onOpen: () => (removeError.value = ""),
+});
 
 /** Keeps a new target's slug following its environment until the operator types another. */
 watch(
@@ -102,7 +101,7 @@ async function remove(): Promise<void> {
 
 <template>
   <Modal :open="open" @update:open="emit('update:open', $event)">
-    <ModalContent class="w-[min(44rem,calc(100vw-2rem))]">
+    <ModalContent :size="ModalSize.Lg">
       <ModalHeader>
         <ModalTitle>{{ target ? `Edit ${target.slug}` : "New environment" }}</ModalTitle>
       </ModalHeader>

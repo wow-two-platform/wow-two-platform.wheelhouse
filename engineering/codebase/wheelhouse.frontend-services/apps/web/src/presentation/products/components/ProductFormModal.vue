@@ -12,7 +12,7 @@ export interface ProductFormModalProps {
 </script>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { Field, SwitchField, TextAreaInput, TextInput } from "@wow-two-beta/ui-vue/presentation/forms";
@@ -23,7 +23,9 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
+  ModalSize,
 } from "@wow-two-beta/ui-vue/presentation/overlays";
+import { useFormDialogSession } from "@wow-two-beta/ui-vue/forms-engine";
 import { useAppForm } from "@/bootstrap/form";
 import {
   productFieldPath,
@@ -62,16 +64,12 @@ const form = useAppForm({
   },
 });
 
-/** Starts each session from the product being edited, or blank. */
-watch(
-  () => props.open,
-  (open) => {
-    if (!open) return;
-    removeError.value = "";
-    form.invalidateSession(productFormOf(props.product));
-  },
-  { immediate: true, flush: "sync" },
-);
+/** Starts each session from the product being edited, or blank, once the opening update has set both props. */
+useFormDialogSession(form, {
+  open: () => props.open,
+  initialValues: () => productFormOf(props.product),
+  onOpen: () => (removeError.value = ""),
+});
 
 /** Removes the product once the host accepts it; a product an environment still runs stays. */
 async function remove(): Promise<void> {
@@ -88,7 +86,7 @@ async function remove(): Promise<void> {
 
 <template>
   <Modal :open="open" @update:open="emit('update:open', $event)">
-    <ModalContent class="w-[min(40rem,calc(100vw-2rem))]">
+    <ModalContent :size="ModalSize.Lg">
       <ModalHeader>
         <ModalTitle>{{ product ? `Edit ${product.name}` : "New product" }}</ModalTitle>
       </ModalHeader>
