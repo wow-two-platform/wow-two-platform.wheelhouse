@@ -143,6 +143,12 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Item | Type | Notes |
 |---|---|---|
 | Rehearse every deployment flow from dev on a sample app | feature | Promotion from dev to prod ships; this proves each flow end to end |
+| Analyze the zero-disruption deployment contract | product | User 2026-10-15: what every app must implement so deployments never break work in flight; covers the rows below; the outcome becomes a wow2 convention |
+| Ability to drain requests and show maintenance before a rollout | feature | The service refuses new requests, finishes in-flight ones, and its pages say so |
+| Ability to deploy when a service is idle, with an estimate | feature | Services report busy work Wheelhouse must not interrupt; Wheelhouse tells the operator when the rollout will run |
+| Ability to schedule a deployment for a set time | feature | E.g. a release set for tomorrow 2 PM |
+| Ability for product frontends to refresh onto a new version | feature | Show "new version available"; before a write, refresh or warn so old pages never call a new API |
+| Ability to dry-run pending migrations before a rollout | feature | Each migration is one transaction today, but a batch is not; dry run plus batch atomicity in the SDK migrator, called before the swap |
 | Roll prod back by promoting the previous release | feature | Dev-to-prod promotion exists |
 | Run each app's migrations as a rollout step and show their state | feature | User decision 2026-10-14: apps own their SQL; the runner migrates with the new image between pull and start; prod waits for test. The app database's own migration journal stays the authority; Wheelhouse reads it at deploy and keeps what it saw in the job history, never a second table. Rollback scripts run only on a confirmed operator action |
 | Mount a GitHub token that can start product builds | check | `WHEELHOUSE_GITHUB_TOKEN_FILE` with Actions write on each product; the Build button needs it |
@@ -173,6 +179,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Ability to group products into workspaces | feature | User 2026-10-15: personal, wow2 platform, wow2 backbone, wow2 apps, own ventures, other ventures |
 | Add `product/product.json` to ForeverPin, every other product repository and the product template | feature | Decided 2026-10-15: identity text is a manifest in the repository ([convention](../../../../../conventions/design/identity/product-manifest.md)); Wheelhouse and the canary carry one; until a repo does, its row supplies the name and description |
 | Edit a product's identity from the console by committing its manifest | feature | Needs the GitHub App (Hosting group); the console shows manifest-sourced name, description and homepage read-only meanwhile |
 | Refresh a product's manifest on push | feature | A GitHub App push webhook feeds the same commit-keyed row; the 5-minute head check and the Refresh action stay as fallbacks |
@@ -195,6 +202,20 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Key expiry and rotation reminders | feature | Keys live until revoked today |
 
 ---
+
+## Experience
+
+User 2026-10-15: layout, motion and notifications must work flawlessly and look their best; pull this group first.
+
+| Item | Type | Notes |
+|---|---|---|
+| Analyze the console's information architecture | product | Secrets and Activity may not need their own tabs; Workspace could carry activity as widgets. Decides the phone navigation below |
+| Ability to navigate on phones from a bottom bar | feature | User 2026-10-15: bottom menus work best on phones; waits on the analysis above |
+| Ability to follow a deployment in a compact progress notification | feature | Closing the deploy dialog keeps the rollout visible; the SDK feedback bus needs progress notices any app can publish |
+| Ability to see rollout steps and page transitions animate | feature | Steps flip to done with no motion today; sweep transitions across the layout |
+| Ability to swipe a table row on phones for its two main actions | feature | Part of a sweep of intuitive phone gestures, navigation and transitions for the SDK and conventions |
+| Analyze full-page versus modal dialogs | product | Then record the dialog convention in wow2 |
+| Ability to see an icon on each rollout step | feature | Lucide first; a Font Awesome-derived icon pack is planned |
 
 ## Product views
 
@@ -226,14 +247,12 @@ Leftovers of the v0.4 sweep. Items marked *decision* wait on the owner.
 | Adopt SDK token paging for the audit list | engineering | Wire change with the Activity page |
 | Extract atomic file write and an EF upsert → SDK | engineering | `InventorySnapshotExporter.cs`, `EfProductManifests.cs` |
 | Replace the local `Stub*` clients with SDK testing fakes | engineering | Waits on the vault and repository-reader extracts shipping fakes; the SDK fakes today cover clients Wheelhouse doesn't call |
-| Extract a data-state region → UI SDK | engineering | *decision*: `LoadState.vue` (17 uses): first load, refresh, error with data, empty |
 | Extract a selectable list → UI SDK | engineering | `ProductsPanel`, `WorkspacePage`, `NamespaceList`: leading, title, meta, trailing, skeleton rows |
 | Extract the rows field → UI SDK | engineering | `RowsField.vue` over `useFieldArray`; stacks on phones |
 | Extract a log viewer that follows the tail → UI SDK | engineering | `ServiceLogsModal.vue` |
 | Extract a schema decoder and problem reason → UI SDK HTTP client | engineering | `integration/common/client.ts` |
 | Extract a status strip and tone classes → UI SDK | engineering | `WorkspacePage.vue` |
 | Make the Sparkline time-based with thresholds → UI SDK | engineering | `TrendLine.vue` |
-| Move the Wheelhouse palette and glass presets → UI SDK theme registry | engineering | *decision*: `bootstrap/index.css`; shared platform look or app-local |
 
 ---
 
