@@ -11,12 +11,14 @@
       the SDK scripted HTTP handler and in-memory fakes in Fakes/ — deliberately NOT the e2e Harness stubs, so this
       tier stays independent of Wheelhouse.Tests.E2E.
 
-      The SDK testing package is here for its I/O-free helpers only (scripted HTTP); its Testcontainers and
-      Mvc.Testing pieces belong to the e2e tier. Versions for the shared test packages are pinned to match what
-      Wheelhouse.Tests.E2E resolves (xunit 2.9.2 / AwesomeAssertions 9.0.0 / TimeProvider.Testing 9.1.0).
+      The SDK testing packages are here for their I/O-free helpers only (scripted HTTP, the in-memory repository);
+      their Testcontainers and Mvc.Testing pieces belong to the e2e tier. Versions for the shared test packages are
+      pinned to match what Wheelhouse.Tests.E2E resolves (xunit 2.9.2 / AwesomeAssertions 9.0.0 /
+      TimeProvider.Testing 9.1.0).
     -->
     <ItemGroup>
         <PackageReference Include="WoW2.Sdk.Backend.Beta.Testing"/>
+        <PackageReference Include="WoW2.Sdk.Backend.Beta.Testing.Data"/>
         <!-- The operator-token stand-in for the SDK GitHub client; pulls the core mono-lib transitively. -->
         <PackageReference Include="WoW2.Sdk.Backend.Beta.Testing.Integrations"/>
         <PackageReference Include="Microsoft.NET.Test.Sdk"/>

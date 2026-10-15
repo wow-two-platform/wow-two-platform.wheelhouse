@@ -1,11 +1,12 @@
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Domain.Servers.Entities;
 using Wheelhouse.Domain.Vaults.Entities;
+using WoW.Two.Sdk.Backend.Beta.Testing.Data.Repositories;
 
 namespace Wheelhouse.Tests.Unit.Fakes;
 
 /// <summary>Keeps servers in memory.</summary>
-public sealed class InMemoryServersRepository : InMemoryRepository<ServerEntity>, IServersRepository
+public sealed class InMemoryServersRepository : InMemoryRepository<ServerEntity, Guid>, IServersRepository
 {
     /// <inheritdoc />
     public Task<ServerEntity?> GetBySlugAsync(string slug, CancellationToken ct = default) =>
@@ -13,7 +14,7 @@ public sealed class InMemoryServersRepository : InMemoryRepository<ServerEntity>
 }
 
 /// <summary>Keeps vaults in memory.</summary>
-public sealed class InMemoryVaultsRepository : InMemoryRepository<VaultEntity>, IVaultsRepository
+public sealed class InMemoryVaultsRepository : InMemoryRepository<VaultEntity, Guid>, IVaultsRepository
 {
     /// <inheritdoc />
     public Task<VaultEntity?> GetBySlugAsync(string slug, CancellationToken ct = default) =>

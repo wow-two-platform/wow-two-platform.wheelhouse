@@ -14,6 +14,7 @@ using Wheelhouse.Tests.Unit.Fakes;
 using Microsoft.Extensions.Time.Testing;
 using WoW.Two.Sdk.Backend.Beta.Foundation.Errors;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Backend.Beta.Testing.Http;
 
 namespace Wheelhouse.Tests.Unit.Vaults;
 
@@ -49,7 +50,7 @@ public sealed class VaultGatewayTests : IDisposable
         {
             Id = Guid.NewGuid(), Slug = "pilot-vault", Name = "Pilot vault", ServerId = server.Id, Url = "http://vault.internal:8080",
         });
-        return new VaultGateway(vaults, servers, new ClientFactory(_vault), cache ?? new VaultSessionCache(_time),
+        return new VaultGateway(vaults, servers, new SingleClientHttpClientFactory(_vault), cache ?? new VaultSessionCache(_time),
             new DeploymentSettings { Root = _root });
     }
 
@@ -171,11 +172,6 @@ public sealed class VaultGatewayTests : IDisposable
     private static AppError Error(AppResult<JsonElement> result) => ((AppResult<JsonElement>.Failure)result).Error;
 
     // ---- Doubles ----
-
-    private sealed class ClientFactory(HttpMessageHandler handler) : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
-    }
 
     private sealed class ScriptedVault : HttpMessageHandler
     {
