@@ -321,11 +321,7 @@ function openDeploy(job?: DeploymentJob): void {
           /><SkeletonState class="h-96" /></div
       ></template>
       <template #emptyActions
-        ><RouterLink
-          to="/products"
-          class="mt-4 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-          >Register product</RouterLink
-        ></template
+        ><Button as-child><RouterLink to="/products">Register product</RouterLink></Button></template
       >
       <div
         class="grid items-start gap-5 lg:grid-cols-[200px_minmax(0,1fr)] 2xl:grid-cols-[224px_minmax(0,1fr)_300px] xl:grid-cols-[190px_minmax(0,1fr)_280px]"

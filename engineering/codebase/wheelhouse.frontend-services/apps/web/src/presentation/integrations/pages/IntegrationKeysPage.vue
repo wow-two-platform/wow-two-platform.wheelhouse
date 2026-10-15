@@ -52,7 +52,7 @@ async function confirmRevoke(key: IntegrationKey): Promise<void> {
     @retry="reload"
   >
     <template #emptyActions
-      ><Button class="mt-3" @click="creating = true"
+      ><Button @click="creating = true"
         ><template #leading><KeyRound :size="16" /></template>Create key</Button
       ></template
     >

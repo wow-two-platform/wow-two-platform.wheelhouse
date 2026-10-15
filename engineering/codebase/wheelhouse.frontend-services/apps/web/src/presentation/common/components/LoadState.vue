@@ -23,7 +23,7 @@ defineOptions({ name: 'LoadState' });
    does not own a refresh must not open a group that hides its parent's. */
 const props = withDefaults(defineProps<LoadStateProps>(), { refreshing: undefined });
 const emit = defineEmits<{ retry: [] }>();
-defineSlots<{ default(): unknown; skeleton(): unknown; emptyActions(): unknown }>();
+defineSlots<{ default(): unknown; skeleton(): unknown; emptyActions?(): unknown }>();
 </script>
 <template>
   <div v-if="props.loading" role="status" aria-label="Loading data" class="space-y-3">
@@ -40,8 +40,9 @@ defineSlots<{ default(): unknown; skeleton(): unknown; emptyActions(): unknown }
     </div>
     <template v-if="!props.error || props.hasData">
       <div v-if="props.empty" class="py-8 text-center">
-        <EmptyState :title="props.emptyTitle ?? 'Nothing here yet'" :description="props.emptyDescription ?? ''" />
-        <slot name="emptyActions" />
+        <EmptyState :title="props.emptyTitle ?? 'Nothing here yet'" :description="props.emptyDescription ?? ''">
+          <template v-if="$slots.emptyActions" #actions><slot name="emptyActions" /></template>
+        </EmptyState>
       </div>
       <!-- Only a region that owns its refresh opens a group; a nested read follows its region's refresh. -->
       <SkeletonStateGroup v-else-if="props.refreshing !== undefined" class="contents" :is-loading="props.refreshing"
