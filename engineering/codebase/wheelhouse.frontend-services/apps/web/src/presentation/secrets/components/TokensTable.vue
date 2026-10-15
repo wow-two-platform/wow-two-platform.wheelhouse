@@ -21,26 +21,15 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@wow-two-beta/ui-vue/presentation/display";
-import {
-  Alert,
-  StatusIndicator,
-} from "@wow-two-beta/ui-vue/presentation/feedback";
-import {
-  AlertModal,
-  AlertModalContent,
-  ModalHeader,
-  ModalTitle,
-  ModalDescription,
-  ModalBody,
-  ModalFooter,
-} from "@wow-two-beta/ui-vue/presentation/overlays";
+import { StatusIndicator } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { ConfirmPopover } from "@wow-two-beta/ui-vue/presentation/overlays";
 import { useTokenChanges, useVaultTokens } from "@/application/secrets";
 import { Measures } from "@/domain/common";
 import { SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { LoadState } from "@/presentation/common/components";
 import MintTokenModal from "./MintTokenModal.vue";
 
-/** Administers metadata, one-time minting, and confirmed token revocation. */
+/** Administers metadata, one-time minting, and token revocation confirmed in the SDK popover. */
 defineOptions({ name: "TokensTable" });
 const props = defineProps<TokensTableProps>();
 defineSlots<{}>();
@@ -82,6 +71,20 @@ async function revoke(): Promise<void> {
   if (!token) return;
   const result = await changes.revoke(token.id);
   if (result.ok && revoking.value?.id === token.id) closeRevoke(false);
+}
+
+/** Opens one token's confirmation; closing it cancels any pending request. @internal */
+function confirmFor(token: VaultToken, open: boolean): void {
+  if (open) {
+    changes.reset();
+    revoking.value = token;
+  } else closeRevoke(false);
+}
+
+/** The popover's confirm: a failed revocation rejects, so the confirmation stays open with its error. @internal */
+async function confirmRevoke(): Promise<void> {
+  await revoke();
+  if (revoking.value !== null) throw new Error(changeError.value?.message ?? "Revocation did not complete");
 }
 </script>
 
@@ -167,42 +170,32 @@ async function revoke(): Promise<void> {
               </span>
             </TableCell>
             <TableCell class="text-right">
-              <Button
+              <ConfirmPopover
                 v-if="!token.isRevoked"
-                variant="ghost"
+                :open="revoking?.id === token.id"
+                :title="`Revoke ${token.name}?`"
+                confirm-label="Revoke"
                 tone="danger"
-                size="sm"
-                @click="revoking = token"
+                placement="top-end"
+                :on-confirm="confirmRevoke"
+                @update:open="confirmFor(token, $event)"
               >
-                Revoke
-              </Button>
+                <template #description
+                  >Later reads with this token fail. Products retain loaded
+                  values until they restart.<span
+                    v-if="changeError && !changing"
+                    role="alert"
+                    class="mt-2 block text-destructive"
+                    >{{ changeError.message }}</span
+                  ></template
+                >
+                <Button variant="ghost" tone="danger" size="sm">Revoke</Button>
+              </ConfirmPopover>
             </TableCell>
           </TableRow>
         </TableBody>
       </Table>
     </LoadState>
     <MintTokenModal :vault="vault" :ns="ns" v-model:open="minting" />
-    <AlertModal :open="revoking !== null" @update:open="closeRevoke">
-      <AlertModalContent class="flex max-h-[calc(100dvh-2rem)] flex-col">
-        <ModalHeader>
-          <ModalTitle>Revoke {{ revoking?.name }}?</ModalTitle>
-          <ModalDescription>
-            Later reads with this token fail. Products retain loaded values
-            until they restart.
-          </ModalDescription>
-        </ModalHeader>
-        <ModalBody class="-mx-1 min-h-0 flex-1 overflow-y-auto px-1" v-if="changeError"
-          ><Alert severity="danger" :description="changeError.message"
-        /></ModalBody>
-        <ModalFooter>
-          <Button variant="outline" tone="neutral" @click="closeRevoke(false)"
-            >Cancel</Button
-          >
-          <Button tone="danger" :is-loading="changing" @click="revoke"
-            >Revoke</Button
-          >
-        </ModalFooter>
-      </AlertModalContent>
-    </AlertModal>
   </div>
 </template>

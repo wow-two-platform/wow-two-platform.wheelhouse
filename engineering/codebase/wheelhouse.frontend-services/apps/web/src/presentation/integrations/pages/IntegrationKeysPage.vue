@@ -2,8 +2,17 @@
 import { computed, ref } from "vue";
 import { KeyRound, Plus } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Badge } from "@wow-two-beta/ui-vue/presentation/display";
+import {
+  Badge,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from "@wow-two-beta/ui-vue/presentation/display";
 import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { ConfirmPopover } from "@wow-two-beta/ui-vue/presentation/overlays";
 import { useIntegrationKeys } from "@/application/integrations";
 import type { IntegrationKey } from "@/domain/integrations";
 import { LoadState, PageActions, Panel } from "@/presentation/common/components";
@@ -14,8 +23,6 @@ defineOptions({ name: "IntegrationKeysPage" });
 
 const { keys, loading, error, reload, create, revoke } = useIntegrationKeys();
 const creating = ref(false);
-const confirming = ref<string | null>(null);
-const revoking = ref(false);
 const revokeError = ref<string | null>(null);
 const live = computed(() => keys.value.filter((key) => key.revokedAt === null).length);
 
@@ -24,18 +31,13 @@ function when(value: string | null): string {
   return value ? new Date(value).toLocaleString() : "—";
 }
 
-/** Revokes only the explicitly confirmed key. */
+/** Revokes only the explicitly confirmed key; a failure rejects, so the confirmation stays open beside its error. */
 async function confirmRevoke(key: IntegrationKey): Promise<void> {
-  if (revoking.value) return;
-  revoking.value = true;
   revokeError.value = null;
-  try {
-    const result = await revoke(key.id);
-    if (result.ok) confirming.value = null;
-    else revokeError.value = result.failure.message;
-  } finally {
-    revoking.value = false;
-  }
+  const result = await revoke(key.id);
+  if (result.ok) return;
+  revokeError.value = result.failure.message;
+  throw new Error(result.failure.message);
 }
 </script>
 
@@ -58,41 +60,44 @@ async function confirmRevoke(key: IntegrationKey): Promise<void> {
     >
     <Panel :title="`${live} live ${live === 1 ? 'key' : 'keys'}`">
       <Alert v-if="revokeError" severity="danger" :description="revokeError" class="mb-3" />
-      <div class="overflow-x-auto">
-        <table class="w-full min-w-[44rem] text-left text-sm">
-          <thead class="text-xs text-muted-foreground">
-            <tr>
-              <th class="py-2 pr-4 font-medium">Name</th>
-              <th class="py-2 pr-4 font-medium">Key</th>
-              <th class="py-2 pr-4 font-medium">Scopes</th>
-              <th class="py-2 pr-4 font-medium">Created</th>
-              <th class="py-2 pr-4 font-medium">Last used</th>
-              <th class="py-2 font-medium"><span class="sr-only">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            <tr v-for="key in keys" :key="key.id" :class="key.revokedAt ? 'text-muted-foreground' : ''">
-              <td class="py-3 pr-4 font-medium">{{ key.name }}</td>
-              <td class="py-3 pr-4 font-mono text-xs">{{ key.prefix }}…</td>
-              <td class="py-3 pr-4">
-                <span class="flex flex-wrap gap-1">
-                  <Badge v-for="scope in key.scopes" :key="scope" size="sm" variant="neutral">{{ scope }}</Badge>
-                </span>
-              </td>
-              <td class="py-3 pr-4 text-xs">{{ when(key.createdAt) }} · {{ key.createdBy }}</td>
-              <td class="py-3 pr-4 text-xs">{{ when(key.lastUsedAt) }}</td>
-              <td class="py-3 text-right">
-                <Badge v-if="key.revokedAt" size="sm" variant="outline" :title="`Revoked ${when(key.revokedAt)}`">Revoked</Badge>
-                <span v-else-if="confirming === key.id" class="inline-flex gap-2">
-                  <Button size="sm" variant="ghost" tone="neutral" :is-disabled="revoking" @click="confirming = null">Cancel</Button>
-                  <Button size="sm" tone="danger" :is-loading="revoking" @click="confirmRevoke(key)">Revoke</Button>
-                </span>
-                <Button v-else size="sm" variant="ghost" tone="danger" @click="confirming = key.id">Revoke</Button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <Table density="compact" is-hoverable class="min-w-[44rem]">
+        <TableHead>
+          <TableRow>
+            <TableHeaderCell>Name</TableHeaderCell>
+            <TableHeaderCell>Key</TableHeaderCell>
+            <TableHeaderCell>Scopes</TableHeaderCell>
+            <TableHeaderCell>Created</TableHeaderCell>
+            <TableHeaderCell>Last used</TableHeaderCell>
+            <TableHeaderCell><span class="sr-only">Actions</span></TableHeaderCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          <TableRow v-for="key in keys" :key="key.id" :class="key.revokedAt ? 'text-muted-foreground' : ''">
+            <TableCell class="font-medium">{{ key.name }}</TableCell>
+            <TableCell class="font-mono text-xs">{{ key.prefix }}…</TableCell>
+            <TableCell>
+              <span class="flex flex-wrap gap-1">
+                <Badge v-for="scope in key.scopes" :key="scope" size="sm" variant="neutral">{{ scope }}</Badge>
+              </span>
+            </TableCell>
+            <TableCell class="text-xs">{{ when(key.createdAt) }} · {{ key.createdBy }}</TableCell>
+            <TableCell class="text-xs">{{ when(key.lastUsedAt) }}</TableCell>
+            <TableCell class="text-right">
+              <Badge v-if="key.revokedAt" size="sm" variant="outline" :title="`Revoked ${when(key.revokedAt)}`">Revoked</Badge>
+              <ConfirmPopover
+                v-else
+                :title="`Revoke ${key.name}?`"
+                confirm-label="Revoke"
+                tone="danger"
+                placement="top-end"
+                :on-confirm="() => confirmRevoke(key)"
+              >
+                <Button size="sm" variant="ghost" tone="danger">Revoke</Button>
+              </ConfirmPopover>
+            </TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
     </Panel>
   </LoadState>
   <CreateKeyModal :open="creating" :create="create" @update:open="creating = $event" />
