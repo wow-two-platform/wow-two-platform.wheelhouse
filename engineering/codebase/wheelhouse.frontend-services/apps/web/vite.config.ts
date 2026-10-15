@@ -1,11 +1,34 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import vue from "@vitejs/plugin-vue";
 import tailwindcss from "@tailwindcss/vite";
 import mkcert from "vite-plugin-mkcert";
 import { fileURLToPath } from "node:url";
+import { colorModeScript } from "@wow-two-beta/ui-vue/foundation/primitives";
+import { ThemeStorageKey } from "./src/bootstrap/theme";
 
 /** Holds the build's version: CI passes `APP_VERSION`; a local build is `dev`. */
 const version = process.env.APP_VERSION || "dev";
+
+/**
+ * Serves and emits `/theme.js`: the SDK's pre-paint colour script for the console's storage key, so a dark console
+ * never flashes light. A same-origin file rather than an inline script, so a strict Content-Security-Policy keeps it
+ * working without a hash.
+ */
+function themeScript(): Plugin {
+  const source = colorModeScript({ storageKey: ThemeStorageKey });
+  return {
+    name: "wheelhouse-theme-script",
+    configureServer(server) {
+      server.middlewares.use("/theme.js", (_request, response) => {
+        response.setHeader("Content-Type", "text/javascript");
+        response.end(source);
+      });
+    },
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: "theme.js", source });
+    },
+  };
+}
 
 // The SPA is served from the .NET host's wwwroot in production (base '/', same-origin "/api/...").
 // In dev, Vite runs over HTTPS (vite-plugin-mkcert → a locally-trusted cert, so the Secure auth
@@ -19,7 +42,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     base: "/",
     define: { __APP_VERSION__: JSON.stringify(version) },
-    plugins: [vue(), tailwindcss(), ...(command === "serve" && https ? [mkcert()] : [])],
+    plugins: [vue(), tailwindcss(), themeScript(), ...(command === "serve" && https ? [mkcert()] : [])],
     resolve: {
       alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
     },

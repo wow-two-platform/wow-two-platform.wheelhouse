@@ -6,15 +6,13 @@ import { useAuth } from '@/application/auth';
 import SignInScreen from '@/presentation/auth/SignInScreen.vue';
 import { BootSplash } from '@/presentation/shell';
 import AppLayout from './AppLayout.vue';
+import { ThemeStorageKey } from './theme';
 
 /** Names the boot stages the splash bar reports; the static splash in `index.html` stops at `Scripts`. */
 const BootProgress = { Scripts: 35, Session: 70, Ready: 100 } as const;
 
 /** Holds the full bar long enough for its width transition to finish before the splash fades. */
 const SettleMs = 250;
-
-/** The key the pre-paint `public/theme.js` reads; the SDK provider persists `light`, `dark` or `system` there. */
-const ThemeStorageKey = 'wheelhouse.theme';
 
 /** Gates every private workspace route on the operator's GitHub session, behind the first-load splash. */
 defineOptions({ name: 'App' });
