@@ -1,4 +1,6 @@
 using System.Net;
+using System.Reflection;
+using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
@@ -49,6 +51,20 @@ public sealed class HostWiringE2ETests(WheelhouseAppFixture fixture) : Wheelhous
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Status_ShouldReportTheServiceVersionAndRig_InTheShapeTheConsoleReads()
+    {
+        var response = await AnonymousClient.GetAsync("/api/system/status");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        body.EnumerateObject().Select(property => property.Name).Should().Equal("service", "status", "version", "localRig");
+        (body.GetProperty("service").GetString(), body.GetProperty("status").GetString()).Should().Be(("Wheelhouse", "ok"));
+        body.GetProperty("version").GetString().Should().Be(typeof(Program).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion);
+        body.GetProperty("localRig").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
     }
 
     [Fact]

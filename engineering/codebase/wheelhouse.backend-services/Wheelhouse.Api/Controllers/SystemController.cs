@@ -1,9 +1,9 @@
-using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Wheelhouse.Api.Configurations;
 using Wheelhouse.Infrastructure.Settings;
+using WoW.Two.Sdk.Backend.Beta.Web.SystemStatus;
 
 namespace Wheelhouse.Api.Controllers;
 
@@ -22,8 +22,7 @@ public sealed class SystemController(HealthCheckService health, DeploymentSettin
             : StatusCode(503);
 
     /// <summary>The running build's informational version: the product version plus the commit it was built from.</summary>
-    private static readonly string Version = typeof(SystemController).Assembly
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+    private static readonly string Version = BuildVersion.Read(typeof(SystemController).Assembly).Version;
 
     /// <summary>Reports service liveness and version, and whether this instance drives the local rehearsal rig instead of real hosts.</summary>
     [AllowAnonymous]
