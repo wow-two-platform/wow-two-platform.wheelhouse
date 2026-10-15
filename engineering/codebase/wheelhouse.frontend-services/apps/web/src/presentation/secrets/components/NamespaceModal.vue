@@ -71,7 +71,7 @@ async function submit(event: Event): Promise<void> {
 
 <template>
   <Modal :open="open" @update:open="close">
-    <ModalContent class="flex max-h-[calc(100dvh-2rem)] flex-col w-full max-w-md">
+    <ModalContent class="w-full max-w-md">
       <form @submit="submit">
         <ModalHeader>
           <ModalTitle>New namespace</ModalTitle>
@@ -80,7 +80,7 @@ async function submit(event: Event): Promise<void> {
             together.</ModalDescription
           >
         </ModalHeader>
-        <ModalBody class="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 flex flex-col gap-4">
+        <ModalBody class="flex flex-col gap-4">
           <form.Field name="slug" is-required v-slot="field">
             <Field label="Slug" helper="Lowercase, e.g. foreverpin-staging">
               <TextInput

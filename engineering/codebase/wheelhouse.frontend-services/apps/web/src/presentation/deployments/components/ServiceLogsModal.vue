@@ -68,7 +68,7 @@ watch(lines, async () => {
 
 <template>
   <Modal :open="props.open" @update:open="emit('update:open', $event)">
-    <ModalContent class="flex max-h-[calc(100dvh-2rem)] flex-col w-full max-w-4xl">
+    <ModalContent class="w-full max-w-4xl">
       <ModalHeader>
         <ModalTitle>Logs · {{ props.service }}</ModalTitle>
         <ModalDescription
@@ -77,7 +77,7 @@ watch(lines, async () => {
           >. Read on request; Wheelhouse never stores them.</ModalDescription
         >
       </ModalHeader>
-      <ModalBody class="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 flex flex-col gap-3">
+      <ModalBody class="flex flex-col gap-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <p class="text-xs text-muted-foreground" role="status">
             {{

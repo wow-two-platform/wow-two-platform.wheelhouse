@@ -264,7 +264,7 @@ function close(open: boolean): void {
     :can-dismiss-on-escape="!start.loading.value"
     @update:open="close"
   >
-    <ModalContent class="flex max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col">
+    <ModalContent class="w-full max-w-xl">
       <template v-if="step === 'choose'">
         <ModalHeader>
           <ModalTitle>Deploy a release</ModalTitle>
@@ -273,7 +273,7 @@ function close(open: boolean): void {
             readiness.</ModalDescription
           >
         </ModalHeader>
-        <ModalBody class="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1">
+        <ModalBody class="flex flex-col gap-4">
           <div
             v-if="targets.loading.value || releases.loading.value"
             class="flex justify-center py-6"
@@ -523,7 +523,7 @@ function close(open: boolean): void {
             window.
           </ModalDescription>
         </ModalHeader>
-        <ModalBody class="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1">
+        <ModalBody class="flex flex-col gap-4">
           <dl
             class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 rounded-xl border border-border p-4 text-sm"
           >
@@ -607,7 +607,7 @@ function close(open: boolean): void {
             outcome.</ModalDescription
           >
         </ModalHeader>
-        <ModalBody class="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1">
+        <ModalBody class="flex flex-col gap-4">
           <div
             role="status"
             class="flex flex-col gap-3 rounded-xl border border-border p-4"

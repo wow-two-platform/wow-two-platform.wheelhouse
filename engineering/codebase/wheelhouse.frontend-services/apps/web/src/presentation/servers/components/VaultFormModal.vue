@@ -80,12 +80,12 @@ async function remove(): Promise<void> {
 
 <template>
   <Modal :open="open" @update:open="emit('update:open', $event)">
-    <ModalContent class="flex max-h-[calc(100dvh-2rem)] w-[min(32rem,calc(100vw-2rem))] flex-col">
+    <ModalContent class="w-[min(32rem,calc(100vw-2rem))]">
       <ModalHeader>
         <ModalTitle>{{ vault ? `Edit ${vault.name}` : "New vault" }}</ModalTitle>
       </ModalHeader>
       <form class="flex min-h-0 flex-1 flex-col" @submit="form.handleSubmit">
-        <ModalBody class="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1">
+        <ModalBody class="flex flex-col gap-4">
           <form.Field v-if="!vault" name="slug" is-required v-slot="field">
             <Field label="Slug" helper="Its password goes in vaults/<slug>/password on the control host">
               <TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" />

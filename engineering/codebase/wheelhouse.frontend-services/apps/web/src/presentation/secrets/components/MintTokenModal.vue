@@ -75,7 +75,7 @@ function close(open: boolean): void {
 
 <template>
   <Modal :open="open" @update:open="close">
-    <ModalContent class="flex max-h-[calc(100dvh-2rem)] flex-col">
+    <ModalContent>
       <ModalHeader>
         <ModalTitle>{{
           minted ? "Copy the token now" : "Mint product token"
@@ -89,7 +89,7 @@ function close(open: boolean): void {
         </ModalDescription>
       </ModalHeader>
       <template v-if="minted">
-        <ModalBody class="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 flex flex-col gap-3">
+        <ModalBody class="flex flex-col gap-3">
           <CodeText class="break-all">{{ minted.token }}</CodeText>
           <p class="text-sm text-muted-foreground">
             Token {{ minted.name }} for {{ minted.namespace }}
@@ -106,7 +106,7 @@ function close(open: boolean): void {
         </ModalFooter>
       </template>
       <form v-else @submit="form.handleSubmit">
-        <ModalBody class="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 flex flex-col gap-4">
+        <ModalBody class="flex flex-col gap-4">
           <form.Field name="name" is-required v-slot="field">
             <Field label="Name" helper="Who uses it, e.g. management">
               <TextInput

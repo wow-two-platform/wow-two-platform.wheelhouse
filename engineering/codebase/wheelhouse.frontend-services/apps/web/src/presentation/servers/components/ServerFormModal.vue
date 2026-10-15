@@ -90,12 +90,12 @@ async function remove(): Promise<void> {
 
 <template>
   <Modal :open="open" @update:open="emit('update:open', $event)">
-    <ModalContent class="flex max-h-[calc(100dvh-2rem)] w-[min(44rem,calc(100vw-2rem))] flex-col">
+    <ModalContent class="w-[min(44rem,calc(100vw-2rem))]">
       <ModalHeader>
         <ModalTitle>{{ server ? `Edit ${server.name}` : "New server" }}</ModalTitle>
       </ModalHeader>
       <form class="flex min-h-0 flex-1 flex-col" @submit="form.handleSubmit">
-        <ModalBody class="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1">
+        <ModalBody class="flex flex-col gap-4">
           <div class="grid gap-4 sm:grid-cols-2">
             <form.Field v-if="!server" name="slug" is-required v-slot="field">
               <Field label="Slug" helper="Its SSH identity goes in ssh/<slug>/ on the control host">

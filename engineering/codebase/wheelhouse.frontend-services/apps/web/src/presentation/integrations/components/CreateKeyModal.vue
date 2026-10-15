@@ -89,7 +89,7 @@ function close(open: boolean): void {
 
 <template>
   <Modal :open="open" @update:open="close">
-    <ModalContent class="flex max-h-[calc(100dvh-2rem)] flex-col">
+    <ModalContent>
       <ModalHeader>
         <ModalTitle>{{ created ? "Copy the key now" : "Create integration key" }}</ModalTitle>
         <ModalDescription>
@@ -101,7 +101,7 @@ function close(open: boolean): void {
         </ModalDescription>
       </ModalHeader>
       <template v-if="created">
-        <ModalBody class="-mx-1 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-1">
+        <ModalBody class="flex flex-col gap-3">
           <CodeText class="break-all">{{ created.secret }}</CodeText>
           <p class="text-sm text-muted-foreground">
             Send it as <code>Authorization: Bearer …</code> or in the <code>X-Api-Key</code> header.
@@ -113,7 +113,7 @@ function close(open: boolean): void {
         </ModalFooter>
       </template>
       <form v-else @submit="form.handleSubmit">
-        <ModalBody class="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1">
+        <ModalBody class="flex flex-col gap-4">
           <form.Field name="name" is-required v-slot="field">
             <Field label="Name" helper="The program that presents it, e.g. Claude">
               <TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" />

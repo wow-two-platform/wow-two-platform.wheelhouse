@@ -83,7 +83,7 @@ async function submit(event: Event): Promise<void> {
 
 <template>
   <Modal :open="open" @update:open="close">
-    <ModalContent class="flex max-h-[calc(100dvh-2rem)] flex-col">
+    <ModalContent>
       <form @submit="submit">
         <ModalHeader>
           <ModalTitle>{{
@@ -94,7 +94,7 @@ async function submit(event: Event): Promise<void> {
             metadata afterwards.
           </ModalDescription>
         </ModalHeader>
-        <ModalBody class="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 flex flex-col gap-4">
+        <ModalBody class="flex flex-col gap-4">
           <form.Field v-if="!secretKey" name="key" is-required v-slot="field">
             <Field label="Key" helper="e.g. DATABASE_URL or Billing:SecretKey">
               <TextInput
