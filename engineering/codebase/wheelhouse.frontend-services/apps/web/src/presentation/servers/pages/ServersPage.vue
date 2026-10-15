@@ -20,6 +20,7 @@ import {
   SelectPickerContent,
   SelectPickerItem,
 } from '@wow-two-beta/ui-vue/presentation/forms';
+import { PageHeaderActions } from '@wow-two-beta/ui-vue/presentation/layout';
 import { useServerChanges, useServers, useServerVitals, useVitalsHistory } from '@/application/servers';
 import { useVaultDefinitions } from '@/application/secrets';
 import { useDeploymentTargets } from '@/application/deployments';
@@ -35,7 +36,7 @@ import {
 } from '@/domain/servers';
 import type { VaultDefinition } from '@/domain/secrets';
 import { Measures } from '@/domain/common';
-import { Panel, LoadState, PageActions, RefreshButton } from '@/presentation/common/components';
+import { Panel, LoadState, RefreshButton } from '@/presentation/common/components';
 import PortfolioAttention from '../components/PortfolioAttention.vue';
 import ResourceMeter from '../components/ResourceMeter.vue';
 import TrendLine from '../components/TrendLine.vue';
@@ -82,12 +83,12 @@ const trendWindow = computed(() => {
 </script>
 <template>
   <div class="space-y-6">
-    <PageActions>
+    <PageHeaderActions>
       <RefreshButton size="md" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
       <Button :is-disabled="serverForm.open" @click="serverForm = { open: true, server: null }">
         <template #leading><Plus :size="16" /></template>Add server
       </Button>
-    </PageActions>
+    </PageHeaderActions>
     <PortfolioAttention />
     <div class="flex flex-wrap items-center justify-between gap-3">
       <p class="text-sm text-muted-foreground">

@@ -19,11 +19,12 @@ import {
   SelectPickerTrigger,
   SelectPickerValue,
 } from "@wow-two-beta/ui-vue/presentation/forms";
+import { PageHeaderActions } from "@wow-two-beta/ui-vue/presentation/layout";
 
 import { useAuditEntries, useAuditVerification } from "@/application/audit";
 import { useRefresh } from "@/bootstrap/query";
 import { AuditArea, AuditExtensions, AuditOutcome } from "@/domain/audit";
-import { LoadState, PageActions, Panel, RefreshButton } from "@/presentation/common/components";
+import { LoadState, Panel, RefreshButton } from "@/presentation/common/components";
 
 /** Lists every operator action from the hash-chained audit trail, newest first, with the chain's verification. */
 defineOptions({ name: "ActivityPage" });
@@ -62,9 +63,9 @@ function newer(): void {
 
 <template>
   <div class="space-y-6">
-    <PageActions
+    <PageHeaderActions
       ><RefreshButton size="md" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh"
-    /></PageActions
+    /></PageHeaderActions
     >
     <section
       class="flex flex-wrap items-start gap-3 rounded-2xl border border-border bg-card p-5"

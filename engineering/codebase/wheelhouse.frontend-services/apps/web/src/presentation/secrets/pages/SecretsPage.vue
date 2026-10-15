@@ -28,7 +28,8 @@ import { useInvalidate } from "@/bootstrap/query";
 import { useRefresh } from "@/bootstrap/query";
 import { VaultStatus } from "@/domain/secrets";
 import { SkeletonStateGroup, SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
-import { LoadState, Panel, PageActions, RefreshButton } from "@/presentation/common/components";
+import { PageHeaderActions } from "@wow-two-beta/ui-vue/presentation/layout";
+import { LoadState, Panel, RefreshButton } from "@/presentation/common/components";
 import NamespaceList from "../components/NamespaceList.vue";
 import SecretsTable from "../components/SecretsTable.vue";
 import TokensTable from "../components/TokensTable.vue";
@@ -116,9 +117,9 @@ function selectVault(value: unknown): void {
 </script>
 
 <template>
-  <PageActions>
+  <PageHeaderActions>
     <RefreshButton :refreshing="refreshing" @refresh="refresh" />
-  </PageActions>
+  </PageHeaderActions>
   <LoadState
     :loading="false"
     :error="error"

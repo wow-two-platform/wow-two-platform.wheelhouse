@@ -31,6 +31,7 @@ import {
   ToggleInput,
 } from "@wow-two-beta/ui-vue/presentation/forms";
 import { SkeletonState } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { PageHeaderActions } from "@wow-two-beta/ui-vue/presentation/layout";
 import { useProducts } from "@/application/products";
 import { useServerVitals } from "@/application/servers";
 import {
@@ -69,7 +70,7 @@ import {
   TargetSites,
   useDeployModal,
 } from "@/presentation/deployments";
-import { LoadState, PageActions, RefreshButton } from "@/presentation/common/components";
+import { LoadState, RefreshButton } from "@/presentation/common/components";
 import { ResourceMeter } from "@/presentation/servers";
 import EnvironmentCompare from "./EnvironmentCompare.vue";
 import ServiceMap from "./ServiceMap.vue";
@@ -306,7 +307,7 @@ function openDeploy(job?: DeploymentJob): void {
 </script>
 <template>
   <div>
-    <PageActions>
+    <PageHeaderActions>
       <RefreshButton
         size="md"
         :refreshing="refresh.refreshing.value"
@@ -316,7 +317,7 @@ function openDeploy(job?: DeploymentJob): void {
         ><template #leading><Rocket :size="16" /></template>Deploy
         release</Button
       >
-    </PageActions>
+    </PageHeaderActions>
     <LoadState
       :loading="inventoryRead.status === 'loading'"
       :error="products.error.value ?? targets.error.value"

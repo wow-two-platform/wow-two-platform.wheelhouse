@@ -14,9 +14,10 @@ import {
 } from "@wow-two-beta/ui-vue/presentation/display";
 import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { ConfirmPopover } from "@wow-two-beta/ui-vue/presentation/overlays";
+import { PageHeaderActions } from "@wow-two-beta/ui-vue/presentation/layout";
 import { useIntegrationKeys } from "@/application/integrations";
 import type { IntegrationKey } from "@/domain/integrations";
-import { LoadState, PageActions, Panel } from "@/presentation/common/components";
+import { LoadState, Panel } from "@/presentation/common/components";
 import CreateKeyModal from "../components/CreateKeyModal.vue";
 
 /** Lists the keys other programs present, with creation and confirmed revocation. */
@@ -43,9 +44,9 @@ async function confirmRevoke(key: IntegrationKey): Promise<void> {
 </script>
 
 <template>
-  <PageActions>
+  <PageHeaderActions>
     <Button @click="creating = true"><template #leading><Plus :size="16" /></template>Create key</Button>
-  </PageActions>
+  </PageHeaderActions>
   <LoadState
     :loading="loading && keys.length === 0"
     :error="error"

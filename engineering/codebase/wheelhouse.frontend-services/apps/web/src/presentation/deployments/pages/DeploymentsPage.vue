@@ -2,15 +2,12 @@
 import { Rocket } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
+import { PageHeaderActions } from "@wow-two-beta/ui-vue/presentation/layout";
 
 import { useRefresh } from "@/bootstrap/query";
 import { useDeploymentHistory } from "@/application/deployments";
 import type { DeploymentJob } from "@/domain/deployments";
-import {
-  LoadState,
-  PageActions,
-  Panel,
-} from "@/presentation/common/components";
+import { LoadState, Panel } from "@/presentation/common/components";
 
 import DeployModal from "../components/DeployModal.vue";
 import DeploymentStatsPanel from "../components/DeploymentStatsPanel.vue";
@@ -36,11 +33,11 @@ function redeploy(job: DeploymentJob): void {
 
 <template>
   <div class="flex flex-col gap-6">
-    <PageActions>
+    <PageHeaderActions>
       <Button variant="solid" tone="primary" @click="deploy.openDeploy()">
         <template #leading><Rocket :size="16" /></template>Deploy
       </Button>
-    </PageActions>
+    </PageHeaderActions>
     <TargetsPanel />
     <Panel
       title="Recent deployments"

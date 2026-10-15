@@ -7,10 +7,10 @@ export interface AppLayoutProps {
 }
 </script>
 <script setup lang="ts">
-import { computed, useTemplateRef, watch } from 'vue';
+import { useTemplateRef, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import { Badge } from '@wow-two-beta/ui-vue/presentation/display';
-import { AppNavLink } from '@wow-two-beta/ui-vue/router';
+import { AppNavLink, RoutePageHeader } from '@wow-two-beta/ui-vue/router';
 import { useApiConnection } from '@/application/system';
 import { BrandWordmark, ProfileMenu } from '@/presentation/shell';
 import { AppPlaces } from './routes';
@@ -22,11 +22,6 @@ const emit = defineEmits<{ signOut: [] }>();
 defineSlots<{ default(): unknown }>();
 const route = useRoute();
 const system = useApiConnection();
-/** The page's title and description, from the matched route's handle. */
-const current = computed(() => ({
-  title: typeof route.meta.title === 'string' ? route.meta.title : undefined,
-  description: typeof route.meta.description === 'string' ? route.meta.description : undefined,
-}));
 const consoleVersion = __APP_VERSION__;
 /** A numbered build shows as `v0.3.4`; a local build shows `dev`. @internal */
 const versionLabel = /^\d/.test(consoleVersion) ? `v${consoleVersion}` : consoleVersion;
@@ -94,13 +89,8 @@ watch(
       class="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] focus:outline-none"
     >
       <div class="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:py-8 xl:px-8">
-        <header class="mb-6 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 class="text-2xl font-semibold tracking-tight">{{ current.title }}</h1>
-            <p class="mt-1 text-sm text-muted-foreground">{{ current.description }}</p>
-          </div>
-          <div id="page-actions" class="flex flex-wrap items-center gap-2 empty:hidden" />
-        </header>
+        <!-- The route handle's title and description; a page's PageHeaderActions land beside them. -->
+        <RoutePageHeader class="mb-6" />
         <slot />
       </div>
     </main>
