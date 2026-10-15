@@ -13,14 +13,12 @@
       PostgresFixture (Testcontainers + Respawn), and the Web JSON/envelope helpers all come from it. It
       transitively brings Microsoft.AspNetCore.Mvc.Testing, xunit, AwesomeAssertions, Testcontainers.PostgreSql,
       Respawn + Npgsql — so only the test RUNNER (which the helper package deliberately omits) is referenced here.
-      Wheelhouse-specific bits that stay local: the test-admin policy rebind onto the SDK test-auth scheme and
-      WheelhouseAppFixture (DB lifecycle composing PostgresFixture). The GitHub/GHCR fakes + the header-gated
-      test-auth handler now come from the SDK (Testing.Integrations + Testing.Auth).
+      Wheelhouse-specific bits that stay local: the test-admin policy rebind onto the SDK test-auth scheme
+      (Testing.Auth, in the same package), WheelhouseAppFixture (DB lifecycle composing PostgresFixture) and the
+      runner, vault, icon and manifest stubs.
     -->
     <ItemGroup>
         <PackageReference Include="WoW2.Sdk.Backend.Beta.Testing"/>
-        <!-- SDK integration-client fakes (FakeGitHubClient / FakeContainerRegistryClient) replacing the local stubs. -->
-        <PackageReference Include="WoW2.Sdk.Backend.Beta.Testing.Integrations"/>
         <PackageReference Include="Microsoft.NET.Test.Sdk"/>
         <PackageReference Include="xunit.runner.visualstudio"/>
     </ItemGroup>

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using Wheelhouse.Infrastructure.Settings;
 using Wheelhouse.Infrastructure.Vaults;
 using Wheelhouse.Persistence;
@@ -16,7 +17,7 @@ namespace Wheelhouse.Tests.E2E.Tests;
 /// <summary>
 /// E2E for the host wiring the SDK owns: the SPA bundle served inside the secure-header pipeline, the cookie key ring's
 /// application name (sign-in sessions depend on it), the readiness probe, the migration version stamp, the guarded
-/// vault client and the lazily bound deployment settings.
+/// vault client, the lazily bound deployment settings and the run's own database.
 /// </summary>
 [Collection(WheelhouseCollection.Name)]
 public sealed class HostWiringE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBase(fixture)
@@ -67,6 +68,19 @@ public sealed class HostWiringE2ETests(WheelhouseAppFixture fixture) : Wheelhous
         // A closed loopback port: the guard lets the private plain-HTTP address through, so the socket refuses it.
         await Assert.ThrowsAsync<HttpRequestException>(() => client.GetAsync("http://127.0.0.1:9/"));
         await Assert.ThrowsAsync<OutboundAddressBlockedException>(() => client.GetAsync("http://admin:secret@127.0.0.1:9/"));
+    }
+
+    [Fact]
+    public async Task Database_ShouldBeTheRunsContainer_NeverTheDevDatabase()
+    {
+        await using var scope = Fixture.Host.Services.CreateAsyncScope();
+        var database = scope.ServiceProvider.GetRequiredService<WheelhouseDbContext>().Database;
+        var container = new NpgsqlConnectionStringBuilder(Fixture.ConnectionString);
+
+        var used = new NpgsqlConnectionStringBuilder(database.GetDbConnection().ConnectionString);
+
+        (used.Host, used.Port, used.Database).Should().Be((container.Host, container.Port, container.Database));
+        (await database.CanConnectAsync()).Should().BeTrue();
     }
 
     [Fact]

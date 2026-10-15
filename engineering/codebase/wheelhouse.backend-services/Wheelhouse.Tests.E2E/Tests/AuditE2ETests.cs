@@ -137,7 +137,7 @@ public sealed class AuditE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EB
         var intact = await Verification();
         Assert.Equal((true, 2), (intact.GetProperty("intact").GetBoolean(), intact.GetProperty("entries").GetInt32()));
 
-        await using var connection = new NpgsqlConnection(Environment.GetEnvironmentVariable("DB_CONNECTION"));
+        await using var connection = new NpgsqlConnection(Fixture.ConnectionString);
         await connection.OpenAsync();
         // The table refuses edits outright; only someone who can disable its trigger can rewrite a row.
         await Assert.ThrowsAsync<PostgresException>(() =>

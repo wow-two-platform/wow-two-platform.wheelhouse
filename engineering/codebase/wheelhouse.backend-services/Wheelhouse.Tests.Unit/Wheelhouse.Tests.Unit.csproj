@@ -5,12 +5,11 @@
     </PropertyGroup>
 
     <!--
-      Unit tier — pure-logic tests, zero I/O (no DB, no HTTP, no Docker). Exercises the Application
-      layer's deterministic decision code directly: the ProductVersionStatus state machine, the
-      ProductValidation repo-format gate, and the FluentValidation validators. SDK integration seams
-      (IGitHubClient / IContainerRegistryClient) are driven by the SDK's configurable fakes from the
-      Testing.Integrations companion (FakeGitHubClient / FakeContainerRegistryClient) — deliberately NOT
-      the e2e Harness stubs, so this tier stays independent of Wheelhouse.Tests.E2E.
+      Unit tier — pure-logic tests, zero I/O (no DB, no network, no Docker). Exercises the decision code
+      directly: the FluentValidation validators, the inventory rules, icon paths and the product manifest parser,
+      vault hygiene rules, the runner failure parser, and the runner and vault adapters. Adapters run against
+      scripted HttpMessageHandlers and in-memory fakes in Fakes/ — deliberately NOT the e2e Harness stubs, so this
+      tier stays independent of Wheelhouse.Tests.E2E.
 
       No Testcontainers / Mvc.Testing / SDK.Testing here — those belong to the e2e tier. Versions for
       the shared test packages are pinned to match what Wheelhouse.Tests.E2E resolves (the SDK
@@ -18,8 +17,7 @@
       transitively; we reference them explicitly since this tier omits that package).
     -->
     <ItemGroup>
-        <!-- SDK integration-client fakes (FakeGitHubClient / FakeContainerRegistryClient over the SDK's
-             IGitHubClient / IContainerRegistryClient); pulls the core mono-lib transitively. -->
+        <!-- Pulls the core mono-lib transitively; its FakeGitHubClient / FakeContainerRegistryClient are not used here. -->
         <PackageReference Include="WoW2.Sdk.Backend.Beta.Testing.Integrations"/>
         <PackageReference Include="Microsoft.NET.Test.Sdk"/>
         <PackageReference Include="xunit"/>

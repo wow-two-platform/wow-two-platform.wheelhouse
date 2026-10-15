@@ -73,7 +73,7 @@ public static class HostConfigurationExtensions
         // One-call host floor for the context: resolves the connection string, builds the shared NpgsqlDataSource,
         // registers the Dapper connection factory + audit interceptor, adds the snake_case EF context, and wires the
         // embedded bespoke migrator over typeof(WheelhouseDbContext).Assembly. Keep Wheelhouse's existing config key
-        // (ConnectionStrings:Wheelhouse) instead of the SDK default (DatabaseOptions:ConnectionString); env DB_CONNECTION still overrides.
+        // (ConnectionStrings:Wheelhouse) instead of the SDK default (DatabaseSettings:ConnectionString); env DB_CONNECTION still overrides.
         builder.Services.AddPostgresPersistence<WheelhouseDbContext>(
             builder.Configuration,
             o =>

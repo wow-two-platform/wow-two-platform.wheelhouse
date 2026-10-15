@@ -29,6 +29,9 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     public WebApiTestHost<Program> Host =>
         _host ?? throw new InvalidOperationException("Fixture not initialized — Host is null.");
 
+    /// <summary>The connection string of the run's Postgres container, the only database the host may use.</summary>
+    public string ConnectionString => _postgres.ConnectionString;
+
     /// <summary>The runner root the host exports its inventory snapshot to; a temporary folder per run.</summary>
     public string InventoryRoot { get; } = Directory.CreateTempSubdirectory("wheelhouse-inventory-").FullName;
 
@@ -60,26 +63,23 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     {
         await _postgres.StartAsync();
 
-        // AddPostgresPersistence resolves the connection string eagerly at service registration, where the host hook's
-        // config layer isn't applied yet — so use the DB_CONNECTION env seam (it wins over config and is visible at
-        // registration time) to point the SDK persistence bundle + bespoke migrator at the container DB. The in-memory
-        // config below (the app's own ConnectionStrings:Wheelhouse key) is the belt-and-suspenders for any later config read.
-        Environment.SetEnvironmentVariable("DB_CONNECTION", _postgres.ConnectionString);
+        // The identity allowlist binds at registration, before the host hook's configuration exists.
         Environment.SetEnvironmentVariable("Identity__AllowedGitHubLogins__0", "test-admin");
-        // Deployment settings bind at registration, before the host hook's configuration exists.
-        Environment.SetEnvironmentVariable("Deployment__Root", InventoryRoot);
 
         _host = new WebApiTestHost<Program>
         {
-            // The SDK host has no connection-string knob — inject it the way the app reads it (ConnectionStrings:Wheelhouse).
-            ConfigureHostHook = builder => builder.ConfigureAppConfiguration((_, config) =>
-                config.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:Wheelhouse"] = _postgres.ConnectionString,
-                    // Tests run sampling passes explicitly; the background sampler stays off.
-                    ["Operations:VitalsSampleMinutes"] = "0",
-                    ["Deployment:FollowSeconds"] = "0",
-                })),
+            // Host-local configuration, read lazily: the SDK persistence bundle resolves its connection string, and the
+            // deployment settings bind, when first resolved. DB_CONNECTION is the key the bundle lets override the
+            // app's own; pinning both to the container keeps a stray DB_CONNECTION in the shell off the dev database.
+            ConfigureConfigurationHook = config => config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Wheelhouse"] = _postgres.ConnectionString,
+                ["DB_CONNECTION"] = _postgres.ConnectionString,
+                ["Deployment:Root"] = InventoryRoot,
+                // Tests run sampling passes explicitly; the background sampler stays off.
+                ["Operations:VitalsSampleMinutes"] = "0",
+                ["Deployment:FollowSeconds"] = "0",
+            }),
             ConfigureServicesHook = services =>
             {
                 services.UseTestAdminAuth();
@@ -110,10 +110,8 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
 
         await _postgres.DisposeAsync();
 
-        // Don't leak the container connection string into other test processes.
-        Environment.SetEnvironmentVariable("DB_CONNECTION", null);
+        // Don't leak the allowlist into other test processes.
         Environment.SetEnvironmentVariable("Identity__AllowedGitHubLogins__0", null);
-        Environment.SetEnvironmentVariable("Deployment__Root", null);
         Directory.Delete(InventoryRoot, recursive: true);
     }
 

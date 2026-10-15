@@ -86,7 +86,7 @@ public sealed class IntegrationKeysE2ETests(WheelhouseAppFixture fixture) : Whee
     {
         // No request creates a scope-less key; one written straight to the store proves the scope, not the key, admits.
         const string secret = "wh_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345";
-        await using (var connection = new NpgsqlConnection(Environment.GetEnvironmentVariable("DB_CONNECTION")))
+        await using (var connection = new NpgsqlConnection(Fixture.ConnectionString))
         {
             await connection.OpenAsync();
             await using var insert = new NpgsqlCommand(
