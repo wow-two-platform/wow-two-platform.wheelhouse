@@ -39,9 +39,10 @@ const props = defineProps<HistoryTableProps>();
   <Table
     density="compact"
     is-hoverable
+    has-sticky-header
     container-class-name="max-h-[28rem] overflow-auto"
   >
-    <TableHead class="sticky top-0 z-10 bg-card">
+    <TableHead>
       <TableRow>
         <TableHeaderCell>Submitted</TableHeaderCell
         ><TableHeaderCell>Target · release</TableHeaderCell>

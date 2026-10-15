@@ -93,8 +93,8 @@ const visible = computed(() =>
       empty-description="Publish a release or push a commit; its build appears here once its workflow finishes."
       @retry="releases.refetch()"
     >
-      <Table density="compact" is-hoverable container-class-name="max-h-[24rem] overflow-auto">
-        <TableHead class="sticky top-0 z-10 bg-card">
+      <Table density="compact" is-hoverable has-sticky-header container-class-name="max-h-[24rem] overflow-auto">
+        <TableHead>
           <TableRow>
             <TableHeaderCell>Release</TableHeaderCell><TableHeaderCell>Product</TableHeaderCell
             ><TableHeaderCell>Commit</TableHeaderCell><TableHeaderCell>Published</TableHeaderCell

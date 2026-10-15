@@ -130,8 +130,8 @@ function newer(): void {
         "
         @retry="entries.refetch()"
       >
-        <Table density="compact" is-hoverable container-class-name="overflow-auto">
-          <TableHead class="sticky top-0 z-10 bg-card">
+        <Table density="compact" is-hoverable has-sticky-header container-class-name="overflow-auto">
+          <TableHead>
             <TableRow>
               <TableHeaderCell>When</TableHeaderCell><TableHeaderCell>Operator</TableHeaderCell
               ><TableHeaderCell>Action</TableHeaderCell><TableHeaderCell>Subject</TableHeaderCell
