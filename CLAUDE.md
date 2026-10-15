@@ -81,7 +81,7 @@ Reserve unit for I/O-free logic; everything user-facing is covered e2e. Full rul
 ## Conventions
 
 - **File-per-type**, slim `Program.cs` (delegates to `Api/Configurations/*`), SDK `AppResult` / `AppError`.
-  Controllers send requests via `ISender`, `Match` the result and answer failures with the SDK `this.ToProblem(error)`.
+  Controllers send requests via `ISender`, render the result with the SDK `this.ToActionResult(result)`.
 - **Ports:** HTTPS even (8210) + HTTP odd (8211), per the wow-two launch-profile rule.
 - **DB:** Postgres (Npgsql). Schema owned by the **bespoke SQL migrator**
   (`…Beta.Data.Migrations.Bespoke`) over hand-authored `Migrations/{NNN}/{Apply,Rollback}.sql`;
@@ -93,7 +93,7 @@ Reserve unit for I/O-free logic; everything user-facing is covered e2e. Full rul
   Badge, Heading, Text, EmptyState, Alert, Spinner, TextInput, …) before hand-rolling. Tailwind v4 wiring: `index.css`
   imports `tailwindcss` + `@wow-two-beta/ui-vue/styles.css` and `@source`s the package's `dist` so its
   utility classes are generated. Shared capability gaps belong in the SDK. Product composition stays local.
-- **Backend → `WoW.Two.Sdk.Backend.Beta` (adopted, `10.0.64-beta`).** `v0.2` migrated every layer onto
+- **Backend → `WoW.Two.Sdk.Backend.Beta` (adopted, `10.0.65-beta`).** `v0.2` migrated every layer onto
   the SDK: host floor (`AddApiDefaults`/`UseApiDefaults`), mediator + results + validation, identity
   (GitHub OAuth + cookie + allowlist/default-deny + scoped API keys), the bespoke SQL
   migrator, and `…Beta.Testing` for the test harness. Products hold business logic only; new infra proves
