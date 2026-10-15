@@ -39,6 +39,12 @@ flowchart LR
 | Python runner | Inventory snapshot reads, release discovery, bundle validation, SSH, rollout, checks and recovery |
 | Vault gateway | Administers inventory vaults over their management API; values are write-only |
 
+Wheelhouse keeps business logic only: domain meaning, inventory and deployment use cases, version-resolution policy,
+store predicates and settings values. Host wiring, data, web contracts, identity, integration clients, UI building
+blocks and the test harness come from the wow-two SDKs; a new generic piece proves inline, then extracts in the next
+Adoption version. snake_case is database-only (column names and stored enum values); the JSON wire stays camelCase.
+Time comes from the SDK `TimeProvider`.
+
 The placeholder deployment, domain and secret tables remain unused.
 The deployment execution journal lives on each target, with a durable local submission index.
 
