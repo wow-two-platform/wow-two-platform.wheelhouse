@@ -105,18 +105,16 @@ function newer(): void {
 
     <Panel title="Operator actions" description="Every deploy, build, reconcile, secret and product change, newest first.">
       <template #actions>
-        <div class="w-56">
-          <SelectPicker v-model="area"
-            ><SelectPickerTrigger aria-label="Area"><SelectPickerValue /></SelectPickerTrigger
-            ><SelectPickerContent
-              ><SelectPickerItem
-                v-for="(label, value) in AreaLabels"
-                :key="value"
-                :item-key="value"
-                :value="value"
-                :label="label" /></SelectPickerContent
-          ></SelectPicker>
-        </div>
+        <SelectPicker v-model="area" :get-option-label="(value) => AreaLabels[value as AuditArea]"
+          ><SelectPickerTrigger aria-label="Area" width="14rem"><SelectPickerValue /></SelectPickerTrigger
+          ><SelectPickerContent
+            ><SelectPickerItem
+              v-for="(label, value) in AreaLabels"
+              :key="value"
+              :item-key="value"
+              :value="value"
+              :label="label" /></SelectPickerContent
+        ></SelectPicker>
       </template>
       <LoadState
         :loading="entries.isFirstLoad.value"

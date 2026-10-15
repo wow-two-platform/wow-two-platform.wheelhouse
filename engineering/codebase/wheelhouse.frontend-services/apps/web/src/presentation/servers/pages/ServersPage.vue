@@ -97,22 +97,20 @@ const trendWindow = computed(() => {
         >
         <template v-else>Current resource readings from your configured hosts.</template>
       </p>
-      <div class="w-48">
-        <SelectPicker
-          v-model="provider"
-          is-clearable
-          clear-label="All providers"
-          :get-option-label="(value) => VpsProviderLabels[value as VpsProvider]"
-          ><SelectPickerTrigger aria-label="Provider"
-            ><SelectPickerValue placeholder="All providers" /></SelectPickerTrigger
-          ><SelectPickerContent
-            ><SelectPickerItem
-              v-for="value in Object.values(VpsProvider)"
-              :key="value"
-              :item-key="value"
-              :label="VpsProviderLabels[value]" /></SelectPickerContent
-        ></SelectPicker>
-      </div>
+      <SelectPicker
+        v-model="provider"
+        is-clearable
+        clear-label="All providers"
+        :get-option-label="(value) => VpsProviderLabels[value as VpsProvider]"
+        ><SelectPickerTrigger aria-label="Provider" width="12rem"
+          ><SelectPickerValue placeholder="All providers" /></SelectPickerTrigger
+        ><SelectPickerContent
+          ><SelectPickerItem
+            v-for="value in Object.values(VpsProvider)"
+            :key="value"
+            :item-key="value"
+            :label="VpsProviderLabels[value]" /></SelectPickerContent
+      ></SelectPicker>
     </div>
     <p
       v-if="vitals.error.value"
@@ -175,18 +173,16 @@ const trendWindow = computed(() => {
           <section class="mb-5" :aria-label="`${server.name} trends`">
             <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h3 class="text-xs font-medium text-muted-foreground">Trends · sampled every few minutes</h3>
-              <div class="w-36">
-                <SelectPicker v-model="trendRange"
-                  ><SelectPickerTrigger aria-label="Trend range"><SelectPickerValue /></SelectPickerTrigger
-                  ><SelectPickerContent
-                    ><SelectPickerItem
-                      v-for="(label, value) in TrendLabels"
-                      :key="value"
-                      :item-key="value"
-                      :value="value"
-                      :label="label" /></SelectPickerContent
-                ></SelectPicker>
-              </div>
+              <SelectPicker v-model="trendRange" :get-option-label="(value) => TrendLabels[value as TrendRange]"
+                ><SelectPickerTrigger aria-label="Trend range" width="9rem"><SelectPickerValue /></SelectPickerTrigger
+                ><SelectPickerContent
+                  ><SelectPickerItem
+                    v-for="(label, value) in TrendLabels"
+                    :key="value"
+                    :item-key="value"
+                    :value="value"
+                    :label="label" /></SelectPickerContent
+              ></SelectPicker>
             </div>
             <p v-if="history.error.value" class="text-xs text-muted-foreground">
               Trends are unavailable: {{ history.error.value.message }}

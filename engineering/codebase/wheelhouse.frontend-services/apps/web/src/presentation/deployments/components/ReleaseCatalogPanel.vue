@@ -57,31 +57,27 @@ const visible = computed(() =>
     description="Published releases go anywhere; a commit's build goes to dev only and expires after 14 days."
   >
     <template #actions>
-      <div class="w-44">
-        <SelectPicker v-model="product" is-clearable clear-label="All products"
-          ><SelectPickerTrigger aria-label="Product"
-            ><SelectPickerValue placeholder="All products" /></SelectPickerTrigger
-          ><SelectPickerContent
-            ><SelectPickerItem
-              v-for="name in products"
-              :key="name"
-              :item-key="name"
-              :value="name"
-              :label="name" /></SelectPickerContent
-        ></SelectPicker>
-      </div>
-      <div class="w-48">
-        <SelectPicker v-model="kind"
-          ><SelectPickerTrigger aria-label="Kind"><SelectPickerValue /></SelectPickerTrigger
-          ><SelectPickerContent
-            ><SelectPickerItem
-              v-for="(label, value) in KindFilter"
-              :key="value"
-              :item-key="value"
-              :value="value"
-              :label="label" /></SelectPickerContent
-        ></SelectPicker>
-      </div>
+      <SelectPicker v-model="product" is-clearable clear-label="All products"
+        ><SelectPickerTrigger aria-label="Product" width="11rem"
+          ><SelectPickerValue placeholder="All products" /></SelectPickerTrigger
+        ><SelectPickerContent
+          ><SelectPickerItem
+            v-for="name in products"
+            :key="name"
+            :item-key="name"
+            :value="name"
+            :label="name" /></SelectPickerContent
+      ></SelectPicker>
+      <SelectPicker v-model="kind" :get-option-label="(value) => KindFilter[value as KindFilter]"
+        ><SelectPickerTrigger aria-label="Kind" width="12rem"><SelectPickerValue /></SelectPickerTrigger
+        ><SelectPickerContent
+          ><SelectPickerItem
+            v-for="(label, value) in KindFilter"
+            :key="value"
+            :item-key="value"
+            :value="value"
+            :label="label" /></SelectPickerContent
+      ></SelectPicker>
       <RefreshButton variant="ghost" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh()" />
     </template>
     <LoadState
