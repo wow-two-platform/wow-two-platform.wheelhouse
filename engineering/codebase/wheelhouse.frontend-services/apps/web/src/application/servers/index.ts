@@ -16,12 +16,14 @@ export function useServers() {
   });
 }
 
-/** Every target's stored readings of the last `hours`, for trend lines. */
+/** Every target's stored readings of the last `hours`, for trend lines; a range change keeps the shown readings until
+ * the new range arrives. */
 export function useVitalsHistory(hours: MaybeRefOrGetter<number>) {
   return useAppQuery({
     key: () => ServerKeys.history(toValue(hours)),
     queryFn: ({ signal }) => serversApi.getVitalsHistory(toValue(hours), signal),
     meta: { suppressGlobalError: true },
+    keepPreviousData: true,
   });
 }
 

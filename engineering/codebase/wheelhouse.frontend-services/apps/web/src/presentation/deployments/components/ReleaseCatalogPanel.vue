@@ -85,7 +85,7 @@ const visible = computed(() =>
       <RefreshButton variant="ghost" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh()" />
     </template>
     <LoadState
-      :loading="releases.loading.value && !releases.data.value"
+      :loading="releases.isFirstLoad.value"
       :error="releases.error.value"
       :has-data="Boolean(releases.data.value)"
       :empty="!visible.length"

@@ -30,7 +30,7 @@ const releases = useReleaseArtifacts();
       :description="releases.error.value.message"
     />
     <LoadState
-      :loading="targets.loading.value && !targets.data.value"
+      :loading="targets.isFirstLoad.value"
       :refreshing="targetRefresh.refreshing.value"
       :error="targets.error.value"
       :has-data="Boolean(targets.data.value)"

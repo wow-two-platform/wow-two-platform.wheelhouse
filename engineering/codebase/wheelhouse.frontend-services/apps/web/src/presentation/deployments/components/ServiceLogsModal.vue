@@ -112,7 +112,7 @@ watch(lines, async () => {
           title="Logs unavailable"
           :description="logs.error.value.message"
         />
-        <div v-else-if="logs.loading.value && !logs.data.value" class="flex justify-center py-10">
+        <div v-else-if="logs.isFirstLoad.value" class="flex justify-center py-10">
           <Spinner label="Reading the container output" />
         </div>
         <pre

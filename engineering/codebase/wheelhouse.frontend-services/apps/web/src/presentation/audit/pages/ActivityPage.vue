@@ -119,7 +119,7 @@ function newer(): void {
         </div>
       </template>
       <LoadState
-        :loading="entries.loading.value && !entries.data.value"
+        :loading="entries.isFirstLoad.value"
         :error="entries.error.value"
         :has-data="Boolean(entries.data.value)"
         :empty="visible.length === 0"
@@ -131,7 +131,14 @@ function newer(): void {
         "
         @retry="entries.refetch()"
       >
-        <Table density="compact" is-hoverable has-sticky-header container-class-name="overflow-auto">
+        <Table
+          density="compact"
+          is-hoverable
+          has-sticky-header
+          container-class-name="overflow-auto"
+          :class="entries.isPreviousData.value ? 'opacity-60' : undefined"
+          :aria-busy="entries.isRefreshing.value || undefined"
+        >
           <TableHead>
             <TableRow>
               <TableHeaderCell>When</TableHeaderCell><TableHeaderCell>Operator</TableHeaderCell
@@ -164,8 +171,12 @@ function newer(): void {
         </Table>
       </LoadState>
       <div v-if="windows.length || hasOlder" class="mt-4 flex justify-between gap-3">
-        <Button variant="ghost" size="sm" :is-disabled="!windows.length" @click="newer">Newer</Button>
-        <Button variant="ghost" size="sm" :is-disabled="!hasOlder" @click="older">Older</Button>
+        <Button variant="ghost" size="sm" :is-disabled="!windows.length || entries.isPreviousData.value" @click="newer"
+          >Newer</Button
+        >
+        <Button variant="ghost" size="sm" :is-disabled="!hasOlder || entries.isPreviousData.value" @click="older"
+          >Older</Button
+        >
       </div>
     </Panel>
   </div>

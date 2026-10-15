@@ -51,7 +51,7 @@ function redeploy(job: DeploymentJob): void {
         />
       </template>
       <LoadState
-        :loading="history.loading.value && !history.data.value"
+        :loading="history.isFirstLoad.value"
         :refreshing="historyRefresh.refreshing.value"
         :error="history.error.value"
         :has-data="Boolean(history.data.value)"

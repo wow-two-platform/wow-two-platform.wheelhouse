@@ -635,7 +635,7 @@ function openDeploy(job?: DeploymentJob): void {
                 </div>
                 <LoadState
                   v-if="serviceView === 'map'"
-                  :loading="topology.loading.value && !topology.data.value"
+                  :loading="topology.isFirstLoad.value"
                   :refreshing="refresh.refreshing.value"
                   :error="topology.error.value"
                   :has-data="Boolean(topology.data.value)"

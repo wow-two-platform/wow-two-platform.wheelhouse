@@ -203,10 +203,7 @@ function chooseBranch(name: string | null): void {
             </div>
             <div class="mt-2 max-h-60 overflow-y-auto" role="listbox" :aria-label="mode === 'branch' ? 'Branches' : 'Commits'">
               <div
-                v-if="
-                  (mode === 'branch' ? branches : commits).loading.value &&
-                  !(mode === 'branch' ? branches : commits).data.value
-                "
+                v-if="(mode === 'branch' ? branches : commits).isFirstLoad.value"
                 class="py-2"
               >
                 <Spinner size="sm" label="Reading GitHub" />

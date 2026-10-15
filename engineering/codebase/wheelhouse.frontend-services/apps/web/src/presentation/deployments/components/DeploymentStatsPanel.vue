@@ -136,7 +136,7 @@ function difference(
       </RouterLink>
     </template>
     <LoadState
-      :loading="stats.loading.value && !stats.data.value"
+      :loading="stats.isFirstLoad.value"
       :refreshing="statsRefresh.refreshing.value"
       :error="stats.error.value"
       :has-data="Boolean(stats.data.value)"
