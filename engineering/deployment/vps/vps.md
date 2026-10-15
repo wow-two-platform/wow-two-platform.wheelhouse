@@ -11,13 +11,16 @@ This bootstrap prepares the private control-plane host on Ubuntu 26.04 amd64: `w
 | Asset | Runs where | Result |
 |---|---|---|
 | [Host bootstrap](bootstrap.sh) | Verified VPS, administrator | Docker/Compose/Python/OpenSSH, deploy account, network, platform files |
-| [Configuration generator](prepare.py) | VPS, deployment account | Initial dev database credentials, console settings and target JSON |
+| [Configuration generator](prepare.py) | VPS, deployment account | Each console's database credentials, settings and target JSON |
+| [Canary generator](prepare_canary.py) | VPS, deployment account | The canary's dev, test and prod databases and settings files |
+| [Runner authorization](authorize-runner.sh) | VPS, administrator | A console's own runner SSH identity for this host |
 | [Identity template](identity.example.json) | Copy to a private VPS file | Real OAuth credentials and owner allowlist, supplied by the operator |
-| [Platform Compose](platform.compose.yml) | VPS | PostgreSQL 16 and private Traefik ingress |
+| [Platform Compose](platform.compose.yml) | VPS | PostgreSQL 16, private Traefik ingress and the canary's tailnet nodes |
 
 The scripts do not accept SSH host keys, enroll Tailscale, change firewall/sshd policy, fetch operator
 credentials or start Wheelhouse. They are executable preparation assets, not evidence of deployment.
-`bootstrap.sh` can rerun on its prepared host; it refuses incompatible engines/networks.
+`bootstrap.sh` can rerun on its prepared host; it refuses incompatible engines/networks and never upgrades an
+installed package, because a Docker upgrade restarts every container on the host.
 `prepare.py` refuses existing or partial credential output instead of rotating a live database password.
 Review a partial failure before retrying; never delete a populated PostgreSQL volume to repeat initialization.
 
@@ -173,6 +176,24 @@ Configure Wheelhouse's public release source and approved image repositories. Pl
 SSH identity and verified `known_hosts` under persistent `/data/deployments/ssh/<server-id>/`.
 The product image's Docker named volumes preserve `/data/keys` and `/data/deployments`, initially owned
 by UID `1654`; preserve them during updates and backups.
+
+## Canary
+
+The canary is the sample app only Wheelhouse dev deploys, to prove each flow before a release is promoted.
+Each environment answers on its own tailnet node, so every one has its own name and trusted certificate:
+
+```text
+canary-dev.<tailnet>  -> Tailscale container 172.30.0.10 -> Traefik canary :8084 -> wheelhousecanary-dev
+canary-test.<tailnet> -> Tailscale container 172.30.0.11 -> Traefik canary :8084 -> wheelhousecanary-test
+canary.<tailnet>      -> Tailscale container 172.30.0.12 -> Traefik canary :8084 -> wheelhousecanary-prod
+```
+
+- The tailnet policy owns `tag:canary`; a reusable tagged auth key sits in `/srv/wheelhouse/private/tailscale-canary.env`
+  as `TS_AUTHKEY=…`. Each node logs in once and keeps its state in its own volume.
+- `prepare_canary.py --tailnet <tailnet>` creates `wheelhousecanary_{dev,test,prod}` and `config/canary-{env}.json`.
+- `sudo bash authorize-runner.sh wheelhouse-dev <server-id>` gives dev Wheelhouse its own key for this host; the
+  server's address inside the console is the platform gateway, `172.30.0.1`.
+- Only Wheelhouse prod deploys products. Dev never receives a products host's key.
 
 ## GitHub-hosted CI access
 

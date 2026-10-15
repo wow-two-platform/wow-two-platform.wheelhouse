@@ -41,7 +41,7 @@ ssh-keygen -l -f "$public_key" >/dev/null
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 deploy_user=wheelhouse-deploy
 deploy_root=/srv/wheelhouse
-for source in platform.compose.yml prepare.py; do
+for source in platform.compose.yml tailscale-serve.json prepare.py prepare_canary.py authorize-runner.sh; do
     [[ -f "$script_dir/$source" ]] || { echo "Missing bootstrap asset: $source" >&2; exit 1; }
 done
 # Fail rather than removing a pre-existing container stack's engine packages.
@@ -53,7 +53,7 @@ done
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl openssh-server python3 unattended-upgrades
+apt-get install -y --no-upgrade ca-certificates curl openssh-server python3 unattended-upgrades
 install -d -m 0755 /etc/apt/keyrings
 curl --fail --silent --show-error --location --proto '=https' \
     https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
@@ -78,10 +78,10 @@ if [[ $install_tailscale == true ]]; then
     chmod 0644 /usr/share/keyrings/tailscale-archive-keyring.gpg /etc/apt/sources.list.d/tailscale.list
 fi
 apt-get update
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+apt-get install -y --no-upgrade docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 systemctl enable --now docker ssh
 if [[ $install_tailscale == true ]]; then
-    apt-get install -y tailscale
+    apt-get install -y --no-upgrade tailscale
     systemctl enable --now tailscaled
 fi
 
@@ -112,8 +112,12 @@ for directory in "$deploy_root" "$deploy_root/config" "$deploy_root/platform" \
 done
 install -m 0600 -o "$deploy_user" -g "$deploy_group" \
     "$script_dir/platform.compose.yml" "$deploy_root/platform/compose.yml"
+install -m 0644 -o "$deploy_user" -g "$deploy_group" \
+    "$script_dir/tailscale-serve.json" "$deploy_root/platform/tailscale-serve.json"
 install -m 0500 -o "$deploy_user" -g "$deploy_group" \
-    "$script_dir/prepare.py" "$deploy_root/bootstrap/prepare.py"
+    "$script_dir/prepare.py" "$script_dir/prepare_canary.py" "$deploy_root/bootstrap/"
+# The administrator runs this one; the deploy account must not be able to change it.
+install -m 0500 -o root -g root "$script_dir/authorize-runner.sh" "$deploy_root/bootstrap/authorize-runner.sh"
 # Traefik must read mode-0600 route files written by the deploy account without extra capabilities.
 printf 'WHEELHOUSE_DEPLOY_UID=%s\nWHEELHOUSE_DEPLOY_GID=%s\n' \
     "$(id -u "$deploy_user")" "$(id -g "$deploy_user")" > "$deploy_root/platform/host.env"

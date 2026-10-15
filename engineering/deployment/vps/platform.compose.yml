@@ -1,5 +1,23 @@
 # Host platform only. The product is deployed from its immutable release bundle by runner.py.
 name: wheelhouse-platform
+# One tailnet node per canary environment gives each its own name and certificate; Serve hands HTTPS to Traefik's
+# canary entry point, which routes by that name. The auth key file is operator-placed and only read at first login.
+x-canary-node: &canary-node
+  image: tailscale/tailscale:v1.104.1
+  env_file:
+    - path: ../private/tailscale-canary.env
+      required: false
+  environment: &canary-env
+    TS_STATE_DIR: /var/lib/tailscale
+    TS_USERSPACE: "true"
+    TS_AUTH_ONCE: "true"
+    TS_EXTRA_ARGS: --advertise-tags=tag:canary
+    TS_SERVE_CONFIG: /config/serve.json
+  mem_limit: 96m
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: "3" }
 services:
   postgres:
     image: postgres:16-alpine
@@ -36,12 +54,16 @@ services:
       - --entryPoints.private.forwardedHeaders.trustedIPs=127.0.0.1/32,172.30.0.1/32
       - --entryPoints.dev.address=:8082
       - --entryPoints.dev.forwardedHeaders.trustedIPs=127.0.0.1/32,172.30.0.1/32
+      # canary serves only the canary environments, reached through their own tailnet nodes.
+      - --entryPoints.canary.address=:8084
+      - --entryPoints.canary.forwardedHeaders.trustedIPs=127.0.0.1/32,172.30.0.1/32,172.30.0.10/31,172.30.0.12/32
       - --ping=true
       - --ping.entryPoint=private
       - --log.level=INFO
     ports:
       - 127.0.0.1:18080:8080
       - 127.0.0.1:18082:8082
+      - 127.0.0.1:18084:8084
     volumes:
       - ../ingress:/etc/traefik/routes:ro
     networks:
@@ -62,9 +84,30 @@ services:
     logging:
       driver: json-file
       options: { max-size: 10m, max-file: "3" }
+  canary-dev:
+    <<: *canary-node
+    hostname: canary-dev
+    environment: { <<: *canary-env, TS_HOSTNAME: canary-dev }
+    volumes: [canary-dev:/var/lib/tailscale, ./tailscale-serve.json:/config/serve.json:ro]
+    networks: { platform: { ipv4_address: 172.30.0.10 } }
+  canary-test:
+    <<: *canary-node
+    hostname: canary-test
+    environment: { <<: *canary-env, TS_HOSTNAME: canary-test }
+    volumes: [canary-test:/var/lib/tailscale, ./tailscale-serve.json:/config/serve.json:ro]
+    networks: { platform: { ipv4_address: 172.30.0.11 } }
+  canary:
+    <<: *canary-node
+    hostname: canary
+    environment: { <<: *canary-env, TS_HOSTNAME: canary }
+    volumes: [canary:/var/lib/tailscale, ./tailscale-serve.json:/config/serve.json:ro]
+    networks: { platform: { ipv4_address: 172.30.0.12 } }
 networks:
   platform:
     name: platform
     external: true
 volumes:
   postgres:
+  canary-dev:
+  canary-test:
+  canary:
