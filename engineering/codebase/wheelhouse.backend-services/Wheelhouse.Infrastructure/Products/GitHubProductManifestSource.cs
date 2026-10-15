@@ -1,5 +1,6 @@
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Products;
+using WoW.Two.Sdk.Backend.Beta.Integrations.GitHub;
 
 namespace Wheelhouse.Infrastructure.Products;
 
@@ -17,11 +18,11 @@ public sealed class GitHubProductManifestSource(GitHubRepositoryReader reader) :
     {
         var file = await reader.ReadAsync(repository, commit, ProductManifestParser.Path, ProductManifestParser.MaxBytes, ct);
         return new ProductManifestFile(
-            file.Status switch
+            file.Outcome switch
             {
-                RepositoryFileStatus.Found => ProductManifestFileStatus.Found,
-                RepositoryFileStatus.Missing => ProductManifestFileStatus.Missing,
-                RepositoryFileStatus.TooLarge => ProductManifestFileStatus.TooLarge,
+                FileRead.Found => ProductManifestFileStatus.Found,
+                FileRead.NotFound => ProductManifestFileStatus.Missing,
+                FileRead.TooLarge => ProductManifestFileStatus.TooLarge,
                 _ => ProductManifestFileStatus.Unreadable,
             },
             file.Content);

@@ -8,16 +8,16 @@
       Unit tier — pure-logic tests, zero I/O (no DB, no network, no Docker). Exercises the decision code
       directly: the FluentValidation validators, the inventory rules, icon paths and the product manifest parser,
       vault hygiene rules, the runner failure parser, and the runner and vault adapters. Adapters run against
-      scripted HttpMessageHandlers and in-memory fakes in Fakes/ — deliberately NOT the e2e Harness stubs, so this
+      the SDK scripted HTTP handler and in-memory fakes in Fakes/ — deliberately NOT the e2e Harness stubs, so this
       tier stays independent of Wheelhouse.Tests.E2E.
 
-      No Testcontainers / Mvc.Testing / SDK.Testing here — those belong to the e2e tier. Versions for
-      the shared test packages are pinned to match what Wheelhouse.Tests.E2E resolves (the SDK
-      testing package brings xunit 2.9.2 / AwesomeAssertions 9.0.0 / TimeProvider.Testing 9.1.0
-      transitively; we reference them explicitly since this tier omits that package).
+      The SDK testing package is here for its I/O-free helpers only (scripted HTTP); its Testcontainers and
+      Mvc.Testing pieces belong to the e2e tier. Versions for the shared test packages are pinned to match what
+      Wheelhouse.Tests.E2E resolves (xunit 2.9.2 / AwesomeAssertions 9.0.0 / TimeProvider.Testing 9.1.0).
     -->
     <ItemGroup>
-        <!-- Pulls the core mono-lib transitively; its FakeGitHubClient / FakeContainerRegistryClient are not used here. -->
+        <PackageReference Include="WoW2.Sdk.Backend.Beta.Testing"/>
+        <!-- The operator-token stand-in for the SDK GitHub client; pulls the core mono-lib transitively. -->
         <PackageReference Include="WoW2.Sdk.Backend.Beta.Testing.Integrations"/>
         <PackageReference Include="Microsoft.NET.Test.Sdk"/>
         <PackageReference Include="xunit"/>

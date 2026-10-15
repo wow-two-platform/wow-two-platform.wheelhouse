@@ -14,6 +14,7 @@ using WoW.Two.Sdk.Backend.Beta.Foundation.Validation;
 using WoW.Two.Sdk.Backend.Beta.Http.Safety;
 using WoW.Two.Sdk.Backend.Beta.Identity.ApiKeys;
 using WoW.Two.Sdk.Backend.Beta.Integrations;
+using WoW.Two.Sdk.Backend.Beta.Integrations.GitHub;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Validation;
 using WoW.Two.Sdk.Backend.Beta.Meta;
@@ -138,16 +139,10 @@ public static class HostConfigurationExtensions
         builder.Services.AddSingleton<Wheelhouse.Infrastructure.Vaults.VaultSessionCache>();
         builder.Services.AddScoped<IVaultGateway, Wheelhouse.Infrastructure.Vaults.VaultGateway>();
 
-        // The integration clients read the signed-in admin's OAuth token off the current request.
+        // The integration clients read the signed-in admin's OAuth token off the current request; the repository reads
+        // share the SDK cache.
         builder.Services.AddHttpContextAccessTokenProvider();
-        builder.Services.AddMemoryCache();
-        builder.Services.AddHttpClient(Wheelhouse.Infrastructure.Products.GitHubRepositoryReader.ClientName, client =>
-        {
-            client.BaseAddress = new Uri("https://api.github.com/");
-            client.Timeout = TimeSpan.FromSeconds(10);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("Wheelhouse");
-            client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
-        });
+        builder.Services.AddGitHubIntegration(Wheelhouse.Infrastructure.Products.GitHubRepositoryReader.ConfigureClient);
         builder.Services.AddScoped<Wheelhouse.Infrastructure.Products.GitHubRepositoryReader>();
         builder.Services.AddScoped<IProductIconSource, Wheelhouse.Infrastructure.Products.GitHubProductIconSource>();
         builder.Services.AddScoped<IProductManifestSource, Wheelhouse.Infrastructure.Products.GitHubProductManifestSource>();

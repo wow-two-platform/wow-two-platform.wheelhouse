@@ -1,5 +1,6 @@
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Products;
+using WoW.Two.Sdk.Backend.Beta.Integrations.GitHub;
 
 namespace Wheelhouse.Infrastructure.Products;
 
@@ -32,7 +33,7 @@ public sealed class GitHubProductIconSource(GitHubRepositoryReader reader) : IPr
             return null;
 
         var file = await reader.ReadAsync(repository, commit, path, ProductIconPaths.MaxBytes, ct);
-        return file is { Status: RepositoryFileStatus.Found, Content: { } bytes }
+        return file is { Outcome: FileRead.Found, Content: { } bytes }
             ? new ProductIconImage(bytes, ProductIconPaths.ContentType(path), path)
             : null;
     }
