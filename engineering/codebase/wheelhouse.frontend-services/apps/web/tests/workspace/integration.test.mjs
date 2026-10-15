@@ -21,7 +21,7 @@ const bundle = await build({
       export { clearHttpSession } from './src/integration/common';
       export { useServerVitals } from './src/application/servers/useServerVitals';
       export { queryClient, queryPlugin } from './src/bootstrap/query';
-      export { createRenderer, nextTick } from 'vue';
+      export { createRenderer, h, nextTick, reactive } from 'vue';
     `,
     resolveDir: process.cwd(),
   },
@@ -49,7 +49,9 @@ const {
   queryClient,
   queryPlugin,
   createRenderer,
+  h,
   nextTick,
+  reactive,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`
 );
@@ -521,10 +523,10 @@ test("cancels pending private data across logout even when the transport resolve
   settle(json({ data: [product] }));
 });
 
-test("server vitals poll every minute, never restart an in-flight snapshot and stop after the last panel unmounts", async () => {
+test("server vitals panels share one subscription that polls every minute, never restarts an in-flight snapshot and stops after the last panel unmounts", async () => {
   const snapshot = { collectedAt: "2026-09-26T00:00:00Z", targets: [] };
   const requests = [];
-  const apps = [];
+  let app;
   const renderer = createRenderer({
     createElement: () => ({}),
     createText: () => ({}),
@@ -544,23 +546,25 @@ test("server vitals poll every minute, never restart an in-flight snapshot and s
       );
     queryClient.setQueryData(["servers", "vitals"], snapshot);
     let vitals;
-    for (let index = 0; index < 2; index++) {
-      const app = renderer.createApp({
-        setup() {
-          vitals = useServerVitals();
-          return () => null;
-        },
-      });
-      app.use(queryPlugin(queryClient));
-      app.mount({});
-      apps.push(app);
-    }
+    const Panel = {
+      setup() {
+        vitals = useServerVitals();
+        return () => null;
+      },
+    };
+    // Two panels of one page, as the servers page and its attention list are.
+    const shown = reactive({ page: true, attention: true });
+    app = renderer.createApp({
+      // An element root: the stub renderer has no siblings, so it cannot walk a fragment root to unmount it.
+      render: () => h("div", [shown.page ? h(Panel) : null, shown.attention ? h(Panel) : null]),
+    });
+    app.use(queryPlugin(queryClient));
+    app.mount({});
     const query = queryClient
       .getQueryCache()
       .find({ queryKey: ["servers", "vitals"] });
-    assert.equal(query.observers.length, 2, "both panels share one read");
-    for (const observer of query.observers)
-      assert.equal(observer.options.refetchInterval, 60_000);
+    assert.equal(query.observers.length, 1, "both panels read one subscription on one timer");
+    assert.equal(query.observers[0].options.refetchInterval, 60_000);
     const refresh = vitals.refetch();
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(requests.length, 1);
@@ -589,16 +593,18 @@ test("server vitals poll every minute, never restart an in-flight snapshot and s
     );
     requests[1].settle(json({ data: snapshot }));
     await new Promise((resolve) => setImmediate(resolve));
-    apps.pop().unmount();
+    shown.page = false;
+    await nextTick();
     assert.equal(
       query.observers.length,
       1,
       "another mounted panel still polls",
     );
-    apps.pop().unmount();
+    shown.attention = false;
+    await nextTick();
     assert.equal(query.observers.length, 0, "no panel left polling");
   } finally {
-    for (const app of apps) app.unmount();
+    app?.unmount();
     queryClient.clear();
   }
 });
