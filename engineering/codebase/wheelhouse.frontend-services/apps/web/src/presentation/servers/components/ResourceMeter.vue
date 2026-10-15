@@ -8,7 +8,7 @@ export interface ResourceMeterProps {
 }
 </script>
 <script setup lang="ts">
-import { MeterBar, SkeletonState } from '@wow-two-beta/ui-vue/presentation/feedback';
+import { MeterBar } from '@wow-two-beta/ui-vue/presentation/feedback';
 import { USAGE_THRESHOLDS } from '@/domain/servers';
 
 /** Presents a current resource snapshot without inventing history or unknown values. */
@@ -17,21 +17,23 @@ const props = defineProps<ResourceMeterProps>();
 </script>
 <template>
   <div class="min-w-0 rounded-xl border border-border bg-card p-3">
-    <div class="mb-2 flex items-center justify-between gap-3 text-xs">
-      <span class="truncate text-muted-foreground">{{ props.label }}</span
-      ><SkeletonState v-if="props.refreshing" class="h-4 w-10" /><span v-else class="font-medium tabular-nums">{{
-        props.value == null ? 'Unavailable' : `${Math.round(props.value)}%`
-      }}</span>
-    </div>
-    <SkeletonState v-if="props.refreshing" class="h-1.5 w-full" />
     <MeterBar
-      v-else-if="props.value != null"
-      :value="props.value"
+      v-if="props.value != null || props.refreshing"
+      :value="props.value ?? 0"
       :thresholds="USAGE_THRESHOLDS"
       :label="props.label"
+      is-label-visible
+      :is-loading="props.refreshing"
       size="sm"
     />
-    <div v-else class="h-1.5 rounded-full bg-muted" />
+    <!-- An unread value draws no meter: a meter would announce a reading the host never gave. -->
+    <div v-else class="flex flex-col gap-1.5">
+      <div class="flex items-center justify-between gap-3 text-xs">
+        <span class="truncate text-muted-foreground">{{ props.label }}</span
+        ><span class="font-medium">Unavailable</span>
+      </div>
+      <div class="h-1 rounded-full bg-muted" />
+    </div>
     <p v-if="props.detail" class="mt-2 truncate text-xs text-muted-foreground" :title="props.detail">
       {{ props.detail }}
     </p>

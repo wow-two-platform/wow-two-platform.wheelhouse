@@ -14,6 +14,7 @@ import {
   RelativeTime,
   Sparkline,
   StatCard,
+  type StatCardTrend,
   Table,
   TableBody,
   TableCell,
@@ -61,63 +62,59 @@ const metrics = computed(() => {
       label: "Deploys",
       value: data.deploys,
       helper: `${data.succeeded} succeeded · ${data.failed} failed · ${data.refused} refused`,
-      change: difference(data.deploys, prior?.deploys, (value) =>
-        String(value),
-      ),
+      ...difference(data.deploys, prior?.deploys, (value) => String(value)),
+      isLowerBetter: false,
     },
     {
       label: "Success rate",
       value: Measures.percent(data.successRate),
       helper: "Of finished rollouts",
-      change: difference(
+      ...difference(
         data.successRate,
         prior?.successRate,
         (value) => `${Math.round(value * 100)} pts`,
       ),
+      isLowerBetter: false,
     },
     {
       label: "Median rollout",
       value: Measures.duration(data.medianRolloutSeconds),
       helper: "Start to verified",
-      change: difference(
+      ...difference(
         data.medianRolloutSeconds,
         prior?.medianRolloutSeconds,
         Measures.duration,
-        true,
       ),
+      isLowerBetter: true,
     },
     {
       label: "Median recovery",
       value: Measures.duration(data.medianRecoverySeconds),
       helper: "Failure to next success",
-      change: difference(
+      ...difference(
         data.medianRecoverySeconds,
         prior?.medianRecoverySeconds,
         Measures.duration,
-        true,
       ),
+      isLowerBetter: true,
     },
   ];
 });
 
-/** Formats a real prior-window comparison, preserving unavailable values. */
+/** The change against the prior window as a StatCard trend; none when either window has no value. */
 function difference(
   current: number | null,
   previous: number | null | undefined,
   format: (value: number) => string,
-  inverse = false,
-) {
-  if (current === null || previous == null) return null;
+): { trend?: StatCardTrend } {
+  if (current === null || previous == null) return {};
   const change = current - previous;
-  const improved = inverse ? change < 0 : change > 0;
   return {
-    text: `${change > 0 ? "+" : change < 0 ? "−" : ""}${format(Math.abs(change))}`,
-    tone:
-      change === 0
-        ? "text-muted-foreground"
-        : improved
-          ? "text-success"
-          : "text-destructive",
+    trend: {
+      value: change,
+      text: `${change > 0 ? "+" : change < 0 ? "−" : ""}${format(Math.abs(change))}`,
+      label: "vs prior 30 days",
+    },
   };
 }
 </script>
@@ -160,21 +157,7 @@ function difference(
       </template>
       <div v-if="stats.data.value" class="flex flex-col gap-5">
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            v-for="metric in metrics"
-            :key="metric.label"
-            :label="metric.label"
-            :value="metric.value"
-            size="sm"
-          >
-            <template #helper>
-              <p>{{ metric.helper }}</p>
-              <p v-if="metric.change" class="mt-2" :class="metric.change.tone">
-                <SkeletonStateSlot>{{ metric.change.text }}</SkeletonStateSlot>
-                <span class="text-muted-foreground">vs prior 30 days</span>
-              </p>
-            </template>
-          </StatCard>
+          <StatCard v-for="metric in metrics" :key="metric.label" v-bind="metric" size="sm" />
         </div>
         <div class="grid gap-4 md:grid-cols-2">
           <div
