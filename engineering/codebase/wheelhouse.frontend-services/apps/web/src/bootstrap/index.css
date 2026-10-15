@@ -36,6 +36,8 @@
   --color-card-foreground: #202d27;
   --color-popover: #ffffff;
   --color-popover-foreground: #202d27;
+  /* Form fields; an open menu stands apart from them by its border and shadow. */
+  --color-field: #ffffff;
   --color-inverse: #202d27;
   --color-inverse-foreground: #f4f4ef;
   --color-muted: #eaece5;
@@ -94,6 +96,8 @@
   --color-card-foreground: #edf1eb;
   --color-popover: #1b2420;
   --color-popover-foreground: #edf1eb;
+  /* Form fields drop to the page fill, so an open menu reads raised over them. */
+  --color-field: #121917;
   --color-inverse: #edf1eb;
   --color-inverse-foreground: #121917;
   --color-muted: #29352e;
