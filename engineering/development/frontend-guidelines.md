@@ -9,7 +9,7 @@ This document records Wheelhouse-specific choices; the workspace design is in
 ## Stack
 
 - Vue 3 Composition API · Vue Router · Vite 6 · TypeScript (strict) · Tailwind v4 · Node 24 · pnpm workspace.
-- UI: published **`@wow-two-beta/ui-vue@0.0.12`**. Use its components, forms, queries and Result contracts. Shared capability gaps belong in the SDK; product composition stays here.
+- UI: published **`@wow-two-beta/ui-vue@0.0.13`**. Use its components, forms, queries and Result contracts. Shared capability gaps belong in the SDK; product composition stays here.
 - `bootstrap/index.css` imports `tailwindcss` and `@wow-two-beta/ui-vue/styles.css`; its `@source` includes SDK utilities.
 - `bootstrap/query.ts` and `bootstrap/form.ts` are the application adapter pins. Integration functions decode wire payloads with Zod and return SDK `Result<T, ApiFailure>` values.
 
@@ -24,8 +24,8 @@ This document records Wheelhouse-specific choices; the workspace design is in
 - Control-plane workspace only — single operator, never public. Secret writes and token minting bypass the mutation cache. Plaintext stays inside the active dialog; abort/generation guards prevent dismissed requests restoring it. Failed writes preserve editable input; successful writes and context changes clear values and form baselines.
 - The console's first load: `index.html` paints a static splash (`public/boot-splash.css`) that mounting replaces with `BootSplash`, the SDK `SplashScreen` overlay on the ambient surface; its bar reports scripts, session and first route (35, 70, 100). Keep the two in step.
 - First loads use `LoadState` with SDK `SkeletonState`; explicit refresh uses the local `useRefresh` timing helper and skeletons. Cached content remains visible with an error when background reads fail.
-- A page's primary action goes in the shared header through `PageActions` and Vue Teleport; the page owns the dialog.
-- Theme tokens live in `bootstrap/index.css` (`:root` and `.dark`); `public/theme.js` applies the remembered scheme before the first paint.
+- A page's primary action goes in the shared header through the SDK `PageHeaderActions`; the page owns the dialog.
+- Theme tokens live in `bootstrap/index.css` (`:root` and `.dark`); Vite generates `/theme.js` from the SDK `colorModeScript`, which applies the remembered scheme before the first paint.
 - The Workspace route combines a product rail, environment/service surface and contextual inspector. Top navigation retains URL product/target selection. Invalid explicit selections remain unavailable rather than silently selecting another target.
 - Registry/runner association uses explicit bindings in `application/workspace/WorkspaceInventory.ts`. Registry lifecycle, observed runtime condition and deployment outcome remain separate facts.
 - Host vitals are current snapshots that the SDK query refetches every 60 seconds. Deployment follow-up refetches every three seconds while the tab is visible. Neither implies retained host history.

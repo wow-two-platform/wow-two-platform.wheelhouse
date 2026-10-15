@@ -208,6 +208,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 |---|---|---|
 | Fix environments listing as dev, prod, test | fix | Order them dev, test, prod everywhere |
 | Fix a new server reading "Host vitals are unavailable" until a target exists | fix | Read host vitals from the server itself |
+| Fix a finished job's inspector refetching vitals, history and stats | fix | `useDeploymentOutcome` refetches them when it opens a job that already finished |
 
 ## SDK adoption
 
