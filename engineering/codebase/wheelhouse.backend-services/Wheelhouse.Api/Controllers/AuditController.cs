@@ -4,7 +4,7 @@ using Wheelhouse.Application.Audit;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
-using WoW.Two.Sdk.Backend.Beta.Web.ErrorMapping;
+using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 
@@ -12,7 +12,7 @@ namespace Wheelhouse.Api.Controllers;
 [ApiController]
 [Route("api/audit")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class AuditController(ISender sender, IErrorHttpStatusCodeMapper errors) : ControllerBase
+public sealed class AuditController(ISender sender) : ControllerBase
 {
     /// <summary>Lists the newest entries; <paramref name="before"/> pages back from a sequence number.</summary>
     [HttpGet]
@@ -28,5 +28,5 @@ public sealed class AuditController(ISender sender, IErrorHttpStatusCodeMapper e
 
     private IActionResult Render<T>(AppResult<T> result) where T : notnull => result.Match<IActionResult>(
         ok => Ok(ApiResponse<T>.Ok(ok.Data)),
-        fail => Problem(statusCode: errors.ToStatusCode(fail.Error), detail: fail.Error.Message));
+        fail => this.ToProblem(fail.Error));
 }

@@ -9,14 +9,14 @@ using Microsoft.AspNetCore.Mvc;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
-using WoW.Two.Sdk.Backend.Beta.Web.ErrorMapping;
+using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 
 /// <summary>Submits reviewed releases and observes target-owned deployment outcomes.</summary>
 [ApiController]
 [Route("api/deployments")]
-public sealed class DeploymentsController(ISender sender, IErrorHttpStatusCodeMapper errors) : ControllerBase
+public sealed class DeploymentsController(ISender sender) : ControllerBase
 {
     // Route regex constraints ignore case; a validated parameter keeps catalog ids exact.
     private const string Slug = Wheelhouse.Application.Inventory.Constants.InventoryPatternConstants.Slug;
@@ -75,7 +75,7 @@ public sealed class DeploymentsController(ISender sender, IErrorHttpStatusCodeMa
         CancellationToken ct = default) =>
         (await sender.SendAsync(new VitalsHistoryQuery(target, hours), ct)).Match<IActionResult>(
             ok => Ok(ApiResponse<IReadOnlyList<VitalsSampleDto>>.Ok(ok.Data)),
-            fail => Problem(statusCode: errors.ToStatusCode(fail.Error), detail: fail.Error.Message));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Lists published releases and per-commit builds from approved repositories.</summary>
     [HttpGet("releases")]
@@ -102,7 +102,7 @@ public sealed class DeploymentsController(ISender sender, IErrorHttpStatusCodeMa
         var result = await sender.SendAsync(new DeploymentBuildCommand(product, request.Commit, Actor()), ct);
         return result.Match<IActionResult>(
             ok => Accepted(ApiResponse<JsonElement>.Ok(ok.Data)),
-            fail => Problem(statusCode: errors.ToStatusCode(fail.Error), detail: fail.Error.Message));
+            fail => this.ToProblem(fail.Error));
     }
 
     /// <summary>Reads the last lines one service's container wrote; the response is never cached or stored.</summary>
@@ -128,12 +128,12 @@ public sealed class DeploymentsController(ISender sender, IErrorHttpStatusCodeMa
         return result.Match<IActionResult>(
             ok => AcceptedAtAction(nameof(Status), new { id = ok.Data.GetProperty("id").GetString() },
                 ApiResponse<JsonElement>.Ok(ok.Data)),
-            fail => Problem(statusCode: errors.ToStatusCode(fail.Error), detail: fail.Error.Message));
+            fail => this.ToProblem(fail.Error));
     }
 
     private string Actor() => User.Identity?.Name ?? User.FindFirst("wt:username")?.Value ?? "authenticated-admin";
 
     private IActionResult Render(AppResult<JsonElement> result) => result.Match<IActionResult>(
         ok => Ok(ApiResponse<JsonElement>.Ok(ok.Data)),
-        fail => Problem(statusCode: errors.ToStatusCode(fail.Error), detail: fail.Error.Message));
+        fail => this.ToProblem(fail.Error));
 }

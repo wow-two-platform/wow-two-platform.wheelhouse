@@ -7,14 +7,14 @@ using Wheelhouse.Application.Integrations.Queries;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
-using WoW.Two.Sdk.Backend.Beta.Web.ErrorMapping;
+using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 
 /// <summary>Exposes integration keys over HTTP.</summary>
 [ApiController]
 [Route("api/integration-keys")]
-public sealed class IntegrationKeysController(ISender sender, IErrorHttpStatusCodeMapper errorMapper) : ControllerBase
+public sealed class IntegrationKeysController(ISender sender) : ControllerBase
 {
     /// <summary>Gets every integration key, revoked ones included; never a secret.</summary>
     [HttpGet]
@@ -22,7 +22,7 @@ public sealed class IntegrationKeysController(ISender sender, IErrorHttpStatusCo
     public async Task<IActionResult> Get(CancellationToken ct) =>
         (await sender.SendAsync(new IntegrationKeyGetAllQuery(), ct)).Match<IActionResult>(
             ok => Ok(ApiResponse<IReadOnlyList<IntegrationKeyDto>>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Creates an integration key; the response carries its secret this once, never cached or stored.</summary>
     [HttpPost]
@@ -36,7 +36,7 @@ public sealed class IntegrationKeysController(ISender sender, IErrorHttpStatusCo
         var result = await sender.SendAsync(new IntegrationKeyCreateCommand { Name = request.Name, Scopes = request.Scopes }, ct);
         return result.Match<IActionResult>(
             ok => StatusCode(StatusCodes.Status201Created, ApiResponse<IntegrationKeyWithSecretDto>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
     }
 
     /// <summary>Revokes an integration key, so it never authenticates again.</summary>
@@ -49,6 +49,6 @@ public sealed class IntegrationKeysController(ISender sender, IErrorHttpStatusCo
         var result = await sender.SendAsync(new IntegrationKeyRevokeCommand { Id = id }, ct);
         return result.Match<IActionResult>(
             ok => Ok(ApiResponse<IntegrationKeyDto>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
     }
 }

@@ -2,6 +2,7 @@ using Wheelhouse.Api.Auth;
 using Wheelhouse.Api.Mcp;
 using WoW.Two.Sdk.Backend.Beta.Meta;
 using WoW.Two.Sdk.Backend.Beta.Web.Hosting;
+using WoW.Two.Sdk.Backend.Beta.Web.ProblemDetails;
 
 namespace Wheelhouse.Api.Configurations;
 
@@ -30,6 +31,9 @@ public static class HostConfiguration
     /// <summary>Configures the middleware pipeline and maps endpoints.</summary>
     public static WebApplication Configure(this WebApplication app)
     {
+        // Outermost: every error status, MVC error result and thrown exception leaves as a ProblemDetails document.
+        app.UseHttpProblemDetails();
+
         // Serve the Vue workspace from wwwroot (single-deploy: API + UI in one host) via the SDK SPA-hosting helper.
         // Static assets stay public so the sign-in screen loads before auth, and are registered before the SDK pipeline
         // so they short-circuit.

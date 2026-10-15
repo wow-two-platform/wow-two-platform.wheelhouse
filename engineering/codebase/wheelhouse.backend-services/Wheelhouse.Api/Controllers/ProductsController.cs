@@ -11,14 +11,14 @@ using Wheelhouse.Application.Products.Queries;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
-using WoW.Two.Sdk.Backend.Beta.Web.ErrorMapping;
+using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 
 /// <summary>Exposes the portfolio's products over HTTP.</summary>
 [ApiController]
 [Route("api/products")]
-public sealed class ProductsController(ISender sender, IErrorHttpStatusCodeMapper errorMapper) : ControllerBase
+public sealed class ProductsController(ISender sender) : ControllerBase
 {
     // Route regex constraints ignore case; a validated parameter keeps slugs exact.
     private const string Slug = InventoryPatternConstants.Slug;
@@ -30,7 +30,7 @@ public sealed class ProductsController(ISender sender, IErrorHttpStatusCodeMappe
     public async Task<IActionResult> Get(CancellationToken ct) =>
         (await sender.SendAsync(new ProductGetAllQuery(), ct)).Match<IActionResult>(
             ok => Ok(ApiResponse<IReadOnlyList<ProductDto>>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Gets one product by its slug.</summary>
     [HttpGet("{slug}")]
@@ -40,7 +40,7 @@ public sealed class ProductsController(ISender sender, IErrorHttpStatusCodeMappe
     public async Task<IActionResult> GetBySlug([RegularExpression(Slug)] string slug, CancellationToken ct) =>
         (await sender.SendAsync(new ProductGetBySlugQuery { Slug = slug }, ct)).Match<IActionResult>(
             ok => Ok(ApiResponse<ProductDto>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Gets the icon a product's repository carries for a theme, form and color, falling back along the icon
     /// convention; not found when no file resolves, so the caller shows its monogram.</summary>
@@ -84,7 +84,7 @@ public sealed class ProductsController(ISender sender, IErrorHttpStatusCodeMappe
             Release = request.Release,
         }, ct)).Match<IActionResult>(
             ok => CreatedAtAction(nameof(GetBySlug), new { slug = ok.Data.Slug }, ApiResponse<ProductDto>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Changes a product's definition; its slug stays.</summary>
     [HttpPut("{slug}")]
@@ -104,7 +104,7 @@ public sealed class ProductsController(ISender sender, IErrorHttpStatusCodeMappe
             Release = request.Release,
         }, ct)).Match<IActionResult>(
             ok => Ok(ApiResponse<ProductDto>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Reads the product's manifest again now: checks the repository's branch head without waiting for the
     /// remembered one, and re-reads <c>product/product.json</c> when the head is a commit the cache has not seen.
@@ -117,7 +117,7 @@ public sealed class ProductsController(ISender sender, IErrorHttpStatusCodeMappe
     public async Task<IActionResult> RefreshIdentity([RegularExpression(Slug)] string slug, CancellationToken ct) =>
         (await sender.SendAsync(new ProductIdentityRefreshCommand { Slug = slug }, ct)).Match<IActionResult>(
             ok => Ok(ApiResponse<ProductDto>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Removes a product no target runs any more.</summary>
     [HttpDelete("{slug}")]
@@ -128,7 +128,7 @@ public sealed class ProductsController(ISender sender, IErrorHttpStatusCodeMappe
     public async Task<IActionResult> Delete([RegularExpression(Slug)] string slug, CancellationToken ct) =>
         (await sender.SendAsync(new ProductDeleteCommand { Slug = slug }, ct)).Match<IActionResult>(
             _ => NoContent(),
-            fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Records where a product stands in the portfolio.</summary>
     [HttpPut("{slug}/lifecycle")]
@@ -141,7 +141,7 @@ public sealed class ProductsController(ISender sender, IErrorHttpStatusCodeMappe
         (await sender.SendAsync(new ProductLifecycleUpdateCommand { Slug = slug, Lifecycle = request.Lifecycle }, ct))
             .Match<IActionResult>(
                 ok => Ok(ApiResponse<ProductDto>.Ok(ok.Data)),
-                fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+                fail => this.ToProblem(fail.Error));
 
     private async Task<IActionResult> IconAsync(string slug, string? service, ProductIconApiRequest request, CancellationToken ct) =>
         (await sender.SendAsync(new ProductIconQuery
@@ -157,5 +157,5 @@ public sealed class ProductsController(ISender sender, IErrorHttpStatusCodeMappe
                 // rendering it, so an SVG from a repository can never run script on this origin.
                 return File(ok.Data.Content, ok.Data.ContentType, "icon" + Path.GetExtension(ok.Data.Path));
             },
-            fail => Problem(detail: fail.Error.Message, statusCode: errorMapper.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 }

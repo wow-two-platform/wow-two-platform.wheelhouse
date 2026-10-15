@@ -9,14 +9,14 @@ using Wheelhouse.Application.Targets.Queries;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
-using WoW.Two.Sdk.Backend.Beta.Web.ErrorMapping;
+using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 
 /// <summary>Exposes each product's environments on their servers over HTTP.</summary>
 [ApiController]
 [Route("api/targets")]
-public sealed class TargetsController(ISender sender, IErrorHttpStatusCodeMapper errors) : ControllerBase
+public sealed class TargetsController(ISender sender) : ControllerBase
 {
     private const string Slug = InventoryPatternConstants.Slug;
 
@@ -26,7 +26,7 @@ public sealed class TargetsController(ISender sender, IErrorHttpStatusCodeMapper
     public async Task<IActionResult> Get([FromQuery, RegularExpression(Slug)] string? product, CancellationToken ct) =>
         (await sender.SendAsync(new TargetGetAllQuery { Product = product }, ct)).Match<IActionResult>(
             ok => Ok(ApiResponse<IReadOnlyList<TargetDto>>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errors.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Adds an environment of a product on a server.</summary>
     [HttpPost]
@@ -48,7 +48,7 @@ public sealed class TargetsController(ISender sender, IErrorHttpStatusCodeMapper
             Sites = request.Sites,
         }, ct)).Match<IActionResult>(
             ok => StatusCode(StatusCodes.Status201Created, ApiResponse<TargetDto>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errors.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Changes a target's definition; its slug stays.</summary>
     [HttpPut("{slug}")]
@@ -70,7 +70,7 @@ public sealed class TargetsController(ISender sender, IErrorHttpStatusCodeMapper
             Sites = request.Sites,
         }, ct)).Match<IActionResult>(
             ok => Ok(ApiResponse<TargetDto>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errors.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Removes a target from the inventory; what runs on its host stays until torn down there.</summary>
     [HttpDelete("{slug}")]
@@ -80,5 +80,5 @@ public sealed class TargetsController(ISender sender, IErrorHttpStatusCodeMapper
     public async Task<IActionResult> Delete([RegularExpression(Slug)] string slug, CancellationToken ct) =>
         (await sender.SendAsync(new TargetDeleteCommand { Slug = slug }, ct)).Match<IActionResult>(
             _ => NoContent(),
-            fail => Problem(detail: fail.Error.Message, statusCode: errors.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 }

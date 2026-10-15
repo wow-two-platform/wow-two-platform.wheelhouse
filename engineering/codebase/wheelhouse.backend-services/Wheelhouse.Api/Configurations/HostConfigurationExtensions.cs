@@ -12,6 +12,7 @@ using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Validation;
 using WoW.Two.Sdk.Backend.Beta.Meta;
 using WoW.Two.Sdk.Backend.Beta.Web.Json;
+using WoW.Two.Sdk.Backend.Beta.Web.ProblemDetails;
 
 namespace Wheelhouse.Api.Configurations;
 
@@ -26,7 +27,8 @@ public static class HostConfigurationExtensions
         return builder;
     }
 
-    /// <summary>Configures the SDK boot floor for a single-user control plane — output cache, rate limiting, and OTLP export off; OpenAPI in development only.</summary>
+    /// <summary>Configures the SDK boot floor for a single-user control plane — output cache, rate limiting, and OTLP export off; OpenAPI in development only —
+    /// and the opt-in HTTP ProblemDetails boundary, so every error the host writes is a problem document.</summary>
     public static WebApplicationBuilder AddPlatformDefaults(this WebApplicationBuilder builder)
     {
         builder.AddApiDefaults(o =>
@@ -37,6 +39,7 @@ public static class HostConfigurationExtensions
             o.EnableOtlpExporters = false;
             o.ExposeOpenApi = builder.Environment.IsDevelopment();
         });
+        builder.Services.AddHttpProblemDetails();
         return builder;
     }
 

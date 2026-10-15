@@ -5,8 +5,8 @@ using WoW.Two.Sdk.Backend.Beta.Testing.Web;
 namespace Wheelhouse.Tests.E2E.Support;
 
 /// <summary>
-/// Reads an RFC 7807 <see cref="ProblemDetails"/> body off an error response — the failure shape the host emits via
-/// <c>ControllerBase.Problem(...)</c>. Used by the E2E error tests to assert it is ProblemDetails (with <c>title</c>/
+/// Reads an RFC 7807 <see cref="ProblemDetails"/> body off an error response — the failure shape the host emits through the SDK
+/// <c>ToProblem</c> and its HTTP ProblemDetails boundary. Used by the E2E error tests to assert it is ProblemDetails (with <c>title</c>/
 /// <c>status</c>), never the success <c>ApiResponse&lt;T&gt;</c> envelope.
 /// </summary>
 public static class ProblemDetailsExtensions

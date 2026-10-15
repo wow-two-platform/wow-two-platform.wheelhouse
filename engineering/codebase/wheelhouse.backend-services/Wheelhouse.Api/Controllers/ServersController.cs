@@ -9,14 +9,14 @@ using Wheelhouse.Application.Servers.Queries;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
-using WoW.Two.Sdk.Backend.Beta.Web.ErrorMapping;
+using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 
 /// <summary>Exposes the hosts Wheelhouse deploys to over HTTP.</summary>
 [ApiController]
 [Route("api/servers")]
-public sealed class ServersController(ISender sender, IErrorHttpStatusCodeMapper errors) : ControllerBase
+public sealed class ServersController(ISender sender) : ControllerBase
 {
     private const string Slug = InventoryPatternConstants.Slug;
 
@@ -26,7 +26,7 @@ public sealed class ServersController(ISender sender, IErrorHttpStatusCodeMapper
     public async Task<IActionResult> Get(CancellationToken ct) =>
         (await sender.SendAsync(new ServerGetAllQuery(), ct)).Match<IActionResult>(
             ok => Ok(ApiResponse<IReadOnlyList<ServerDto>>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errors.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Adds a server; it reaches nothing until its SSH identity and pinned host key are on the control host.</summary>
     [HttpPost]
@@ -47,7 +47,7 @@ public sealed class ServersController(ISender sender, IErrorHttpStatusCodeMapper
             Ingress = request.Ingress,
         }, ct)).Match<IActionResult>(
             ok => StatusCode(StatusCodes.Status201Created, ApiResponse<ServerDto>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errors.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Changes a server's definition; its slug stays.</summary>
     [HttpPut("{slug}")]
@@ -68,7 +68,7 @@ public sealed class ServersController(ISender sender, IErrorHttpStatusCodeMapper
             Ingress = request.Ingress,
         }, ct)).Match<IActionResult>(
             ok => Ok(ApiResponse<ServerDto>.Ok(ok.Data)),
-            fail => Problem(detail: fail.Error.Message, statusCode: errors.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Removes a server no target or vault runs on any more.</summary>
     [HttpDelete("{slug}")]
@@ -79,5 +79,5 @@ public sealed class ServersController(ISender sender, IErrorHttpStatusCodeMapper
     public async Task<IActionResult> Delete([RegularExpression(Slug)] string slug, CancellationToken ct) =>
         (await sender.SendAsync(new ServerDeleteCommand { Slug = slug }, ct)).Match<IActionResult>(
             _ => NoContent(),
-            fail => Problem(detail: fail.Error.Message, statusCode: errors.ToStatusCode(fail.Error)));
+            fail => this.ToProblem(fail.Error));
 }

@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.Mvc;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
 using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
 using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
-using WoW.Two.Sdk.Backend.Beta.Web.ErrorMapping;
+using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 
@@ -20,7 +20,7 @@ namespace Wheelhouse.Api.Controllers;
 [ApiController]
 [Route("api/vaults")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class VaultsController(ISender sender, IErrorHttpStatusCodeMapper errors) : ControllerBase
+public sealed class VaultsController(ISender sender) : ControllerBase
 {
     /// <summary>Lists the configured vaults with their sealed state.</summary>
     [HttpGet]
@@ -37,7 +37,7 @@ public sealed class VaultsController(ISender sender, IErrorHttpStatusCodeMapper 
     public async Task<IActionResult> Hygiene([RegularExpression(VaultRules.Vault)] string vault, CancellationToken ct) =>
         (await sender.SendAsync(new VaultHygieneQuery(vault), ct)).Match<IActionResult>(
             ok => Ok(ApiResponse<VaultHygiene>.Ok(ok.Data)),
-            fail => Problem(statusCode: errors.ToStatusCode(fail.Error), detail: fail.Error.Message));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Creates a namespace.</summary>
     [HttpPost("{vault}/namespaces")]
@@ -97,7 +97,7 @@ public sealed class VaultsController(ISender sender, IErrorHttpStatusCodeMapper 
     public async Task<IActionResult> Definitions(CancellationToken ct) =>
         (await sender.SendAsync(new VaultGetAllQuery(), ct)).Match<IActionResult>(
             ok => Ok(ApiResponse<IReadOnlyList<VaultDto>>.Ok(ok.Data)),
-            fail => Problem(statusCode: errors.ToStatusCode(fail.Error), detail: fail.Error.Message));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Adds a vault; it opens nothing until its administrator password is on the control host.</summary>
     [HttpPost]
@@ -109,7 +109,7 @@ public sealed class VaultsController(ISender sender, IErrorHttpStatusCodeMapper 
             Slug = request.Slug, Name = request.Name, Server = request.Server, Url = request.Url,
         }, ct)).Match<IActionResult>(
             ok => StatusCode(StatusCodes.Status201Created, ApiResponse<VaultDto>.Ok(ok.Data)),
-            fail => Problem(statusCode: errors.ToStatusCode(fail.Error), detail: fail.Error.Message));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Changes a vault's definition; its slug stays.</summary>
     [HttpPut("{vault}")]
@@ -122,7 +122,7 @@ public sealed class VaultsController(ISender sender, IErrorHttpStatusCodeMapper 
             Slug = vault, Name = request.Name, Server = request.Server, Url = request.Url,
         }, ct)).Match<IActionResult>(
             ok => Ok(ApiResponse<VaultDto>.Ok(ok.Data)),
-            fail => Problem(statusCode: errors.ToStatusCode(fail.Error), detail: fail.Error.Message));
+            fail => this.ToProblem(fail.Error));
 
     /// <summary>Stops administering a vault; the vault and its secrets stay where they run.</summary>
     [HttpDelete("{vault}")]
@@ -131,7 +131,7 @@ public sealed class VaultsController(ISender sender, IErrorHttpStatusCodeMapper 
     public async Task<IActionResult> Delete([RegularExpression(VaultRules.Vault)] string vault, CancellationToken ct) =>
         (await sender.SendAsync(new VaultDeleteCommand { Slug = vault }, ct)).Match<IActionResult>(
             _ => NoContent(),
-            fail => Problem(statusCode: errors.ToStatusCode(fail.Error), detail: fail.Error.Message));
+            fail => this.ToProblem(fail.Error));
 
     private async Task<IActionResult> Change(string vault, VaultChange change, CancellationToken ct)
     {
@@ -141,5 +141,5 @@ public sealed class VaultsController(ISender sender, IErrorHttpStatusCodeMapper 
 
     private IActionResult Render(AppResult<JsonElement> result) => result.Match<IActionResult>(
         ok => Ok(ApiResponse<JsonElement>.Ok(ok.Data)),
-        fail => Problem(statusCode: errors.ToStatusCode(fail.Error), detail: fail.Error.Message));
+        fail => this.ToProblem(fail.Error));
 }

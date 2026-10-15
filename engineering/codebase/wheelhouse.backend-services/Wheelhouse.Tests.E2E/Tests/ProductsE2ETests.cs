@@ -63,6 +63,12 @@ public sealed class ProductsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE
         var response = await AdminClient.GetAsync("api/products/ghost");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        response.Headers.CacheControl?.NoStore.Should().BeTrue();
+        var problem = await response.ReadProblemAsync();
+        problem.Status.Should().Be(404);
+        problem.Detail.Should().NotBeNullOrWhiteSpace();
+        problem.Extensions["code"]?.ToString().Should().Be("NotFound");
     }
 
     [Fact]
