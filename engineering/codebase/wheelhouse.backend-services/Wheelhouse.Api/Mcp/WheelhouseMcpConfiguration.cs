@@ -1,8 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.Json.Serialization.Metadata;
 using Wheelhouse.Domain.Integrations.Constants;
 using WoW.Two.Sdk.Backend.Beta.Ai.Mcp;
+using WoW.Two.Sdk.Backend.Beta.Foundation.Serialization;
 using WoW.Two.Sdk.Backend.Beta.Identity.ApiKeys;
 
 namespace Wheelhouse.Api.Mcp;
@@ -31,11 +31,12 @@ public static class WheelhouseMcpConfiguration
             .AddPolicy(CatalogPolicy, policy => policy.RequireApiKeyScope(IntegrationScopeConstants.CatalogRead))
             .AddPolicy(DeploymentsPolicy, policy => policy.RequireApiKeyScope(IntegrationScopeConstants.DeploymentsRead));
 
-        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        // The SDK wire preset (camelCase, string enums); nulls stay on the wire and dictionary keys keep their casing.
+        var json = new JsonSerializerOptions(JsonOptionsConstants.Default)
         {
-            TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+            DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+            DictionaryKeyPolicy = null,
         };
-        json.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
         builder.Services.AddStatelessMcpServer().WithTools<WheelhouseReadTools>(json);
         return builder;
     }

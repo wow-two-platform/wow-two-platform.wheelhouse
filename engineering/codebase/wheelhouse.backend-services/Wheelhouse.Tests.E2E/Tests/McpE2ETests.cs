@@ -53,6 +53,22 @@ public sealed class McpE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBas
     }
 
     [Fact]
+    public async Task ListProjects_KeepsCamelCaseNamesStringEnumsAndNullFields()
+    {
+        var key = await CreateKeyAsync("catalog:read");
+        using var client = KeyClient(key.Secret);
+
+        using var projects = await CallAsync(client, "list_projects");
+
+        var text = projects.RootElement.GetProperty("result").GetProperty("content")[0].GetProperty("text").GetString();
+        using var payload = JsonDocument.Parse(text!);
+        var project = payload.RootElement.EnumerateArray().Single(p => p.GetProperty("slug").GetString() == "foreverpin");
+        project.GetProperty("homepage").ValueKind.Should().Be(JsonValueKind.Null);
+        project.GetProperty("lifecycle").ValueKind.Should().Be(JsonValueKind.String);
+        project.TryGetProperty("Slug", out _).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task FleetKey_OnlyDiscoversReadOnlyFleetTools()
     {
         var key = await CreateKeyAsync("deployments:read");

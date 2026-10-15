@@ -11,6 +11,7 @@ using WoW.Two.Sdk.Backend.Beta.Foundation.Audit;
 using WoW.Two.Sdk.Backend.Beta.Foundation.Options;
 using WoW.Two.Sdk.Backend.Beta.Foundation.Time;
 using WoW.Two.Sdk.Backend.Beta.Foundation.Validation;
+using WoW.Two.Sdk.Backend.Beta.Http.Safety;
 using WoW.Two.Sdk.Backend.Beta.Identity.ApiKeys;
 using WoW.Two.Sdk.Backend.Beta.Integrations;
 using WoW.Two.Sdk.Backend.Beta.Mediator;
@@ -125,10 +126,15 @@ public static class HostConfigurationExtensions
         builder.Services.AddHybridCaching();
         builder.Services.AddScoped<ITargetSites, Wheelhouse.Infrastructure.Products.RunnerTargetSites>();
 
-        // Vault administration: inventory endpoints only, no redirects or cookies, bounded calls.
+        // Vault administration: inventory endpoints only, bounded calls, through the SDK outbound guard (no redirects,
+        // proxies, cookies or credentials in the address). Vaults live on private addresses, often over plain HTTP.
         builder.Services.AddHttpClient(Wheelhouse.Infrastructure.Vaults.VaultGateway.ClientName,
                 client => client.Timeout = TimeSpan.FromSeconds(10))
-            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+            .AddSafeOutboundHttp(o =>
+            {
+                o.AllowPrivateNetworkTargets = true;
+                o.RequireHttps = false;
+            });
         builder.Services.AddSingleton<Wheelhouse.Infrastructure.Vaults.VaultSessionCache>();
         builder.Services.AddScoped<IVaultGateway, Wheelhouse.Infrastructure.Vaults.VaultGateway>();
 
