@@ -57,7 +57,7 @@ function choose(value: string | null): void {
       <button
         type="button"
         :aria-label="`Account menu for ${props.user.name || props.user.login}`"
-        class="flex items-center gap-2 rounded-xl p-1.5 text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+        class="flex items-center gap-2 rounded-xl border border-border p-1.5 text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
       >
         <Avatar
           v-bind="props.user.avatar ? { src: props.user.avatar } : {}"
