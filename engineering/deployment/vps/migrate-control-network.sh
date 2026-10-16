@@ -88,8 +88,9 @@ done
 host=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["ingress"]["hosts"]["console"])' \
     "$deploy_root/config/wheelhouse-prod.json")
 probe=wheelhouse-platform-canary-dev-1
-echo "Through Traefik: $(docker exec "$probe" wget -q -S -O /dev/null --header "Host: $host" \
-    http://172.30.0.2:8080/ 2>&1 | awk '/HTTP\//{print $2; exit}') (expected 403)"
+# BusyBox wget replaces a custom Host header, so the Traefik check uses curl on the workload network.
+echo "Through Traefik: $(docker run --rm --network platform curlimages/curl:8.11.1 -s -o /dev/null \
+    -w '%{http_code}' -H "Host: $host" http://172.30.0.2:8080/health) (expected 403)"
 # Any HTTP status line, even a 400 from host filtering, means the container is still reachable.
 if docker exec "$probe" wget -q -T 3 -S -O /dev/null --header "Host: $host" \
     http://wheelhouse-prod-console:8080/health 2>&1 | grep -q 'HTTP/'; then
