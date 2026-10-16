@@ -51,7 +51,7 @@ const comparison = computed(() =>
         Each service's version per environment. A highlighted version has not reached the next environment yet.
       </p>
     </div>
-    <Table density="compact" container-class-name="overflow-auto">
+    <Table density="compact" phone-layout="scroll" container-class-name="overflow-auto">
       <TableHead>
         <TableRow>
           <TableHeaderCell>Service</TableHeaderCell>

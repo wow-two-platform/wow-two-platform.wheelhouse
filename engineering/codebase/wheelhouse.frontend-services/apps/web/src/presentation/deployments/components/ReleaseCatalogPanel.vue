@@ -100,23 +100,29 @@ const visible = computed(() =>
         <TableBody>
           <TableRow v-for="artifact in visible" :key="artifact.id">
             <TableCell>
-              <span class="block font-mono text-xs font-medium">{{ artifact.release }}</span>
-              <Badge class="mt-1" :variant="artifact.kind === 'release' ? 'success' : 'neutral'">{{
-                artifact.kind === "release" ? (artifact.prerelease ? "Pre-release" : "Release") : "Commit build"
-              }}</Badge>
+              <span class="block min-w-0">
+                <span class="block font-mono text-xs font-medium">{{ artifact.release }}</span>
+                <Badge class="mt-1" :variant="artifact.kind === 'release' ? 'success' : 'neutral'">{{
+                  artifact.kind === "release" ? (artifact.prerelease ? "Pre-release" : "Release") : "Commit build"
+                }}</Badge>
+              </span>
             </TableCell>
             <TableCell class="text-xs">{{ artifact.product }}</TableCell>
             <TableCell class="font-mono text-xs">
-              <span class="block">{{ artifact.commit?.slice(0, 7) ?? "—" }}</span>
-              <span v-if="artifact.branch" class="mt-1 block text-muted-foreground">{{ artifact.branch }}</span>
+              <span class="block min-w-0">
+                <span class="block">{{ artifact.commit?.slice(0, 7) ?? "—" }}</span>
+                <span v-if="artifact.branch" class="mt-1 block text-muted-foreground">{{ artifact.branch }}</span>
+              </span>
             </TableCell>
             <TableCell class="whitespace-nowrap text-xs text-muted-foreground">
-              <RelativeTime class="block" :value="artifact.publishedAt" />
-              <span v-if="artifact.expiresAt" class="mt-1 block"
-                >expires <RelativeTime :value="artifact.expiresAt"
-              /></span>
+              <span class="block">
+                <RelativeTime class="block" :value="artifact.publishedAt" />
+                <span v-if="artifact.expiresAt" class="mt-1 block"
+                  >expires <RelativeTime :value="artifact.expiresAt"
+                /></span>
+              </span>
             </TableCell>
-            <TableCell class="text-right">
+            <TableCell label="" class="justify-end text-right">
               <Button
                 variant="ghost"
                 tone="neutral"

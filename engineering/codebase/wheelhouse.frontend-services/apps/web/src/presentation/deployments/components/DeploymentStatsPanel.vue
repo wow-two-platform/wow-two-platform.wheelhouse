@@ -214,12 +214,14 @@ function difference(
               <TableCell class="tabular-nums">{{ target.deploys }}</TableCell>
               <TableCell class="tabular-nums">{{ target.failed }}</TableCell>
               <TableCell>
-                <JobStatusIndicator :status="target.lastStatus" />
-                <span
-                  v-if="target.lastRelease"
-                  class="mt-1 block font-mono text-xs"
-                  >{{ target.lastRelease }}</span
-                >
+                <span class="block min-w-0">
+                  <JobStatusIndicator :status="target.lastStatus" />
+                  <span
+                    v-if="target.lastRelease"
+                    class="mt-1 block font-mono text-xs"
+                    >{{ target.lastRelease }}</span
+                  >
+                </span>
               </TableCell>
               <TableCell class="whitespace-nowrap text-xs text-muted-foreground"
                 ><RelativeTime :value="target.lastDeployAt"

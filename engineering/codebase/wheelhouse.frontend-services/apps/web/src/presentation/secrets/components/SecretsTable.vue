@@ -132,12 +132,14 @@ function closeEditor(open: boolean): void {
           </template>
           <TableRow v-for="secret in data ?? []" :key="secret.key">
             <TableCell>
-              <span class="block font-mono text-xs">{{ secret.key }}</span>
-              <span
-                v-if="secret.description"
-                class="block text-xs text-muted-foreground"
-                >{{ secret.description }}</span
-              >
+              <span class="block min-w-0">
+                <span class="block font-mono text-xs">{{ secret.key }}</span>
+                <span
+                  v-if="secret.description"
+                  class="block text-xs text-muted-foreground"
+                  >{{ secret.description }}</span
+                >
+              </span>
             </TableCell>
             <TableCell>
               <SkeletonStateSlot
@@ -161,7 +163,7 @@ function closeEditor(open: boolean): void {
                 >
               </span>
             </TableCell>
-            <TableCell>
+            <TableCell label="" class="justify-end">
               <div class="flex justify-end gap-1">
                 <Button
                   variant="ghost"

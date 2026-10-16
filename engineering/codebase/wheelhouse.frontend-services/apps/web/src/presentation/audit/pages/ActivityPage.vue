@@ -147,22 +147,28 @@ function newer(): void {
           <TableBody>
             <TableRow v-for="entry in visible" :key="entry.sequence">
               <TableCell class="whitespace-nowrap text-xs text-muted-foreground">
-                <RelativeTime class="block" :value="entry.occurredAt" />
-                <span class="mt-1 block font-mono">#{{ entry.sequence }}</span>
+                <span class="block">
+                  <RelativeTime class="block" :value="entry.occurredAt" />
+                  <span class="mt-1 block font-mono">#{{ entry.sequence }}</span>
+                </span>
               </TableCell>
               <TableCell class="text-xs">{{ entry.actor }}</TableCell>
               <TableCell>
-                <span class="block text-sm font-medium">{{ AuditExtensions.label(entry.action) }}</span>
-                <span v-if="entry.detail" class="block text-xs text-muted-foreground">{{ entry.detail }}</span>
+                <span class="block min-w-0">
+                  <span class="block text-sm font-medium">{{ AuditExtensions.label(entry.action) }}</span>
+                  <span v-if="entry.detail" class="block text-xs text-muted-foreground">{{ entry.detail }}</span>
+                </span>
               </TableCell>
               <TableCell class="font-mono text-xs break-all">{{ entry.subject }}</TableCell>
               <TableCell>
-                <Badge :variant="entry.outcome === AuditOutcome.Succeeded ? 'success' : 'danger'">{{
-                  entry.outcome === AuditOutcome.Succeeded ? "Done" : "Failed"
-                }}</Badge>
-                <span v-if="entry.reason" class="mt-1 block max-w-xs text-xs text-muted-foreground">{{
-                  entry.reason
-                }}</span>
+                <span class="block min-w-0">
+                  <Badge :variant="entry.outcome === AuditOutcome.Succeeded ? 'success' : 'danger'">{{
+                    entry.outcome === AuditOutcome.Succeeded ? "Done" : "Failed"
+                  }}</Badge>
+                  <span v-if="entry.reason" class="mt-1 block max-w-xs text-xs text-muted-foreground">{{
+                    entry.reason
+                  }}</span>
+                </span>
               </TableCell>
             </TableRow>
           </TableBody>

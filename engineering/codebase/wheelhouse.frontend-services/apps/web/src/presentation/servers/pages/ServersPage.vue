@@ -297,14 +297,16 @@ const trendWindow = computed(() => {
             ><TableBody
               ><TableRow v-for="target in targets.data.value" :key="target.id"
                 ><TableCell
-                  ><RouterLink
-                    v-if="workspaceLinks.has(target.id)"
-                    :to="workspaceLinks.get(target.id)!"
-                    class="font-medium text-primary hover:underline"
-                    >{{ target.environment }}</RouterLink
-                  >
-                  <span v-else class="font-medium">{{ target.environment }}</span>
-                  <p class="text-xs text-muted-foreground">{{ target.id }}</p></TableCell
+                  ><div class="min-w-0">
+                    <RouterLink
+                      v-if="workspaceLinks.has(target.id)"
+                      :to="workspaceLinks.get(target.id)!"
+                      class="font-medium text-primary hover:underline"
+                      >{{ target.environment }}</RouterLink
+                    >
+                    <span v-else class="font-medium">{{ target.environment }}</span>
+                    <p class="text-xs text-muted-foreground">{{ target.id }}</p>
+                  </div></TableCell
                 ><TableCell>{{ target.product }}</TableCell
                 ><TableCell>{{ target.host }}</TableCell
                 ><TableCell>{{ VpsProviderLabels[target.provider as VpsProvider] ?? target.provider }}</TableCell></TableRow

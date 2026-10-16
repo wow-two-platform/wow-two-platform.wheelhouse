@@ -72,18 +72,18 @@ const props = defineProps<HistoryTableProps>();
               job.release ?? job.bundleId ?? "—"
             }}</span>
           </button>
-          <template v-else>
+          <span v-else class="block min-w-0">
             <span class="block">{{ job.targetId ?? "—" }}</span>
             <span class="mt-1 block text-muted-foreground">{{
               job.release ?? job.bundleId ?? "—"
             }}</span>
-          </template>
+          </span>
         </TableCell>
         <TableCell
           ><JobStatusIndicator :status="job.status" :reason="job.reason"
         /></TableCell>
         <TableCell class="text-xs">{{ job.actor ?? "—" }}</TableCell>
-        <TableCell v-if="props.onRedeploy" class="text-right">
+        <TableCell v-if="props.onRedeploy" label="" class="justify-end text-right">
           <Button
             v-if="
               job.status === JobStatus.Succeeded && job.targetId && job.bundleId

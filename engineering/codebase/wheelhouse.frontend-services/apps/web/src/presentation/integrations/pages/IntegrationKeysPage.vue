@@ -62,7 +62,7 @@ async function confirmRevoke(key: IntegrationKey): Promise<void> {
     >
     <Panel :title="`${live} live ${live === 1 ? 'key' : 'keys'}`">
       <Alert v-if="revokeError" severity="danger" :description="revokeError" class="mb-3" />
-      <Table density="compact" is-hoverable class="min-w-[44rem]">
+      <Table density="compact" is-hoverable class="md:min-w-[44rem]">
         <TableHead>
           <TableRow>
             <TableHeaderCell>Name</TableHeaderCell>
@@ -82,11 +82,13 @@ async function confirmRevoke(key: IntegrationKey): Promise<void> {
                 <Badge v-for="scope in key.scopes" :key="scope" size="sm" variant="neutral">{{ scope }}</Badge>
               </span>
             </TableCell>
-            <TableCell class="text-xs"><RelativeTime :value="key.createdAt" /> · {{ key.createdBy }}</TableCell>
+            <TableCell class="text-xs"
+              ><span><RelativeTime :value="key.createdAt" /> · {{ key.createdBy }}</span></TableCell
+            >
             <TableCell class="text-xs"
               ><RelativeTime v-if="key.lastUsedAt" :value="key.lastUsedAt" /><template v-else>—</template></TableCell
             >
-            <TableCell class="text-right">
+            <TableCell label="" class="justify-end text-right">
               <Badge v-if="key.revokedAt" size="sm" variant="outline" :title="`Revoked ${when(key.revokedAt)}`">Revoked</Badge>
               <ConfirmPopover
                 v-else

@@ -169,7 +169,7 @@ async function confirmRevoke(): Promise<void> {
                 </Badge>
               </span>
             </TableCell>
-            <TableCell class="text-right">
+            <TableCell label="" class="justify-end text-right">
               <ConfirmPopover
                 v-if="!token.isRevoked"
                 :open="revoking?.id === token.id"
