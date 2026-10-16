@@ -8,22 +8,26 @@ export interface ResourceMeterProps {
 }
 </script>
 <script setup lang="ts">
-import { MeterBar } from '@wow-two-beta/ui-vue/presentation/feedback';
+import { Text } from '@wow-two-beta/ui-vue/presentation/display';
+import { MeterBar, useSkeletonState } from '@wow-two-beta/ui-vue/presentation/feedback';
 import { USAGE_THRESHOLDS } from '@/domain/servers';
 
 /** Presents a current resource snapshot without inventing history or unknown values. */
 defineOptions({ name: 'ResourceMeter' });
 const props = defineProps<ResourceMeterProps>();
+/** A region's first load draws the meter as its skeleton, not the unavailable line. */
+const skeleton = useSkeletonState();
 </script>
 <template>
   <div class="min-w-0 rounded-xl border border-border bg-card p-3">
+    <!-- Only a running refresh is passed: an explicit `false` would override the meter's own first-load skeleton. -->
     <MeterBar
-      v-if="props.value != null || props.refreshing"
+      v-if="props.value != null || props.refreshing || skeleton.isSkeleton.value"
       :value="props.value ?? 0"
       :thresholds="USAGE_THRESHOLDS"
       :label="props.label"
       is-label-visible
-      :is-loading="props.refreshing"
+      v-bind="props.refreshing ? { isLoading: true } : {}"
       size="sm"
     />
     <!-- An unread value draws no meter: a meter would announce a reading the host never gave. -->
@@ -34,8 +38,8 @@ const props = defineProps<ResourceMeterProps>();
       </div>
       <div class="h-1 rounded-full bg-muted" />
     </div>
-    <p v-if="props.detail" class="mt-2 truncate text-xs text-muted-foreground" :title="props.detail">
+    <Text v-if="props.detail" class="mt-2 truncate text-xs text-muted-foreground" :title="props.detail">
       {{ props.detail }}
-    </p>
+    </Text>
   </div>
 </template>

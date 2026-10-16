@@ -12,21 +12,23 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@wow-two-beta/ui-vue/presentation/display";
-import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { Alert, DataRegion, useSkeletonItems } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { ConfirmPopover } from "@wow-two-beta/ui-vue/presentation/overlays";
 import { PageHeaderActions } from "@wow-two-beta/ui-vue/presentation/layout";
 import { useIntegrationKeys } from "@/application/integrations";
 import type { IntegrationKey } from "@/domain/integrations";
-import { LoadState, Panel } from "@/presentation/common/components";
+import { Panel } from "@/presentation/common/components";
 import CreateKeyModal from "../components/CreateKeyModal.vue";
 
 /** Lists the keys other programs present, with creation and confirmed revocation. */
 defineOptions({ name: "IntegrationKeysPage" });
 
-const { keys, loading, error, reload, create, revoke } = useIntegrationKeys();
+const { keys, isFirstLoad, hasData, error, reload, create, revoke } = useIntegrationKeys();
 const creating = ref(false);
 const revokeError = ref<string | null>(null);
 const live = computed(() => keys.value.filter((key) => key.revokedAt === null).length);
+/** The keys, or placeholder rows until the first list arrives. */
+const rows = useSkeletonItems(() => (hasData.value ? keys.value : undefined), 3);
 
 /** Formats an instant for the revoked badge's tooltip. @internal */
 function when(value: string): string {
@@ -47,12 +49,14 @@ async function confirmRevoke(key: IntegrationKey): Promise<void> {
   <PageHeaderActions>
     <Button @click="creating = true"><template #leading><Plus :size="16" /></template>Create key</Button>
   </PageHeaderActions>
-  <LoadState
-    :loading="loading && keys.length === 0"
+  <!-- The page has no refresh control, so a failed first load offers its own retry. -->
+  <DataRegion
+    :is-first-load="isFirstLoad"
     :error="error"
-    :has-data="keys.length > 0"
-    :empty="keys.length === 0"
+    :has-data="hasData"
+    :is-empty="hasData && keys.length === 0"
     empty-title="No integration keys"
+    loading-label="Loading integration keys"
     @retry="reload"
   >
     <template #emptyActions
@@ -74,37 +78,51 @@ async function confirmRevoke(key: IntegrationKey): Promise<void> {
           </TableRow>
         </TableHead>
         <TableBody>
-          <TableRow v-for="key in keys" :key="key.id" :class="key.revokedAt ? 'text-muted-foreground' : ''">
-            <TableCell class="font-medium">{{ key.name }}</TableCell>
-            <TableCell class="font-mono text-xs">{{ key.prefix }}…</TableCell>
+          <TableRow
+            v-for="(key, index) in rows"
+            :key="key?.id ?? `placeholder-${index}`"
+            :class="key?.revokedAt ? 'text-muted-foreground' : ''"
+          >
+            <TableCell class="font-medium">{{ key?.name }}</TableCell>
+            <TableCell class="font-mono text-xs">{{ key ? `${key.prefix}…` : "" }}</TableCell>
             <TableCell>
               <span class="flex flex-wrap gap-1">
-                <Badge v-for="scope in key.scopes" :key="scope" size="sm" variant="neutral">{{ scope }}</Badge>
+                <template v-if="key">
+                  <Badge v-for="scope in key.scopes" :key="scope" size="sm" variant="neutral">{{ scope }}</Badge>
+                </template>
+                <Badge v-else size="sm" variant="neutral">products:read</Badge>
               </span>
             </TableCell>
             <TableCell class="text-xs"
-              ><span><RelativeTime :value="key.createdAt" /> · {{ key.createdBy }}</span></TableCell
+              ><span v-if="key"><RelativeTime :value="key.createdAt" /> · {{ key.createdBy }}</span></TableCell
             >
             <TableCell class="text-xs"
-              ><RelativeTime v-if="key.lastUsedAt" :value="key.lastUsedAt" /><template v-else>—</template></TableCell
+              ><RelativeTime v-if="key?.lastUsedAt" :value="key.lastUsedAt" /><template v-else-if="key"
+                >—</template
+              ></TableCell
             >
             <TableCell label="" class="justify-end text-right">
-              <Badge v-if="key.revokedAt" size="sm" variant="outline" :title="`Revoked ${when(key.revokedAt)}`">Revoked</Badge>
-              <ConfirmPopover
-                v-else
-                :title="`Revoke ${key.name}?`"
-                confirm-label="Revoke"
-                tone="danger"
-                placement="top-end"
-                :on-confirm="() => confirmRevoke(key)"
-              >
-                <Button size="sm" variant="ghost" tone="danger">Revoke</Button>
-              </ConfirmPopover>
+              <template v-if="key">
+                <Badge v-if="key.revokedAt" size="sm" variant="outline" :title="`Revoked ${when(key.revokedAt)}`"
+                  >Revoked</Badge
+                >
+                <ConfirmPopover
+                  v-else
+                  :title="`Revoke ${key.name}?`"
+                  confirm-label="Revoke"
+                  tone="danger"
+                  placement="top-end"
+                  :on-confirm="() => confirmRevoke(key)"
+                >
+                  <Button size="sm" variant="ghost" tone="danger">Revoke</Button>
+                </ConfirmPopover>
+              </template>
+              <Button v-else size="sm" variant="ghost" tone="danger">Revoke</Button>
             </TableCell>
           </TableRow>
         </TableBody>
       </Table>
     </Panel>
-  </LoadState>
+  </DataRegion>
   <CreateKeyModal :open="creating" :create="create" @update:open="creating = $event" />
 </template>

@@ -11,7 +11,9 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  Text,
 } from "@wow-two-beta/ui-vue/presentation/display";
+import { DataRegion, useSkeletonItems } from "@wow-two-beta/ui-vue/presentation/feedback";
 import {
   SelectPicker,
   SelectPickerContent,
@@ -24,7 +26,7 @@ import { PageHeaderActions } from "@wow-two-beta/ui-vue/presentation/layout";
 import { useAuditEntries, useAuditVerification } from "@/application/audit";
 import { useRefresh } from "@/bootstrap/query";
 import { AuditArea, AuditExtensions, AuditOutcome } from "@/domain/audit";
-import { LoadState, Panel, RefreshButton } from "@/presentation/common/components";
+import { Panel, RefreshButton } from "@/presentation/common/components";
 
 /** Lists every operator action from the hash-chained audit trail, newest first, with the chain's verification. */
 defineOptions({ name: "ActivityPage" });
@@ -47,6 +49,8 @@ const refresh = useRefresh(() => Promise.all([entries.refetch(), verification.re
 const visible = computed(() =>
   (entries.data.value ?? []).filter((entry) => AuditExtensions.inArea(entry.action, area.value)),
 );
+/** The shown entries, or placeholder rows until the first window arrives. */
+const rows = useSkeletonItems(() => (entries.data.value ? visible.value : undefined), 8);
 const oldest = computed(() => entries.data.value?.at(-1)?.sequence ?? null);
 const hasOlder = computed(() => (entries.data.value?.length ?? 0) === WindowSize && (oldest.value ?? 0) > 1);
 
@@ -67,40 +71,51 @@ function newer(): void {
       ><RefreshButton size="md" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh"
     /></PageHeaderActions
     >
-    <section
-      class="flex flex-wrap items-start gap-3 rounded-2xl border border-border bg-card p-5"
-      aria-label="Audit chain"
-      role="status"
-    >
-      <template v-if="verification.data.value?.intact">
-        <ShieldCheck :size="22" class="mt-0.5 shrink-0 text-success" aria-hidden="true" />
-        <div>
-          <p class="font-medium">
-            Chain intact · {{ verification.data.value.entries }}
-            {{ verification.data.value.entries === 1 ? "entry" : "entries" }}
-          </p>
-          <p class="mt-1 text-sm text-muted-foreground">
-            No stored entry was edited, reordered or removed from the middle. A verified chain cannot show that
-            the newest entries were kept.
-          </p>
+    <section class="rounded-2xl border border-border bg-card p-5" aria-label="Audit chain">
+      <DataRegion
+        :is-first-load="verification.isFirstLoad.value"
+        :error="verification.error.value"
+        :has-data="Boolean(verification.data.value)"
+        loading-label="Verifying the audit chain"
+      >
+        <template #unavailable>
+          <Text class="text-sm text-muted-foreground">The chain could not be verified.</Text>
+        </template>
+        <div class="flex items-start gap-3" role="status">
+          <ShieldAlert
+            v-if="verification.data.value && !verification.data.value.intact"
+            :size="22"
+            class="mt-0.5 shrink-0 text-destructive"
+            aria-hidden="true"
+          />
+          <ShieldCheck
+            v-else
+            :size="22"
+            class="mt-0.5 shrink-0"
+            :class="verification.data.value ? 'text-success' : 'text-muted-foreground'"
+            aria-hidden="true"
+          />
+          <div v-if="verification.data.value && !verification.data.value.intact" class="min-w-0">
+            <Text class="font-medium text-destructive">
+              Chain broken at entry {{ verification.data.value.brokenSequence }}:
+              {{ AuditExtensions.breakLabel(verification.data.value.reason) }}
+            </Text>
+            <Text class="mt-1 text-sm text-muted-foreground">
+              Someone with database access changed the trail. Entries from that point on are not proven.
+            </Text>
+          </div>
+          <div v-else class="min-w-0">
+            <Text class="font-medium">
+              Chain intact · {{ verification.data.value?.entries ?? 0 }}
+              {{ verification.data.value?.entries === 1 ? "entry" : "entries" }}
+            </Text>
+            <Text class="mt-1 text-sm text-muted-foreground">
+              No stored entry was edited, reordered or removed from the middle. A verified chain cannot show that
+              the newest entries were kept.
+            </Text>
+          </div>
         </div>
-      </template>
-      <template v-else-if="verification.data.value">
-        <ShieldAlert :size="22" class="mt-0.5 shrink-0 text-destructive" aria-hidden="true" />
-        <div>
-          <p class="font-medium text-destructive">
-            Chain broken at entry {{ verification.data.value.brokenSequence }}:
-            {{ AuditExtensions.breakLabel(verification.data.value.reason) }}
-          </p>
-          <p class="mt-1 text-sm text-muted-foreground">
-            Someone with database access changed the trail. Entries from that point on are not proven.
-          </p>
-        </div>
-      </template>
-      <p v-else-if="verification.error.value" class="text-sm text-muted-foreground">
-        The chain could not be verified: {{ verification.error.value.message }}
-      </p>
-      <p v-else class="text-sm text-muted-foreground">Verifying the audit chain…</p>
+      </DataRegion>
     </section>
 
     <Panel title="Operator actions" description="Every deploy, build, reconcile, secret and product change, newest first.">
@@ -116,18 +131,19 @@ function newer(): void {
               :label="label" /></SelectPickerContent
         ></SelectPicker>
       </template>
-      <LoadState
-        :loading="entries.isFirstLoad.value"
+      <DataRegion
+        :is-first-load="entries.isFirstLoad.value"
+        :is-refreshing="entries.isRefreshing.value"
         :error="entries.error.value"
         :has-data="Boolean(entries.data.value)"
-        :empty="visible.length === 0"
+        :is-empty="Boolean(entries.data.value) && visible.length === 0"
         empty-title="No actions recorded"
         :empty-description="
           area === AuditArea.All
             ? 'Deploys, builds, reconciles and secret or product changes appear here.'
             : 'No action in this area within the entries shown.'
         "
-        @retry="entries.refetch()"
+        loading-label="Loading operator actions"
       >
         <Table
           density="compact"
@@ -145,27 +161,28 @@ function newer(): void {
             </TableRow>
           </TableHead>
           <TableBody>
-            <TableRow v-for="entry in visible" :key="entry.sequence">
+            <TableRow v-for="(entry, index) in rows" :key="entry?.sequence ?? `placeholder-${index}`">
+              <!-- A placeholder row leaves composite cells empty, so each draws one bar. -->
               <TableCell class="whitespace-nowrap text-xs text-muted-foreground">
-                <span class="block">
+                <span v-if="entry" class="block">
                   <RelativeTime class="block" :value="entry.occurredAt" />
                   <span class="mt-1 block font-mono">#{{ entry.sequence }}</span>
                 </span>
               </TableCell>
-              <TableCell class="text-xs">{{ entry.actor }}</TableCell>
+              <TableCell class="text-xs">{{ entry?.actor }}</TableCell>
               <TableCell>
-                <span class="block min-w-0">
+                <span v-if="entry" class="block min-w-0">
                   <span class="block text-sm font-medium">{{ AuditExtensions.label(entry.action) }}</span>
                   <span v-if="entry.detail" class="block text-xs text-muted-foreground">{{ entry.detail }}</span>
                 </span>
               </TableCell>
-              <TableCell class="font-mono text-xs break-all">{{ entry.subject }}</TableCell>
+              <TableCell class="font-mono text-xs break-all">{{ entry?.subject }}</TableCell>
               <TableCell>
                 <span class="block min-w-0">
-                  <Badge :variant="entry.outcome === AuditOutcome.Succeeded ? 'success' : 'danger'">{{
-                    entry.outcome === AuditOutcome.Succeeded ? "Done" : "Failed"
+                  <Badge :variant="entry?.outcome === AuditOutcome.Failed ? 'danger' : 'success'">{{
+                    entry?.outcome === AuditOutcome.Failed ? "Failed" : "Done"
                   }}</Badge>
-                  <span v-if="entry.reason" class="mt-1 block max-w-xs text-xs text-muted-foreground">{{
+                  <span v-if="entry?.reason" class="mt-1 block max-w-xs text-xs text-muted-foreground">{{
                     entry.reason
                   }}</span>
                 </span>
@@ -173,7 +190,7 @@ function newer(): void {
             </TableRow>
           </TableBody>
         </Table>
-      </LoadState>
+      </DataRegion>
       <div v-if="windows.length || hasOlder" class="mt-4 flex justify-between gap-3">
         <Button variant="ghost" size="sm" :is-disabled="!windows.length || entries.isPreviousData.value" @click="newer"
           >Newer</Button

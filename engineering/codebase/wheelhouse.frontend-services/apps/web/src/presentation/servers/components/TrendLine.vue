@@ -14,6 +14,7 @@ export interface TrendLineProps {
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { Text } from "@wow-two-beta/ui-vue/presentation/display";
 
 import { USAGE_THRESHOLDS } from "@/domain/servers";
 
@@ -42,9 +43,9 @@ const summary = computed(() =>
 <template>
   <div class="min-w-0 rounded-xl border border-border bg-card p-3">
     <div class="mb-2 flex items-center justify-between gap-3 text-xs">
-      <span class="truncate text-muted-foreground">{{ props.label }}</span>
-      <span v-if="props.points.length >= 2" class="font-medium tabular-nums"
-        >peak {{ Math.round(peak) }}%</span
+      <Text as="span" class="truncate text-muted-foreground">{{ props.label }}</Text>
+      <Text v-if="props.points.length >= 2" as="span" class="font-medium tabular-nums"
+        >peak {{ Math.round(peak) }}%</Text
       >
     </div>
     <svg
@@ -77,8 +78,8 @@ const summary = computed(() =>
         vector-effect="non-scaling-stroke"
       />
     </svg>
-    <p v-else class="flex h-12 items-center text-xs text-muted-foreground">
-      Not enough readings yet
-    </p>
+    <div v-else class="flex h-12 items-center">
+      <Text as="span" class="text-xs text-muted-foreground">Not enough readings yet</Text>
+    </div>
   </div>
 </template>

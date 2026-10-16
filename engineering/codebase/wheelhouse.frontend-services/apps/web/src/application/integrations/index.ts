@@ -27,6 +27,10 @@ export function useIntegrationKeys() {
   return {
     keys,
     loading: list.loading,
+    /** True until the first list arrives: the page renders placeholder rows. */
+    isFirstLoad: list.isFirstLoad,
+    /** Whether a list has arrived, so a later failure keeps it on screen. */
+    hasData: computed(() => list.data.value !== undefined),
     error,
     reload: async () => {
       await list.refetch();

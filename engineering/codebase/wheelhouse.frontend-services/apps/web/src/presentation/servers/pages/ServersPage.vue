@@ -12,7 +12,9 @@ import {
   TableRow,
   TableCell,
   TableHeaderCell,
+  Text,
 } from '@wow-two-beta/ui-vue/presentation/display';
+import { DataRegion, useSkeletonItems } from '@wow-two-beta/ui-vue/presentation/feedback';
 import {
   SelectPicker,
   SelectPickerTrigger,
@@ -36,7 +38,7 @@ import {
 } from '@/domain/servers';
 import type { VaultDefinition } from '@/domain/secrets';
 import { Measures } from '@/domain/common';
-import { Panel, LoadState, RefreshButton } from '@/presentation/common/components';
+import { Panel, RefreshButton } from '@/presentation/common/components';
 import PortfolioAttention from '../components/PortfolioAttention.vue';
 import ResourceMeter from '../components/ResourceMeter.vue';
 import TrendLine from '../components/TrendLine.vue';
@@ -71,7 +73,17 @@ const provider = ref<string | null>(null);
 const visible = computed(() =>
   (servers.data.value ?? []).filter((server) => !provider.value || server.provider === provider.value),
 );
+/** The servers, or placeholder panels until the first inventory read arrives. */
+const serverRows = useSkeletonItems(() => (servers.data.value ? visible.value : undefined), 2);
+/** The environment bindings, or placeholder rows until the first read arrives. */
+const targetRows = useSkeletonItems(() => targets.data.value, 3);
 const groups = computed(() => ServerExtensions.byServer(vitals.data.value?.targets ?? []));
+/** The host readings of one server; none for a placeholder panel. */
+const hostOf = (server: Server | undefined) =>
+  server ? ServerExtensions.hostOf(groups.value.get(server.slug) ?? []) : null;
+/** The vaults on one server, or a placeholder row until the first vault catalog arrives. */
+const vaultRows = (server: Server | undefined): ReadonlyArray<VaultDefinition | undefined> =>
+  vaults.loading.value || !server ? [undefined] : vaultsOn(server.slug);
 const TrendLabels: Record<TrendRange, string> = { day: 'Last 24 hours', week: 'Last 7 days', month: 'Last 30 days' };
 const trendRange = ref<TrendRange>('day');
 const history = useVitalsHistory(() => TrendRanges[trendRange.value]);
@@ -119,58 +131,63 @@ const trendWindow = computed(() => {
     >
       {{ vitals.error.value.message }} Last available readings remain visible.
     </p>
-    <LoadState
-      :loading="servers.loading.value"
+    <DataRegion
+      :is-first-load="servers.isFirstLoad.value"
+      :is-refreshing="servers.isRefreshing.value"
       :error="servers.error.value"
       :has-data="Boolean(servers.data.value)"
-      :empty="!visible.length"
+      :is-empty="Boolean(servers.data.value) && !visible.length"
       empty-title="No servers"
       :empty-description="provider ? 'No server matches this provider.' : 'Add one to deploy to it.'"
-      @retry="servers.refetch"
+      loading-label="Loading servers"
     >
       <div class="grid items-start gap-5 2xl:grid-cols-2">
         <Panel
-          v-for="server in visible"
-          :key="server.slug"
-          :title="server.name"
-          :description="`${server.host} · ${server.region} · SSH ${server.sshUser}${server.sshPort === 22 ? '' : `:${server.sshPort}`}`"
+          v-for="(server, index) in serverRows"
+          :key="server?.slug ?? `placeholder-${index}`"
+          :title="server?.name ?? 'Server'"
+          :description="
+            server
+              ? `${server.host} · ${server.region} · SSH ${server.sshUser}${server.sshPort === 22 ? '' : `:${server.sshPort}`}`
+              : 'host · region · SSH user'
+          "
         >
           <template #actions>
-            <Badge>{{ VpsProviderLabels[server.provider] }}</Badge>
+            <Badge>{{ server ? VpsProviderLabels[server.provider] : 'Provider' }}</Badge>
             <Button
               size="sm"
               variant="ghost"
               tone="neutral"
-              :aria-label="`Edit ${server.name}`"
-              @click="serverForm = { open: true, server }"
+              :aria-label="`Edit ${server?.name ?? 'server'}`"
+              @click="server && (serverForm = { open: true, server })"
             >
               <Pencil :size="14" />
             </Button>
           </template>
-          <div v-if="ServerExtensions.hostOf(groups.get(server.slug) ?? [])" class="mb-5 grid gap-3 sm:grid-cols-2">
-            <ResourceMeter
-              label="CPU load"
-              :value="ServerExtensions.loadPercent(ServerExtensions.hostOf(groups.get(server.slug) ?? [])!)"
-              :refreshing="refresh.refreshing.value"
-            />
-            <ResourceMeter
-              label="Memory"
-              :value="ServerExtensions.memoryPercent(ServerExtensions.hostOf(groups.get(server.slug) ?? [])!)"
-              :refreshing="refresh.refreshing.value"
-            />
-            <ResourceMeter
-              v-for="disk in ServerExtensions.hostOf(groups.get(server.slug) ?? [])?.disks"
-              :key="disk.path"
-              :label="`Disk · ${disk.path}`"
-              :value="ServerExtensions.diskPercent(disk)"
-              :detail="`${Measures.bytes(disk.freeBytes)} free of ${Measures.bytes(disk.totalBytes)}`"
-              :refreshing="refresh.refreshing.value"
-            />
-          </div>
-          <p v-else class="mb-5 text-sm text-muted-foreground">
-            {{ vitals.loading.value ? 'Reading host vitals…' : 'Host vitals are unavailable.' }}
-          </p>
-          <section class="mb-5" :aria-label="`${server.name} trends`">
+          <DataRegion :is-first-load="vitals.isFirstLoad.value" loading-label="Reading host vitals" class="mb-5">
+            <div v-if="hostOf(server) || !server || vitals.isFirstLoad.value" class="grid gap-3 sm:grid-cols-2">
+              <ResourceMeter
+                label="CPU load"
+                :value="hostOf(server) ? ServerExtensions.loadPercent(hostOf(server)!) : null"
+                :refreshing="refresh.refreshing.value"
+              />
+              <ResourceMeter
+                label="Memory"
+                :value="hostOf(server) ? ServerExtensions.memoryPercent(hostOf(server)!) : null"
+                :refreshing="refresh.refreshing.value"
+              />
+              <ResourceMeter
+                v-for="disk in hostOf(server)?.disks"
+                :key="disk.path"
+                :label="`Disk · ${disk.path}`"
+                :value="ServerExtensions.diskPercent(disk)"
+                :detail="`${Measures.bytes(disk.freeBytes)} free of ${Measures.bytes(disk.totalBytes)}`"
+                :refreshing="refresh.refreshing.value"
+              />
+            </div>
+            <Text v-else class="text-sm text-muted-foreground">Host vitals are unavailable.</Text>
+          </DataRegion>
+          <section class="mb-5" :aria-label="`${server?.name ?? 'Server'} trends`">
             <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h3 class="text-xs font-medium text-muted-foreground">Trends · sampled every few minutes</h3>
               <SelectPicker v-model="trendRange" :get-option-label="(value) => TrendLabels[value as TrendRange]"
@@ -187,105 +204,125 @@ const trendWindow = computed(() => {
             <p v-if="history.error.value" class="text-xs text-muted-foreground">
               Trends are unavailable: {{ history.error.value.message }}
             </p>
-            <div v-else class="grid gap-3 sm:grid-cols-3">
+            <DataRegion
+              v-else
+              :is-first-load="history.isFirstLoad.value"
+              loading-label="Reading trends"
+              class="grid gap-3 sm:grid-cols-3"
+            >
               <TrendLine
                 label="CPU load"
-                :points="hostTrend(history.data.value ?? [], server.slug, 'loadPercent')"
+                :points="server ? hostTrend(history.data.value ?? [], server.slug, 'loadPercent') : []"
                 v-bind="trendWindow"
               />
               <TrendLine
                 label="Memory"
-                :points="hostTrend(history.data.value ?? [], server.slug, 'memoryPercent')"
+                :points="server ? hostTrend(history.data.value ?? [], server.slug, 'memoryPercent') : []"
                 v-bind="trendWindow"
               />
               <TrendLine
                 label="Fullest disk"
-                :points="hostTrend(history.data.value ?? [], server.slug, 'diskPercent')"
+                :points="server ? hostTrend(history.data.value ?? [], server.slug, 'diskPercent') : []"
                 v-bind="trendWindow"
               />
-            </div>
+            </DataRegion>
           </section>
-          <section class="mb-5" :aria-label="`${server.name} vaults`">
+          <section class="mb-5" :aria-label="`${server?.name ?? 'Server'} vaults`">
             <div class="mb-2 flex items-center justify-between gap-2">
               <h3 class="text-xs font-medium text-muted-foreground">Vaults</h3>
-              <Button size="sm" variant="ghost" @click="vaultForm = { open: true, server: server.slug, vault: null }">
+              <Button
+                size="sm"
+                variant="ghost"
+                @click="server && (vaultForm = { open: true, server: server.slug, vault: null })"
+              >
                 <template #leading><Plus :size="14" /></template>Add vault
               </Button>
             </div>
-            <ul v-if="vaultsOn(server.slug).length" class="divide-y divide-border rounded-xl border border-border">
-              <li v-for="vault in vaultsOn(server.slug)" :key="vault.slug" class="flex items-center gap-3 p-3 text-sm">
-                <KeyRound :size="14" class="shrink-0 text-muted-foreground" />
-                <span class="font-medium">{{ vault.name }}</span>
-                <span class="min-w-0 truncate font-mono text-xs text-muted-foreground">{{ vault.url }}</span>
-                <Button
-                  class="ml-auto"
-                  size="sm"
-                  variant="ghost"
-                  tone="neutral"
-                  :aria-label="`Edit ${vault.name}`"
-                  @click="vaultForm = { open: true, server: server.slug, vault }"
+            <DataRegion :is-first-load="vaults.loading.value" loading-label="Reading vaults">
+              <ul v-if="vaultRows(server).length" class="divide-y divide-border rounded-xl border border-border">
+                <li
+                  v-for="(vault, row) in vaultRows(server)"
+                  :key="vault?.slug ?? `placeholder-${row}`"
+                  class="flex items-center gap-3 p-3 text-sm"
                 >
-                  <Pencil :size="14" />
-                </Button>
-              </li>
-            </ul>
-            <p v-else class="text-sm text-muted-foreground">{{ vaults.loading.value ? 'Reading vaults…' : 'No vault.' }}</p>
+                  <KeyRound :size="14" class="shrink-0 text-muted-foreground" />
+                  <Text as="span" class="font-medium">{{ vault?.name }}</Text>
+                  <Text as="span" class="min-w-0 truncate font-mono text-xs text-muted-foreground" skeleton-width="12rem">{{
+                    vault?.url
+                  }}</Text>
+                  <Button
+                    class="ml-auto"
+                    size="sm"
+                    variant="ghost"
+                    tone="neutral"
+                    :aria-label="`Edit ${vault?.name ?? 'vault'}`"
+                    @click="server && vault && (vaultForm = { open: true, server: server.slug, vault })"
+                  >
+                    <Pencil :size="14" />
+                  </Button>
+                </li>
+              </ul>
+              <p v-else class="text-sm text-muted-foreground">No vault.</p>
+            </DataRegion>
           </section>
-          <section
-            v-for="target in groups.get(server.slug) ?? []"
-            :key="target.targetId"
-            class="mt-4 border-t border-border pt-4"
-          >
-            <div class="mb-3 flex flex-wrap items-center gap-2">
-              <ServerIcon :size="15" />
-              <h3 class="text-sm font-medium">{{ target.targetId }}</h3>
-              <span class="ml-auto text-xs text-muted-foreground">{{ target.release ?? 'Release unknown' }}</span>
-            </div>
-            <p v-if="!target.ok" role="alert" class="text-sm text-destructive">
-              {{ target.reason ?? 'This target could not be read.' }}
-            </p>
-            <template v-else>
-              <p v-for="problem in target.problems" :key="problem" class="mb-2 text-sm text-warning">{{ problem }}</p>
-              <div
-                v-for="container in target.containers ?? []"
-                :key="container.service"
-                class="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3 text-sm"
-              >
-                <div>
-                  <p class="font-medium">{{ container.service }}</p>
-                  <p class="mt-1 text-xs text-muted-foreground">
-                    {{ ServerExtensions.containerLabel(container) }} · {{ container.restarts }} restarts · started
-                    <RelativeTime v-if="container.startedAt" :value="container.startedAt" /><template v-else
-                      >—</template
-                    >
-                  </p>
-                </div>
-                <div class="text-right text-xs tabular-nums">
-                  <p>
-                    {{ container.cpuPercent == null ? 'CPU unavailable' : `${container.cpuPercent.toFixed(1)}% CPU` }}
-                  </p>
-                  <p class="mt-1 text-muted-foreground">
-                    {{ Measures.bytes(container.memoryBytes) }} / {{ Measures.bytes(container.memoryLimitBytes) }}
-                  </p>
-                </div>
+          <template v-if="server">
+            <section
+              v-for="target in groups.get(server.slug) ?? []"
+              :key="target.targetId"
+              class="mt-4 border-t border-border pt-4"
+            >
+              <div class="mb-3 flex flex-wrap items-center gap-2">
+                <ServerIcon :size="15" />
+                <h3 class="text-sm font-medium">{{ target.targetId }}</h3>
+                <span class="ml-auto text-xs text-muted-foreground">{{ target.release ?? 'Release unknown' }}</span>
               </div>
-              <p v-if="target.containers == null" class="text-sm text-muted-foreground">
-                Container readings are unavailable.
+              <p v-if="!target.ok" role="alert" class="text-sm text-destructive">
+                {{ target.reason ?? 'This target could not be read.' }}
               </p>
-              <p v-else-if="!target.containers.length" class="text-sm text-muted-foreground">No containers observed.</p>
-            </template>
-          </section>
+              <template v-else>
+                <p v-for="problem in target.problems" :key="problem" class="mb-2 text-sm text-warning">{{ problem }}</p>
+                <div
+                  v-for="container in target.containers ?? []"
+                  :key="container.service"
+                  class="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3 text-sm"
+                >
+                  <div>
+                    <p class="font-medium">{{ container.service }}</p>
+                    <p class="mt-1 text-xs text-muted-foreground">
+                      {{ ServerExtensions.containerLabel(container) }} · {{ container.restarts }} restarts · started
+                      <RelativeTime v-if="container.startedAt" :value="container.startedAt" /><template v-else
+                        >—</template
+                      >
+                    </p>
+                  </div>
+                  <div class="text-right text-xs tabular-nums">
+                    <p>
+                      {{ container.cpuPercent == null ? 'CPU unavailable' : `${container.cpuPercent.toFixed(1)}% CPU` }}
+                    </p>
+                    <p class="mt-1 text-muted-foreground">
+                      {{ Measures.bytes(container.memoryBytes) }} / {{ Measures.bytes(container.memoryLimitBytes) }}
+                    </p>
+                  </div>
+                </div>
+                <p v-if="target.containers == null" class="text-sm text-muted-foreground">
+                  Container readings are unavailable.
+                </p>
+                <p v-else-if="!target.containers.length" class="text-sm text-muted-foreground">No containers observed.</p>
+              </template>
+            </section>
+          </template>
         </Panel>
       </div>
-    </LoadState>
+    </DataRegion>
     <Panel title="Environment bindings" description="Each environment connects one product to one configured host.">
-      <LoadState
-        :loading="targets.loading.value"
+      <DataRegion
+        :is-first-load="targets.isFirstLoad.value"
+        :is-refreshing="targets.isRefreshing.value"
         :error="targets.error.value"
         :has-data="Boolean(targets.data.value)"
-        :empty="!targets.data.value?.length"
+        :is-empty="Boolean(targets.data.value) && !targets.data.value?.length"
         empty-title="No deployment targets"
-        @retry="targets.refetch"
+        loading-label="Loading environment bindings"
       >
         <div class="overflow-x-auto">
           <Table density="compact"
@@ -295,9 +332,9 @@ const trendWindow = computed(() => {
                 ><TableHeaderCell>Host</TableHeaderCell><TableHeaderCell>Provider</TableHeaderCell></TableRow
               ></TableHead
             ><TableBody
-              ><TableRow v-for="target in targets.data.value" :key="target.id"
+              ><TableRow v-for="(target, index) in targetRows" :key="target?.id ?? `placeholder-${index}`"
                 ><TableCell
-                  ><div class="min-w-0">
+                  ><div v-if="target" class="min-w-0">
                     <RouterLink
                       v-if="workspaceLinks.has(target.id)"
                       :to="workspaceLinks.get(target.id)!"
@@ -307,14 +344,16 @@ const trendWindow = computed(() => {
                     <span v-else class="font-medium">{{ target.environment }}</span>
                     <p class="text-xs text-muted-foreground">{{ target.id }}</p>
                   </div></TableCell
-                ><TableCell>{{ target.product }}</TableCell
-                ><TableCell>{{ target.host }}</TableCell
-                ><TableCell>{{ VpsProviderLabels[target.provider as VpsProvider] ?? target.provider }}</TableCell></TableRow
+                ><TableCell>{{ target?.product }}</TableCell
+                ><TableCell>{{ target?.host }}</TableCell
+                ><TableCell>{{
+                  target ? (VpsProviderLabels[target.provider as VpsProvider] ?? target.provider) : ''
+                }}</TableCell></TableRow
               ></TableBody
             ></Table
           >
         </div>
-      </LoadState>
+      </DataRegion>
     </Panel>
     <ServerFormModal
       :open="serverForm.open"
