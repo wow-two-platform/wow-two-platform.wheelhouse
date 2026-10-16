@@ -28,7 +28,7 @@ const rows = useSkeletonItems(() => targets.data.value, 3);
       class="mb-4"
       severity="warning"
       title="Release comparison unavailable"
-      :description="releases.error.value.message"
+      description="Drift against the latest published release shows once the catalog loads."
     />
     <DataRegion
       :is-first-load="targets.isFirstLoad.value"
