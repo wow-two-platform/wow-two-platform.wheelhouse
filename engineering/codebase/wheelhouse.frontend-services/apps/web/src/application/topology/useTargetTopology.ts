@@ -10,6 +10,5 @@ export function useTargetTopology(target: MaybeRefOrGetter<string | null>) {
     queryFn: ({ signal }) =>
       topologyApi.getTargetTopology(toValue(target) ?? "", signal),
     enabled: () => Boolean(toValue(target)),
-    meta: { suppressGlobalError: true },
   });
 }

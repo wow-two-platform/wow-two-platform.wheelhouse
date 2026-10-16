@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { RouterView, useRouter } from 'vue-router';
 import { ColorModeProvider } from '@wow-two-beta/ui-vue/foundation/primitives';
+import { FeedbackToastHost } from '@wow-two-beta/ui-vue/presentation/feedback';
 import { useAuth } from '@/application/auth';
 import SignInScreen from '@/presentation/auth/SignInScreen.vue';
 import { BootSplash } from '@/presentation/shell';
@@ -39,5 +40,7 @@ watch(progress, (value) => {
     </AppLayout>
     <SignInScreen v-else-if="!auth.loading.value" :error="auth.error.value" @sign-in="auth.signIn" />
     <BootSplash :is-open="booting" :value="progress" />
+    <!-- Carries query failures: a region that fails to load shows neutral copy, the reason arrives here. -->
+    <FeedbackToastHost />
   </ColorModeProvider>
 </template>

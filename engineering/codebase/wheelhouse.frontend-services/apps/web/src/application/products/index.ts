@@ -22,6 +22,7 @@ export function useProducts() {
       { signal },
     ) => productsApi.updateLifecycle(slug, value, signal),
     invalidates: () => [ProductKeys.list],
+    meta: { suppressGlobalError: true },
   });
   const refreshIdentity = useAppMutation({
     mutationFn: (slug: string, { signal }) => productsApi.refreshIdentity(slug, signal),

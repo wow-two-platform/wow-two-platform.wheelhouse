@@ -16,10 +16,12 @@ export function useIntegrationKeys() {
     mutationFn: (body: CreateIntegrationKeyRequest, { signal }) =>
       integrationKeysApi.createKey(body, signal),
     invalidates,
+    meta: { suppressGlobalError: true },
   });
   const revoke = useAppMutation({
     mutationFn: (id: string, { signal }) => integrationKeysApi.revokeKey(id, signal),
     invalidates,
+    meta: { suppressGlobalError: true },
   });
   const keys = computed(() => list.data.value ?? []);
   const error = computed(() => list.error.value?.message ?? null);

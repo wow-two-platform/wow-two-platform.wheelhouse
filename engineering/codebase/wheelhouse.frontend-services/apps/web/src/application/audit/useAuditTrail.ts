@@ -22,6 +22,5 @@ export function useAuditVerification() {
   return useAppQuery({
     key: AuditKeys.verification,
     queryFn: ({ signal }) => auditApi.verify(signal),
-    meta: { suppressGlobalError: true },
   });
 }
