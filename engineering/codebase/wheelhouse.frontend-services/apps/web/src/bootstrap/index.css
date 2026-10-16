@@ -18,7 +18,6 @@
   --color-sidebar-active: var(--color-primary-soft);
   --color-sidebar-border: var(--color-border);
   --color-sidebar-accent: var(--color-primary);
-  --color-navigation: #fffffff2;
 
   --color-chart-1: #2e735f;
   --color-chart-2: #8c693b;
@@ -134,7 +133,6 @@
   --color-info-soft: #293b44;
   --color-info-soft-foreground: #b6d6e7;
 
-  --color-navigation: #1b2420f2;
   --color-chart-1: #98d1b5;
   --color-chart-2: #d9b583;
   --color-chart-3: #b7bee9;
@@ -184,11 +182,6 @@
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-}
-
-/* Sticky navigation can pass over any content, so it uses a denser translucent fill. */
-@utility wh-glass-navigation {
-  --wh-glass-color: var(--color-navigation);
 }
 
 /* A nested header or rail borrows the outer material without another blur pass. */

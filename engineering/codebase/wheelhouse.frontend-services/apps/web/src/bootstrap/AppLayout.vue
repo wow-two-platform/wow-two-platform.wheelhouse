@@ -10,6 +10,7 @@ export interface AppLayoutProps {
 import { useTemplateRef, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import { Badge } from '@wow-two-beta/ui-vue/presentation/display';
+import { AppShell, AppShellContent, AppShellHeader, AppShellMain } from '@wow-two-beta/ui-vue/presentation/layout';
 import { AppNavLink, RoutePageHeader } from '@wow-two-beta/ui-vue/router';
 import { useApiConnection } from '@/application/system';
 import { BrandWordmark, ProfileMenu } from '@/presentation/shell';
@@ -25,25 +26,23 @@ const system = useApiConnection();
 const consoleVersion = __APP_VERSION__;
 /** A numbered build shows as `v0.3.4`; a local build shows `dev`. @internal */
 const versionLabel = /^\d/.test(consoleVersion) ? `v${consoleVersion}` : consoleVersion;
-const mainElement = useTemplateRef<HTMLElement>('main');
+const main = useTemplateRef<{ el: HTMLElement | null }>('main');
 
-/** The main region is the scroll container, so a new page starts at its top. */
+/* The main region is the scroll container, so a new page starts at its top. A selection inside a page (a query
+   change) keeps its place; the list-detail pages manage their own scroll as their panes swap. */
 watch(
   () => route.path,
-  () => mainElement.value?.scrollTo({ top: 0 }),
+  () => main.value?.el?.scrollTo({ top: 0 }),
 );
 </script>
 <template>
-  <!-- The frame owns the viewport: the header spans the full window and only the main region scrolls, so no
+  <!-- The shell owns the viewport: the header spans the full window and only the main region scrolls, so no
        platform scrollbar ever cuts the header short. -->
-  <div class="wh-ambient flex h-dvh flex-col overflow-hidden text-foreground">
-    <a
-      href="#main-content"
-      class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-card focus:p-3"
-      >Skip to content</a
-    >
-    <header class="wh-glass wh-glass-navigation relative z-30 shrink-0 border-b">
-      <div class="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-7 px-4 sm:px-6 xl:px-8">
+  <AppShell class="wh-ambient">
+    <AppShellHeader height="auto" variant="glass" class="p-0">
+      <!-- One row on wider screens; on phones the navigation wraps to its own row and scrolls sideways. Its edges
+           follow the content's gutter and 1536px measure. -->
+      <div class="mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-x-7 px-4 sm:px-6 lg:px-8">
         <RouterLink
           :to="{ path: '/', query: route.query }"
           class="flex h-[72px] shrink-0 items-center gap-2.5"
@@ -58,7 +57,7 @@ watch(
         </RouterLink>
         <nav
           aria-label="Primary navigation"
-          class="order-3 -mx-4 flex w-[calc(100%+2rem)] shrink-0 gap-1 overflow-x-auto px-4 pb-2 md:order-none md:mx-0 md:w-auto md:shrink md:flex-1 md:p-0"
+          class="order-3 -mx-4 flex w-[calc(100%+2rem)] shrink-0 gap-1 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:w-[calc(100%+3rem)] sm:px-6 md:order-none md:mx-0 md:w-auto md:shrink md:flex-1 md:p-0"
         >
           <AppNavLink
             v-for="place in AppPlaces"
@@ -81,18 +80,13 @@ watch(
           />
         </div>
       </div>
-    </header>
-    <main
-      id="main-content"
-      ref="main"
-      tabindex="-1"
-      class="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable] focus:outline-none"
-    >
-      <div class="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:py-8 xl:px-8">
+    </AppShellHeader>
+    <AppShellMain ref="main">
+      <AppShellContent gutter="lg" max-width="2xl">
         <!-- The route handle's title and description; a page's PageHeaderActions land beside them. -->
         <RoutePageHeader class="mb-6" />
         <slot />
-      </div>
-    </main>
-  </div>
+      </AppShellContent>
+    </AppShellMain>
+  </AppShell>
 </template>
