@@ -41,7 +41,7 @@ ssh-keygen -l -f "$public_key" >/dev/null
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 deploy_user=wheelhouse-deploy
 deploy_root=/srv/wheelhouse
-for source in platform.compose.yml tailscale-serve.json prepare.py prepare_canary.py authorize-runner.sh; do
+for source in platform.compose.yml tailscale-serve.json control-only.yml prepare.py prepare_canary.py authorize-runner.sh; do
     [[ -f "$script_dir/$source" ]] || { echo "Missing bootstrap asset: $source" >&2; exit 1; }
 done
 # Fail rather than removing a pre-existing container stack's engine packages.
@@ -114,6 +114,9 @@ install -m 0600 -o "$deploy_user" -g "$deploy_group" \
     "$script_dir/platform.compose.yml" "$deploy_root/platform/compose.yml"
 install -m 0644 -o "$deploy_user" -g "$deploy_group" \
     "$script_dir/tailscale-serve.json" "$deploy_root/platform/tailscale-serve.json"
+# The console entry points require this middleware; Traefik refuses their routes until it exists.
+install -m 0600 -o "$deploy_user" -g "$deploy_group" \
+    "$script_dir/control-only.yml" "$deploy_root/ingress/control-only.yml"
 install -m 0500 -o "$deploy_user" -g "$deploy_group" \
     "$script_dir/prepare.py" "$script_dir/prepare_canary.py" "$deploy_root/bootstrap/"
 # The administrator runs this one; the deploy account must not be able to change it.
@@ -125,16 +128,20 @@ chown "$deploy_user:$deploy_group" "$deploy_root/platform/host.env"
 chmod 0600 "$deploy_root/platform/host.env"
 
 # Fixed addresses make forwarded-header trust explicit. An incompatible existing network is refused.
-if ! docker network inspect platform >/dev/null 2>&1; then
-    docker network create --driver bridge --subnet 172.30.0.0/24 --gateway 172.30.0.1 platform >/dev/null
-fi
-docker network inspect platform | python3 -c '
+# control: consoles, PostgreSQL, Traefik. platform: product and canary workloads, PostgreSQL, Traefik.
+ensure_network() {
+    local name=$1 subnet=$2 gateway=$3
+    if ! docker network inspect "$name" >/dev/null 2>&1; then
+        docker network create --driver bridge --subnet "$subnet" --gateway "$gateway" "$name" >/dev/null
+    fi
+    docker network inspect "$name" | python3 -c '
 import json, sys
-network = json.load(sys.stdin)[0]
-if network.get("Driver") != "bridge" or network.get("IPAM", {}).get("Config") != [
-    {"Subnet": "172.30.0.0/24", "Gateway": "172.30.0.1"}
-]:
-    sys.exit("Existing platform network differs; review addresses before proceeding.")
-'
+network, subnet, gateway = json.load(sys.stdin)[0], sys.argv[1], sys.argv[2]
+if network.get("Driver") != "bridge" or network.get("IPAM", {}).get("Config") != [{"Subnet": subnet, "Gateway": gateway}]:
+    sys.exit("Existing " + network.get("Name", "?") + " network differs; review addresses before proceeding.")
+' "$subnet" "$gateway"
+}
+ensure_network platform 172.30.0.0/24 172.30.0.1
+ensure_network control 172.30.1.0/24 172.30.1.1
 docker compose version
 echo 'Host dependencies prepared. Complete private settings and access checks in vps.md before starting services.'

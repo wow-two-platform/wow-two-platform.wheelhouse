@@ -1,6 +1,6 @@
 # Wheelhouse dev VPS
 
-*Last updated: 2026-10-14*
+*Last updated: 2026-10-16*
 
 This bootstrap prepares the private control-plane host on Ubuntu 26.04 amd64: `wheelhouse-prod` and
 `wheelhouse-dev` side by side, each with its own database and sign-in. GitHub builds the image; the existing
@@ -16,6 +16,9 @@ This bootstrap prepares the private control-plane host on Ubuntu 26.04 amd64: `w
 | [Runner authorization](authorize-runner.sh) | VPS, administrator | A console's own runner SSH identity for this host |
 | [Identity template](identity.example.json) | Copy to a private VPS file | Real OAuth credentials and owner allowlist, supplied by the operator |
 | [Platform Compose](platform.compose.yml) | VPS | PostgreSQL 16, private Traefik ingress and the canary's tailnet nodes |
+| [Console allowlist](control-only.yml) | VPS ingress folder | Traefik middleware: the console entry points accept only the host itself |
+| [Tailnet policy](tailnet-policy.hujson) | Tailscale admin console | Owner devices reach consoles, SSH and canary sites; tagged nodes reach nothing |
+| [Network migration](migrate-control-network.sh) | VPS, administrator, once | Moves an existing host onto the `control` and `platform` split |
 
 The scripts do not accept SSH host keys, enroll Tailscale, change firewall/sshd policy, fetch operator
 credentials or start Wheelhouse. They are executable preparation assets, not evidence of deployment.
@@ -57,10 +60,20 @@ It does not silently remove an existing engine or alter SSH/firewall configurati
 
 ## Private network and HTTPS
 
-The external Docker network `platform` uses `172.30.0.0/24`, gateway `172.30.0.1`.
-Traefik is `172.30.0.2`; PostgreSQL is `172.30.0.3`. Docker refuses conflicting subnet creation.
-If this subnet conflicts with the host or tailnet routes, review all addresses in these assets together
-before bootstrap; do not silently reuse another network. The console trusts only Traefik's exact address.
+Two external Docker networks keep workloads away from the consoles:
+
+| Network | Subnet, gateway | Members |
+|---|---|---|
+| `control` | `172.30.1.0/24`, `172.30.1.1` | Both consoles, PostgreSQL `172.30.1.3`, Traefik `172.30.1.2` |
+| `platform` | `172.30.0.0/24`, `172.30.0.1` | Product and canary workloads, the canary tailnet nodes, PostgreSQL `172.30.0.3`, Traefik `172.30.0.2` |
+
+A workload shares PostgreSQL and Traefik with the consoles but no network with them. Traefik's console entry
+points (`private`, `dev`) also carry the `control-only` middleware, which accepts only loopback and the two
+gateways, so a workload that forges a console hostname at Traefik gets 403. Docker refuses conflicting subnet
+creation; if a subnet conflicts with host or tailnet routes, review all addresses in these assets together.
+The console trusts forwarded headers only from Traefik's `control` address. Consoles still reach the host's SSH at
+`172.30.0.1`, which stays a host address on every bridge. An existing host moves with
+`sudo bash migrate-control-network.sh`; it reports a workload's 403 and that the console is unreachable.
 
 Enroll the VPS in the operator's actual tailnet, with ordinary OpenSSH retained:
 
@@ -104,6 +117,22 @@ Only `127.0.0.1:18080` and `127.0.0.1:18082` are published. Neither PostgreSQL n
 [Docker-published ports](https://docs.docker.com/engine/network/port-publishing/) require explicit binding;
 UFW alone is insufficient. Verify external denial of app/database ports over IPv4 and IPv6.
 Narrow public SSH only after a second verified private SSH session and provider-console recovery succeed.
+
+### Tailnet policy
+
+Tailscale's default policy lets every node reach every other. [tailnet-policy.hujson](tailnet-policy.hujson)
+replaces it: owner devices reach the consoles (443, 8443), administrator SSH and the canary sites, and every tagged
+node reaches nothing. Tag the control-plane machine `tag:control` (Machines › Edit ACL tags) first, then paste the
+policy under Access controls; its tests refuse a save that would let a canary node or the host reach anything.
+Verify from a canary node afterwards:
+
+
+```sh
+sudo docker exec wheelhouse-platform-canary-dev-1 sh -c \
+  'echo | timeout 5 tailscale --socket=/tmp/tailscaled.sock nc <control-host> 443 && echo REACHABLE || echo blocked'
+```
+
+Before the policy this prints `REACHABLE`; after it, `blocked`.
 
 ## Private configuration
 
@@ -192,7 +221,7 @@ canary.<tailnet>      -> Tailscale container 172.30.0.12 -> Traefik canary :8084
   as `TS_AUTHKEY=…`. Each node logs in once and keeps its state in its own volume.
 - `prepare_canary.py --tailnet <tailnet>` creates `wheelhousecanary_{dev,test,prod}` and `config/canary-{env}.json`.
 - `sudo bash authorize-runner.sh wheelhouse-dev <server-id>` gives dev Wheelhouse its own key for this host; the
-  server's address inside the console is the platform gateway, `172.30.0.1`.
+  server's address inside the console is the host's `platform` bridge address, `172.30.0.1`.
 - Only Wheelhouse prod deploys products. Dev never receives a products host's key.
 
 ## GitHub-hosted CI access

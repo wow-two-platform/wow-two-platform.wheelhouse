@@ -36,9 +36,9 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual((self.root, "wheelhouse-dev"), runner.validate_target(target))
         runner.validate_settings(target, "console", ["ConnectionStrings:Wheelhouse", "Identity:GitHub:ClientId",
                                                     "Identity:GitHub:ClientSecret", "Identity:AllowedGitHubLogins"])
-        self.assertEqual("platform", runner.base_environment(target)["PLATFORM_NETWORK"])
+        self.assertEqual("control", runner.base_environment(target)["PLATFORM_NETWORK"])
         self.assertEqual("", config["Deployment"]["Rehearsal"])
-        self.assertEqual(["172.30.0.2"], config["Deployment"]["TrustedProxies"])
+        self.assertEqual(["172.30.1.2"], config["Deployment"]["TrustedProxies"])
         self.assertEqual("http://127.0.0.1:18082", target["ingress"]["privateProbe"])
         self.assertEqual((8443, ["dev"]), (target["ingress"]["port"], target["ingress"]["privateEntryPoints"]))
         self.assertEqual(target["ingress"]["probe"], target["ingress"]["privateProbe"])

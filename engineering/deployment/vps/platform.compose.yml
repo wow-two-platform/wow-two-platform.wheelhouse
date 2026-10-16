@@ -1,4 +1,6 @@
 # Host platform only. The product is deployed from its immutable release bundle by runner.py.
+# Two networks: `control` holds the consoles, PostgreSQL and Traefik; `platform` holds product and canary workloads,
+# which reach PostgreSQL and Traefik but never a console. Console entry points also refuse any source but the host.
 name: wheelhouse-platform
 # One tailnet node per canary environment gives each its own name and certificate; Serve hands HTTPS to Traefik's
 # canary entry point, which routes by that name. The auth key file is operator-placed and only read at first login.
@@ -30,6 +32,9 @@ services:
       - ./.secrets/postgres-password:/run/bootstrap/postgres-password:ro
       - ./.secrets/wheelhouse-dev.sql:/docker-entrypoint-initdb.d/10-wheelhouse-dev.sql:ro
     networks:
+      control:
+        ipv4_address: 172.30.1.3
+        aliases: [wheelhouse-postgres]
       platform:
         ipv4_address: 172.30.0.3
         aliases: [wheelhouse-postgres]
@@ -50,10 +55,13 @@ services:
       - --providers.file.directory=/etc/traefik/routes
       - --providers.file.watch=true
       # private serves prod on Tailscale HTTPS 443; dev serves Wheelhouse dev on 8443 under the same hostname.
+      # Both accept only host-originated traffic (Serve through the published ports), never a workload container.
       - --entryPoints.private.address=:8080
-      - --entryPoints.private.forwardedHeaders.trustedIPs=127.0.0.1/32,172.30.0.1/32
+      - --entryPoints.private.forwardedHeaders.trustedIPs=127.0.0.1/32,172.30.0.1/32,172.30.1.1/32
+      - --entryPoints.private.http.middlewares=control-only@file
       - --entryPoints.dev.address=:8082
-      - --entryPoints.dev.forwardedHeaders.trustedIPs=127.0.0.1/32,172.30.0.1/32
+      - --entryPoints.dev.forwardedHeaders.trustedIPs=127.0.0.1/32,172.30.0.1/32,172.30.1.1/32
+      - --entryPoints.dev.http.middlewares=control-only@file
       # canary serves only the canary environments, reached through their own tailnet nodes.
       - --entryPoints.canary.address=:8084
       - --entryPoints.canary.forwardedHeaders.trustedIPs=127.0.0.1/32,172.30.0.1/32,172.30.0.10/31,172.30.0.12/32
@@ -67,6 +75,8 @@ services:
     volumes:
       - ../ingress:/etc/traefik/routes:ro
     networks:
+      control:
+        ipv4_address: 172.30.1.2
       platform:
         ipv4_address: 172.30.0.2
     healthcheck:
@@ -103,6 +113,9 @@ services:
     volumes: [canary:/var/lib/tailscale, ./tailscale-serve.json:/config/serve.json:ro]
     networks: { platform: { ipv4_address: 172.30.0.12 } }
 networks:
+  control:
+    name: control
+    external: true
   platform:
     name: platform
     external: true

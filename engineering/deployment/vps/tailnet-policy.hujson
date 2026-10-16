@@ -1,0 +1,24 @@
+// Tailnet access policy for the control-plane host. Paste it in the Tailscale admin console, Access controls.
+// Owner devices reach the consoles, admin SSH and the canary sites; tagged nodes reach nothing at all.
+// Tag the control-plane machine `tag:control` in the admin console (Machines › Edit ACL tags) before applying.
+{
+  "tagOwners": {
+    "tag:control": ["autogroup:admin"],
+    "tag:canary": ["autogroup:admin"],
+  },
+
+  "grants": [
+    // The owner's own devices reach each other.
+    {"src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["*"]},
+    // Prod console on 443, dev console on 8443, administrator SSH on 22.
+    {"src": ["autogroup:member"], "dst": ["tag:control"], "ip": ["tcp:443", "tcp:8443", "tcp:22"]},
+    // Each canary environment answers on its own node.
+    {"src": ["autogroup:member"], "dst": ["tag:canary"], "ip": ["tcp:443"]},
+  ],
+
+  // Rejected on save if a canary node or the control host could reach anything.
+  "tests": [
+    {"src": "tag:canary", "deny": ["tag:control:443", "tag:control:8443", "tag:control:22", "tag:canary:443"]},
+    {"src": "tag:control", "deny": ["tag:canary:443"]},
+  ],
+}

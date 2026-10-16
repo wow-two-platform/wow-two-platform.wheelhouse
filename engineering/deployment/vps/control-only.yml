@@ -1,0 +1,10 @@
+# Installed beside the route files; the console entry points (private, dev) attach it to every router.
+# Allowed sources are the host itself: loopback and the two bridge gateways that published ports arrive from.
+http:
+  middlewares:
+    control-only:
+      ipAllowList:
+        sourceRange:
+          - 127.0.0.1/32
+          - 172.30.0.1/32
+          - 172.30.1.1/32

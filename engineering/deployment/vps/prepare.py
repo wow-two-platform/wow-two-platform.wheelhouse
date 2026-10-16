@@ -77,12 +77,12 @@ def prepare(root, identity_file, hostname, environment="dev", database=create_da
         "Identity": {"GitHub": {key: github[key] for key in ("ClientId", "ClientSecret")},
                      "AllowedGitHubLogins": logins},
         "DataProtection": {"KeyPath": "/data/keys"},
-        "Deployment": {"Root": "/data/deployments", "Rehearsal": "", "TrustedProxies": ["172.30.0.2"]},
+        "Deployment": {"Root": "/data/deployments", "Rehearsal": "", "TrustedProxies": ["172.30.1.2"]},
     }
     target = {
         "product": "wheelhouse", "environment": environment, "root": str(root),
         "settings": {"console": str(config / shape["settings"])},
-        "variables": {"PLATFORM_NETWORK": "platform"},
+        "variables": {"PLATFORM_NETWORK": "control"},
         "ingress": {"scheme": "https", "port": shape["port"], "entryPoints": [shape["entryPoint"]],
                     "privateEntryPoints": [shape["entryPoint"]], "certResolver": None,
                     "hosts": {"console": hostname}, "probe": shape["probe"], "privateProbe": shape["probe"]},
