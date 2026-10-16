@@ -236,6 +236,7 @@ User 2026-10-15: layout, motion and notifications must work flawlessly and look 
 
 | Item | Type | Notes |
 |---|---|---|
+| Fix the Servers page leaving old content after a dialog closes | fix | The SDK `Tooltip` inside `RelativeTime` throws reading `refs`, and the next page change keeps the old page; root cause in the UI SDK (also on 0.0.13) |
 | Fix environments listing as dev, prod, test | fix | Order them dev, test, prod everywhere |
 | Fix a new server reading "Host vitals are unavailable" until a target exists | fix | Read host vitals from the server itself |
 | Fix a finished job's inspector refetching vitals, history and stats | fix | `useDeploymentOutcome` refetches them when it opens a job that already finished |

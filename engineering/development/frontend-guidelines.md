@@ -1,6 +1,6 @@
 # Wheelhouse — Frontend Development Guidelines
 
-*Last updated: 2026-10-15*
+*Last updated: 2026-10-16*
 
 Shared frontend conventions live in `wow-two-ws/conventions/development/frontend/`.
 This document records Wheelhouse-specific choices; the workspace design is in
@@ -9,7 +9,7 @@ This document records Wheelhouse-specific choices; the workspace design is in
 ## Stack
 
 - Vue 3 Composition API · Vue Router · Vite 6 · TypeScript (strict) · Tailwind v4 · Node 24 · pnpm workspace.
-- UI: published **`@wow-two-beta/ui-vue@0.0.13`**. Use its components, forms, queries and Result contracts. Shared capability gaps belong in the SDK; product composition stays here.
+- UI: published **`@wow-two-beta/ui-vue@0.0.14`**. Use its components, forms, queries and Result contracts. Shared capability gaps belong in the SDK; product composition stays here.
 - `bootstrap/index.css` imports `tailwindcss` and `@wow-two-beta/ui-vue/styles.css`; its `@source` includes SDK utilities.
 - `bootstrap/query.ts` and `bootstrap/form.ts` are the application adapter pins. Integration functions decode wire payloads with Zod and return SDK `Result<T, ApiFailure>` values.
 
