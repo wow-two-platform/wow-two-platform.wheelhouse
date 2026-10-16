@@ -33,6 +33,7 @@ import {
 import {
   Modal,
   ModalBody,
+  ModalClose,
   ModalContent,
   ModalDescription,
   ModalFooter,
@@ -265,8 +266,10 @@ function close(open: boolean): void {
     @update:open="close"
   >
     <ModalContent class="w-full max-w-xl">
+      <!-- The choose step has no Cancel, and a full-screen phone panel has no outside to click. -->
+      <ModalClose />
       <template v-if="step === 'choose'">
-        <ModalHeader>
+        <ModalHeader class="pr-8">
           <ModalTitle>Deploy a release</ModalTitle>
           <ModalDescription
             >Choose an environment and a published release, then check
@@ -513,7 +516,7 @@ function close(open: boolean): void {
         </ModalFooter>
       </template>
       <template v-else-if="step === 'confirm'">
-        <ModalHeader>
+        <ModalHeader class="pr-8">
           <ModalTitle
             >Deploy {{ selectedRelease?.release }} to {{ target }}?</ModalTitle
           >
@@ -593,7 +596,7 @@ function close(open: boolean): void {
         </ModalFooter>
       </template>
       <template v-else>
-        <ModalHeader>
+        <ModalHeader class="pr-8">
           <ModalTitle
             >{{
               outcome.pending.value || !outcome.data.value
