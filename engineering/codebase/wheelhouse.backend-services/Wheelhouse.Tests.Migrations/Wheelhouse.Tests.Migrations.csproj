@@ -14,13 +14,13 @@
       (Constraint / EnumRoundTrip / Store over RelationalTestDb) lives in Wheelhouse.Tests.Integration.
 
       Testing.Data brings the harness + Testcontainers.PostgreSql / Npgsql / Respawn transitively; the bespoke migrator
-      engine (MigrationOptions in …Data.Migrations.Bespoke) comes from WoW2.Sdk.Backend.Beta.
+      engine (MigrationOptions in …Data.Migrations.Bespoke) comes from WoW2.Sdk.Beta.Be.
     -->
     <ItemGroup>
         <!-- MigratorHarness / MigratorPostgresFixture / MigrationHistoryRow + transitive Testcontainers.PostgreSql / Npgsql / Respawn. -->
-        <PackageReference Include="WoW2.Sdk.Backend.Beta.Testing.Data"/>
+        <PackageReference Include="WoW2.Sdk.Beta.Be.Testing.Data"/>
         <!-- The bespoke migrator engine — MigrationOptions (AllowRollback) the apply/rollback scenarios configure. -->
-        <PackageReference Include="WoW2.Sdk.Backend.Beta"/>
+        <PackageReference Include="WoW2.Sdk.Beta.Be"/>
         <PackageReference Include="Microsoft.NET.Test.Sdk"/>
         <PackageReference Include="xunit"/>
         <PackageReference Include="xunit.runner.visualstudio"/>

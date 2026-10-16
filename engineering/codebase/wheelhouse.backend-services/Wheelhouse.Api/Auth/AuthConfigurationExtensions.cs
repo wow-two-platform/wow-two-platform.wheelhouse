@@ -1,12 +1,12 @@
 using Wheelhouse.Domain.Integrations.Constants;
 using Wheelhouse.Infrastructure.Settings;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Configuration;
-using WoW.Two.Sdk.Backend.Beta.Identity.ApiKeys;
-using WoW.Two.Sdk.Backend.Beta.Identity.Authorization;
-using WoW.Two.Sdk.Backend.Beta.Identity.Claims;
-using WoW.Two.Sdk.Backend.Beta.Identity.Cookies;
-using WoW.Two.Sdk.Backend.Beta.Identity.OAuth.GitHub;
+using WoW.Two.Sdk.Beta.Be.Foundation.Configuration;
+using WoW.Two.Sdk.Beta.Be.Identity.ApiKeys;
+using WoW.Two.Sdk.Beta.Be.Identity.Authorization;
+using WoW.Two.Sdk.Beta.Be.Identity.Claims;
+using WoW.Two.Sdk.Beta.Be.Identity.Cookies;
+using WoW.Two.Sdk.Beta.Be.Identity.OAuth.GitHub;
 
 namespace Wheelhouse.Api.Auth;
 

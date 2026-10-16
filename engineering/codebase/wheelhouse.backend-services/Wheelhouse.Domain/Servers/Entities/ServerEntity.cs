@@ -1,6 +1,6 @@
 using Wheelhouse.Domain.Servers.Enums;
 using Wheelhouse.Domain.Servers.Models;
-using WoW.Two.Sdk.Backend.Beta.Data.Abstractions;
+using WoW.Two.Sdk.Beta.Be.Data.Abstractions;
 
 namespace Wheelhouse.Domain.Servers.Entities;
 

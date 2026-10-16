@@ -1,8 +1,8 @@
 using AwesomeAssertions;
 using Wheelhouse.Tests.Migrations.Harness;
 using Wheelhouse.Persistence;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Results;
-using WoW.Two.Sdk.Backend.Beta.Testing.Data.Migrations;
+using WoW.Two.Sdk.Beta.Be.Foundation.Results;
+using WoW.Two.Sdk.Beta.Be.Testing.Data.Migrations;
 
 namespace Wheelhouse.Tests.Migrations.Tests;
 
@@ -19,7 +19,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
     private static readonly string[] SchemaTables = ["servers", "products", "deployments", "domains", "secrets"];
 
     /// <summary>Builds a migrator over the shared container DB reading the real embedded wheelhouse migrations (001-baseline through 008-product-manifests).</summary>
-    private MigratorHarness CreateMigrator(Action<WoW.Two.Sdk.Backend.Beta.Data.Migrations.Bespoke.MigrationOptions>? configure = null) =>
+    private MigratorHarness CreateMigrator(Action<WoW.Two.Sdk.Beta.Be.Data.Migrations.Bespoke.MigrationOptions>? configure = null) =>
         MigratorHarness.CreatePostgres(fixture.ConnectionString, typeof(WheelhouseDbContext).Assembly, configure);
 
     [Fact]

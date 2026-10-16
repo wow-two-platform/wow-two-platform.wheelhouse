@@ -1,6 +1,6 @@
 using Wheelhouse.Domain.Targets.Enums;
 using Wheelhouse.Domain.Targets.Models;
-using WoW.Two.Sdk.Backend.Beta.Data.Abstractions;
+using WoW.Two.Sdk.Beta.Be.Data.Abstractions;
 
 namespace Wheelhouse.Domain.Targets.Entities;
 

@@ -3,8 +3,8 @@ using Wheelhouse.Application.Inventory;
 using Wheelhouse.Application.Servers.Models;
 using Wheelhouse.Domain.Servers.Enums;
 using Wheelhouse.Domain.Servers.Models;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Cqrs;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Servers.Commands;
 

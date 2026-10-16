@@ -3,7 +3,7 @@
   <ItemGroup>
     <!-- AppResult / ISuccessResult / IFailureResult — the result-pattern carrier the per-operation
          result containers implement. Flows transitively to Application + Api. -->
-    <PackageReference Include="WoW2.Sdk.Backend.Beta" />
+    <PackageReference Include="WoW2.Sdk.Beta.Be" />
   </ItemGroup>
 
 </Project>

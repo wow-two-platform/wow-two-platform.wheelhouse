@@ -12,9 +12,9 @@ using Wheelhouse.Infrastructure.Settings;
 using Wheelhouse.Infrastructure.Vaults;
 using Wheelhouse.Persistence;
 using Wheelhouse.Tests.E2E.Harness;
-using WoW.Two.Sdk.Backend.Beta.Data.Migrations.Bespoke;
-using WoW.Two.Sdk.Backend.Beta.Http.Safety;
-using WoW.Two.Sdk.Backend.Beta.Integrations.GitHub;
+using WoW.Two.Sdk.Beta.Be.Data.Migrations.Bespoke;
+using WoW.Two.Sdk.Beta.Be.Http.Safety;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 
 namespace Wheelhouse.Tests.E2E.Tests;
 

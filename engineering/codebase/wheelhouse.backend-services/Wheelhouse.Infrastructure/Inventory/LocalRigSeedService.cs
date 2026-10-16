@@ -7,8 +7,8 @@ using Wheelhouse.Domain.Targets.Entities;
 using Wheelhouse.Domain.Vaults.Entities;
 using Wheelhouse.Infrastructure.Inventory.Mappers;
 using Wheelhouse.Infrastructure.Inventory.Models;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Serialization;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Foundation.Serialization;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Infrastructure.Inventory;
 

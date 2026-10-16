@@ -2,8 +2,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Testcontainers.PostgreSql;
-using WoW.Two.Sdk.Backend.Beta.Testing;
-using WoW.Two.Sdk.Backend.Beta.Testing.Containers.Postgres;
+using WoW.Two.Sdk.Beta.Be.Testing;
+using WoW.Two.Sdk.Beta.Be.Testing.Containers.Postgres;
 
 namespace Wheelhouse.Tests.E2E.Harness;
 

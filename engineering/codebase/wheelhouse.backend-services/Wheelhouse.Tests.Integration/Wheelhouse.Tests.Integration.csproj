@@ -16,9 +16,9 @@
     -->
     <ItemGroup>
         <!-- ContainerFixtureBase + PostgresFixture (Testcontainers + Respawn) + transitive Testcontainers.PostgreSql / Npgsql / Respawn. -->
-        <PackageReference Include="WoW2.Sdk.Backend.Beta.Testing"/>
+        <PackageReference Include="WoW2.Sdk.Beta.Be.Testing"/>
         <!-- RelationalTestDb<TContext> + TestSetupOptions (the provider-switchable EF-model harness) + transitive EFCore.Sqlite/Npgsql. -->
-        <PackageReference Include="WoW2.Sdk.Backend.Beta.Testing.Data"/>
+        <PackageReference Include="WoW2.Sdk.Beta.Be.Testing.Data"/>
         <PackageReference Include="Microsoft.EntityFrameworkCore"/>
         <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL"/>
         <PackageReference Include="EFCore.NamingConventions"/>

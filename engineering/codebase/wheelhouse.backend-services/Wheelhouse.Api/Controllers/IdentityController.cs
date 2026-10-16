@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using WoW.Two.Sdk.Backend.Beta.Identity.Claims;
+using WoW.Two.Sdk.Beta.Be.Identity.Claims;
 
 namespace Wheelhouse.Api.Controllers;
 

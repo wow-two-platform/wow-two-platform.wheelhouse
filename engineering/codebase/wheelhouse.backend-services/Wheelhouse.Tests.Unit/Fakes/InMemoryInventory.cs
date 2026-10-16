@@ -1,7 +1,7 @@
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Domain.Servers.Entities;
 using Wheelhouse.Domain.Vaults.Entities;
-using WoW.Two.Sdk.Backend.Beta.Testing.Data.Repositories;
+using WoW.Two.Sdk.Beta.Be.Testing.Data.Repositories;
 
 namespace Wheelhouse.Tests.Unit.Fakes;
 

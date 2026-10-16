@@ -2,8 +2,8 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Products.Models;
-using WoW.Two.Sdk.Backend.Beta.Caching.Core;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Caching.Core;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Infrastructure.Products;
 

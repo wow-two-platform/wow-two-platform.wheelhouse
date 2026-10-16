@@ -5,7 +5,7 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Products;
 using Wheelhouse.Infrastructure.Products;
 using Wheelhouse.Tests.Unit.Fakes;
-using WoW.Two.Sdk.Backend.Beta.Testing.Http;
+using WoW.Two.Sdk.Beta.Be.Testing.Http;
 
 namespace Wheelhouse.Tests.Unit.Products;
 

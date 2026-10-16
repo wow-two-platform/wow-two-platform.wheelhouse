@@ -1,5 +1,5 @@
-using WoW.Two.Sdk.Backend.Beta.Caching.Core;
-using WoW.Two.Sdk.Backend.Beta.Integrations.GitHub;
+using WoW.Two.Sdk.Beta.Be.Caching.Core;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 
 namespace Wheelhouse.Infrastructure.Products;
 

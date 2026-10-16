@@ -1,5 +1,5 @@
 using Wheelhouse.Application.Abstractions;
-using WoW.Two.Sdk.Backend.Beta.Identity.ApiKeys;
+using WoW.Two.Sdk.Beta.Be.Identity.ApiKeys;
 
 namespace Wheelhouse.Api.Auth;
 

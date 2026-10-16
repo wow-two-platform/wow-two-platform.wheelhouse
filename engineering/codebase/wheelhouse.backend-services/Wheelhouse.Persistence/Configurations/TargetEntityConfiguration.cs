@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Servers.Entities;
 using Wheelhouse.Domain.Targets.Entities;
-using WoW.Two.Sdk.Backend.Beta.Data.EntityFrameworkCore.Json;
+using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore.Json;
 
 namespace Wheelhouse.Persistence.Configurations;
 

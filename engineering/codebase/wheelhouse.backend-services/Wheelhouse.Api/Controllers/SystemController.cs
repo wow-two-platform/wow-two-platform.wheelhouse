@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Wheelhouse.Api.Configurations;
 using Wheelhouse.Infrastructure.Settings;
-using WoW.Two.Sdk.Backend.Beta.Web.SystemStatus;
+using WoW.Two.Sdk.Beta.Be.Web.SystemStatus;
 
 namespace Wheelhouse.Api.Controllers;
 

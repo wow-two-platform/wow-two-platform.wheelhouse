@@ -1,5 +1,5 @@
 using Wheelhouse.Domain.Audit.Entities;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Audit;
+using WoW.Two.Sdk.Beta.Be.Foundation.Audit;
 
 namespace Wheelhouse.Persistence.Audit;
 

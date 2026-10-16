@@ -1,5 +1,5 @@
 using Wheelhouse.Domain.Products.Models;
-using WoW.Two.Sdk.Backend.Beta.Data.Abstractions;
+using WoW.Two.Sdk.Beta.Be.Data.Abstractions;
 
 namespace Wheelhouse.Domain.Products.Entities;
 

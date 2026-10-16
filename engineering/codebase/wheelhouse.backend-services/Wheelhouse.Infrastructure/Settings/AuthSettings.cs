@@ -2,7 +2,7 @@ namespace Wheelhouse.Infrastructure.Settings;
 
 /// <summary>Optional allowlist that locks who may sign in. Empty (default) = <b>open</b>: any authenticated
 /// GitHub user is admitted (self-hosted — the runner is the user). Populate only to restrict an exposed instance.
-/// Loaded via <see cref="WoW.Two.Sdk.Backend.Beta.Foundation.Configuration.ConfigurationLoader"/> from the <c>Identity</c> section.</summary>
+/// Loaded via <see cref="WoW.Two.Sdk.Beta.Be.Foundation.Configuration.ConfigurationLoader"/> from the <c>Identity</c> section.</summary>
 /// <example>Identity</example>
 public sealed record AuthSettings
 {

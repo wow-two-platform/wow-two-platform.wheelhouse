@@ -1,13 +1,13 @@
 # Wheelhouse — Backend Development Guidelines
 
-*Last updated: 2026-10-15*
+*Last updated: 2026-10-16*
 
 > Defer to the shared conventions in `wow-two-ws/conventions/development/backend/` — do not restate them. This file
 > holds only Wheelhouse deltas.
 
 ## Repo-specific deltas
 
-- **SDK:** every layer runs on `WoW2.Sdk.Backend.Beta` — host floor, mediator, `AppResult` / `AppError`, validation,
+- **SDK:** every layer runs on the be sdk (`WoW2.Sdk.Beta.Be`) — host floor, mediator, `AppResult` / `AppError`, validation,
   identity, the GitHub and GHCR clients, the bespoke SQL migrator and the test harness. New infrastructure proves inline,
   then extracts to the SDK ([backlog](../planning/backlog.md) § SDK adoption).
 - **Controllers** send a request through `ISender` and render the result with the SDK

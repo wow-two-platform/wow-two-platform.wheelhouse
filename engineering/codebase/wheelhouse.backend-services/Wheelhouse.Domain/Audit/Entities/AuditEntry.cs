@@ -1,5 +1,5 @@
-using WoW.Two.Sdk.Backend.Beta.Data.Abstractions;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Audit;
+using WoW.Two.Sdk.Beta.Be.Data.Abstractions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Audit;
 using Wheelhouse.Domain.Audit.Enums;
 
 namespace Wheelhouse.Domain.Audit.Entities;

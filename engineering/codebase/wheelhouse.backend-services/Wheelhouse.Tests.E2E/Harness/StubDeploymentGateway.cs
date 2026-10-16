@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Wheelhouse.Application.Abstractions;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Errors;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Tests.E2E.Harness;
 

@@ -12,9 +12,9 @@ using Wheelhouse.Domain.Servers.Models;
 using Wheelhouse.Domain.Vaults.Entities;
 using Wheelhouse.Tests.Unit.Fakes;
 using Microsoft.Extensions.Time.Testing;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Errors;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
-using WoW.Two.Sdk.Backend.Beta.Testing.Http;
+using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Testing.Http;
 
 namespace Wheelhouse.Tests.Unit.Vaults;
 

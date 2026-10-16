@@ -1,4 +1,4 @@
-using WoW.Two.Sdk.Backend.Beta.Foundation.Configuration;
+using WoW.Two.Sdk.Beta.Be.Foundation.Configuration;
 
 namespace Wheelhouse.Infrastructure.Settings;
 

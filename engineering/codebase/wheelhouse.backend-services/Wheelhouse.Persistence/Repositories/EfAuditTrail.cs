@@ -2,9 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Audit;
 using Wheelhouse.Domain.Audit.Entities;
-using WoW.Two.Sdk.Backend.Beta.Data.EntityFrameworkCore.Locks.Extensions;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Audit;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Audit.Validators;
+using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore.Locks.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Audit;
+using WoW.Two.Sdk.Beta.Be.Foundation.Audit.Validators;
 
 namespace Wheelhouse.Persistence.Repositories;
 

@@ -1,7 +1,7 @@
 using System.Net;
 using AwesomeAssertions;
 using Wheelhouse.Tests.E2E.Harness;
-using WoW.Two.Sdk.Backend.Beta.Testing.Web;
+using WoW.Two.Sdk.Beta.Be.Testing.Web;
 
 namespace Wheelhouse.Tests.E2E.Tests;
 

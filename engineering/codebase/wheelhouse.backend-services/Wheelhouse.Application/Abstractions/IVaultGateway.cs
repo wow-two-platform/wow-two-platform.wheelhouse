@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Wheelhouse.Application.Vaults;
 using Wheelhouse.Application.Vaults.Changes;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Abstractions;
 

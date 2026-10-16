@@ -1,6 +1,6 @@
 using AwesomeAssertions;
 using Wheelhouse.Infrastructure.Deployments.Parsers;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Errors;
+using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 
 namespace Wheelhouse.Tests.Unit.Deployments;
 

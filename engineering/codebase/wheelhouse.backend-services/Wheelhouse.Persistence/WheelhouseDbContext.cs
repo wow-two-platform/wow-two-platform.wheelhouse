@@ -9,9 +9,9 @@ using Wheelhouse.Domain.Secrets.Entities;
 using Wheelhouse.Domain.Servers.Entities;
 using Wheelhouse.Domain.Targets.Entities;
 using Wheelhouse.Domain.Vaults.Entities;
-using WoW.Two.Sdk.Backend.Beta.Data.EntityFrameworkCore;
-using WoW.Two.Sdk.Backend.Beta.Data.EntityFrameworkCore.Naming;
-using WoW.Two.Sdk.Backend.Beta.Data.EntityFrameworkCore.Sqlite;
+using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore;
+using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore.Naming;
+using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore.Sqlite;
 
 namespace Wheelhouse.Persistence;
 

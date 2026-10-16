@@ -3,8 +3,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Wheelhouse.Api.Auth;
 using Wheelhouse.Domain.Integrations.Constants;
-using WoW.Two.Sdk.Backend.Beta.Identity.ApiKeys;
-using WoW.Two.Sdk.Backend.Beta.Testing.Auth;
+using WoW.Two.Sdk.Beta.Be.Identity.ApiKeys;
+using WoW.Two.Sdk.Beta.Be.Testing.Auth;
 
 namespace Wheelhouse.Tests.E2E.Harness;
 

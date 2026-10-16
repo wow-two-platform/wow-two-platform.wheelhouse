@@ -1,5 +1,5 @@
 using Wheelhouse.Api.Configurations;
-using WoW.Two.Sdk.Backend.Beta.Data;
+using WoW.Two.Sdk.Beta.Be.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configure();

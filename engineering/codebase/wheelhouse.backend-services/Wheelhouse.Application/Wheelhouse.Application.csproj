@@ -2,7 +2,7 @@
 
   <ItemGroup>
     <!-- Mediator (IQuery/ICommand + handlers + AddMediator) + AppResult — replaces the raw MediatR ref. -->
-    <PackageReference Include="WoW2.Sdk.Backend.Beta" />
+    <PackageReference Include="WoW2.Sdk.Beta.Be" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
 

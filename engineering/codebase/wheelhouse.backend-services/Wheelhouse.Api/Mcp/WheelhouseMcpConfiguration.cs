@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Wheelhouse.Domain.Integrations.Constants;
-using WoW.Two.Sdk.Backend.Beta.Ai.Mcp;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Serialization;
-using WoW.Two.Sdk.Backend.Beta.Identity.ApiKeys;
+using WoW.Two.Sdk.Beta.Be.Ai.Mcp;
+using WoW.Two.Sdk.Beta.Be.Foundation.Serialization;
+using WoW.Two.Sdk.Beta.Be.Identity.ApiKeys;
 
 namespace Wheelhouse.Api.Mcp;
 

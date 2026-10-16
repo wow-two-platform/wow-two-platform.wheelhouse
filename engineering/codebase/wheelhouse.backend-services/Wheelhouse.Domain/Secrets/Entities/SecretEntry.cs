@@ -1,4 +1,4 @@
-using WoW.Two.Sdk.Backend.Beta.Data.Abstractions;
+using WoW.Two.Sdk.Beta.Be.Data.Abstractions;
 using Wheelhouse.Domain.Secrets.Enums;
 
 namespace Wheelhouse.Domain.Secrets.Entities;

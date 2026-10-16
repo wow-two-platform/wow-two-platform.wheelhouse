@@ -7,10 +7,10 @@ using Wheelhouse.Application.Vaults;
 using Wheelhouse.Application.Vaults.Changes;
 using Wheelhouse.Application.Vaults.Hygiene;
 using Microsoft.AspNetCore.Mvc;
-using WoW.Two.Sdk.Backend.Beta.Mediator;
-using WoW.Two.Sdk.Backend.Beta.Web.Antiforgery;
-using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
-using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
+using WoW.Two.Sdk.Beta.Be.Mediator;
+using WoW.Two.Sdk.Beta.Be.Web.Antiforgery;
+using WoW.Two.Sdk.Beta.Be.Web.Contracts;
+using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 

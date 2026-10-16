@@ -7,7 +7,7 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Tests.E2E.Harness;
 using Wheelhouse.Tests.E2E.Support;
-using WoW.Two.Sdk.Backend.Beta.Testing.Web;
+using WoW.Two.Sdk.Beta.Be.Testing.Web;
 
 namespace Wheelhouse.Tests.E2E.Tests;
 

@@ -13,8 +13,8 @@ using Wheelhouse.Application.Servers.Queries;
 using Wheelhouse.Application.Targets.Queries;
 using Wheelhouse.Infrastructure.Settings;
 using Wheelhouse.Persistence;
-using WoW.Two.Sdk.Backend.Beta.Mediator;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Mediator;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Api.Mcp;
 

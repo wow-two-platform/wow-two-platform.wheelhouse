@@ -1,6 +1,6 @@
 # Wheelhouse MCP
 
-The read-only MCP implementation is adopted with the published backend SDK `10.0.64-beta`.
+The read-only MCP implementation is adopted with the published be sdk `10.0.64-beta`.
 It exposes stateless Streamable HTTP at `/mcp` on the private API host. The rebuilt local API is running;
 an authenticated external client connection remains manual acceptance.
 
@@ -33,8 +33,8 @@ an authenticated external client connection remains manual acceptance.
 
 ## Delivery status
 
-The implementation uses the SDK `Ai/Mcp` host helpers. Every backend SDK family reference now uses
-the publicly verified `10.0.64-beta` release. No production deployment is established here.
+The implementation uses the SDK `Ai/Mcp` host helpers. Every be sdk family reference now uses
+the publicly verified `10.0.67-beta` release. No production deployment is established here.
 
 ## Adoption verification — 2026-10-06
 
@@ -47,7 +47,7 @@ the publicly verified `10.0.64-beta` release. No production deployment is establ
 ## Local verification — 2026-10-05
 
 - SDK source: isolated `HEAD` plus only the MCP/AI lane changes; unrelated staged changes excluded.
-- Local package: `WoW2.Sdk.Backend.Beta` `10.0.64-mcp.20261005.2`, with its matching data-abstractions package.
+- Local package: `WoW2.Sdk.Backend.Beta` (since renamed `WoW2.Sdk.Beta.Be`) `10.0.64-mcp.20261005.2`, with its matching data-abstractions package.
 - SDK checks: 6 passed, covering both `2025-11-25` and `2026-07-28`, scopes, statelessness and exception redaction.
 - Wheelhouse checks: 136 E2E tests passed against that package and the existing built frontend assets.
 - Verification copy: `/private/tmp/wheelhouse-mcp-verification`; package files: `/private/tmp/wheelhouse-mcp-packages`.

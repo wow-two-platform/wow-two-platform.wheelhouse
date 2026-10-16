@@ -3,10 +3,10 @@ using Wheelhouse.Api.Requests;
 using Wheelhouse.Application.Integrations.Commands;
 using Wheelhouse.Application.Integrations.Models;
 using Wheelhouse.Application.Integrations.Queries;
-using WoW.Two.Sdk.Backend.Beta.Mediator;
-using WoW.Two.Sdk.Backend.Beta.Web.Antiforgery;
-using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
-using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
+using WoW.Two.Sdk.Beta.Be.Mediator;
+using WoW.Two.Sdk.Beta.Be.Web.Antiforgery;
+using WoW.Two.Sdk.Beta.Be.Web.Contracts;
+using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 

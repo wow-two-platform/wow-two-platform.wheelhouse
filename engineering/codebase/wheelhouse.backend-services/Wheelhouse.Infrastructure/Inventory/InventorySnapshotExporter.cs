@@ -4,7 +4,7 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Infrastructure.Inventory.Mappers;
 using Wheelhouse.Infrastructure.Inventory.Models;
 using Wheelhouse.Infrastructure.Settings;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Serialization;
+using WoW.Two.Sdk.Beta.Be.Foundation.Serialization;
 
 namespace Wheelhouse.Infrastructure.Inventory;
 

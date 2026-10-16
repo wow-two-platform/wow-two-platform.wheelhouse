@@ -2,8 +2,8 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Integrations.Mappers;
 using Wheelhouse.Application.Integrations.Models;
 using Wheelhouse.Application.Integrations.Queries;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Cqrs;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Integrations.QueryHandlers;
 

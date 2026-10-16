@@ -1,4 +1,4 @@
-using WoW.Two.Sdk.Backend.Beta.Testing.Data.Migrations;
+using WoW.Two.Sdk.Beta.Be.Testing.Data.Migrations;
 
 namespace Wheelhouse.Tests.Migrations.Harness;
 

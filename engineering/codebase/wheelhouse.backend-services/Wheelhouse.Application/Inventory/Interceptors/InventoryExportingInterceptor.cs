@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Wheelhouse.Application.Abstractions;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Results;
-using WoW.Two.Sdk.Backend.Beta.Mediator;
+using WoW.Two.Sdk.Beta.Be.Foundation.Results;
+using WoW.Two.Sdk.Beta.Be.Mediator;
 
 namespace Wheelhouse.Application.Inventory.Interceptors;
 

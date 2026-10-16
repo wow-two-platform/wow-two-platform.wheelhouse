@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Domain.Integrations.Entities;
-using WoW.Two.Sdk.Backend.Beta.Data.EntityFrameworkCore.Repositories;
-using WoW.Two.Sdk.Backend.Beta.Identity.ApiKeys;
+using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore.Repositories;
+using WoW.Two.Sdk.Beta.Be.Identity.ApiKeys;
 
 namespace Wheelhouse.Persistence.Repositories;
 

@@ -3,9 +3,9 @@ using Microsoft.Extensions.Logging;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Domain.Audit.Enums;
 using Wheelhouse.Application.Audit;
-using WoW.Two.Sdk.Backend.Beta.Foundation.Errors;
-using WoW.Two.Sdk.Backend.Beta.Mediator;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
+using WoW.Two.Sdk.Beta.Be.Mediator;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Audit.Interceptors;
 

@@ -9,7 +9,7 @@
       against an ephemeral Postgres container (Testcontainers); migrate-on-boot (the bespoke SQL migrator)
       builds the schema.
 
-      Harness now rides the SDK testing package (WoW2.Sdk.Backend.Beta.Testing): WebApiTestHost<Program>,
+      Harness now rides the SDK testing package (WoW2.Sdk.Beta.Be.Testing): WebApiTestHost<Program>,
       PostgresFixture (Testcontainers + Respawn), and the Web JSON/envelope helpers all come from it. It
       transitively brings Microsoft.AspNetCore.Mvc.Testing, xunit, AwesomeAssertions, Testcontainers.PostgreSql,
       Respawn + Npgsql — so only the test RUNNER (which the helper package deliberately omits) is referenced here.
@@ -18,7 +18,7 @@
       runner, vault, icon and manifest stubs.
     -->
     <ItemGroup>
-        <PackageReference Include="WoW2.Sdk.Backend.Beta.Testing"/>
+        <PackageReference Include="WoW2.Sdk.Beta.Be.Testing"/>
         <PackageReference Include="Microsoft.NET.Test.Sdk"/>
         <PackageReference Include="xunit.runner.visualstudio"/>
     </ItemGroup>

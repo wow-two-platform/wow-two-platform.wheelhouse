@@ -3,7 +3,7 @@ using AwesomeAssertions;
 using Wheelhouse.Infrastructure.Deployments;
 using Wheelhouse.Infrastructure.Deployments.Parsers;
 using Wheelhouse.Infrastructure.Settings;
-using WoW.Two.Sdk.Backend.Beta.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Tests.Unit.Deployments;
 

@@ -6,7 +6,7 @@
 
   <ItemGroup>
     <!-- Mediator (ISender.SendAsync) + AppResult.Match — controllers dispatch + collapse the union. -->
-    <PackageReference Include="WoW2.Sdk.Backend.Beta" />
+    <PackageReference Include="WoW2.Sdk.Beta.Be" />
   </ItemGroup>
 
   <ItemGroup>

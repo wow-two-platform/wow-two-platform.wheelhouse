@@ -1,11 +1,11 @@
 using Microsoft.Extensions.DependencyInjection;
 using Wheelhouse.Infrastructure.Products;
-using WoW.Two.Sdk.Backend.Beta.Caching.Core;
-using WoW.Two.Sdk.Backend.Beta.Caching.Hybrid;
-using WoW.Two.Sdk.Backend.Beta.Integrations;
-using WoW.Two.Sdk.Backend.Beta.Integrations.GitHub;
-using WoW.Two.Sdk.Backend.Beta.Testing.Http;
-using WoW.Two.Sdk.Backend.Beta.Testing.Integrations;
+using WoW.Two.Sdk.Beta.Be.Caching.Core;
+using WoW.Two.Sdk.Beta.Be.Caching.Hybrid;
+using WoW.Two.Sdk.Beta.Be.Integrations;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
+using WoW.Two.Sdk.Beta.Be.Testing.Http;
+using WoW.Two.Sdk.Beta.Be.Testing.Integrations;
 
 namespace Wheelhouse.Tests.Unit.Fakes;
 

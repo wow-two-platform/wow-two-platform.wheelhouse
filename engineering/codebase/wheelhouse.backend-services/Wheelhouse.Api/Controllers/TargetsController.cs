@@ -5,10 +5,10 @@ using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Application.Targets.Commands;
 using Wheelhouse.Application.Targets.Models;
 using Wheelhouse.Application.Targets.Queries;
-using WoW.Two.Sdk.Backend.Beta.Mediator;
-using WoW.Two.Sdk.Backend.Beta.Web.Antiforgery;
-using WoW.Two.Sdk.Backend.Beta.Web.Contracts;
-using WoW.Two.Sdk.Backend.Beta.Web.ExceptionHandling.Extensions;
+using WoW.Two.Sdk.Beta.Be.Mediator;
+using WoW.Two.Sdk.Beta.Be.Web.Antiforgery;
+using WoW.Two.Sdk.Beta.Be.Web.Contracts;
+using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 

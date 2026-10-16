@@ -1,15 +1,15 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <BackendSdkVersion>10.0.66-beta</BackendSdkVersion>
+    <BackendSdkVersion>10.0.67-beta</BackendSdkVersion>
   </PropertyGroup>
 
-  <!-- Backend SDK: one family, bumped together. -->
+  <!-- be sdk: one family, bumped together. -->
   <ItemGroup>
-    <PackageVersion Include="WoW2.Sdk.Backend.Beta" Version="$(BackendSdkVersion)" />
-    <PackageVersion Include="WoW2.Sdk.Backend.Beta.Testing" Version="$(BackendSdkVersion)" />
-    <PackageVersion Include="WoW2.Sdk.Backend.Beta.Testing.Data" Version="$(BackendSdkVersion)" />
-    <PackageVersion Include="WoW2.Sdk.Backend.Beta.Testing.Integrations" Version="$(BackendSdkVersion)" />
+    <PackageVersion Include="WoW2.Sdk.Beta.Be" Version="$(BackendSdkVersion)" />
+    <PackageVersion Include="WoW2.Sdk.Beta.Be.Testing" Version="$(BackendSdkVersion)" />
+    <PackageVersion Include="WoW2.Sdk.Beta.Be.Testing.Data" Version="$(BackendSdkVersion)" />
+    <PackageVersion Include="WoW2.Sdk.Beta.Be.Testing.Integrations" Version="$(BackendSdkVersion)" />
   </ItemGroup>
 
   <!-- Data access. -->

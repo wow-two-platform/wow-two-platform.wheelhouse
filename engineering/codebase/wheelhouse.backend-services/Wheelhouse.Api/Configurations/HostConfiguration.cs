@@ -1,7 +1,7 @@
 using Wheelhouse.Api.Auth;
 using Wheelhouse.Api.Mcp;
-using WoW.Two.Sdk.Backend.Beta.Meta;
-using WoW.Two.Sdk.Backend.Beta.Web.ProblemDetails;
+using WoW.Two.Sdk.Beta.Be.Meta;
+using WoW.Two.Sdk.Beta.Be.Web.ProblemDetails;
 
 namespace Wheelhouse.Api.Configurations;
 
