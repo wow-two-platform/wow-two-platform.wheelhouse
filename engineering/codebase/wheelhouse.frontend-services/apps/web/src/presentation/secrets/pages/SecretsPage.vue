@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { KeyRound } from "lucide-vue-next";
+import { computed } from "vue";
+import { ChevronLeft, KeyRound } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
 import {
   Badge,
@@ -28,8 +28,12 @@ import { useInvalidate } from "@/bootstrap/query";
 import { useRefresh } from "@/bootstrap/query";
 import { VaultStatus } from "@/domain/secrets";
 import { SkeletonStateGroup, SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
-import { PageHeaderActions } from "@wow-two-beta/ui-vue/presentation/layout";
+import {
+  ListDetailLayout,
+  PageHeaderActions,
+} from "@wow-two-beta/ui-vue/presentation/layout";
 import { LoadState, Panel, RefreshButton } from "@/presentation/common/components";
+import { useListDetailRoute } from "@/presentation/common/hooks";
 import NamespaceList from "../components/NamespaceList.vue";
 import SecretsTable from "../components/SecretsTable.vue";
 import TokensTable from "../components/TokensTable.vue";
@@ -47,8 +51,14 @@ const VaultTone = {
 const { data: vaults, error } = useVaults();
 const invalidate = useInvalidate();
 const { refresh, refreshing } = useRefresh(() => invalidate(SecretKeys.vaults));
-const vault = ref("");
-const namespace = ref("");
+/* `?vault=` and `?namespace=` hold the selection; a namespace opens its detail, which replaces the list on phones. */
+const listDetail = useListDetailRoute(["namespace"]);
+/** The requested vault while the catalog has it; otherwise the first vault. */
+const vault = computed(() => {
+  const requested = listDetail.read("vault");
+  const items = vaults.value ?? [];
+  return items.find((item) => item.id === requested)?.id ?? items[0]?.id ?? "";
+});
 const selected = computed(() =>
   vaults.value?.find((item) => item.id === vault.value),
 );
@@ -59,6 +69,16 @@ const hygiene = useVaultHygiene(() =>
 const namespaces = useVaultNamespaces(() =>
   selected.value?.status === VaultStatus.Unsealed ? vault.value : "",
 );
+/**
+ * The requested namespace, or the vault's first one when none is requested. A requested namespace the vault does not
+ * have selects nothing rather than another namespace: writes go to the namespace the operator named.
+ */
+const namespace = computed(() => {
+  const requested = listDetail.read("namespace");
+  const items = namespaces.data.value;
+  if (requested === null) return items?.[0]?.slug ?? "";
+  return !items || items.some((item) => item.slug === requested) ? requested : "";
+});
 /** True until the first vault catalog and its namespaces arrive: the frame renders with placeholder values. */
 const pending = computed(
   () =>
@@ -92,27 +112,15 @@ const dueCount = computed(
     (hygieneData.value?.overdueTokens.length ?? 0),
 );
 
-/** Chooses an available vault when the catalog loads or removes the current vault. */
-watch(
-  vaults,
-  (items) => {
-    if (items && !items.some((item) => item.id === vault.value))
-      vault.value = items[0]?.id ?? "";
-  },
-  { immediate: true },
-);
-/** Resets the namespace immediately when its owning vault changes. */
-watch(
-  vault,
-  () => {
-    namespace.value = "";
-  },
-  { flush: "sync" },
-);
-
-/** Changes the authoritative vault selection. */
+/** Changes the vault; its namespaces differ, so the namespace selection clears with it. */
 function selectVault(value: unknown): void {
-  vault.value = typeof value === "string" ? value : "";
+  if (typeof value === "string" && value !== vault.value)
+    void listDetail.select({ vault: value, namespace: null });
+}
+
+/** Opens a namespace's secrets and tokens. */
+function selectNamespace(slug: string): void {
+  void listDetail.select({ vault: vault.value, namespace: slug });
 }
 </script>
 
@@ -215,63 +223,79 @@ function selectVault(value: unknown): void {
             {{ hygieneData?.tokens ?? 0 }} tokens across this vault</SkeletonStateSlot
           >
         </SkeletonStateGroup>
-        <div
-          class="grid min-h-96 overflow-hidden rounded-2xl border border-border lg:grid-cols-[15rem_minmax(0,1fr)]"
+        <ListDetailLayout
+          :is-detail-open="listDetail.isDetailOpen.value"
+          list-width="15rem"
+          back-label="Namespaces"
+          class="min-h-96 overflow-hidden rounded-2xl border border-border"
+          @back="listDetail.back"
         >
-          <aside
-            class="border-b border-border bg-muted/40 p-4 lg:border-b-0 lg:border-r"
-          >
-            <NamespaceList
-              :vault="vault"
-              :selected="namespace"
-              @select="namespace = $event"
-            />
-          </aside>
-          <section class="min-w-0 bg-card p-4 lg:p-5">
-            <template v-if="namespace || pending">
-              <div class="mb-5 flex flex-wrap items-center gap-2">
-                <KeyRound :size="16" class="text-primary" />
-                <h2 class="break-all font-mono text-sm font-semibold">
-                  <SkeletonStateSlot :is-loading="!namespace">{{
-                    namespace || "namespace"
-                  }}</SkeletonStateSlot>
-                </h2>
-              </div>
-              <TabsGroup
-                :key="`${vault}/${namespace}`"
-                default-value="secrets"
-                class="min-w-0"
-              >
-                <TabsGroupList aria-label="Namespace administration">
-                  <TabsGroupTab value="secrets">Secrets</TabsGroupTab>
-                  <TabsGroupTab value="tokens">Tokens</TabsGroupTab>
-                </TabsGroupList>
-                <TabsGroupPanel value="secrets" class="pt-5">
-                  <SecretsTable
-                    :vault="vault"
-                    :ns="namespace"
-                    :overdue="overdueSecrets"
-                  />
-                </TabsGroupPanel>
-                <TabsGroupPanel value="tokens" class="pt-5">
-                  <TokensTable
-                    :vault="vault"
-                    :ns="namespace"
-                    :flags="tokenFlags"
-                  />
-                </TabsGroupPanel>
-              </TabsGroup>
-            </template>
-            <EmptyState
-              v-else
-              size="sm"
-              title="Select a namespace"
-              description="Its secrets and product tokens open here."
+          <template #list>
+            <aside
+              class="h-full border-border bg-muted/40 p-4 lg:border-r"
             >
-              <template #icon><KeyRound :size="24" /></template>
-            </EmptyState>
-          </section>
-        </div>
+              <NamespaceList
+                :vault="vault"
+                :selected="namespace"
+                @select="selectNamespace"
+              />
+            </aside>
+          </template>
+          <!-- The pane has no gutter of its own, so the phone back control sits in a bar above the namespace. -->
+          <template #back="{ back, label }">
+            <div class="-mb-2 bg-card px-2 pt-2">
+              <Button variant="ghost" tone="neutral" size="sm" @click="back"
+                ><template #leading><ChevronLeft :size="16" /></template>{{ label }}</Button
+              >
+            </div>
+          </template>
+          <template #detail>
+            <section class="h-full min-w-0 bg-card p-4 lg:p-5">
+              <template v-if="namespace || pending">
+                <div class="mb-5 flex flex-wrap items-center gap-2">
+                  <KeyRound :size="16" class="text-primary" />
+                  <h2 class="break-all font-mono text-sm font-semibold">
+                    <SkeletonStateSlot :is-loading="!namespace">{{
+                      namespace || "namespace"
+                    }}</SkeletonStateSlot>
+                  </h2>
+                </div>
+                <TabsGroup
+                  :key="`${vault}/${namespace}`"
+                  default-value="secrets"
+                  class="min-w-0"
+                >
+                  <TabsGroupList aria-label="Namespace administration">
+                    <TabsGroupTab value="secrets">Secrets</TabsGroupTab>
+                    <TabsGroupTab value="tokens">Tokens</TabsGroupTab>
+                  </TabsGroupList>
+                  <TabsGroupPanel value="secrets" class="pt-5">
+                    <SecretsTable
+                      :vault="vault"
+                      :ns="namespace"
+                      :overdue="overdueSecrets"
+                    />
+                  </TabsGroupPanel>
+                  <TabsGroupPanel value="tokens" class="pt-5">
+                    <TokensTable
+                      :vault="vault"
+                      :ns="namespace"
+                      :flags="tokenFlags"
+                    />
+                  </TabsGroupPanel>
+                </TabsGroup>
+              </template>
+              <EmptyState
+                v-else
+                size="sm"
+                title="Select a namespace"
+                description="Its secrets and product tokens open here."
+              >
+                <template #icon><KeyRound :size="24" /></template>
+              </EmptyState>
+            </section>
+          </template>
+        </ListDetailLayout>
       </div>
     </Panel>
     </SkeletonStateGroup>

@@ -31,15 +31,6 @@ const PlaceholderRows = [
   { slug: "namespace-three", name: "Product environment" },
 ];
 
-/** Selects an available namespace when the catalog arrives or removes the current selection. */
-watch(
-  data,
-  (items) => {
-    if (items && !items.some((item) => item.slug === props.selected))
-      emit("select", items[0]?.slug ?? "");
-  },
-  { immediate: true },
-);
 /** Closes namespace creation when the vault changes. */
 watch(
   () => props.vault,

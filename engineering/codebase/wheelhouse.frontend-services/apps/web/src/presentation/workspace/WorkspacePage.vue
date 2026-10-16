@@ -31,7 +31,10 @@ import {
   ToggleInput,
 } from "@wow-two-beta/ui-vue/presentation/forms";
 import { SkeletonState } from "@wow-two-beta/ui-vue/presentation/feedback";
-import { PageHeaderActions } from "@wow-two-beta/ui-vue/presentation/layout";
+import {
+  ListDetailLayout,
+  PageHeaderActions,
+} from "@wow-two-beta/ui-vue/presentation/layout";
 import { useProducts } from "@/application/products";
 import { useServerVitals } from "@/application/servers";
 import {
@@ -71,6 +74,7 @@ import {
   useDeployModal,
 } from "@/presentation/deployments";
 import { LoadState, RefreshButton } from "@/presentation/common/components";
+import { useListDetailRoute } from "@/presentation/common/hooks";
 import { ResourceMeter } from "@/presentation/servers";
 import EnvironmentCompare from "./EnvironmentCompare.vue";
 import ServiceMap from "./ServiceMap.vue";
@@ -86,6 +90,8 @@ const vitals = useServerVitals();
 const history = useDeploymentHistory();
 const releases = useReleaseArtifacts();
 const deploy = useDeployModal();
+/* Any selection parameter opens the product's workspace; on phones it replaces the product list. */
+const listDetail = useListDetailRoute(["product", "target", "inspect", "item"]);
 const search = ref("");
 const reconciling = ref(false);
 const inspectorElement = ref<HTMLElement | null>(null);
@@ -336,720 +342,730 @@ function openDeploy(job?: DeploymentJob): void {
       <template #emptyActions
         ><Button as-child><RouterLink to="/products">Register product</RouterLink></Button></template
       >
-      <div
-        class="grid items-start gap-5 lg:grid-cols-[200px_minmax(0,1fr)] 2xl:grid-cols-[224px_minmax(0,1fr)_300px] xl:grid-cols-[190px_minmax(0,1fr)_280px]"
+      <ListDetailLayout
+        :is-detail-open="listDetail.isDetailOpen.value"
+        list-width="var(--wh-rail-width)"
+        back-label="Products"
+        class="gap-5 [--wh-rail-width:200px] xl:[--wh-rail-width:190px] 2xl:[--wh-rail-width:224px]"
+        @back="listDetail.back"
       >
-        <aside
-          aria-label="Product navigator"
-          class="wh-glass min-w-0 rounded-2xl border border-border p-3 lg:sticky lg:top-6"
-        >
-          <div class="mb-4 flex items-center justify-between px-1">
-            <h2
-              class="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
-            >
-              Products
-              <span class="ml-1 tabular-nums">{{
-                inventory.products.length
-              }}</span>
-            </h2>
-            <RouterLink
-              to="/products"
-              aria-label="Manage products"
-              class="rounded-md p-1 text-muted-foreground hover:bg-muted"
-              ><Plus :size="16"
-            /></RouterLink>
-          </div>
-          <SearchInput
-            v-model="search"
-            size="sm"
-            placeholder="Find a product"
-            aria-label="Find a product"
-            class="mb-3"
-          />
-          <div
-            class="flex gap-2 overflow-x-auto lg:block lg:space-y-2 lg:overflow-visible"
+        <template #list>
+          <aside
+            aria-label="Product navigator"
+            class="wh-glass min-w-0 rounded-2xl border border-border p-3 lg:sticky lg:top-6"
           >
-            <button
-              v-for="entry in visibleProducts"
-              :key="entry.key"
-              type="button"
-              :aria-pressed="product?.key === entry.key"
-              class="w-48 shrink-0 rounded-xl border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring lg:w-full"
-              :class="
-                product?.key === entry.key
-                  ? 'border-primary/30 bg-primary-soft text-primary-soft-foreground'
-                  : 'border-transparent hover:border-border hover:bg-muted/50'
-              "
-              @click="selectProduct(entry)"
-            >
-              <span class="mb-3 flex items-center gap-2"
-                ><ProductIcon
-                  :product-slug="entry.product ? entry.key : null"
-                  :name="productName(entry)"
-                  size="sm"
-                /><span class="min-w-0 truncate text-sm font-semibold">{{
-                  productName(entry)
-                }}</span></span
+            <div class="mb-4 flex items-center justify-between px-1">
+              <h2
+                class="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               >
-              <span class="block text-xs text-muted-foreground"
-                >{{ entry.targets.length }} environment{{
-                  entry.targets.length === 1 ? "" : "s"
-                }}</span
-              >
-              <span class="mt-3 flex items-center justify-between gap-2"
-                ><span class="text-[11px] text-muted-foreground"
-                  >Recent deploys</span
-                ><span v-if="history.loading.value" class="text-xs">…</span
-                ><span v-else-if="history.error.value" class="text-xs"
-                  >Unavailable</span
-                ><span
-                  v-else-if="!recent(entry).length"
-                  class="text-xs text-muted-foreground"
-                  >None</span
-                ><span
-                  v-else
-                  class="flex gap-0.5"
-                  :aria-label="
-                    recent(entry)
-                      .map((job) => DeploymentExtensions.label(job.status))
-                      .join(', ')
-                  "
-                  ><span
-                    v-for="job in recent(entry)"
-                    :key="job.id"
-                    :title="`${job.release ?? 'Release'}: ${DeploymentExtensions.label(job.status)}`"
-                    class="h-4 w-1.5 rounded-sm"
-                    :class="outcomeColor(job)" /></span
-              ></span>
-            </button>
-          </div>
-          <p
-            v-if="!visibleProducts.length"
-            class="p-3 text-sm text-muted-foreground"
-          >
-            No matching products.
-          </p>
-          <RouterLink
-            to="/deployments"
-            class="mt-5 flex items-center justify-between border-t border-border px-1 pt-4 text-xs font-medium text-muted-foreground hover:text-primary"
-            >Portfolio activity<ArrowRight :size="14"
-          /></RouterLink>
-        </aside>
-        <section id="environment-workspace" class="min-w-0 space-y-5">
-          <div
-            v-if="selection.status === 'unavailable'"
-            role="alert"
-            class="rounded-2xl border border-warning/30 bg-warning-soft p-5 text-warning-soft-foreground"
-          >
-            <h2 class="font-semibold">This selection is unavailable</h2>
-            <p class="mt-2 text-sm">
-              The linked product, environment, or item is no longer available in
-              this scope. Choose a product or environment to continue.
-            </p>
-            <Button
-              class="mt-3"
+                Products
+                <span class="ml-1 tabular-nums">{{
+                  inventory.products.length
+                }}</span>
+              </h2>
+              <RouterLink
+                to="/products"
+                aria-label="Manage products"
+                class="rounded-md p-1 text-muted-foreground hover:bg-muted"
+                ><Plus :size="16"
+              /></RouterLink>
+            </div>
+            <SearchInput
+              v-model="search"
               size="sm"
-              variant="outline"
-              @click="select(EmptyWorkspaceSelection)"
-              >Reset selection</Button
+              placeholder="Find a product"
+              aria-label="Find a product"
+              class="mb-3"
+            />
+            <div class="space-y-2">
+              <button
+                v-for="entry in visibleProducts"
+                :key="entry.key"
+                type="button"
+                :aria-pressed="product?.key === entry.key"
+                class="w-full rounded-xl border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring"
+                :class="
+                  product?.key === entry.key
+                    ? 'border-primary/30 bg-primary-soft text-primary-soft-foreground'
+                    : 'border-transparent hover:border-border hover:bg-muted/50'
+                "
+                @click="selectProduct(entry)"
+              >
+                <span class="mb-3 flex items-center gap-2"
+                  ><ProductIcon
+                    :product-slug="entry.product ? entry.key : null"
+                    :name="productName(entry)"
+                    size="sm"
+                  /><span class="min-w-0 truncate text-sm font-semibold">{{
+                    productName(entry)
+                  }}</span></span
+                >
+                <span class="block text-xs text-muted-foreground"
+                  >{{ entry.targets.length }} environment{{
+                    entry.targets.length === 1 ? "" : "s"
+                  }}</span
+                >
+                <span class="mt-3 flex items-center justify-between gap-2"
+                  ><span class="text-[11px] text-muted-foreground"
+                    >Recent deploys</span
+                  ><span v-if="history.loading.value" class="text-xs">…</span
+                  ><span v-else-if="history.error.value" class="text-xs"
+                    >Unavailable</span
+                  ><span
+                    v-else-if="!recent(entry).length"
+                    class="text-xs text-muted-foreground"
+                    >None</span
+                  ><span
+                    v-else
+                    class="flex gap-0.5"
+                    :aria-label="
+                      recent(entry)
+                        .map((job) => DeploymentExtensions.label(job.status))
+                        .join(', ')
+                    "
+                    ><span
+                      v-for="job in recent(entry)"
+                      :key="job.id"
+                      :title="`${job.release ?? 'Release'}: ${DeploymentExtensions.label(job.status)}`"
+                      class="h-4 w-1.5 rounded-sm"
+                      :class="outcomeColor(job)" /></span
+                ></span>
+              </button>
+            </div>
+            <p
+              v-if="!visibleProducts.length"
+              class="p-3 text-sm text-muted-foreground"
             >
-          </div>
-          <template v-if="product">
-            <div class="wh-glass rounded-2xl border border-border p-5 sm:p-6">
-              <div class="flex flex-wrap items-start justify-between gap-4">
-                <div class="min-w-0">
-                  <p
-                    class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground"
-                  >
-                    Product workspace
-                  </p>
-                  <h2
-                    class="flex items-center gap-3 text-2xl font-semibold tracking-tight"
-                  >
-                    <ProductIcon
-                      :product-slug="product.product ? product.key : null"
-                      :name="productName(product)"
-                      size="lg"
-                    />{{ productName(product) }}
-                  </h2>
-                  <p class="mt-2 break-all text-xs text-muted-foreground">
-                    {{
-                      product.product?.repository.name ??
-                      "Not in the product catalog"
-                    }}
-                  </p>
-                </div>
-                <Badge
-                  v-if="product.product"
-                  variant="neutral"
-                  class="capitalize"
-                  :title="'Portfolio lifecycle, separate from runtime health'"
-                  >{{ product.product.lifecycle }}</Badge
+              No matching products.
+            </p>
+            <RouterLink
+              to="/deployments"
+              class="mt-5 flex items-center justify-between border-t border-border px-1 pt-4 text-xs font-medium text-muted-foreground hover:text-primary"
+              >Portfolio activity<ArrowRight :size="14"
+            /></RouterLink>
+          </aside>
+        </template>
+        <template #detail>
+          <div
+            class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px] 2xl:grid-cols-[minmax(0,1fr)_300px]"
+          >
+            <section id="environment-workspace" class="min-w-0 space-y-5">
+              <div
+                v-if="selection.status === 'unavailable'"
+                role="alert"
+                class="rounded-2xl border border-warning/30 bg-warning-soft p-5 text-warning-soft-foreground"
+              >
+                <h2 class="font-semibold">This selection is unavailable</h2>
+                <p class="mt-2 text-sm">
+                  The linked product, environment, or item is no longer available in
+                  this scope. Choose a product or environment to continue.
+                </p>
+                <Button
+                  class="mt-3"
+                  size="sm"
+                  variant="outline"
+                  @click="select(EmptyWorkspaceSelection)"
+                  >Reset selection</Button
                 >
               </div>
-              <div
-                v-if="product.targets.length"
-                class="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-4"
+              <template v-if="product">
+                <div class="wh-glass rounded-2xl border border-border p-5 sm:p-6">
+                  <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div class="min-w-0">
+                      <p
+                        class="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground"
+                      >
+                        Product workspace
+                      </p>
+                      <h2
+                        class="flex items-center gap-3 text-2xl font-semibold tracking-tight"
+                      >
+                        <ProductIcon
+                          :product-slug="product.product ? product.key : null"
+                          :name="productName(product)"
+                          size="lg"
+                        />{{ productName(product) }}
+                      </h2>
+                      <p class="mt-2 break-all text-xs text-muted-foreground">
+                        {{
+                          product.product?.repository.name ??
+                          "Not in the product catalog"
+                        }}
+                      </p>
+                    </div>
+                    <Badge
+                      v-if="product.product"
+                      variant="neutral"
+                      class="capitalize"
+                      :title="'Portfolio lifecycle, separate from runtime health'"
+                      >{{ product.product.lifecycle }}</Badge
+                    >
+                  </div>
+                  <div
+                    v-if="product.targets.length"
+                    class="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-4"
+                  >
+                    <Layers :size="16" class="text-muted-foreground" />
+                    <div class="min-w-0 flex-1">
+                      <SelectPicker
+                        :model-value="target?.id ?? null"
+                        :get-option-label="
+                          (id) =>
+                            product?.targets.find((item) => item.id === id)
+                              ?.environment ?? id
+                        "
+                        @update:model-value="selectTarget"
+                        ><SelectPickerTrigger aria-label="Environment"
+                          ><SelectPickerValue
+                            placeholder="Choose environment" /></SelectPickerTrigger
+                        ><SelectPickerContent
+                          ><SelectPickerItem
+                            v-for="item in product.targets"
+                            :key="item.id"
+                            :item-key="item.id"
+                            :label="item.environment"
+                            ><span>{{ item.environment }}</span
+                            ><span class="ml-2 text-xs text-muted-foreground">{{
+                              item.host
+                            }}</span></SelectPickerItem
+                          ></SelectPickerContent
+                        ></SelectPicker
+                      >
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      tone="neutral"
+                      :is-disabled="!target"
+                      @click="inspect('target')"
+                      >Details<template #trailing
+                        ><ChevronRight :size="14" /></template
+                    ></Button>
+                  </div>
+                  <div v-else class="mt-5 rounded-xl bg-muted/50 p-4">
+                    <p class="text-sm font-medium">No environment yet</p>
+                    <p class="mt-1 text-sm text-muted-foreground">
+                      Add one to this product in Products to deploy it.
+                    </p>
+                    <RouterLink
+                      to="/products"
+                      class="mt-3 inline-flex text-sm font-medium text-primary"
+                      >Open in Products<ArrowRight :size="14" class="ml-1"
+                    /></RouterLink>
+                  </div>
+                </div>
+                <template v-if="target">
+                  <p
+                    v-if="state.error.value"
+                    role="alert"
+                    class="rounded-xl bg-destructive-soft p-3 text-sm text-destructive-soft-foreground"
+                  >
+                    {{ state.error.value.message }} Current release verification is
+                    unavailable.
+                  </p>
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      class="rounded-2xl border border-border bg-card p-5 text-left focus-visible:outline-2 focus-visible:outline-ring"
+                      @click="inspect('target')"
+                    >
+                      <span
+                        class="flex items-center gap-2 text-xs text-muted-foreground"
+                        ><Rocket :size="15" />Verified release</span
+                      ><SkeletonState
+                        v-if="state.loading.value || refresh.refreshing.value"
+                        class="mt-3 h-7 w-2/3"
+                      /><span
+                        v-else
+                        class="mt-3 block truncate text-xl font-semibold"
+                        >{{
+                          state.data.value?.current?.release ?? "Not verified"
+                        }}</span
+                      ><span class="mt-2 block text-xs text-muted-foreground">{{
+                        drift?.behind != null && drift.behind > 0
+                          ? `${drift.behind} newer published release${drift.behind === 1 ? "" : "s"}`
+                          : state.data.value?.current
+                            ? "Last verified on this target"
+                            : "A successful rollout establishes this state"
+                      }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-2xl border border-border bg-card p-5 text-left focus-visible:outline-2 focus-visible:outline-ring"
+                      @click="inspect('target')"
+                    >
+                      <span
+                        class="flex items-center gap-2 text-xs text-muted-foreground"
+                        ><ShieldCheck :size="15" />Deployment state</span
+                      ><SkeletonState
+                        v-if="state.loading.value || refresh.refreshing.value"
+                        class="mt-3 h-7 w-2/3"
+                      /><span
+                        v-else
+                        class="mt-3 block text-xl font-semibold capitalize"
+                        >{{
+                          state.data.value
+                            ? DeploymentExtensions.label(state.data.value.condition)
+                            : "Unknown"
+                        }}</span
+                      ><span class="mt-2 block text-xs text-muted-foreground"
+                        >{{ target.host }} · {{ target.provider }}</span
+                      >
+                    </button>
+                  </div>
+                  <TargetSites
+                    :sites="state.data.value?.current?.sites"
+                    :versions="state.data.value?.current?.versions"
+                  />
+                  <EnvironmentCompare
+                    v-if="product"
+                    :targets="product.targets"
+                    :releases="releases.data.value ?? []"
+                    @promote="deploy.openDeploy($event)"
+                  />
+                  <section
+                    class="wh-glass rounded-2xl border border-border p-5"
+                    aria-label="Environment services"
+                  >
+                    <div
+                      class="mb-4 flex flex-wrap items-center justify-between gap-2"
+                    >
+                      <h3 class="flex items-center gap-2 text-sm font-semibold">
+                        <Box :size="16" />Services
+                      </h3>
+                      <ToggleGroup
+                        variant="segmented"
+                        aria-label="Service view"
+                        :model-value="serviceView"
+                        @update:model-value="setServiceView"
+                      >
+                        <ToggleInput value="map" size="sm"
+                          ><Network :size="14" />Map</ToggleInput
+                        >
+                        <ToggleInput value="list" size="sm"
+                          ><List :size="14" />List</ToggleInput
+                        >
+                      </ToggleGroup>
+                    </div>
+                    <LoadState
+                      v-if="serviceView === 'map'"
+                      :loading="topology.isFirstLoad.value"
+                      :refreshing="refresh.refreshing.value"
+                      :error="topology.error.value"
+                      :has-data="Boolean(topology.data.value)"
+                      @retry="topology.refetch"
+                    >
+                      <template #skeleton
+                        ><SkeletonState class="h-72 w-full"
+                      /></template>
+                      <ServiceMap
+                        v-if="topology.data.value"
+                        :key="target.id"
+                        :topology="topology.data.value"
+                        :containers="mapContainers"
+                        :selected-service="
+                          selectedMapService ??
+                          (inspected?.kind === 'service'
+                            ? inspected.service.service
+                            : null)
+                        "
+                        :observed-at="
+                          mapContainers
+                            ? (vitals.data.value?.collectedAt ?? null)
+                            : null
+                        "
+                        @select="selectMapService"
+                      />
+                    </LoadState>
+                    <LoadState
+                      v-else
+                      :loading="vitals.loading.value"
+                      :error="vitals.error.value"
+                      :has-data="Boolean(vitals.data.value)"
+                      @retry="vitals.refetch"
+                    >
+                      <p
+                        v-if="!targetVitals || !targetVitals.ok"
+                        role="status"
+                        class="rounded-xl bg-warning-soft p-4 text-sm text-warning-soft-foreground"
+                      >
+                        {{
+                          targetVitals?.reason ??
+                          "This environment has no readable vitals yet."
+                        }}
+                      </p>
+                      <template v-else>
+                        <p
+                          v-for="problem in targetVitals.problems"
+                          :key="problem"
+                          class="mb-3 text-sm text-warning"
+                        >
+                          {{ problem }}
+                        </p>
+                        <div class="grid gap-3 sm:grid-cols-2">
+                          <button
+                            v-for="service in targetVitals.containers ?? []"
+                            :key="service.service"
+                            type="button"
+                            class="rounded-xl border p-4 text-left transition-colors hover:border-primary/50 focus-visible:outline-2 focus-visible:outline-ring"
+                            :class="
+                              inspected?.kind === 'service' &&
+                              inspected.service.service === service.service
+                                ? 'border-primary bg-primary-soft/40'
+                                : 'border-border bg-background/40'
+                            "
+                            @click="inspect('service', service.service)"
+                          >
+                            <span class="flex items-start justify-between gap-2"
+                              ><span
+                                class="flex size-9 items-center justify-center rounded-lg border border-border bg-card"
+                                ><Box :size="18" class="text-primary" /></span
+                              ><span
+                                class="text-xs capitalize"
+                                :class="
+                                  ServerExtensions.isHealthy(service)
+                                    ? 'text-success'
+                                    : 'text-destructive'
+                                "
+                                >{{ ServerExtensions.containerLabel(service) }}</span
+                              ></span
+                            >
+                            <span
+                              class="mt-4 block break-all text-sm font-semibold"
+                              >{{ service.service }}</span
+                            ><span class="mt-1 block text-xs text-muted-foreground"
+                              >{{ service.restarts }} restarts</span
+                            >
+                            <span
+                              v-if="!refresh.refreshing.value"
+                              class="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs tabular-nums text-muted-foreground"
+                              ><span>{{
+                                service.cpuPercent == null
+                                  ? "CPU unavailable"
+                                  : `${service.cpuPercent.toFixed(1)}% CPU`
+                              }}</span
+                              ><span>{{
+                                Measures.bytes(service.memoryBytes)
+                              }}</span></span
+                            ><SkeletonState v-else class="mt-4 h-7 w-full" />
+                          </button>
+                        </div>
+                        <p
+                          v-if="targetVitals.containers == null"
+                          class="py-4 text-sm text-muted-foreground"
+                        >
+                          Container readings are unavailable.
+                        </p>
+                        <EmptyState
+                          v-else-if="targetVitals.containers.length === 0"
+                          title="No containers observed"
+                          description="Deploy a published release to start services on this environment."
+                        />
+                        <div
+                          v-if="targetVitals.host"
+                          class="mt-4 grid gap-3 sm:grid-cols-2"
+                        >
+                          <ResourceMeter
+                            label="Host CPU load"
+                            :value="ServerExtensions.loadPercent(targetVitals.host)"
+                            :refreshing="refresh.refreshing.value"
+                          /><ResourceMeter
+                            label="Host memory"
+                            :value="
+                              ServerExtensions.memoryPercent(targetVitals.host)
+                            "
+                            :refreshing="refresh.refreshing.value"
+                          />
+                        </div>
+                      </template>
+                    </LoadState>
+                  </section>
+                  <section
+                    class="overflow-hidden rounded-2xl border border-border bg-card"
+                  >
+                    <header
+                      class="flex items-center justify-between gap-3 border-b border-border px-5 py-4"
+                    >
+                      <h3 class="text-sm font-semibold">Recent deployments</h3>
+                      <RouterLink
+                        :to="{ path: '/deployments', query: route.query }"
+                        class="text-xs font-medium text-primary hover:underline"
+                        >View all</RouterLink
+                      >
+                    </header>
+                    <LoadState
+                      :loading="history.loading.value"
+                      :error="history.error.value"
+                      :has-data="Boolean(history.data.value)"
+                      :empty="!targetHistory.length"
+                      empty-title="No recent deployments"
+                      empty-description="Recorded submissions for this environment appear here."
+                      class="p-3"
+                      @retry="history.refetch"
+                    >
+                      <button
+                        v-for="job in targetHistory.slice(0, 6)"
+                        :key="job.id"
+                        type="button"
+                        class="flex w-full items-center gap-3 rounded-xl p-3 text-left hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
+                        :class="
+                          inspectedJob?.id === job.id ? 'bg-primary-soft' : ''
+                        "
+                        @click="inspect('deployment', job.id)"
+                      >
+                        <span
+                          class="size-2 shrink-0 rounded-full"
+                          :class="outcomeColor(job)"
+                        /><span class="min-w-0 flex-1"
+                          ><span class="block truncate text-sm font-medium">{{
+                            job.release ?? job.bundleId ?? "Submitted release"
+                          }}</span
+                          ><span class="text-xs text-muted-foreground"
+                            >{{ job.actor ?? "Operator" }} ·
+                            <RelativeTime v-if="job.submittedAt" :value="job.submittedAt" /><template v-else
+                              >—</template
+                            ></span
+                          ></span
+                        ><span class="text-xs capitalize text-muted-foreground">{{
+                          DeploymentExtensions.label(job.status)
+                        }}</span
+                        ><ChevronRight
+                          :size="14"
+                          class="shrink-0 text-muted-foreground"
+                        />
+                      </button>
+                    </LoadState>
+                  </section>
+                </template>
+              </template>
+            </section>
+            <aside
+              ref="inspectorElement"
+              tabindex="-1"
+              aria-label="Context inspector"
+              class="wh-glass min-w-0 rounded-2xl border border-border outline-none xl:sticky xl:top-6"
+            >
+              <header
+                class="flex items-center gap-2 border-b border-border px-5 py-4"
               >
                 <Layers :size="16" class="text-muted-foreground" />
-                <div class="min-w-0 flex-1">
-                  <SelectPicker
-                    :model-value="target?.id ?? null"
-                    :get-option-label="
-                      (id) =>
-                        product?.targets.find((item) => item.id === id)
-                          ?.environment ?? id
-                    "
-                    @update:model-value="selectTarget"
-                    ><SelectPickerTrigger aria-label="Environment"
-                      ><SelectPickerValue
-                        placeholder="Choose environment" /></SelectPickerTrigger
-                    ><SelectPickerContent
-                      ><SelectPickerItem
-                        v-for="item in product.targets"
-                        :key="item.id"
-                        :item-key="item.id"
-                        :label="item.environment"
-                        ><span>{{ item.environment }}</span
-                        ><span class="ml-2 text-xs text-muted-foreground">{{
-                          item.host
-                        }}</span></SelectPickerItem
-                      ></SelectPickerContent
-                    ></SelectPicker
-                  >
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  tone="neutral"
-                  :is-disabled="!target"
-                  @click="inspect('target')"
-                  >Details<template #trailing
-                    ><ChevronRight :size="14" /></template
-                ></Button>
-              </div>
-              <div v-else class="mt-5 rounded-xl bg-muted/50 p-4">
-                <p class="text-sm font-medium">No environment yet</p>
-                <p class="mt-1 text-sm text-muted-foreground">
-                  Add one to this product in Products to deploy it.
-                </p>
-                <RouterLink
-                  to="/products"
-                  class="mt-3 inline-flex text-sm font-medium text-primary"
-                  >Open in Products<ArrowRight :size="14" class="ml-1"
-                /></RouterLink>
-              </div>
-            </div>
-            <template v-if="target">
-              <p
-                v-if="state.error.value"
-                role="alert"
-                class="rounded-xl bg-destructive-soft p-3 text-sm text-destructive-soft-foreground"
-              >
-                {{ state.error.value.message }} Current release verification is
-                unavailable.
-              </p>
-              <div class="grid gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  class="rounded-2xl border border-border bg-card p-5 text-left focus-visible:outline-2 focus-visible:outline-ring"
-                  @click="inspect('target')"
-                >
-                  <span
-                    class="flex items-center gap-2 text-xs text-muted-foreground"
-                    ><Rocket :size="15" />Verified release</span
-                  ><SkeletonState
-                    v-if="state.loading.value || refresh.refreshing.value"
-                    class="mt-3 h-7 w-2/3"
-                  /><span
-                    v-else
-                    class="mt-3 block truncate text-xl font-semibold"
-                    >{{
-                      state.data.value?.current?.release ?? "Not verified"
-                    }}</span
-                  ><span class="mt-2 block text-xs text-muted-foreground">{{
-                    drift?.behind != null && drift.behind > 0
-                      ? `${drift.behind} newer published release${drift.behind === 1 ? "" : "s"}`
-                      : state.data.value?.current
-                        ? "Last verified on this target"
-                        : "A successful rollout establishes this state"
-                  }}</span>
-                </button>
-                <button
-                  type="button"
-                  class="rounded-2xl border border-border bg-card p-5 text-left focus-visible:outline-2 focus-visible:outline-ring"
-                  @click="inspect('target')"
-                >
-                  <span
-                    class="flex items-center gap-2 text-xs text-muted-foreground"
-                    ><ShieldCheck :size="15" />Deployment state</span
-                  ><SkeletonState
-                    v-if="state.loading.value || refresh.refreshing.value"
-                    class="mt-3 h-7 w-2/3"
-                  /><span
-                    v-else
-                    class="mt-3 block text-xl font-semibold capitalize"
-                    >{{
-                      state.data.value
-                        ? DeploymentExtensions.label(state.data.value.condition)
-                        : "Unknown"
-                    }}</span
-                  ><span class="mt-2 block text-xs text-muted-foreground"
-                    >{{ target.host }} · {{ target.provider }}</span
-                  >
-                </button>
-              </div>
-              <TargetSites
-                :sites="state.data.value?.current?.sites"
-                :versions="state.data.value?.current?.versions"
-              />
-              <EnvironmentCompare
-                v-if="product"
-                :targets="product.targets"
-                :releases="releases.data.value ?? []"
-                @promote="deploy.openDeploy($event)"
-              />
-              <section
-                class="wh-glass rounded-2xl border border-border p-5"
-                aria-label="Environment services"
-              >
-                <div
-                  class="mb-4 flex flex-wrap items-center justify-between gap-2"
-                >
-                  <h3 class="flex items-center gap-2 text-sm font-semibold">
-                    <Box :size="16" />Services
-                  </h3>
-                  <ToggleGroup
-                    variant="segmented"
-                    aria-label="Service view"
-                    :model-value="serviceView"
-                    @update:model-value="setServiceView"
-                  >
-                    <ToggleInput value="map" size="sm"
-                      ><Network :size="14" />Map</ToggleInput
+                <h2 class="text-sm font-semibold">
+                  {{
+                    inspected?.kind === "service"
+                      ? "Service details"
+                      : inspected?.kind === "deployment"
+                        ? "Deployment details"
+                        : "Environment details"
+                  }}
+                </h2>
+              </header>
+              <div class="space-y-5 p-5">
+                <template v-if="target && selection.status === 'ready'">
+                  <template v-if="inspected?.kind === 'service'"
+                    ><div>
+                      <Box :size="26" class="mb-4 text-primary" />
+                      <h3 class="break-all text-lg font-semibold">
+                        {{ inspected.service.service }}
+                      </h3>
+                      <p class="mt-1 text-sm capitalize text-muted-foreground">
+                        {{ ServerExtensions.containerLabel(inspected.service) }}
+                      </p>
+                    </div>
+                    <ResourceMeter
+                      label="Container CPU"
+                      :value="inspected.service.cpuPercent"
+                    />
+                    <DescriptionGroup
+                      layout="stacked"
+                      density="lg"
+                      class="[&_dt]:text-xs"
+                      :items="[
+                        {
+                          label: 'Memory',
+                          value: `${Measures.bytes(inspected.service.memoryBytes)} / ${Measures.bytes(inspected.service.memoryLimitBytes)}`,
+                        },
+                        { label: 'Restarts', value: inspected.service.restarts },
+                        {
+                          label: 'Started',
+                          value: Measures.moment(inspected.service.startedAt),
+                        },
+                        {
+                          label: 'Exit code',
+                          value: inspected.service.exitCode ?? 'Not reported',
+                        },
+                      ]"
+                    />
+                    <Button
+                      variant="outline"
+                      is-full-width
+                      @click="logsService = inspected.service.service"
+                      >Read logs</Button
                     >
-                    <ToggleInput value="list" size="sm"
-                      ><List :size="14" />List</ToggleInput
-                    >
-                  </ToggleGroup>
-                </div>
-                <LoadState
-                  v-if="serviceView === 'map'"
-                  :loading="topology.isFirstLoad.value"
-                  :refreshing="refresh.refreshing.value"
-                  :error="topology.error.value"
-                  :has-data="Boolean(topology.data.value)"
-                  @retry="topology.refetch"
-                >
-                  <template #skeleton
-                    ><SkeletonState class="h-72 w-full"
-                  /></template>
-                  <ServiceMap
-                    v-if="topology.data.value"
-                    :key="target.id"
-                    :topology="topology.data.value"
-                    :containers="mapContainers"
-                    :selected-service="
-                      selectedMapService ??
-                      (inspected?.kind === 'service'
-                        ? inspected.service.service
-                        : null)
-                    "
-                    :observed-at="
-                      mapContainers
-                        ? (vitals.data.value?.collectedAt ?? null)
-                        : null
-                    "
-                    @select="selectMapService"
-                  />
-                </LoadState>
-                <LoadState
-                  v-else
-                  :loading="vitals.loading.value"
-                  :error="vitals.error.value"
-                  :has-data="Boolean(vitals.data.value)"
-                  @retry="vitals.refetch"
-                >
-                  <p
-                    v-if="!targetVitals || !targetVitals.ok"
-                    role="status"
-                    class="rounded-xl bg-warning-soft p-4 text-sm text-warning-soft-foreground"
-                  >
-                    {{
-                      targetVitals?.reason ??
-                      "This environment has no readable vitals yet."
-                    }}
-                  </p>
-                  <template v-else>
                     <p
-                      v-for="problem in targetVitals.problems"
-                      :key="problem"
-                      class="mb-3 text-sm text-warning"
+                      class="border-t border-border pt-4 text-xs text-muted-foreground"
                     >
-                      {{ problem }}
-                    </p>
-                    <div class="grid gap-3 sm:grid-cols-2">
-                      <button
-                        v-for="service in targetVitals.containers ?? []"
-                        :key="service.service"
-                        type="button"
-                        class="rounded-xl border p-4 text-left transition-colors hover:border-primary/50 focus-visible:outline-2 focus-visible:outline-ring"
-                        :class="
-                          inspected?.kind === 'service' &&
-                          inspected.service.service === service.service
-                            ? 'border-primary bg-primary-soft/40'
-                            : 'border-border bg-background/40'
+                      Deployments update the entire environment. Service readings
+                      are observational.
+                    </p></template
+                  >
+                  <template v-else-if="inspectedJob"
+                    ><div>
+                      <Rocket :size="26" class="mb-4 text-primary" />
+                      <h3 class="break-all text-lg font-semibold">
+                        {{ inspectedJob.release ?? "Deployment" }}
+                      </h3>
+                      <Badge
+                        class="mt-2"
+                        :variant="
+                          DeploymentExtensions.statusVariant(inspectedJob.status)
                         "
-                        @click="inspect('service', service.service)"
+                        >{{
+                          DeploymentExtensions.label(inspectedJob.status)
+                        }}</Badge
                       >
-                        <span class="flex items-start justify-between gap-2"
-                          ><span
-                            class="flex size-9 items-center justify-center rounded-lg border border-border bg-card"
-                            ><Box :size="18" class="text-primary" /></span
-                          ><span
-                            class="text-xs capitalize"
-                            :class="
-                              ServerExtensions.isHealthy(service)
-                                ? 'text-success'
-                                : 'text-destructive'
-                            "
-                            >{{ ServerExtensions.containerLabel(service) }}</span
-                          ></span
-                        >
-                        <span
-                          class="mt-4 block break-all text-sm font-semibold"
-                          >{{ service.service }}</span
-                        ><span class="mt-1 block text-xs text-muted-foreground"
-                          >{{ service.restarts }} restarts</span
-                        >
-                        <span
-                          v-if="!refresh.refreshing.value"
-                          class="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs tabular-nums text-muted-foreground"
-                          ><span>{{
-                            service.cpuPercent == null
-                              ? "CPU unavailable"
-                              : `${service.cpuPercent.toFixed(1)}% CPU`
-                          }}</span
-                          ><span>{{
-                            Measures.bytes(service.memoryBytes)
-                          }}</span></span
-                        ><SkeletonState v-else class="mt-4 h-7 w-full" />
-                      </button>
                     </div>
                     <p
-                      v-if="targetVitals.containers == null"
-                      class="py-4 text-sm text-muted-foreground"
+                      v-if="outcome.error.value"
+                      role="alert"
+                      class="text-sm text-destructive"
                     >
-                      Container readings are unavailable.
+                      Outcome refresh failed. The last recorded submission remains
+                      visible.
                     </p>
-                    <EmptyState
-                      v-else-if="targetVitals.containers.length === 0"
-                      title="No containers observed"
-                      description="Deploy a published release to start services on this environment."
+                    <DescriptionGroup
+                      layout="stacked"
+                      density="lg"
+                      class="[&_dt]:text-xs"
+                      :items="[
+                        { label: 'Operator', value: inspectedJob.actor ?? 'Unknown' },
+                        {
+                          label: 'Submitted',
+                          value: Measures.moment(inspectedJob.submittedAt),
+                        },
+                        {
+                          label: 'Completed',
+                          value: Measures.moment(inspectedJob.completedAt),
+                        },
+                      ]"
+                    />
+                    <p
+                      v-if="inspectedJob.reason || inspectedJob.failure"
+                      class="break-words rounded-lg bg-warning-soft p-3 text-sm text-warning-soft-foreground"
+                    >
+                      {{ inspectedJob.failure ?? inspectedJob.reason }}
+                    </p>
+                    <p
+                      v-for="warning in inspectedJob.warnings ?? []"
+                      :key="warning"
+                      class="break-words rounded-lg bg-warning-soft p-3 text-sm text-warning-soft-foreground"
+                    >
+                      {{ warning }}
+                    </p>
+                    <DeploymentSteps :steps="inspectedJob.steps" />
+                    <Button
+                      variant="outline"
+                      is-full-width
+                      :is-disabled="
+                        !inspectedJob.bundleId ||
+                        !releases.data.value?.some(
+                          (item) => item.id === inspectedJob?.bundleId,
+                        )
+                      "
+                      @click="openDeploy(inspectedJob)"
+                      >Redeploy release</Button
+                    ></template
+                  >
+                  <template v-else
+                    ><div>
+                      <Server :size="26" class="mb-4 text-primary" />
+                      <h3 class="text-lg font-semibold">
+                        {{ target.environment }}
+                      </h3>
+                      <p class="mt-1 break-all text-xs text-muted-foreground">
+                        {{ target.id }}
+                      </p>
+                    </div>
+                    <DescriptionGroup
+                      layout="stacked"
+                      density="lg"
+                      class="gap-y-4 [&_dd]:break-all [&_dt]:text-xs"
+                      :items="[
+                        { label: 'Host', value: target.host },
+                        { label: 'Provider', value: target.provider },
+                        {
+                          label: 'Verified release',
+                          value: state.data.value?.current?.release ?? 'Not verified',
+                        },
+                        {
+                          label: 'Host uptime',
+                          value: Measures.duration(targetVitals?.host?.uptimeSeconds),
+                        },
+                      ]"
                     />
                     <div
-                      v-if="targetVitals.host"
-                      class="mt-4 grid gap-3 sm:grid-cols-2"
+                      v-if="
+                        state.data.value?.condition ===
+                          TargetCondition.NeedsReconciliation &&
+                        state.data.value.active
+                      "
+                      class="rounded-xl bg-warning-soft p-3"
                     >
-                      <ResourceMeter
-                        label="Host CPU load"
-                        :value="ServerExtensions.loadPercent(targetVitals.host)"
-                        :refreshing="refresh.refreshing.value"
-                      /><ResourceMeter
-                        label="Host memory"
-                        :value="
-                          ServerExtensions.memoryPercent(targetVitals.host)
-                        "
-                        :refreshing="refresh.refreshing.value"
-                      />
+                      <p class="mb-3 text-sm text-warning-soft-foreground">
+                        A previous rollout needs review before another deployment.
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        @click="reconciling = true"
+                        >Reconcile target</Button
+                      >
                     </div>
-                  </template>
-                </LoadState>
-              </section>
-              <section
-                class="overflow-hidden rounded-2xl border border-border bg-card"
-              >
-                <header
-                  class="flex items-center justify-between gap-3 border-b border-border px-5 py-4"
-                >
-                  <h3 class="text-sm font-semibold">Recent deployments</h3>
+                    <Button
+                      v-else
+                      variant="outline"
+                      is-full-width
+                      @click="openDeploy()"
+                      >Check a release<template #trailing
+                        ><ArrowRight :size="14" /></template
+                    ></Button>
+                    <p class="text-xs text-muted-foreground">
+                      Readiness is checked against the release you select. No
+                      rollout starts without confirmation.
+                    </p></template
+                  >
+                  <div class="border-t border-border pt-4">
+                    <p class="text-xs text-muted-foreground">Environment</p>
+                    <button
+                      type="button"
+                      class="mt-2 flex w-full items-center justify-between text-sm font-medium text-primary"
+                      @click="inspect('target')"
+                    >
+                      {{ target.environment }}<ChevronRight :size="14" />
+                    </button>
+                  </div>
+                </template>
+                <template v-else
+                  ><p class="text-sm text-muted-foreground">
+                    {{
+                      selection.status === "loading"
+                        ? "Loading the selected item…"
+                        : selection.status === "error"
+                          ? "The selected item could not be read. Refresh to try again."
+                          : "Select a configured environment or one of its services to inspect it here."
+                    }}
+                  </p>
                   <RouterLink
-                    :to="{ path: '/deployments', query: route.query }"
-                    class="text-xs font-medium text-primary hover:underline"
-                    >View all</RouterLink
-                  >
-                </header>
-                <LoadState
-                  :loading="history.loading.value"
-                  :error="history.error.value"
-                  :has-data="Boolean(history.data.value)"
-                  :empty="!targetHistory.length"
-                  empty-title="No recent deployments"
-                  empty-description="Recorded submissions for this environment appear here."
-                  class="p-3"
-                  @retry="history.refetch"
+                    v-if="product?.product"
+                    to="/products"
+                    class="inline-flex text-sm text-primary"
+                    >Open in Products</RouterLink
+                  ></template
                 >
-                  <button
-                    v-for="job in targetHistory.slice(0, 6)"
-                    :key="job.id"
-                    type="button"
-                    class="flex w-full items-center gap-3 rounded-xl p-3 text-left hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"
-                    :class="
-                      inspectedJob?.id === job.id ? 'bg-primary-soft' : ''
-                    "
-                    @click="inspect('deployment', job.id)"
-                  >
-                    <span
-                      class="size-2 shrink-0 rounded-full"
-                      :class="outcomeColor(job)"
-                    /><span class="min-w-0 flex-1"
-                      ><span class="block truncate text-sm font-medium">{{
-                        job.release ?? job.bundleId ?? "Submitted release"
-                      }}</span
-                      ><span class="text-xs text-muted-foreground"
-                        >{{ job.actor ?? "Operator" }} ·
-                        <RelativeTime v-if="job.submittedAt" :value="job.submittedAt" /><template v-else
-                          >—</template
-                        ></span
-                      ></span
-                    ><span class="text-xs capitalize text-muted-foreground">{{
-                      DeploymentExtensions.label(job.status)
-                    }}</span
-                    ><ChevronRight
-                      :size="14"
-                      class="shrink-0 text-muted-foreground"
-                    />
-                  </button>
-                </LoadState>
-              </section>
-            </template>
-          </template>
-        </section>
-        <aside
-          ref="inspectorElement"
-          tabindex="-1"
-          aria-label="Context inspector"
-          class="wh-glass min-w-0 rounded-2xl border border-border outline-none lg:col-start-2 xl:sticky xl:top-6 xl:col-start-auto"
-        >
-          <header
-            class="flex items-center gap-2 border-b border-border px-5 py-4"
-          >
-            <Layers :size="16" class="text-muted-foreground" />
-            <h2 class="text-sm font-semibold">
-              {{
-                inspected?.kind === "service"
-                  ? "Service details"
-                  : inspected?.kind === "deployment"
-                    ? "Deployment details"
-                    : "Environment details"
-              }}
-            </h2>
-          </header>
-          <div class="space-y-5 p-5">
-            <template v-if="target && selection.status === 'ready'">
-              <template v-if="inspected?.kind === 'service'"
-                ><div>
-                  <Box :size="26" class="mb-4 text-primary" />
-                  <h3 class="break-all text-lg font-semibold">
-                    {{ inspected.service.service }}
-                  </h3>
-                  <p class="mt-1 text-sm capitalize text-muted-foreground">
-                    {{ ServerExtensions.containerLabel(inspected.service) }}
-                  </p>
-                </div>
-                <ResourceMeter
-                  label="Container CPU"
-                  :value="inspected.service.cpuPercent"
-                />
-                <DescriptionGroup
-                  layout="stacked"
-                  density="lg"
-                  class="[&_dt]:text-xs"
-                  :items="[
-                    {
-                      label: 'Memory',
-                      value: `${Measures.bytes(inspected.service.memoryBytes)} / ${Measures.bytes(inspected.service.memoryLimitBytes)}`,
-                    },
-                    { label: 'Restarts', value: inspected.service.restarts },
-                    {
-                      label: 'Started',
-                      value: Measures.moment(inspected.service.startedAt),
-                    },
-                    {
-                      label: 'Exit code',
-                      value: inspected.service.exitCode ?? 'Not reported',
-                    },
-                  ]"
-                />
-                <Button
-                  variant="outline"
-                  is-full-width
-                  @click="logsService = inspected.service.service"
-                  >Read logs</Button
-                >
-                <p
-                  class="border-t border-border pt-4 text-xs text-muted-foreground"
-                >
-                  Deployments update the entire environment. Service readings
-                  are observational.
-                </p></template
-              >
-              <template v-else-if="inspectedJob"
-                ><div>
-                  <Rocket :size="26" class="mb-4 text-primary" />
-                  <h3 class="break-all text-lg font-semibold">
-                    {{ inspectedJob.release ?? "Deployment" }}
-                  </h3>
-                  <Badge
-                    class="mt-2"
-                    :variant="
-                      DeploymentExtensions.statusVariant(inspectedJob.status)
-                    "
-                    >{{
-                      DeploymentExtensions.label(inspectedJob.status)
-                    }}</Badge
-                  >
-                </div>
-                <p
-                  v-if="outcome.error.value"
-                  role="alert"
-                  class="text-sm text-destructive"
-                >
-                  Outcome refresh failed. The last recorded submission remains
-                  visible.
-                </p>
-                <DescriptionGroup
-                  layout="stacked"
-                  density="lg"
-                  class="[&_dt]:text-xs"
-                  :items="[
-                    { label: 'Operator', value: inspectedJob.actor ?? 'Unknown' },
-                    {
-                      label: 'Submitted',
-                      value: Measures.moment(inspectedJob.submittedAt),
-                    },
-                    {
-                      label: 'Completed',
-                      value: Measures.moment(inspectedJob.completedAt),
-                    },
-                  ]"
-                />
-                <p
-                  v-if="inspectedJob.reason || inspectedJob.failure"
-                  class="break-words rounded-lg bg-warning-soft p-3 text-sm text-warning-soft-foreground"
-                >
-                  {{ inspectedJob.failure ?? inspectedJob.reason }}
-                </p>
-                <p
-                  v-for="warning in inspectedJob.warnings ?? []"
-                  :key="warning"
-                  class="break-words rounded-lg bg-warning-soft p-3 text-sm text-warning-soft-foreground"
-                >
-                  {{ warning }}
-                </p>
-                <DeploymentSteps :steps="inspectedJob.steps" />
-                <Button
-                  variant="outline"
-                  is-full-width
-                  :is-disabled="
-                    !inspectedJob.bundleId ||
-                    !releases.data.value?.some(
-                      (item) => item.id === inspectedJob?.bundleId,
-                    )
-                  "
-                  @click="openDeploy(inspectedJob)"
-                  >Redeploy release</Button
-                ></template
-              >
-              <template v-else
-                ><div>
-                  <Server :size="26" class="mb-4 text-primary" />
-                  <h3 class="text-lg font-semibold">
-                    {{ target.environment }}
-                  </h3>
-                  <p class="mt-1 break-all text-xs text-muted-foreground">
-                    {{ target.id }}
-                  </p>
-                </div>
-                <DescriptionGroup
-                  layout="stacked"
-                  density="lg"
-                  class="gap-y-4 [&_dd]:break-all [&_dt]:text-xs"
-                  :items="[
-                    { label: 'Host', value: target.host },
-                    { label: 'Provider', value: target.provider },
-                    {
-                      label: 'Verified release',
-                      value: state.data.value?.current?.release ?? 'Not verified',
-                    },
-                    {
-                      label: 'Host uptime',
-                      value: Measures.duration(targetVitals?.host?.uptimeSeconds),
-                    },
-                  ]"
-                />
-                <div
-                  v-if="
-                    state.data.value?.condition ===
-                      TargetCondition.NeedsReconciliation &&
-                    state.data.value.active
-                  "
-                  class="rounded-xl bg-warning-soft p-3"
-                >
-                  <p class="mb-3 text-sm text-warning-soft-foreground">
-                    A previous rollout needs review before another deployment.
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    @click="reconciling = true"
-                    >Reconcile target</Button
-                  >
-                </div>
-                <Button
-                  v-else
-                  variant="outline"
-                  is-full-width
-                  @click="openDeploy()"
-                  >Check a release<template #trailing
-                    ><ArrowRight :size="14" /></template
-                ></Button>
-                <p class="text-xs text-muted-foreground">
-                  Readiness is checked against the release you select. No
-                  rollout starts without confirmation.
-                </p></template
-              >
-              <div class="border-t border-border pt-4">
-                <p class="text-xs text-muted-foreground">Environment</p>
-                <button
-                  type="button"
-                  class="mt-2 flex w-full items-center justify-between text-sm font-medium text-primary"
-                  @click="inspect('target')"
-                >
-                  {{ target.environment }}<ChevronRight :size="14" />
-                </button>
               </div>
-            </template>
-            <template v-else
-              ><p class="text-sm text-muted-foreground">
-                {{
-                  selection.status === "loading"
-                    ? "Loading the selected item…"
-                    : selection.status === "error"
-                      ? "The selected item could not be read. Refresh to try again."
-                      : "Select a configured environment or one of its services to inspect it here."
-                }}
-              </p>
-              <RouterLink
-                v-if="product?.product"
-                to="/products"
-                class="inline-flex text-sm text-primary"
-                >Open in Products</RouterLink
-              ></template
-            >
+            </aside>
           </div>
-        </aside>
-      </div>
+        </template>
+      </ListDetailLayout>
     </LoadState>
     <DeployModal
       :key="deploy.session.value"
