@@ -18,6 +18,7 @@
 | Frontend dev guidelines | `engineering/development/frontend-guidelines.md` |
 | Operational rules | `engineering/development/rules.md` |
 | Deploy / ops, local rig, VPS wiring checklist | `engineering/deployment/deployment.md` |
+| Host network: tailnet policy and tags, Docker networks, console isolation | `engineering/deployment/vps/network.md` |
 | Next versions, close-out items | `engineering/research/next-versions.md` |
 | Feature completeness, decision Points, sweep | `engineering/research/feature-completeness.md` |
 | Deployment topology, environments, sites, builds | `engineering/research/deployment-topology.md` |

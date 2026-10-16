@@ -16,6 +16,7 @@ This bootstrap prepares the private control-plane host on Ubuntu 26.04 amd64: `w
 | [Runner authorization](authorize-runner.sh) | VPS, administrator | A console's own runner SSH identity for this host |
 | [Identity template](identity.example.json) | Copy to a private VPS file | Real OAuth credentials and owner allowlist, supplied by the operator |
 | [Platform Compose](platform.compose.yml) | VPS | PostgreSQL 16, private Traefik ingress and the canary's tailnet nodes |
+| [Network and access](network.md) | Reference | Paths in, tailnet policy and tags, Docker networks, verification |
 | [Console allowlist](control-only.yml) | VPS ingress folder | Traefik middleware: the console entry points accept only the host itself |
 | [Tailnet policy](tailnet-policy.hujson) | Tailscale admin console | Owner devices reach consoles, SSH and canary sites; tagged nodes reach nothing |
 | [Network migration](migrate-control-network.sh) | VPS, administrator, once | Moves an existing host onto the `control` and `platform` split |
@@ -60,7 +61,7 @@ It does not silently remove an existing engine or alter SSH/firewall configurati
 
 ## Private network and HTTPS
 
-Two external Docker networks keep workloads away from the consoles:
+The full reference is [network.md](network.md). Two external Docker networks keep workloads away from the consoles:
 
 | Network | Subnet, gateway | Members |
 |---|---|---|

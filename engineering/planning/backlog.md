@@ -100,8 +100,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Apply a tailnet grants policy and prove canary nodes reach nothing | engineering | [MCP review](../research/mcp-review.md): the default policy lets every node reach the consoles and SSH; owner devices → consoles, CI tag → SSH, `tag:canary` → nothing |
-| Split the platform network into control and workloads | engineering | MCP review: product and canary containers reach the consoles' ports directly today |
 | Sign in to the local console through a localhost GitHub OAuth app | feature | Local rig sign-in; the `rehearse.py console` check depends on it |
 | Tell dev from prod by an environment tag beside the version | feature | Dev and prod consoles run side by side |
 | Prepare a VPS for deployments with one command | feature | Traefik (file provider on `/srv/wheelhouse/ingress`), PostgreSQL, `platform` network, deploy account, protected root, firewall |
