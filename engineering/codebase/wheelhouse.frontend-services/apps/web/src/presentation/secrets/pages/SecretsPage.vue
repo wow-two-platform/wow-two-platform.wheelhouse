@@ -118,9 +118,9 @@ function selectVault(value: unknown): void {
     void listDetail.select({ vault: value, namespace: null });
 }
 
-/** Opens a namespace's secrets and tokens. */
+/** Opens a namespace's secrets and tokens; the vault stays as the URL names it, so back returns to that list. */
 function selectNamespace(slug: string): void {
-  void listDetail.select({ vault: vault.value, namespace: slug });
+  void listDetail.select({ namespace: slug });
 }
 </script>
 
