@@ -122,8 +122,9 @@ Narrow public SSH only after a second verified private SSH session and provider-
 
 Tailscale's default policy lets every node reach every other. [tailnet-policy.hujson](tailnet-policy.hujson)
 replaces it: owner devices reach the consoles (443, 8443), administrator SSH and the canary sites, and every tagged
-node reaches nothing. Tag the control-plane machine `tag:control` (Machines › Edit ACL tags) first, then paste the
-policy under Access controls; its tests refuse a save that would let a canary node or the host reach anything.
+node reaches nothing. Paste the policy under Access controls first (a tag must be defined before a machine can
+carry it), then tag the control-plane machine `tag:control` (Machines › Edit ACL tags). The policy's tests refuse a
+save that would let a canary node or the host reach anything.
 Verify from a canary node afterwards:
 
 
