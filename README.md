@@ -62,7 +62,7 @@ Container startup requires an explicit database password and owner login; see
 
 ## Stack
 
-- **Backend:** .NET 10, Clean Architecture, `WoW2.Sdk.Backend.Beta` (mediator, results, identity), EF Core 10 + PostgreSQL.
+- **Backend:** .NET 10, Clean Architecture, the be sdk `WoW2.Sdk.Beta.Be` (mediator, results, identity), EF Core 10 + PostgreSQL.
 - **Frontend:** Vue 3, Vue Router, Vite 6, Tailwind v4, `@wow-two-beta/ui-vue` component library.
 - **Runtime (target):** Docker + Traefik per Hetzner VPS; images from GHCR.
 
