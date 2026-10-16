@@ -50,6 +50,10 @@ export function useProducts() {
   return {
     products,
     loading: list.loading,
+    /** True until the first catalog arrives: the catalog renders placeholder rows. */
+    isFirstLoad: list.isFirstLoad,
+    /** Whether a catalog has arrived, so a later failure keeps it on screen. */
+    hasData: computed(() => list.data.value !== undefined),
     error,
     reload: async () => {
       await list.refetch();
