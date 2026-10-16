@@ -39,10 +39,16 @@ watch(
   <!-- The shell owns the viewport: the header spans the full window and only the main region scrolls, so no
        platform scrollbar ever cuts the header short. -->
   <AppShell class="wh-ambient">
-    <AppShellHeader height="auto" variant="glass" class="p-0">
+    <!-- The SDK glass bar keeps the console's glass edge and depth. `min-w-0` stops the navigation's full width
+         widening the shell's single grid column past a phone screen; the navigation scrolls instead. -->
+    <AppShellHeader
+      height="auto"
+      variant="glass"
+      class="min-w-0 border-(--wh-glass-edge) p-0 shadow-(--wh-glass-shadow)"
+    >
       <!-- One row on wider screens; on phones the navigation wraps to its own row and scrolls sideways. Its edges
            follow the content's gutter and 1536px measure. -->
-      <div class="mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-x-7 px-4 sm:px-6 lg:px-8">
+      <div class="mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-x-7 px-4 sm:px-6 xl:px-8">
         <RouterLink
           :to="{ path: '/', query: route.query }"
           class="flex h-[72px] shrink-0 items-center gap-2.5"
@@ -82,7 +88,8 @@ watch(
       </div>
     </AppShellHeader>
     <AppShellMain ref="main">
-      <AppShellContent gutter="lg" max-width="2xl">
+      <!-- The widening gutter, held at 1.5rem until `xl` as the console always has. -->
+      <AppShellContent gutter="lg" max-width="2xl" class="lg:px-6 xl:px-8">
         <!-- The route handle's title and description; a page's PageHeaderActions land beside them. -->
         <RoutePageHeader class="mb-6" />
         <slot />
