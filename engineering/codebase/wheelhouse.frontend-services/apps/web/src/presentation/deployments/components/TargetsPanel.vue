@@ -1,23 +1,24 @@
 <script setup lang="ts">
-import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { Alert, DataRegion, useSkeletonItems } from "@wow-two-beta/ui-vue/presentation/feedback";
 
-import { useRefresh } from "@/bootstrap/query";
 import {
   useDeploymentTargets,
   useReleaseArtifacts,
 } from "@/application/deployments";
-import { LoadState, Panel } from "@/presentation/common/components";
+import { Panel } from "@/presentation/common/components";
 
 import TargetRow from "./TargetRow.vue";
 
 /** Renders all configured environments and their independent target state reads. */
 defineOptions({ name: "TargetsPanel" });
 const targets = useDeploymentTargets();
-const targetRefresh = useRefresh(targets.refetch);
 const releases = useReleaseArtifacts();
+/** The targets, or placeholder rows until the first read arrives. */
+const rows = useSkeletonItems(() => targets.data.value, 3);
 </script>
 
 <template>
+  <!-- The panel has no refresh control, so a failed first load offers its own retry. -->
   <Panel
     title="Environments"
     description="Verified releases and deployment readiness across configured targets."
@@ -29,24 +30,25 @@ const releases = useReleaseArtifacts();
       title="Release comparison unavailable"
       :description="releases.error.value.message"
     />
-    <LoadState
-      :loading="targets.isFirstLoad.value"
-      :refreshing="targetRefresh.refreshing.value"
+    <DataRegion
+      :is-first-load="targets.isFirstLoad.value"
+      :is-refreshing="targets.isRefreshing.value"
       :error="targets.error.value"
       :has-data="Boolean(targets.data.value)"
-      :empty="!targets.data.value?.length"
+      :is-empty="Boolean(targets.data.value) && !targets.data.value?.length"
       empty-title="No deployment environments"
       empty-description="No deployment environment has been configured."
-      @retry="targetRefresh.refresh()"
+      loading-label="Loading environments"
+      @retry="targets.refetch()"
     >
       <ul class="divide-y divide-border">
         <TargetRow
-          v-for="target in targets.data.value"
-          :key="target.id"
+          v-for="(target, index) in rows"
+          :key="target?.id ?? `placeholder-${index}`"
           :target="target"
           :releases="releases.data.value ?? []"
         />
       </ul>
-    </LoadState>
+    </DataRegion>
   </Panel>
 </template>

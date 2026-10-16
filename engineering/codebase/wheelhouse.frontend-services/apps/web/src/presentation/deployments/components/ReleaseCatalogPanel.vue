@@ -12,7 +12,9 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  Text,
 } from "@wow-two-beta/ui-vue/presentation/display";
+import { DataRegion, useSkeletonItems } from "@wow-two-beta/ui-vue/presentation/feedback";
 import {
   SelectPicker,
   SelectPickerContent,
@@ -23,8 +25,7 @@ import {
 
 import { useRefresh } from "@/bootstrap/query";
 import { useReleaseArtifacts } from "@/application/deployments";
-import { LoadState, Panel } from "@/presentation/common/components";
-import { RefreshButton } from "@/presentation/common/components";
+import { Panel, RefreshButton } from "@/presentation/common/components";
 
 /** Lists the deployable catalog: published releases and commit builds from approved repositories, newest first. */
 defineOptions({ name: "ReleaseCatalogPanel" });
@@ -49,6 +50,8 @@ const visible = computed(() =>
     )
     .sort((left, right) => Date.parse(right.publishedAt) - Date.parse(left.publishedAt)),
 );
+/** The shown releases, or placeholder rows until the first catalog arrives. */
+const rows = useSkeletonItems(() => (releases.data.value ? visible.value : undefined), 4);
 </script>
 
 <template>
@@ -80,14 +83,15 @@ const visible = computed(() =>
       ></SelectPicker>
       <RefreshButton variant="ghost" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh()" />
     </template>
-    <LoadState
-      :loading="releases.isFirstLoad.value"
+    <DataRegion
+      :is-first-load="releases.isFirstLoad.value"
+      :is-refreshing="releases.isRefreshing.value"
       :error="releases.error.value"
       :has-data="Boolean(releases.data.value)"
-      :empty="!visible.length"
+      :is-empty="Boolean(releases.data.value) && !visible.length"
       empty-title="No releases"
       empty-description="Publish a release or push a commit; its build appears here once its workflow finishes."
-      @retry="releases.refetch()"
+      loading-label="Loading releases"
     >
       <Table density="compact" is-hoverable has-sticky-header container-class-name="max-h-[24rem] overflow-auto">
         <TableHead>
@@ -98,24 +102,25 @@ const visible = computed(() =>
           </TableRow>
         </TableHead>
         <TableBody>
-          <TableRow v-for="artifact in visible" :key="artifact.id">
+          <TableRow v-for="(artifact, index) in rows" :key="artifact?.id ?? `placeholder-${index}`">
             <TableCell>
               <span class="block min-w-0">
-                <span class="block font-mono text-xs font-medium">{{ artifact.release }}</span>
-                <Badge class="mt-1" :variant="artifact.kind === 'release' ? 'success' : 'neutral'">{{
-                  artifact.kind === "release" ? (artifact.prerelease ? "Pre-release" : "Release") : "Commit build"
+                <Text as="span" class="block font-mono text-xs font-medium">{{ artifact?.release }}</Text>
+                <Badge class="mt-1" :variant="artifact?.kind === 'candidate' ? 'neutral' : 'success'">{{
+                  artifact?.kind === "candidate" ? "Commit build" : artifact?.prerelease ? "Pre-release" : "Release"
                 }}</Badge>
               </span>
             </TableCell>
-            <TableCell class="text-xs">{{ artifact.product }}</TableCell>
+            <TableCell class="text-xs">{{ artifact?.product }}</TableCell>
+            <!-- A placeholder row leaves composite cells empty, so each draws one bar. -->
             <TableCell class="font-mono text-xs">
-              <span class="block min-w-0">
+              <span v-if="artifact" class="block min-w-0">
                 <span class="block">{{ artifact.commit?.slice(0, 7) ?? "—" }}</span>
                 <span v-if="artifact.branch" class="mt-1 block text-muted-foreground">{{ artifact.branch }}</span>
               </span>
             </TableCell>
             <TableCell class="whitespace-nowrap text-xs text-muted-foreground">
-              <span class="block">
+              <span v-if="artifact" class="block">
                 <RelativeTime class="block" :value="artifact.publishedAt" />
                 <span v-if="artifact.expiresAt" class="mt-1 block"
                   >expires <RelativeTime :value="artifact.expiresAt"
@@ -127,15 +132,15 @@ const visible = computed(() =>
                 variant="ghost"
                 tone="neutral"
                 size="sm"
-                :aria-label="`Deploy ${artifact.release}`"
+                :aria-label="`Deploy ${artifact?.release ?? 'release'}`"
                 title="Deploy this release"
-                @click="emit('deploy', artifact.id)"
+                @click="artifact && emit('deploy', artifact.id)"
                 ><template #leading><Rocket :size="14" /></template
               ></Button>
             </TableCell>
           </TableRow>
         </TableBody>
       </Table>
-    </LoadState>
+    </DataRegion>
   </Panel>
 </template>

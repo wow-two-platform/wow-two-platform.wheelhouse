@@ -3,8 +3,8 @@ import type { DeploymentJob } from "@/domain/deployments";
 
 /** Defines recent submissions and optional inspector or redeploy actions. */
 export interface HistoryTableProps {
-  /** The observed submissions, in their supplied order. */
-  readonly jobs: readonly DeploymentJob[];
+  /** The observed submissions, in their supplied order; undefined until the first read, which draws placeholder rows. */
+  readonly jobs: readonly DeploymentJob[] | undefined;
   /** Opens deployment confirmation for an eligible successful submission. */
   readonly onRedeploy?: (job: DeploymentJob) => void;
   /** Opens the selected submission's inspector. */
@@ -25,14 +25,16 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@wow-two-beta/ui-vue/presentation/display";
+import { useSkeletonItems } from "@wow-two-beta/ui-vue/presentation/feedback";
 
 import { JobStatus } from "@/domain/deployments";
 
 import JobStatusIndicator from "./JobStatusIndicator.vue";
 
-/** Renders observed deployment history with optional explicit actions. */
+/** Renders observed deployment history with optional explicit actions; inside a first-loading region its rows draw skeletons. */
 defineOptions({ name: "HistoryTable" });
 const props = defineProps<HistoryTableProps>();
+const rows = useSkeletonItems(() => props.jobs, 5);
 </script>
 
 <template>
@@ -54,39 +56,42 @@ const props = defineProps<HistoryTableProps>();
       </TableRow>
     </TableHead>
     <TableBody>
-      <TableRow v-for="job in props.jobs" :key="job.id">
+      <TableRow v-for="(job, index) in rows" :key="job?.id ?? `placeholder-${index}`">
+        <!-- A placeholder row leaves its cells empty, so each draws one bar. -->
         <TableCell class="whitespace-nowrap text-xs text-muted-foreground">
-          <RelativeTime v-if="job.submittedAt" :value="job.submittedAt" />
-          <template v-else>—</template>
+          <RelativeTime v-if="job?.submittedAt" :value="job.submittedAt" />
+          <template v-else-if="job">—</template>
         </TableCell>
         <TableCell class="font-mono text-xs">
-          <button
-            v-if="props.onSelect"
-            type="button"
-            class="text-left hover:text-primary focus-visible:outline-primary"
-            :aria-label="`Inspect deployment ${job.id}`"
-            @click="props.onSelect(job)"
-          >
-            <span class="block">{{ job.targetId ?? "—" }}</span>
-            <span class="mt-1 block text-muted-foreground">{{
-              job.release ?? job.bundleId ?? "—"
-            }}</span>
-          </button>
-          <span v-else class="block min-w-0">
-            <span class="block">{{ job.targetId ?? "—" }}</span>
-            <span class="mt-1 block text-muted-foreground">{{
-              job.release ?? job.bundleId ?? "—"
-            }}</span>
-          </span>
+          <template v-if="job">
+            <button
+              v-if="props.onSelect"
+              type="button"
+              class="text-left hover:text-primary focus-visible:outline-primary"
+              :aria-label="`Inspect deployment ${job.id}`"
+              @click="props.onSelect(job)"
+            >
+              <span class="block">{{ job.targetId ?? "—" }}</span>
+              <span class="mt-1 block text-muted-foreground">{{
+                job.release ?? job.bundleId ?? "—"
+              }}</span>
+            </button>
+            <span v-else class="block min-w-0">
+              <span class="block">{{ job.targetId ?? "—" }}</span>
+              <span class="mt-1 block text-muted-foreground">{{
+                job.release ?? job.bundleId ?? "—"
+              }}</span>
+            </span>
+          </template>
         </TableCell>
         <TableCell
-          ><JobStatusIndicator :status="job.status" :reason="job.reason"
+          ><JobStatusIndicator v-if="job" :status="job.status" :reason="job.reason"
         /></TableCell>
-        <TableCell class="text-xs">{{ job.actor ?? "—" }}</TableCell>
+        <TableCell class="text-xs">{{ job ? (job.actor ?? "—") : "" }}</TableCell>
         <TableCell v-if="props.onRedeploy" label="" class="justify-end text-right">
           <Button
             v-if="
-              job.status === JobStatus.Succeeded && job.targetId && job.bundleId
+              job && job.status === JobStatus.Succeeded && job.targetId && job.bundleId
             "
             variant="ghost"
             tone="neutral"

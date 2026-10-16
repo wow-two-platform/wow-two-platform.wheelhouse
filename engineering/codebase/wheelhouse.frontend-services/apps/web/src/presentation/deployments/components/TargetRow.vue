@@ -3,8 +3,8 @@ import type { DeploymentTarget, ReleaseArtifact } from "@/domain/deployments";
 
 /** Defines one target row and its current published release catalog. */
 export interface TargetRowProps {
-  /** The code-owned target to inspect. */
-  readonly target: DeploymentTarget;
+  /** The code-owned target to inspect; undefined for a placeholder row while the targets first load. */
+  readonly target: DeploymentTarget | undefined;
   /** The available release catalog used only to calculate drift. */
   readonly releases: readonly ReleaseArtifact[];
 }
@@ -14,7 +14,7 @@ export interface TargetRowProps {
 import { computed, ref } from "vue";
 
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Badge } from "@wow-two-beta/ui-vue/presentation/display";
+import { Badge, Text } from "@wow-two-beta/ui-vue/presentation/display";
 import { Spinner } from "@wow-two-beta/ui-vue/presentation/feedback";
 
 import { useRefresh } from "@/bootstrap/query";
@@ -29,14 +29,14 @@ import { RefreshButton } from "@/presentation/common/components";
 /** Renders a target's verified release and explicit reconciliation action. */
 defineOptions({ name: "TargetRow" });
 const props = defineProps<TargetRowProps>();
-const state = useTargetState(() => props.target.id);
+const state = useTargetState(() => props.target?.id ?? null);
 const stateRefresh = useRefresh(state.refetch);
 const reconciling = ref(false);
 const drift = computed(() =>
   DeploymentExtensions.releaseDrift(
     state.data.value?.current?.release,
     [...props.releases],
-    props.target.product,
+    props.target?.product ?? "",
   ),
 );
 </script>
@@ -44,11 +44,13 @@ const drift = computed(() =>
 <template>
   <li class="flex flex-wrap items-center justify-between gap-4 py-4">
     <div class="min-w-0">
-      <p class="font-mono text-sm">{{ props.target.id }}</p>
-      <p class="mt-1 text-xs text-muted-foreground">
-        {{ props.target.product }} · {{ props.target.environment }} ·
-        {{ props.target.host }}
-      </p>
+      <Text class="font-mono text-sm" skeleton-width="12rem">{{ props.target?.id }}</Text>
+      <Text class="mt-1 text-xs text-muted-foreground" skeleton-width="16rem">
+        <template v-if="props.target"
+          >{{ props.target.product }} · {{ props.target.environment }} ·
+          {{ props.target.host }}</template
+        >
+      </Text>
       <TargetSites
         class="mt-2"
         :sites="state.data.value?.current?.sites"
@@ -56,6 +58,8 @@ const drift = computed(() =>
       />
     </div>
     <div class="flex flex-wrap items-center gap-3 text-sm">
+      <!-- A placeholder row draws the condition badge's shape. -->
+      <Badge v-if="!props.target">Ready</Badge>
       <Spinner
         v-if="state.loading.value || stateRefresh.refreshing.value"
         size="sm"
@@ -99,6 +103,7 @@ const drift = computed(() =>
         </span>
         <template
           v-if="
+            props.target &&
             state.data.value.condition ===
               TargetCondition.NeedsReconciliation && state.data.value.active
           "

@@ -21,14 +21,17 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
+  Text,
 } from "@wow-two-beta/ui-vue/presentation/display";
-import { SkeletonState } from "@wow-two-beta/ui-vue/presentation/feedback";
+import {
+  DataRegion,
+  SkeletonStateSlot,
+  useSkeletonItems,
+} from "@wow-two-beta/ui-vue/presentation/feedback";
 
-import { useRefresh } from "@/bootstrap/query";
 import { useDeploymentStats } from "@/application/deployments";
 import { Measures } from "@/domain/common";
-import { SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
-import { LoadState, Panel } from "@/presentation/common/components";
+import { Panel } from "@/presentation/common/components";
 
 import JobStatusIndicator from "./JobStatusIndicator.vue";
 
@@ -38,7 +41,6 @@ const props = withDefaults(defineProps<DeploymentStatsPanelProps>(), {
   showTargets: false,
 });
 const stats = useDeploymentStats(30);
-const statsRefresh = useRefresh(stats.refetch);
 const route = useRoute();
 const recent = computed(() => stats.data.value?.daily.slice(-14) ?? []);
 const chartSeries = computed(() => [
@@ -101,6 +103,11 @@ const metrics = computed(() => {
   ];
 });
 
+/** The metric tiles, or placeholder tiles until the first statistics arrive. */
+const tiles = useSkeletonItems(() => (stats.data.value ? metrics.value : undefined), 4);
+/** The per-target totals, or placeholder rows until the first statistics arrive. */
+const targetRows = useSkeletonItems(() => stats.data.value?.targets, 3);
+
 /** The change against the prior window as a StatCard trend; none when either window has no value. */
 function difference(
   current: number | null,
@@ -132,32 +139,23 @@ function difference(
         History
       </RouterLink>
     </template>
-    <LoadState
-      :loading="stats.isFirstLoad.value"
-      :refreshing="statsRefresh.refreshing.value"
+    <!-- The panel has no refresh control, so a failed first load offers its own retry. -->
+    <DataRegion
+      :is-first-load="stats.isFirstLoad.value"
+      :is-refreshing="stats.isRefreshing.value"
       :error="stats.error.value"
       :has-data="Boolean(stats.data.value)"
-      :empty="!stats.data.value"
-      empty-title="No deployment records"
-      @retry="statsRefresh.refresh()"
+      loading-label="Loading deployment statistics"
+      @retry="stats.refetch()"
     >
-      <template #skeleton>
-        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <SkeletonState
-            v-for="label in [
-              'Deploys',
-              'Success rate',
-              'Median rollout',
-              'Median recovery',
-            ]"
-            :key="label"
-            class="h-32 rounded-xl"
-          />
-        </div>
-      </template>
-      <div v-if="stats.data.value" class="flex flex-col gap-5">
+      <div class="flex flex-col gap-5">
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard v-for="metric in metrics" :key="metric.label" v-bind="metric" size="sm" />
+          <StatCard
+            v-for="(metric, index) in tiles"
+            :key="metric?.label ?? `placeholder-${index}`"
+            v-bind="metric ?? { label: '', value: '' }"
+            size="sm"
+          />
         </div>
         <div class="grid gap-4 md:grid-cols-2">
           <div
@@ -166,7 +164,7 @@ function difference(
             class="rounded-xl border border-border p-4"
           >
             <div class="mb-3 flex items-baseline justify-between gap-3 text-sm">
-              <span>{{ series.title }}</span>
+              <Text as="span">{{ series.title }}</Text>
               <SkeletonStateSlot class="font-medium tabular-nums">{{
                 series.data.reduce((sum, value) => sum + value, 0)
               }}</SkeletonStateSlot>
@@ -190,7 +188,7 @@ function difference(
           changed no containers.
         </p>
         <Table
-          v-if="props.showTargets && stats.data.value.targets.length"
+          v-if="props.showTargets && targetRows.length"
           density="compact"
           is-hoverable
         >
@@ -205,16 +203,17 @@ function difference(
           >
           <TableBody>
             <TableRow
-              v-for="target in stats.data.value.targets"
-              :key="target.targetId"
+              v-for="(target, index) in targetRows"
+              :key="target?.targetId ?? `placeholder-${index}`"
             >
               <TableCell class="font-mono text-xs">{{
-                target.targetId
+                target?.targetId
               }}</TableCell>
-              <TableCell class="tabular-nums">{{ target.deploys }}</TableCell>
-              <TableCell class="tabular-nums">{{ target.failed }}</TableCell>
+              <TableCell class="tabular-nums">{{ target?.deploys }}</TableCell>
+              <TableCell class="tabular-nums">{{ target?.failed }}</TableCell>
+              <!-- A placeholder row leaves composite cells empty, so each draws one bar. -->
               <TableCell>
-                <span class="block min-w-0">
+                <span v-if="target" class="block min-w-0">
                   <JobStatusIndicator :status="target.lastStatus" />
                   <span
                     v-if="target.lastRelease"
@@ -224,12 +223,12 @@ function difference(
                 </span>
               </TableCell>
               <TableCell class="whitespace-nowrap text-xs text-muted-foreground"
-                ><RelativeTime :value="target.lastDeployAt"
+                ><RelativeTime v-if="target" :value="target.lastDeployAt"
               /></TableCell>
             </TableRow>
           </TableBody>
         </Table>
       </div>
-    </LoadState>
+    </DataRegion>
   </Panel>
 </template>

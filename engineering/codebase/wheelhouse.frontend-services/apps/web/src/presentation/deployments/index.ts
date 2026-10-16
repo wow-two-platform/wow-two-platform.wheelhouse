@@ -3,7 +3,6 @@ export {
   default as HistoryTable,
   type HistoryTableProps,
 } from "./components/HistoryTable.vue";
-export { default as HistoryTableSkeleton } from "./components/HistoryTableSkeleton.vue";
 export { default as TargetsPanel } from "./components/TargetsPanel.vue";
 export { default as ConditionBadge } from "./components/ConditionBadge.vue";
 export { default as JobStatusBadge } from "./components/JobStatusBadge.vue";

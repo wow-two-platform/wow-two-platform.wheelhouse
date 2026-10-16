@@ -2,21 +2,20 @@
 import { Rocket } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
+import { DataRegion, SkeletonStateGroup } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { PageHeaderActions } from "@wow-two-beta/ui-vue/presentation/layout";
 
 import { useRefresh } from "@/bootstrap/query";
 import { useDeploymentHistory } from "@/application/deployments";
 import type { DeploymentJob } from "@/domain/deployments";
-import { LoadState, Panel } from "@/presentation/common/components";
+import { Panel, RefreshButton } from "@/presentation/common/components";
 
 import DeployModal from "../components/DeployModal.vue";
 import DeploymentStatsPanel from "../components/DeploymentStatsPanel.vue";
 import HistoryTable from "../components/HistoryTable.vue";
-import HistoryTableSkeleton from "../components/HistoryTableSkeleton.vue";
 import ReleaseCatalogPanel from "../components/ReleaseCatalogPanel.vue";
 import TargetsPanel from "../components/TargetsPanel.vue";
 import { useDeployModal } from "../hooks/useDeployModal";
-import { RefreshButton } from "@/presentation/common/components";
 
 /** Renders portfolio deployment history, complete statistics and target operations. */
 defineOptions({ name: "DeploymentsPage" });
@@ -50,21 +49,19 @@ function redeploy(job: DeploymentJob): void {
           @refresh="historyRefresh.refresh()"
         />
       </template>
-      <LoadState
-        :loading="history.isFirstLoad.value"
-        :refreshing="historyRefresh.refreshing.value"
+      <DataRegion
+        :is-first-load="history.isFirstLoad.value"
+        :is-refreshing="history.isRefreshing.value"
         :error="history.error.value"
         :has-data="Boolean(history.data.value)"
-        :empty="!history.data.value?.length"
+        :is-empty="Boolean(history.data.value) && !history.data.value?.length"
         empty-title="No deployments yet"
-        @retry="historyRefresh.refresh()"
+        loading-label="Loading deployments"
       >
-        <template #skeleton><HistoryTableSkeleton /></template>
-        <HistoryTable
-          :jobs="history.data.value ?? []"
-          :on-redeploy="redeploy"
-        />
-      </LoadState>
+        <SkeletonStateGroup class="contents" :is-loading="historyRefresh.refreshing.value">
+          <HistoryTable :jobs="history.data.value" :on-redeploy="redeploy" />
+        </SkeletonStateGroup>
+      </DataRegion>
     </Panel>
     <ReleaseCatalogPanel
       @deploy="deploy.openDeploy({ target: '', release: $event })"
