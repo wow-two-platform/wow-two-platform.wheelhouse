@@ -10,7 +10,12 @@ import {
   TabsGroupTab,
   TabsGroupPanel,
 } from "@wow-two-beta/ui-vue/presentation/display";
-import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
+import {
+  Alert,
+  DataRegion,
+  SkeletonStateGroup,
+  SkeletonStateSlot,
+} from "@wow-two-beta/ui-vue/presentation/feedback";
 import {
   SelectPicker,
   SelectPickerTrigger,
@@ -27,12 +32,11 @@ import {
 import { useInvalidate } from "@/bootstrap/query";
 import { useRefresh } from "@/bootstrap/query";
 import { VaultStatus } from "@/domain/secrets";
-import { SkeletonStateGroup, SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
 import {
   ListDetailLayout,
   PageHeaderActions,
 } from "@wow-two-beta/ui-vue/presentation/layout";
-import { LoadState, Panel, RefreshButton } from "@/presentation/common/components";
+import { Panel, RefreshButton } from "@/presentation/common/components";
 import { useListDetailRoute } from "@/presentation/common/hooks";
 import NamespaceList from "../components/NamespaceList.vue";
 import SecretsTable from "../components/SecretsTable.vue";
@@ -48,7 +52,7 @@ const VaultTone = {
   sealed: "warning",
   unreachable: "danger",
 } as const;
-const { data: vaults, error } = useVaults();
+const { data: vaults, error, isFirstLoad, isRefreshing } = useVaults();
 const invalidate = useInvalidate();
 const { refresh, refreshing } = useRefresh(() => invalidate(SecretKeys.vaults));
 /* `?vault=` and `?namespace=` hold the selection; a namespace opens its detail, which replaces the list on phones. */
@@ -87,7 +91,6 @@ const pending = computed(
 );
 const hygieneData = hygiene.data;
 const hygieneError = hygiene.error;
-const hygieneLoading = hygiene.loading;
 /** The keys overdue for rotation in the selected namespace. */
 const overdueSecrets = computed(
   () =>
@@ -128,29 +131,21 @@ function selectNamespace(slug: string): void {
   <PageHeaderActions>
     <RefreshButton :refreshing="refreshing" @refresh="refresh" />
   </PageHeaderActions>
-  <LoadState
-    :loading="false"
+  <DataRegion
+    :is-first-load="isFirstLoad"
+    :is-refreshing="isRefreshing"
     :error="error"
     :has-data="vaults !== undefined"
-    :empty="vaults !== undefined && !vaults.length"
+    :is-empty="vaults !== undefined && !vaults.length"
     empty-title="No vaults configured"
     empty-description="Configured vaults appear here when they are available."
-    @retry="refresh"
+    loading-label="Loading vaults"
   >
-    <SkeletonStateGroup
-      class="contents"
-      :is-loading="vaults === undefined || refreshing"
-      label="Loading vaults"
-    >
+    <SkeletonStateGroup class="contents" :is-loading="refreshing" label="Refreshing vaults">
     <Panel
       :title="selected?.name ?? 'Vault'"
       description="Select a namespace to manage its write-only secrets and product access tokens."
     >
-      <template #title
-        ><SkeletonStateSlot :is-loading="vaults === undefined">{{
-          selected?.name ?? "Local vault"
-        }}</SkeletonStateSlot></template
-      >
       <template #actions>
         <SkeletonStateSlot shape="circle"
           ><Badge :variant="selected ? VaultTone[selected.status] : 'success'">{{
@@ -203,11 +198,11 @@ function selectNamespace(slug: string): void {
             >
           </template>
         </Alert>
-        <SkeletonStateGroup
+        <DataRegion
           v-else
+          :is-first-load="!hygieneData"
+          loading-label="Checking rotation status"
           class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
-          :is-loading="!hygieneData || hygieneLoading || refreshing"
-          label="Checking rotation status"
         >
           <SkeletonStateSlot shape="circle"
             ><Badge :variant="dueCount > 0 ? 'warning' : 'success'">
@@ -222,7 +217,7 @@ function selectNamespace(slug: string): void {
             >{{ hygieneData?.secrets ?? 0 }} secrets ·
             {{ hygieneData?.tokens ?? 0 }} tokens across this vault</SkeletonStateSlot
           >
-        </SkeletonStateGroup>
+        </DataRegion>
         <ListDetailLayout
           :is-detail-open="listDetail.isDetailOpen.value"
           list-width="15rem"
@@ -299,5 +294,5 @@ function selectNamespace(slug: string): void {
       </div>
     </Panel>
     </SkeletonStateGroup>
-  </LoadState>
+  </DataRegion>
 </template>

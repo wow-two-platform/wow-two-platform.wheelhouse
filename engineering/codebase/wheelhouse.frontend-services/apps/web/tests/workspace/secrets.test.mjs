@@ -89,12 +89,6 @@ const modals = Object.fromEntries(
     }),
   ),
 );
-aliases.set(
-  "@/presentation/common/components",
-  asModule(
-    "const Stub = { render: () => null }; export { Stub as LoadState, Stub as SkeletonStateSlot };",
-  ),
-);
 modals.TokensTable = (
   await import(
     await loadSource(

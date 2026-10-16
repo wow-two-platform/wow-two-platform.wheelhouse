@@ -7,11 +7,11 @@ export interface NamespaceListProps {
 </script>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { Plus } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
-import { LoadState } from "@/presentation/common/components";
+import { Text } from "@wow-two-beta/ui-vue/presentation/display";
+import { DataRegion, useSkeletonItems } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { useVaultNamespaces } from "@/application/secrets";
 import NamespaceModal from "./NamespaceModal.vue";
 
@@ -21,15 +21,12 @@ const props = defineProps<NamespaceListProps>();
 const emit = defineEmits<{ select: [slug: string] }>();
 defineSlots<{}>();
 
-const { data, error, refetch } = useVaultNamespaces(() => props.vault);
+const { data, error, isRefreshing } = useVaultNamespaces(() => props.vault);
 const adding = ref(false);
-
-/** Rows shaped like real namespaces, shown until the first catalog arrives. @internal */
-const PlaceholderRows = [
-  { slug: "namespace-one", name: "Product environment" },
-  { slug: "namespace-two", name: "Product environment" },
-  { slug: "namespace-three", name: "Product environment" },
-];
+/** True until the vault's first catalog arrives, including while no vault is selected yet. */
+const pending = computed(() => data.value === undefined && !error.value);
+/** The namespaces, or placeholder rows until the first catalog arrives. */
+const rows = useSkeletonItems(() => data.value, 3);
 
 /** Closes namespace creation when the vault changes. */
 watch(
@@ -52,61 +49,48 @@ watch(
         New
       </Button>
     </div>
-    <ul
-      v-if="data === undefined && !error"
-      class="flex flex-col gap-1"
-      aria-busy="true"
-      aria-label="Loading namespaces"
-    >
-      <li v-for="row in PlaceholderRows" :key="row.slug">
-        <div class="flex min-h-14 w-full flex-col justify-center gap-1 rounded-xl px-3 py-2">
-          <SkeletonStateSlot :is-loading="true" class="font-mono text-xs font-medium">{{
-            row.slug
-          }}</SkeletonStateSlot>
-          <SkeletonStateSlot :is-loading="true" class="text-xs">{{ row.name }}</SkeletonStateSlot>
-        </div>
-      </li>
-    </ul>
-    <LoadState
-      v-else
-      :loading="false"
+    <DataRegion
+      :is-first-load="pending"
+      :is-refreshing="isRefreshing"
       :error="error"
       :has-data="data !== undefined"
-      :empty="!data?.length"
+      :is-empty="data !== undefined && !data.length"
       empty-title="No namespaces yet"
       empty-description="Create one per product environment."
-      @retry="refetch"
+      loading-label="Loading namespaces"
     >
       <ul class="flex flex-col gap-1">
-        <li v-for="item in data ?? []" :key="item.slug">
+        <li v-for="(item, index) in rows" :key="item?.slug ?? `placeholder-${index}`">
           <button
             type="button"
-            :aria-current="item.slug === selected ? 'true' : undefined"
+            :aria-current="item && item.slug === selected ? 'true' : undefined"
             class="flex min-h-14 w-full flex-col justify-center rounded-xl px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             :class="
-              item.slug === selected
+              item && item.slug === selected
                 ? 'bg-primary-soft text-primary-soft-foreground'
                 : 'hover:bg-muted'
             "
-            @click="emit('select', item.slug)"
+            @click="item && emit('select', item.slug)"
           >
-            <span class="w-full truncate font-mono text-xs font-medium">{{
-              item.slug
-            }}</span>
-            <span
+            <Text as="span" class="w-full truncate font-mono text-xs font-medium" skeleton-width="70%">{{
+              item?.slug
+            }}</Text>
+            <Text
+              as="span"
               class="w-full truncate text-xs"
               :class="
-                item.slug === selected
+                item && item.slug === selected
                   ? 'text-primary-soft-foreground'
                   : 'text-muted-foreground'
               "
+              skeleton-width="90%"
             >
-              {{ item.name }}
-            </span>
+              {{ item?.name }}
+            </Text>
           </button>
         </li>
       </ul>
-    </LoadState>
+    </DataRegion>
     <NamespaceModal
       :vault="vault"
       v-model:open="adding"

@@ -27,12 +27,13 @@ import {
 } from "@wow-two-beta/ui-vue/presentation/display";
 import {
   Alert,
+  DataRegion,
+  SkeletonStateSlot,
   StatusIndicator,
+  useSkeletonItems,
 } from "@wow-two-beta/ui-vue/presentation/feedback";
 import { useSecretChanges, useVaultSecrets } from "@/application/secrets";
 import { SecretState } from "@/domain/secrets";
-import { SkeletonStateSlot } from "@wow-two-beta/ui-vue/presentation/feedback";
-import { LoadState } from "@/presentation/common/components";
 import SetSecretModal from "./SetSecretModal.vue";
 
 /** Shows metadata and controls serving state without exposing stored values. */
@@ -40,7 +41,7 @@ defineOptions({ name: "SecretsTable" });
 const props = defineProps<SecretsTableProps>();
 defineSlots<{}>();
 
-const { data, error, refetch } = useVaultSecrets(
+const { data, error, isRefreshing } = useVaultSecrets(
   () => props.vault,
   () => props.ns,
 );
@@ -52,14 +53,10 @@ const changeError = changes.error;
 const changing = changes.loading;
 const editing = shallowRef<SecretEditor | null>(null);
 
-/** Rows shaped like real secrets, shown until the namespace's first read arrives. @internal */
-const PlaceholderSecrets = [
-  { key: "ConnectionStrings:Database", state: SecretState.Active, version: 1, updatedAtUtc: "" },
-  { key: "Identity:ClientSecret", state: SecretState.Active, version: 1, updatedAtUtc: "" },
-  { key: "Payments:WebhookKey", state: SecretState.Active, version: 1, updatedAtUtc: "" },
-];
-/** True until the first read: the table renders its header and placeholder rows, never gray blocks. */
+/** True until the first read, including while no namespace is selected yet: the table draws placeholder rows. */
 const pending = computed(() => data.value === undefined && !error.value);
+/** The secrets, or placeholder rows until the namespace's first read arrives. */
+const rows = useSkeletonItems(() => data.value, 3);
 
 /** Discards an editor when its vault or namespace changes. */
 watch([() => props.vault, () => props.ns], () => {
@@ -87,14 +84,15 @@ function closeEditor(open: boolean): void {
       severity="danger"
       :description="changeError.message"
     />
-    <LoadState
-      :loading="false"
+    <DataRegion
+      :is-first-load="pending"
+      :is-refreshing="isRefreshing"
       :error="error"
       :has-data="data !== undefined"
-      :empty="data !== undefined && !data.length"
+      :is-empty="data !== undefined && !data.length"
       empty-title="No secrets yet"
       empty-description="Add the values this product environment needs."
-      @retry="refetch"
+      loading-label="Loading secrets"
     >
       <Table
         density="compact"
@@ -113,26 +111,10 @@ function closeEditor(open: boolean): void {
           </TableRow></TableHead
         >
         <TableBody>
-          <template v-if="pending">
-            <TableRow v-for="row in PlaceholderSecrets" :key="row.key" aria-hidden="true">
-              <TableCell
-                ><SkeletonStateSlot :is-loading="true" class="font-mono text-xs">{{
-                  row.key
-                }}</SkeletonStateSlot></TableCell
-              >
-              <TableCell
-                ><SkeletonStateSlot :is-loading="true">{{ row.state }}</SkeletonStateSlot></TableCell
-              >
-              <TableCell><SkeletonStateSlot :is-loading="true">v1</SkeletonStateSlot></TableCell>
-              <TableCell class="text-xs"
-                ><SkeletonStateSlot :is-loading="true">2 days ago</SkeletonStateSlot></TableCell
-              >
-              <TableCell />
-            </TableRow>
-          </template>
-          <TableRow v-for="secret in data ?? []" :key="secret.key">
+          <TableRow v-for="(secret, index) in rows" :key="secret?.key ?? `placeholder-${index}`">
+            <!-- A placeholder row leaves the key cell empty, so it draws one bar. -->
             <TableCell>
-              <span class="block min-w-0">
+              <span v-if="secret" class="block min-w-0">
                 <span class="block font-mono text-xs">{{ secret.key }}</span>
                 <span
                   v-if="secret.description"
@@ -145,20 +127,22 @@ function closeEditor(open: boolean): void {
               <SkeletonStateSlot
                 ><StatusIndicator
                   :tone="
-                    secret.state === SecretState.Disabled ? 'warning' : 'success'
+                    secret?.state === SecretState.Disabled ? 'warning' : 'success'
                   "
-                  :label="secret.state"
+                  :label="secret?.state ?? SecretState.Active"
               /></SkeletonStateSlot>
             </TableCell>
             <TableCell
-              ><SkeletonStateSlot>v{{ secret.version }}</SkeletonStateSlot></TableCell
+              ><SkeletonStateSlot>v{{ secret?.version ?? 1 }}</SkeletonStateSlot></TableCell
             >
             <TableCell class="whitespace-nowrap text-xs text-muted-foreground">
               <span class="flex flex-col items-start gap-1">
                 <SkeletonStateSlot
-                  ><RelativeTime :value="secret.updatedAtUtc"
-                /></SkeletonStateSlot>
-                <Badge v-if="overdue.has(secret.key)" variant="warning"
+                  ><RelativeTime v-if="secret" :value="secret.updatedAtUtc" /><template v-else
+                    >2 days ago</template
+                  ></SkeletonStateSlot
+                >
+                <Badge v-if="secret && overdue.has(secret.key)" variant="warning"
                   >rotation due</Badge
                 >
               </span>
@@ -169,28 +153,29 @@ function closeEditor(open: boolean): void {
                   variant="ghost"
                   tone="neutral"
                   size="sm"
-                  :aria-label="`Rotate ${secret.key}`"
+                  :aria-label="`Rotate ${secret?.key ?? 'secret'}`"
                   title="Write a new version"
-                  @click="editing = { key: secret.key }"
+                  @click="secret && (editing = { key: secret.key })"
                 >
                   <KeyRound :size="14" />
                 </Button>
                 <Button
                   variant="ghost"
                   :tone="
-                    secret.state === SecretState.Disabled ? 'neutral' : 'danger'
+                    secret?.state === SecretState.Disabled ? 'neutral' : 'danger'
                   "
                   size="sm"
                   :is-disabled="changing"
                   @click="
-                    changes.setDisabled(
-                      secret.key,
-                      secret.state !== SecretState.Disabled,
-                    )
+                    secret &&
+                      changes.setDisabled(
+                        secret.key,
+                        secret.state !== SecretState.Disabled,
+                      )
                   "
                 >
                   {{
-                    secret.state === SecretState.Disabled ? "Enable" : "Disable"
+                    secret?.state === SecretState.Disabled ? "Enable" : "Disable"
                   }}
                 </Button>
               </div>
@@ -198,7 +183,7 @@ function closeEditor(open: boolean): void {
           </TableRow>
         </TableBody>
       </Table>
-    </LoadState>
+    </DataRegion>
     <SetSecretModal
       :vault="vault"
       :ns="ns"
