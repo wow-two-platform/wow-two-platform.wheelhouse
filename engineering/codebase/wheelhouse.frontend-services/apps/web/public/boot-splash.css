@@ -1,6 +1,6 @@
 /* The first paint's splash, shown before any script runs. It draws what BootSplash renders — the ambient
    surface, the 40px wordmark and a 12rem bar — so the mounted splash takes over without a visible change.
-   Colours mirror the tokens in src/bootstrap/index.css. A file rather than an inline style, so a strict
+   Colours mirror the fe SDK platform theme (`theme-platform`). A file rather than an inline style, so a strict
    Content-Security-Policy keeps it working. */
 .boot-splash {
   position: fixed;

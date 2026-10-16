@@ -38,7 +38,7 @@ watch(
 <template>
   <!-- The shell owns the viewport: the header spans the full window and only the main region scrolls, so no
        platform scrollbar ever cuts the header short. -->
-  <AppShell class="wh-ambient">
+  <AppShell class="surface-ambient">
     <!-- The SDK glass bar keeps the console's glass edge and depth. `min-w-0` stops the navigation's full width
          widening the shell's single grid column past a phone screen; the navigation scrolls instead. -->
     <AppShellHeader

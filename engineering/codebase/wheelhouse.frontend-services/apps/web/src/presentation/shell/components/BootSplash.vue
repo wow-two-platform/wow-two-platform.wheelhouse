@@ -20,7 +20,7 @@ const props = defineProps<BootSplashProps>();
 defineSlots<{}>();
 </script>
 <template>
-  <SplashScreen :is-open="props.isOpen" :value="props.value" is-overlay label="Loading Wheelhouse" class="wh-ambient">
+  <SplashScreen :is-open="props.isOpen" :value="props.value" is-overlay label="Loading Wheelhouse" class="surface-ambient">
     <template #logo><BrandWordmark :height="40" /></template>
   </SplashScreen>
 </template>

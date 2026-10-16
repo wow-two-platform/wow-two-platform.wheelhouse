@@ -4,11 +4,16 @@
    text-foreground, bg-card, border-border, etc. */
 @import '@wow-two-beta/ui-vue/styles.css';
 
+/* The shared platform theme: Wheelhouse's chalk and forest palette and its ambient backdrop, applied by
+   `theme-platform` on <html> (index.html) with `dark` from the colour-mode provider. After styles.css, so it wins. */
+@import '@wow-two-beta/ui-vue/themes.css';
+
 /* Tailwind v4 ignores node_modules by default — point it at the beta UI's compiled
    output so the utility classes its components emit actually get generated. */
 @source '../../node_modules/@wow-two-beta/ui-vue/dist';
 
-/* Navigation follows the workspace palette; glass is limited to structural surfaces. */
+/* App-only tokens the platform theme does not carry: navigation follows the theme's palette; the chart series
+   are Wheelhouse's own. */
 @theme {
   --color-sidebar: var(--color-card);
   --color-sidebar-deep: var(--color-background);
@@ -25,57 +30,10 @@
   --color-chart-4: #aa5965;
 }
 
-/* Wheelhouse palette over the library's semantic tokens; unlayered, so it wins over @theme.
-   Warm chalk, forest actions, and solid operational surfaces. Text is at least 4.58:1 on
-   background/card/muted; input boundaries are at least 3.27:1 on those same surfaces. */
+/* The console's glass is stronger than the fe SDK `glass` variants (75% header / 70% card fill, 12px blur, no edge
+   or highlight): 86% light / 90% dark fill, 16px blur, a tinted edge and an inset top highlight. Until glass
+   strength is a theme token, these material roles stay here, beside the map atmosphere. */
 :root {
-  --color-background: #f4f4ef;
-  --color-foreground: #202d27;
-  --color-card: #ffffff;
-  --color-card-foreground: #202d27;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #202d27;
-  /* Form fields; an open menu stands apart from them by its border and shadow. */
-  --color-field: #ffffff;
-  --color-inverse: #202d27;
-  --color-inverse-foreground: #f4f4ef;
-  --color-muted: #eaece5;
-  --color-muted-foreground: #56665d;
-  --color-subtle-foreground: #5e6d64;
-  --color-border: #dde2d8;
-  --color-border-strong: #b8c2b6;
-  --color-input: #758579;
-  --color-ring: #285c4b;
-
-  --color-primary: #285c4b;
-  --color-primary-foreground: #ffffff;
-  --color-primary-soft: #e2eee6;
-  --color-primary-soft-foreground: #285c4b;
-  --color-accent: #806235;
-  --color-accent-foreground: #ffffff;
-  --color-accent-soft: #f1eade;
-  --color-accent-soft-foreground: #755521;
-
-  --color-success: #26704c;
-  --color-success-foreground: #ffffff;
-  --color-success-soft: #e3f0e5;
-  --color-success-soft-foreground: #25633d;
-  --color-warning: #966014;
-  --color-warning-foreground: #ffffff;
-  --color-warning-soft: #faf0d9;
-  --color-warning-soft-foreground: #7d5511;
-  --color-destructive: #b44745;
-  --color-destructive-foreground: #ffffff;
-  --color-destructive-soft: #f9e8e5;
-  --color-destructive-soft-foreground: #a13d39;
-  --color-info: #306a83;
-  --color-info-foreground: #ffffff;
-  --color-info-soft: #e4eef4;
-  --color-info-soft-foreground: #2d6179;
-
-  /* Material roles stay separate from opaque card, input, and popover colors. */
-  --wh-ambient-forest: #80aa9210;
-  --wh-ambient-gold: #d6b6750f;
   --wh-glass-color: #ffffffdb;
   --wh-glass-subtle-color: #ffffff8c;
   --wh-glass-edge: #24433224;
@@ -86,60 +44,12 @@
   --wh-map-gold: #dec59314;
 }
 
-/* Pine-charcoal surfaces and muted mint actions preserve the same hierarchy at night.
-   Text is at least 5.54:1 on background/card/muted; input boundaries are at least 3.63:1. */
 .dark {
-  --color-background: #121917;
-  --color-foreground: #edf1eb;
-  --color-card: #1b2420;
-  --color-card-foreground: #edf1eb;
-  --color-popover: #1b2420;
-  --color-popover-foreground: #edf1eb;
-  /* Form fields drop to the page fill, so an open menu reads raised over them. */
-  --color-field: #121917;
-  --color-inverse: #edf1eb;
-  --color-inverse-foreground: #121917;
-  --color-muted: #29352e;
-  --color-muted-foreground: #b2beb4;
-  --color-subtle-foreground: #a1aea3;
-  --color-border: #344138;
-  --color-border-strong: #536659;
-  --color-input: #7b8d7f;
-  --color-ring: #a6d4bd;
-
-  --color-primary: #a6d4bd;
-  --color-primary-foreground: #14352a;
-  --color-primary-soft: #283e33;
-  --color-primary-soft-foreground: #b6dcc5;
-  --color-accent: #d9bd8c;
-  --color-accent-foreground: #36280e;
-  --color-accent-soft: #3d3424;
-  --color-accent-soft-foreground: #e4c99c;
-
-  --color-success: #a1d7b3;
-  --color-success-foreground: #11281a;
-  --color-success-soft: #243c2b;
-  --color-success-soft-foreground: #b4dcbf;
-  --color-warning: #eac582;
-  --color-warning-foreground: #382709;
-  --color-warning-soft: #3e3320;
-  --color-warning-soft-foreground: #edcf99;
-  --color-destructive: #efa69c;
-  --color-destructive-foreground: #3c1715;
-  --color-destructive-soft: #442c29;
-  --color-destructive-soft-foreground: #efb5aa;
-  --color-info: #9dcce1;
-  --color-info-foreground: #102731;
-  --color-info-soft: #293b44;
-  --color-info-soft-foreground: #b6d6e7;
-
   --color-chart-1: #98d1b5;
   --color-chart-2: #d9b583;
   --color-chart-3: #b7bee9;
   --color-chart-4: #e5abb5;
 
-  --wh-ambient-forest: #3d7b6229;
-  --wh-ambient-gold: #aa854d1a;
   --wh-glass-color: #1b2420e6;
   --wh-glass-subtle-color: #1b2420b8;
   --wh-glass-edge: #c1dfcb26;
@@ -148,18 +58,6 @@
   --wh-glass-shadow: 0 12px 32px #00000024, inset 0 1px 0 var(--wh-glass-highlight);
   --wh-map-forest: #579d791a;
   --wh-map-gold: #c5a4640f;
-}
-
-/* Ambient color has no animation and never replaces the theme's opaque base. */
-@utility wh-ambient {
-  background-color: var(--color-background);
-  background-image:
-    radial-gradient(ellipse 70rem 42rem at 0% 0%, var(--wh-ambient-forest), transparent 72%),
-    radial-gradient(ellipse 58rem 42rem at 100% 10%, var(--wh-ambient-gold), transparent 74%);
-
-  @media (prefers-reduced-transparency: reduce) {
-    background-image: none;
-  }
 }
 
 /* One backdrop layer per outer surface. Solid is the baseline for unsupported browsers.
