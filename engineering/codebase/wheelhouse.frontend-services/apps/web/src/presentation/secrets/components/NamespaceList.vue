@@ -72,7 +72,7 @@ watch(
             "
             @click="item && emit('select', item.slug)"
           >
-            <Text as="span" class="w-full truncate font-mono text-xs font-medium" skeleton-width="70%">{{
+            <Text as="span" class="w-full truncate font-mono text-xs font-medium text-inherit" skeleton-width="70%">{{
               item?.slug
             }}</Text>
             <Text

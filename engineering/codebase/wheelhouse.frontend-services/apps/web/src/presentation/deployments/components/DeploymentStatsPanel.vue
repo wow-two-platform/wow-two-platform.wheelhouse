@@ -164,7 +164,7 @@ function difference(
             class="rounded-xl border border-border p-4"
           >
             <div class="mb-3 flex items-baseline justify-between gap-3 text-sm">
-              <Text as="span">{{ series.title }}</Text>
+              <Text as="span" class="text-sm">{{ series.title }}</Text>
               <SkeletonStateSlot class="font-medium tabular-nums">{{
                 series.data.reduce((sum, value) => sum + value, 0)
               }}</SkeletonStateSlot>

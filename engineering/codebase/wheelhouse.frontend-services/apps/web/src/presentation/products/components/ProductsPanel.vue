@@ -207,7 +207,7 @@ async function changeLifecycle(value: string | null): Promise<void> {
             >
               <ProductIcon :product-slug="product?.slug ?? null" :name="product?.name ?? ''" />
               <div class="min-w-0 flex-1">
-                <Text class="truncate text-sm font-semibold" skeleton-width="70%">{{ product?.name }}</Text>
+                <Text class="truncate text-sm font-semibold text-inherit" skeleton-width="70%">{{ product?.name }}</Text>
                 <Text class="mt-1 truncate text-xs text-muted-foreground" skeleton-width="45%">
                   {{ product?.slug }}
                 </Text>
@@ -245,7 +245,7 @@ async function changeLifecycle(value: string | null): Promise<void> {
                   :name="selected?.name ?? ''"
                   size="lg"
                 />
-                <Text as="span" skeleton-width="10rem">{{ selected?.name }}</Text>
+                <Text as="span" class="text-xl font-semibold" skeleton-width="10rem">{{ selected?.name }}</Text>
               </h2>
               <Text class="mt-2 max-w-prose text-sm text-muted-foreground" skeleton-width="18rem">
                 {{ selected?.description }}

@@ -62,7 +62,7 @@ const items = useSkeletonItems(() => (firstLoad.value ? undefined : attention.va
         :key="item?.id ?? `placeholder-${index}`"
         class="flex items-start justify-between gap-3 border-t border-border py-3"
       >
-        <div>
+        <div class="min-w-0 flex-1">
           <Text
             class="text-sm font-medium"
             :class="item?.tone === 'danger' ? 'text-destructive' : 'text-warning'"

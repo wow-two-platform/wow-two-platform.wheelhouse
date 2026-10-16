@@ -374,7 +374,7 @@ function openDeploy(job?: DeploymentJob): void {
                 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
               >
                 Products
-                <Text as="span" class="ml-1 tabular-nums" skeleton-width="1.5ch">{{
+                <Text as="span" class="ml-1 text-xs font-semibold tabular-nums text-inherit" skeleton-width="1.5ch">{{
                   firstLoad ? "" : inventory.products.length
                 }}</Text>
               </h2>
@@ -411,7 +411,7 @@ function openDeploy(job?: DeploymentJob): void {
                     :product-slug="entry?.product ? entry.key : null"
                     :name="entry ? productName(entry) : ''"
                     size="sm"
-                  /><Text as="span" class="min-w-0 truncate text-sm font-semibold" skeleton-width="7rem">{{
+                  /><Text as="span" class="min-w-0 truncate text-sm font-semibold text-inherit" skeleton-width="7rem">{{
                     entry ? productName(entry) : ""
                   }}</Text></span
                 >
@@ -429,7 +429,7 @@ function openDeploy(job?: DeploymentJob): void {
                     v-if="!entry || history.loading.value"
                     as="span"
                     is-skeleton
-                    skeleton-width="3rem"
+                    skeleton-width="2rem"
                     class="text-xs"
                   /><span v-else-if="history.error.value" class="text-xs"
                     >Unavailable</span
@@ -507,7 +507,7 @@ function openDeploy(job?: DeploymentJob): void {
                           :product-slug="product?.product ? product.key : null"
                           :name="product ? productName(product) : ''"
                           size="lg"
-                        /><Text as="span" skeleton-width="10rem">{{
+                        /><Text as="span" class="text-2xl font-semibold text-inherit" skeleton-width="10rem">{{
                           product ? productName(product) : ""
                         }}</Text>
                       </h2>
@@ -756,7 +756,7 @@ function openDeploy(job?: DeploymentJob): void {
                                 >{{ service ? ServerExtensions.containerLabel(service) : "" }}</Text
                               ></span
                             >
-                            <Text as="span" class="mt-4 block break-all text-sm font-semibold">{{
+                            <Text as="span" class="mt-4 block break-all text-sm font-semibold text-inherit">{{
                               service?.service
                             }}</Text
                             ><Text as="span" class="mt-1 block text-xs text-muted-foreground"
@@ -845,7 +845,7 @@ function openDeploy(job?: DeploymentJob): void {
                           class="size-2 shrink-0 rounded-full"
                           :class="job ? outcomeColor(job) : 'bg-muted'"
                         /><span class="min-w-0 flex-1"
-                          ><Text as="span" class="block truncate text-sm font-medium" skeleton-width="8rem">{{
+                          ><Text as="span" class="block truncate text-sm font-medium text-inherit" skeleton-width="8rem">{{
                             job ? (job.release ?? job.bundleId ?? "Submitted release") : ""
                           }}</Text
                           ><Text as="span" class="text-xs text-muted-foreground" skeleton-width="10rem"

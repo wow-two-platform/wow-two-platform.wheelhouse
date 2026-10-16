@@ -246,7 +246,7 @@ const trendWindow = computed(() => {
                   class="flex items-center gap-3 p-3 text-sm"
                 >
                   <KeyRound :size="14" class="shrink-0 text-muted-foreground" />
-                  <Text as="span" class="font-medium">{{ vault?.name }}</Text>
+                  <Text as="span" class="text-sm font-medium">{{ vault?.name }}</Text>
                   <Text as="span" class="min-w-0 truncate font-mono text-xs text-muted-foreground" skeleton-width="12rem">{{
                     vault?.url
                   }}</Text>

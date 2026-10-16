@@ -43,8 +43,8 @@ const summary = computed(() =>
 <template>
   <div class="min-w-0 rounded-xl border border-border bg-card p-3">
     <div class="mb-2 flex items-center justify-between gap-3 text-xs">
-      <Text as="span" class="truncate text-muted-foreground">{{ props.label }}</Text>
-      <Text v-if="props.points.length >= 2" as="span" class="font-medium tabular-nums"
+      <Text as="span" class="truncate text-xs text-muted-foreground">{{ props.label }}</Text>
+      <Text v-if="props.points.length >= 2" as="span" class="text-xs font-medium tabular-nums"
         >peak {{ Math.round(peak) }}%</Text
       >
     </div>
