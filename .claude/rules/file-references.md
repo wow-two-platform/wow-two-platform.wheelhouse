@@ -22,6 +22,7 @@
 | Feature completeness, decision Points, sweep | `engineering/research/feature-completeness.md` |
 | Deployment topology, environments, sites, builds | `engineering/research/deployment-topology.md` |
 | Parked UI directions (Claude boards) | `engineering/research/design-directions/design-directions.md` |
+| MCP security and reliability review, MCP vs REST | `engineering/research/mcp-review.md` |
 | Brand, app logo and icon-set export scripts | `engineering/scripts/export-brand-logos.py` · `export-app-icons.py` · `export-icon-set.py` |
 
 ## Source projects (`engineering/codebase/`)

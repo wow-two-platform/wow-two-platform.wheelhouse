@@ -100,6 +100,8 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Apply a tailnet grants policy and prove canary nodes reach nothing | engineering | [MCP review](../research/mcp-review.md): the default policy lets every node reach the consoles and SSH; owner devices → consoles, CI tag → SSH, `tag:canary` → nothing |
+| Split the platform network into control and workloads | engineering | MCP review: product and canary containers reach the consoles' ports directly today |
 | Sign in to the local console through a localhost GitHub OAuth app | feature | Local rig sign-in; the `rehearse.py console` check depends on it |
 | Tell dev from prod by an environment tag beside the version | feature | Dev and prod consoles run side by side |
 | Prepare a VPS for deployments with one command | feature | Traefik (file provider on `/srv/wheelhouse/ingress`), PostgreSQL, `platform` network, deploy account, protected root, firewall |
@@ -198,8 +200,15 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Build, deploy and log tools for agents | feature | `builds:write`, `deployments:write`, `logs:read`; prod keeps the typed target ID; read-only MCP is implemented |
-| Key expiry and rotation reminders | feature | Keys live until revoked today |
+| Audit every MCP tool call | feature | [MCP review](../research/mcp-review.md): key, tool, target, outcome and duration; required before any write tool |
+| Limit MCP concurrency and rate per key | feature | Each runner tool spawns Python and SSH for up to 110 s; cap 2–4 concurrent calls |
+| Ability to expire integration keys and see them near expiry | feature | Keys live until revoked today; default 90 days |
+| Fix MCP tool failures collapsing into one generic message | fix | Pass the operator-safe error and a retryable hint |
+| Harden `/mcp` with an Origin check, a small body limit and a `/.well-known` 404 | fix | The spec requires the Origin 403; the SPA answers `/.well-known/*` with HTML today |
+| Connect Claude Code to prod MCP with the key in the Keychain | check | The pending authenticated acceptance; a headers helper keeps the key out of the plain-text client config |
+| Fix `catalog:read` returning vault namespaces over REST but not MCP | fix | One projection per scope |
+| Cover the 2026-07-28 MCP protocol in E2E | engineering | Tests use 2025-11-25 only |
+| Build, deploy and log tools for agents | feature | `builds:write`, `deployments:write`, `logs:read` on short-lived keys; server-side approval (plan, approve in the console, execute); prod keeps the typed target ID |
 
 ---
 
