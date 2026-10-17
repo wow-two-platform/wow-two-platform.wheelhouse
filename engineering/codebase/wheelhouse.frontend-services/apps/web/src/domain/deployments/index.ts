@@ -21,3 +21,4 @@ export {
   type Promotion,
   type ServiceComparison,
 } from './EnvironmentComparison';
+export * from './history';
