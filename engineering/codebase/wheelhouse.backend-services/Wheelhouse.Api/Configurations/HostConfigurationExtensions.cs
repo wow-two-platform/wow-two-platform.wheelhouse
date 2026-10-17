@@ -114,8 +114,8 @@ public static class HostConfigurationExtensions
     }
 
     /// <summary>Registers the infrastructure layer — the SDK time provider, the runner gateway, the inventory snapshot and
-    /// its startup export, the vault client, the OAuth-token source and the GitHub repository reader the icon and
-    /// manifest reads share.</summary>
+    /// its startup export, the vault client, the OAuth-token source, the GitHub repository reader the icon, manifest and
+    /// catalog reads share, and the catalog settings.</summary>
     public static WebApplicationBuilder AddInfrastructureLayer(this WebApplicationBuilder builder)
     {
         builder.Services.AddTimeProviders();
@@ -153,6 +153,15 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Infrastructure.Products.GitHubRepositoryReader>();
         builder.Services.AddScoped<IProductIconSource, Wheelhouse.Infrastructure.Products.GitHubProductIconSource>();
         builder.Services.AddScoped<IProductManifestSource, Wheelhouse.Infrastructure.Products.GitHubProductManifestSource>();
+        builder.Services.AddScoped<IRepositoryFileSource, Wheelhouse.Infrastructure.Catalog.GitHubRepositoryFileSource>();
+
+        // The wow2 catalog: one YAML file in a GitHub repository, bound when first resolved; a malformed setting fails it.
+        var configuration = builder.Configuration;
+        builder.Services.AddValidatedOptions<Wheelhouse.Application.Catalog.CatalogSettings>(
+            settings => configuration.GetSection("Catalog").Bind(settings),
+            options => options.Validate(
+                settings => settings.IsValid,
+                "Catalog:Repository must be owner/name, Catalog:Path a relative file path and Catalog:Ref a branch."));
 
         return builder;
     }
@@ -167,6 +176,8 @@ public static class HostConfigurationExtensions
         builder.Services.AddMediatorInterceptor(typeof(Wheelhouse.Application.Inventory.Interceptors.InventoryExportingInterceptor<,>));
         builder.Services.AddMediatorValidatingInterceptor();
         builder.Services.AddScoped<Wheelhouse.Application.Workspaces.Services.DefaultWorkspaceService>();
+        builder.Services.AddScoped<Wheelhouse.Application.Catalog.Services.CatalogReader>();
+        builder.Services.AddScoped<Wheelhouse.Application.Catalog.Services.CatalogReleaseService>();
         builder.Services.AddScoped<Wheelhouse.Application.Products.Services.ProductIdentityService>();
         builder.Services.AddScoped<Wheelhouse.Application.Products.Services.ProductsProjectionService>();
         builder.Services.AddScoped<Wheelhouse.Application.Targets.Services.TargetsProjectionService>();

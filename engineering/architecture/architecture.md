@@ -175,6 +175,34 @@ Pins are a preference: they never reach the audit trail and are not inventory.
 - Operators' sessions only (`OperatorSession` policy): an integration key is authenticated, then refused with 403;
   writes carry the action header `pin`.
 
+### wow2 catalog
+
+Wheelhouse reads one YAML catalog of every wow2 app from GitHub: `Catalog:Repository` (default `wow-two/wow-two-ws`),
+`Catalog:Path` (`catalog.yml`) and `Catalog:Ref` (`main`), validated options, read with the signed-in operator's token
+through `GitHubRepositoryReader` (`IRepositoryFileSource`). Each read checks the ref's head again, so a pushed catalog
+shows at once; a commit's file stays cached. The format (`catalog: 1`, `workspaces`, `entries`) is owned by
+wow-two-ws ([catalog convention](../../../../../conventions/development/repo/catalog/catalog.md)); Wheelhouse reads
+an entry's slug, name, workspace, kind, deploy, purpose and repositories, and ignores `orgs`, `status`, `local` and any
+key it does not know. The parser (YamlDotNet's representation model) names the line and the field of the first
+problem.
+
+- `GET /api/catalog` returns `{ source: { repository, path, ref, commit }, workspaces: [{ slug, name, description }],
+  entries: [{ slug, name, workspace, kind, deploy, purpose, repositories, productId }] }`; `productId` is the product
+  with the entry's slug, else `null`. 503 when GitHub cannot serve the repository, 404 when the file is missing, 422
+  (`catalog.yml line N: field …`) when it is malformed. Operator's session only.
+- `POST /api/catalog/import` `{ slugs }` (action header `catalog`, audited as `catalog.import`) walks the chosen
+  entries in catalog order: an existing product with the slug moves into the entry's workspace; an entry with
+  `deploy: wheelhouse` and a repository becomes a product; anything else is skipped with a warning (an entry with
+  `repositories: []` is not importable). A workspace is created from its catalog declaration, last in the order, only
+  when a product needs it. It answers `{ createdWorkspaces, createdProducts, movedProducts, warnings: [{ slug,
+  message }] }` (slugs); a second run changes nothing. An unknown slug is 400 and nothing changes.
+- A product created from the catalog needs no typed release config: name and description (clipped to 200) from the
+  entry, the primary (first) repository, branch `main`, asset `{slug}-release.tar.gz`, workflow
+  `publish-docker-image.yml`, and one image per service key of `engineering/deployment/deploy.yml` at `main`'s head:
+  the service's own `image`, else `ghcr.io/{owner/repo, lowercase}/{service}`, the shared publish workflow's
+  convention (`release.py` `repository_of`). Without a readable, valid descriptor the product gets no images and the
+  warning says why; a descriptor naming another `product` keeps its images with a warning.
+
 ### Product identity
 
 A product's name, description, homepage and per-service name and description are text in `product/product.json` in its

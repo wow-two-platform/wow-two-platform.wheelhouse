@@ -4,6 +4,8 @@
     <!-- Mediator (IQuery/ICommand + handlers + AddMediator) + AppResult — replaces the raw MediatR ref. -->
     <PackageReference Include="WoW2.Sdk.Beta.Be" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <!-- The wow2 catalog and each product's deploy.yml are YAML; the be sdk has no YAML reader yet. -->
+    <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 
   <ItemGroup>

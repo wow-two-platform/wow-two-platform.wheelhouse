@@ -21,6 +21,11 @@
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
   </ItemGroup>
 
+  <!-- Formats: the wow2 catalog and deploy.yml are YAML; the be sdk ships no YAML reader. -->
+  <ItemGroup>
+    <PackageVersion Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
   <!-- Hosting abstractions. -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.12" />
