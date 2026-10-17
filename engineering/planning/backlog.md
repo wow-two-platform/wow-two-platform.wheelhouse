@@ -38,16 +38,14 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 |---|---|---|
 | Sign in to the local console through a localhost GitHub OAuth app | feature | Local rig sign-in; the `rehearse.py console` check depends on it |
 | Tell dev from prod by an environment tag beside the version | feature | Dev and prod consoles run side by side |
-| Prepare a VPS for deployments with one command | feature | Traefik (file provider on `/srv/wheelhouse/ingress`), PostgreSQL, `platform` network, deploy account, protected root, firewall |
 | Accept the hosted console: owner sign-in, restart persistence, authenticated MCP | check | After Wheelhouse prod is live (user 2026-10-13); dev already passed CI's rollout, HTTPS and anonymous-MCP checks |
 | Give Wheelhouse a GitHub App installed on every org | feature | User decision 2026-10-14: reads, commits (identity edits), workflow runs and repository renames. Today catalog reads are anonymous and icons use the operator's expiring sign-in token |
-| Add a second VPS for products once Wheelhouse dev runs | check | User decision 2026-10-09: the Wheelhouse host stays control-plane only (no public 80/443); products get their own host |
-| Wire the products VPS: host, pinned SSH, public ingress and domains | feature | The control-plane VPS was wired 2026-10-13 through `vps/vps.md`; reuse it with public ingress |
-| Deploy ForeverPin to the products VPS and watch its redirect | check | Live editor, create and scan; restart; redirect monitoring and headroom |
-| Choose the shared preview domain for dev and test hosts | check | Topology point 25; one wildcard DNS record per environment |
+| Register the second OVH VPS for Ocharo as a server | check | User 2026-10-17: the owner buys it (`app-t-004` in the wow2 tasks); Wheelhouse wires it with v0.5's public-hosting iteration |
+| Deploy Ocharo to the products VPS | check | User 2026-10-17: Ocharo is the first product to go live, after v0.5's essential modules (`app-t-005`); ForeverPin follows |
+| Choose the shared preview domain for dev hosts | check | Topology point 25; one wildcard DNS record; `test` was retired 2026-10-17 |
 | Start and stop an environment from Wheelhouse | feature | Topology point 15; `compose stop/start` under the target lock |
-| Encrypted off-provider backups with a restore drill | feature | Product databases, key volumes, Wheelhouse state; decryption keys held off-host. OVH's daily VPS backup is the only copy today. Multi-cloud replication and failover are on the table (user 2026-10-13) |
 | Retire `rehearse.py console` for the self-deployed console | check | `rehearse.py self` deploys Wheelhouse to `wheelhouse-dev`; it needs an OAuth app and the inventory mount |
+| Ability to confirm dangerous actions with a second factor | feature | User 2026-10-17: deleting a server and similar actions ask for a fresh second factor. GitHub sign-in can't force a new 2FA check, so prefer a passkey (be sdk identity has passkeys and TOTP) with an authenticator-app code as fallback |
 
 ---
 
@@ -55,9 +53,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Uptime, backup-age and disk alerts | feature | The vitals sampler exists; needs the alert channel (completeness Point 6) and an external probe |
-| Notify deploy outcomes and alerts | feature | Needs the alert channel (completeness Point 6) |
-| Stream a service's logs live | feature | Recent lines on request exist |
 | Checkpoint the newest audit entries outside Wheelhouse | feature | The chain shows edits, not truncation of the newest entries |
 | Ability to see an unreadable host in the attention list | feature | Servers shows the reason since v0.4; the attention list skips it |
 
@@ -81,12 +76,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Item | Type | Notes |
 |---|---|---|
 | Rehearse every deployment flow from dev on a sample app | feature | Promotion from dev to prod ships; this proves each flow end to end |
-| Analyze the zero-disruption deployment contract | product | User 2026-10-15: what every app must implement so deployments never break work in flight; covers the rows below; the outcome becomes a wow2 convention |
-| Ability to drain requests and show maintenance before a rollout | feature | The service refuses new requests, finishes in-flight ones, and its pages say so |
-| Ability to deploy when a service is idle, with an estimate | feature | Services report busy work Wheelhouse must not interrupt; Wheelhouse tells the operator when the rollout will run |
-| Ability to schedule a deployment for a set time | feature | E.g. a release set for tomorrow 2 PM |
-| Ability for product frontends to refresh onto a new version | feature | Show "new version available"; before a write, refresh or warn so old pages never call a new API |
-| Ability to dry-run pending migrations before a rollout | feature | The SDK migrator applies a batch atomically and dry-runs it (`wow-migrate apply --dry-run`, exit 2 on failure). Open: how the runner reaches the new image's embedded migrations (copy them out, ship the CLI in the image, or an app dry-run entry point); skip the gate on a first deploy |
 | Roll prod back by promoting the previous release | feature | Dev-to-prod promotion exists |
 | Run each app's migrations as a rollout step and show their state | feature | User decision 2026-10-14: apps own their SQL; the runner migrates with the new image between pull and start; prod waits for test. The app database's own migration journal stays the authority; Wheelhouse reads it at deploy and keeps what it saw in the job history, never a second table. Rollback scripts run only on a confirmed operator action |
 | Mount a GitHub token that can start product builds | check | `WHEELHOUSE_GITHUB_TOKEN_FILE` with Actions write on each product; the Build button needs it |
@@ -108,8 +97,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Item | Type | Notes |
 |---|---|---|
 | Registrar search and purchase against a pre-funded balance | feature | Registrar choice open |
-| DNS records and ingress routes per product environment | feature | Per-zone scoped tokens |
-| Domain and certificate expiry tracking | feature | A dead domain is a dead product |
 
 ---
 

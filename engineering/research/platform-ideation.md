@@ -13,7 +13,7 @@ written from it when the version opens.
 | 1 | One console shell for every platform app: each app ships an API and a module inside Wheelhouse; one sign-in, one navigation, one audit trail | 2026-10-17 |
 | 2 | Hierarchy: Workspace → Product → Environment → Service, with shared platform services (PostgreSQL, Valkey) beneath | 2026-10-17 |
 | 3 | Platform apps are ordinary products in a Platform workspace; Wheelhouse itself stays CI-promoted | 2026-10-17 |
-| 4 | Environments stay `dev`, `test`, `prod`; branch previews come later | 2026-10-17 |
+| 4 | Environments are `dev` and `prod`: products work on `main` only and fix forward, every `main` release deploys to dev, then is promoted to prod; `test` and its branch are dropped; branch previews come later | 2026-10-17 |
 | 5 | Pins: workspaces, products and services can be pinned and custom-sorted; a pinned service is one pin for all its environments | 2026-10-17 |
 | 6 | The repo declares what a product is; Wheelhouse decides where and when it runs | 2026-10-17 |
 | 7 | One manifest per repo replaces `product/product.json` and `engineering/deployment/deploy.yml` | 2026-10-17 |
@@ -28,6 +28,10 @@ written from it when the version opens.
 | 16 | Secrets Vault keeps its name; the console's two editors are labelled Settings and Secrets | 2026-10-17 |
 | 17 | Ocharo gets its own `ocharo` workspace in the catalog | 2026-10-17 |
 | 18 | Prod skips v0.4 and takes v0.5 after the owner's review | 2026-10-17 |
+| 19 | Two environments, `dev` and `prod`; products work on `main` only, every release goes to dev, then is promoted to prod | 2026-10-17 |
+| 20 | Deployed dev runs as .NET `Development`, prod as `Production` | 2026-10-17 |
+| 21 | Primary navigation is Home, Products, Deployments, Servers; secrets and activity belong to products | 2026-10-17 |
+| 22 | Before Ocharo goes live: settings and secrets editor, public hosting, backups, logs, monitoring and alerts, one manifest, zero-disruption deploys | 2026-10-17 |
 
 | Fact | Owner |
 |---|---|
@@ -43,6 +47,5 @@ written from it when the version opens.
 ## Open topics
 
 - Manifest fields and format.
-- Whether to drop the `test` environment and branch, keeping `dev` and `prod`.
 - The Deployments page and everything connected to deploying.
 - The deployment contract (`con-t-012` in the wow2 tasks).
