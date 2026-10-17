@@ -28,6 +28,7 @@ export const ManagementPlaces = [
 /** Account-level destinations, under Settings. */
 export const SettingsPlaces = [
   { path: '/settings/keys', label: 'Integration keys', description: 'Scoped keys other programs present to read Wheelhouse.' },
+  { path: '/settings/catalog', label: 'Catalog', description: 'Every wow2 app the workspace catalog lists, ready to import.' },
 ] as const;
 
 /** A fixed place in the console: its URL, its title and the line under it. */
@@ -46,6 +47,7 @@ const Pages: Record<Place['path'], LazyRoute> = {
   '/products': () => import('@/presentation/products/pages/ProductsPage.vue'),
   '/activity': () => import('@/presentation/audit/pages/ActivityPage.vue'),
   '/settings/keys': () => import('@/presentation/integrations/pages/IntegrationKeysPage.vue'),
+  '/settings/catalog': () => import('@/presentation/catalog/pages/CatalogPage.vue'),
 };
 
 /** A place's route: its handle carries the title (scope bar and document title) and the description. @internal */

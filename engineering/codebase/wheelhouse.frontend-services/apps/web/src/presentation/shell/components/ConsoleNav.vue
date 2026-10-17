@@ -8,7 +8,7 @@ export interface ConsoleNavProps {
 <script setup lang="ts">
 import { computed } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
-import { Boxes, History, House, KeyRound, LayoutGrid, Rocket, Server, Settings } from 'lucide-vue-next';
+import { BookOpen, Boxes, Plug, History, House, KeyRound, LayoutGrid, Rocket, Server, Settings } from 'lucide-vue-next';
 import { DataRegion, SkeletonState } from '@wow-two-beta/fe/presentation/feedback';
 import {
   SidebarMenu,
@@ -46,7 +46,8 @@ const Operations = [
 /** @internal Registry and account settings. */
 const SettingsLinks = [
   { path: ConsolePaths.products, label: 'Products', icon: Boxes },
-  { path: ConsolePaths.keys, label: 'Integration keys', icon: KeyRound },
+  { path: ConsolePaths.keys, label: 'Integration keys', icon: Plug },
+  { path: ConsolePaths.catalog, label: 'Catalog', icon: BookOpen },
 ] as const;
 
 /** Each workspace group's key, stable across reads. @internal */

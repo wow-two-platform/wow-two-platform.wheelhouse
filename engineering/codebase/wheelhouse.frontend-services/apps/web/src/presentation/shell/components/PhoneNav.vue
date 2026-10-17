@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
-import { Boxes, Ellipsis, History, House, KeyRound, LayoutGrid, LogOut, Rocket, Server } from 'lucide-vue-next';
+import { BookOpen, Boxes, Plug, Ellipsis, History, House, KeyRound, LayoutGrid, LogOut, Rocket, Server } from 'lucide-vue-next';
 import { Button } from '@wow-two-beta/fe/presentation/actions';
 import { DataRegion, SkeletonState } from '@wow-two-beta/fe/presentation/feedback';
 import {
@@ -35,7 +35,8 @@ const moreOpen = ref(false);
 const MorePlaces = [
   { path: ConsolePaths.secrets, label: 'Secrets', icon: KeyRound },
   { path: ConsolePaths.activity, label: 'Activity', icon: History },
-  { path: ConsolePaths.keys, label: 'Integration keys', icon: KeyRound },
+  { path: ConsolePaths.keys, label: 'Integration keys', icon: Plug },
+  { path: ConsolePaths.catalog, label: 'Catalog', icon: BookOpen },
 ] as const;
 
 /** Whether a destination is the current page, including the pages below it. @internal */
@@ -135,7 +136,7 @@ watch(
     </div>
   </BottomSheet>
 
-  <BottomSheet v-model:open="moreOpen" :snap-points="[420, '80vh']">
+  <BottomSheet v-model:open="moreOpen" :snap-points="[390, '85vh']">
     <BottomSheetTitle class="sr-only">More</BottomSheetTitle>
     <SidebarMenu aria-label="More">
       <SidebarMenuItem v-for="place in MorePlaces" :key="place.path" as-child class="h-11" :is-active="isAt(place.path)">

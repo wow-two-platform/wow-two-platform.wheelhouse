@@ -48,7 +48,8 @@ const groups = computed(() => (portfolio.isFirstLoad.value ? placeholders : port
       @retry="refresh.refresh"
     >
       <template #emptyActions>
-        <Button as-child><RouterLink :to="ConsolePaths.products">Add product</RouterLink></Button>
+        <Button as-child><RouterLink :to="ConsolePaths.catalog">Import from the catalog</RouterLink></Button>
+        <Button as-child variant="outline"><RouterLink :to="ConsolePaths.products">Add product</RouterLink></Button>
       </template>
       <WorkspaceSection
         v-for="(group, index) in groups"
