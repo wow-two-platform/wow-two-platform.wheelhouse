@@ -12,6 +12,9 @@ public sealed record DeploymentRecord
     /// <summary>Gets the target the release was submitted to.</summary>
     public string? TargetId { get; init; }
 
+    /// <summary>Gets the environment the runner recorded at submission; it names a removed target's environment.</summary>
+    public string? Environment { get; init; }
+
     /// <summary>Gets the release bundle's identifier in the catalog, such as <c>foreverpin-gh-42</c>.</summary>
     public string? BundleId { get; init; }
 

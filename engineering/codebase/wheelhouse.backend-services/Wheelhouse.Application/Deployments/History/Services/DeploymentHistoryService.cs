@@ -43,7 +43,8 @@ public sealed class DeploymentHistoryService(
             var product = target?.Product ?? record.Product;
             var workspace = target?.Workspace ?? (product is null ? null : productWorkspaces.GetValueOrDefault(product));
             var previous = record.TargetId is { } key ? lastSuccess.GetValueOrDefault(key) : null;
-            entries.Add(new DeploymentEntry(record, product, workspace, target?.Environment, previous, Compare(record, previous)));
+            entries.Add(new DeploymentEntry(record, product, workspace, target?.Environment ?? record.Environment, previous,
+                Compare(record, previous)));
             if (record.TargetId is { } slug && DeploymentOutcome.Of(record.Status) == DeploymentOutcome.Succeeded)
                 lastSuccess[slug] = record;
         }
