@@ -56,8 +56,8 @@ export const AttentionRules = {
         items.push({ id: `problem:${id}:${problem}`, tone: 'warning', title: `${id}: ${problem}`,
           detail: 'Part of the reading failed; the rest is shown.', href: '/servers' });
     }
-    for (const [server, targets] of ServerExtensions.byServer(vitals.targets)) {
-      const host = ServerExtensions.hostOf(targets);
+    for (const { serverId: server } of vitals.servers) {
+      const host = ServerExtensions.hostOf(vitals, server);
       if (!host) continue;
       for (const disk of host.disks) {
         const used = ServerExtensions.diskPercent(disk);

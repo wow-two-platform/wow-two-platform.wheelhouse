@@ -272,9 +272,10 @@ class TransportTests(unittest.TestCase):
             if remote.calls:
                 raise transport.CommandFailed("SSH connection refused (exit 255); inspect the target privately")
             remote.calls += 1
-            return {"project": "pilot-staging", "containers": [], "host": {"cpus": 2}}
+            return {"project": "pilot-staging", "containers": []}
         remote.calls = 0
         with patch.object(transport.fleet, "active_targets", return_value=bindings), \
+                patch.object(transport.fleet, "active_servers", return_value=()), \
                 patch.object(transport.fleet, "resolve_target", return_value=config), \
                 patch.object(transport, "ThreadPoolExecutor", FakePool), \
                 patch.object(transport, "run_remote", side_effect=remote):
@@ -285,6 +286,45 @@ class TransportTests(unittest.TestCase):
         with patch.object(transport.fleet, "active_targets", return_value=bindings):
             with self.assertRaisesRegex(ValueError, "not in the inventory"):
                 transport.vitals(self.root, "missing")
+
+    def test_vitals_read_each_server_host_once_even_before_it_runs_a_target(self):
+        servers = tuple(transport.fleet.Server(name, name, transport.fleet.VpsProvider.HETZNER, name + ".example.net", "hel1")
+                        for name in ("busy", "fresh", "dark"))
+        bindings = (transport.fleet.Target("pilot-dev", "busy", "pilot", transport.fleet.DeploymentEnvironment.DEV,
+                                           (), "platform", root="/srv/pilot"),
+                    transport.fleet.Target("pilot-test", "busy", "pilot", transport.fleet.DeploymentEnvironment.TEST,
+                                           (), "platform", root="/srv/pilot"))
+        for server in ("busy", "fresh"):
+            (self.root / "ssh" / server).mkdir(parents=True)
+            for name in ("identity", "known_hosts"):
+                (self.root / "ssh" / server / name).touch()
+        calls = []
+
+        def remote(ssh, action, document, *arguments, release=None, timeout=30):
+            calls.append((action, ssh.config["host"], document))
+            if action == "host":
+                return {"host": {"cpus": 2, "disks": []}, "problems": []}
+            return {"project": document["product"] + "-" + document["environment"], "containers": []}
+        with patch.object(transport.fleet, "SERVERS", servers), patch.object(transport.fleet, "TARGETS", bindings), \
+                patch.object(transport.fleet, "rehearsal", return_value=False), \
+                patch.object(transport.fleet, "defined_product", return_value=None), \
+                patch.object(transport, "ThreadPoolExecutor", FakePool), \
+                patch.object(transport, "run_remote", side_effect=remote):
+            result = transport.vitals(self.root)
+            first = list(calls)
+            one = transport.vitals(self.root, "pilot-test")
+        self.assertEqual([("busy", True), ("fresh", True), ("dark", False)],
+                         [(item["serverId"], item["ok"]) for item in result["servers"]])
+        self.assertEqual({"cpus": 2, "disks": []}, result["servers"][1]["host"])
+        self.assertEqual("Missing SSH identity file", result["servers"][2]["reason"])
+        # A server's disks cover its targets' roots, or the default root while it runs none; one read per server.
+        hosts = [(host, document) for action, host, document in first if action == "host"]
+        self.assertEqual([("busy.example.net", {"roots": ["/srv/pilot"]}),
+                          ("fresh.example.net", {"roots": ["/srv/wheelhouse"]})], hosts)
+        self.assertEqual(["pilot-dev", "pilot-test"], [item["targetId"] for item in result["targets"]])
+        self.assertNotIn("host", result["targets"][0])
+        self.assertEqual((["busy"], ["pilot-test"]), ([item["serverId"] for item in one["servers"]],
+                                                      [item["targetId"] for item in one["targets"]]))
 
     def test_logs_read_one_service_through_the_runner_and_bound_the_request(self):
         config = {"serverId": "pilot", "provider": "Hetzner", "ssh": self.config,

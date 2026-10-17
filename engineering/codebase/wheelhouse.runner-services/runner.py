@@ -1024,8 +1024,9 @@ def percent(text):
     return float(match.group(1)) if match else None
 
 
-def host_vitals(root):
-    """Load, memory, disks and uptime from /proc and statvfs; a field stays None where the host hides it."""
+def host_vitals(roots):
+    """Load, memory, disks and uptime from /proc and statvfs; a field stays None where the host hides it. `roots` are
+    the deployment roots whose filesystems the disks cover, beside Docker's data root."""
     def read(path):
         try:
             return Path(path).read_text()
@@ -1040,9 +1041,9 @@ def host_vitals(root):
     load = read("/proc/loadavg").split()[:3]
     uptime = read("/proc/uptime").split()[:1]
     disks, seen = [], set()
-    # The deployment root and Docker's data root, once per filesystem. Container mounts give one disk several
+    # The deployment roots and Docker's data root, once per filesystem. Container mounts give one disk several
     # device ids, so identical capacity counts as the same disk too.
-    for path in (root, Path("/var/lib/docker")):
+    for path in (*roots, Path("/var/lib/docker")):
         existing = next((item for item in (path, *path.parents) if item.exists()), None)
         try:
             device, usage = existing.stat().st_dev, shutil.disk_usage(existing)
@@ -1092,16 +1093,25 @@ def container_vitals(docker, project):
     return sorted(result, key=lambda container: container["service"])
 
 
+def host(document):
+    """Reads the host's own vitals without a target, so a server reads the same before and after it runs one. The
+    document names the deployment roots whose disks to cover; every field is operator-safe."""
+    roots = document.get("roots") if isinstance(document, dict) else None
+    require(isinstance(roots, list) and 0 < len(roots) <= 32
+            and all(isinstance(root, str) and Path(root).is_absolute() for root in roots), "Invalid host roots")
+    try:
+        return {"host": host_vitals([Path(root) for root in roots]), "problems": []}
+    except (OSError, ValueError):
+        return {"host": None, "problems": ["Host vitals were unreadable"]}
+
+
 def vitals(target, docker_factory=None):
-    """Reads host and container vitals without changing the target; every field is operator-safe."""
-    root, project = validate_target(target)
+    """Reads container vitals without changing the target; every field is operator-safe. The host is read once per
+    server (`host`), never through its targets."""
+    _, project = validate_target(target)
     docker = (docker_factory or Docker)(target, base_environment(target))
     before = state(target)
-    result = {"project": project, "host": None, "containers": None, "problems": []}
-    try:
-        result["host"] = host_vitals(root)
-    except (OSError, ValueError):
-        result["problems"].append("Host vitals were unreadable")
+    result = {"project": project, "containers": None, "problems": []}
     try:
         result["containers"] = container_vitals(docker, project)
     except (Rejected, CommandFailed) as error:
@@ -1146,7 +1156,7 @@ def decode(value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["validate", "apply", "launch", "status", "acknowledge", "state", "check",
-                                           "vitals", "topology", "logs"])
+                                           "host", "vitals", "topology", "logs"])
     parser.add_argument("--bundle")
     parser.add_argument("--target")
     parser.add_argument("--target-json")
@@ -1172,6 +1182,8 @@ def main():
             result = topology(target or read_json(args.target))
         elif args.action == "check":
             result = check(target or read_json(args.target), decode(args.release_json) if args.release_json else None)
+        elif args.action == "host":
+            result = host(target)
         elif args.action == "vitals":
             result = vitals(target or read_json(args.target))
         elif args.action == "logs":

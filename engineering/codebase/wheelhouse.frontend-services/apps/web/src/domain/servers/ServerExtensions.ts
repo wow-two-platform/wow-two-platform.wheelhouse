@@ -1,5 +1,12 @@
 import { Measures } from '@/domain/common';
-import type { ContainerVitals, DiskUsage, HostVitals, TargetVitals } from './models/ServerVitals';
+import type {
+  ContainerVitals,
+  DiskUsage,
+  HostVitals,
+  ServerHostVitals,
+  ServerVitals,
+  TargetVitals,
+} from './models/ServerVitals';
 
 /** Meter zones `[good, warn]` in percent: green up to 75, amber up to 90, red above. */
 export const USAGE_THRESHOLDS: [number, number] = [75, 90];
@@ -53,6 +60,13 @@ export const ServerExtensions = {
     return groups;
   },
 
-  /** A host's vitals from the first target that could read them. */
-  hostOf: (targets: TargetVitals[]) => targets.find((target) => target.ok && target.host)?.host ?? null,
+  /** One server's own host reading from a pass, or null when the pass did not include the server. */
+  readingOf: (vitals: ServerVitals | undefined, serverId: string): ServerHostVitals | null =>
+    vitals?.servers.find((server) => server.serverId === serverId) ?? null,
+
+  /** One server's host vitals, read from the server itself, so a server that runs no target has them too. */
+  hostOf: (vitals: ServerVitals | undefined, serverId: string): HostVitals | null => {
+    const reading = ServerExtensions.readingOf(vitals, serverId);
+    return reading?.ok ? (reading.host ?? null) : null;
+  },
 } as const;

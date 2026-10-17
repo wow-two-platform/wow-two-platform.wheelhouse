@@ -397,7 +397,7 @@ class RunnerTests(unittest.TestCase):
                                  runner.Docker(self.target, {}).unhealthy(self.bundle))
 
 
-    def test_vitals_read_containers_and_host_without_secrets(self):
+    def test_vitals_read_containers_without_secrets_and_leave_the_host_to_the_server(self):
         VitalsDocker.fail = False
         result = runner.vitals(self.target, docker_factory=VitalsDocker)
         api, worker = result["containers"]
@@ -408,9 +408,20 @@ class RunnerTests(unittest.TestCase):
                                                            worker["cpuPercent"]))
         self.assertEqual(("pilot-test", "ready", None, []),
                          (result["project"], result["condition"], result["release"], result["problems"]))
-        self.assertGreaterEqual(len(result["host"]["disks"]), 1)
+        self.assertNotIn("host", result)
         self.assertNotIn("DO_NOT_LOG", json.dumps(result))
         self.assertFalse((self.root / "state/pilot-test").exists())
+
+    def test_host_reads_the_server_without_a_target(self):
+        result = runner.host({"roots": [str(self.root / "not-yet-created"), "/srv/wheelhouse"]})
+        self.assertEqual([], result["problems"])
+        self.assertGreaterEqual(len(result["host"]["disks"]), 1)
+        self.assertTrue(all(Path(disk["path"]).is_absolute() for disk in result["host"]["disks"]))
+        for document in (None, {}, {"roots": []}, {"roots": ["relative"]}, {"roots": [7]}, {"roots": ["/srv"] * 33}):
+            with self.subTest(document=document), self.assertRaisesRegex(ValueError, "Invalid host roots"):
+                runner.host(document)
+        with patch.object(runner, "host_vitals", side_effect=OSError):
+            self.assertEqual({"host": None, "problems": ["Host vitals were unreadable"]}, runner.host({"roots": ["/srv"]}))
 
     def test_vitals_report_a_docker_failure_as_a_problem(self):
         VitalsDocker.fail = True
@@ -420,13 +431,11 @@ class RunnerTests(unittest.TestCase):
             VitalsDocker.fail = False
         self.assertIsNone(result["containers"])
         self.assertEqual(["docker ps failed (exit 1); inspect target containers privately"], result["problems"])
-        self.assertIsNotNone(result["host"])
 
     def test_vitals_correlate_only_a_stable_ready_release(self):
         observed = {"project": "pilot-test", "condition": "ready",
                     "current": {"id": "first", "release": "v1"}, "active": {"id": "first", "status": "succeeded"}}
         with patch.object(runner, "state", return_value=observed), \
-             patch.object(runner, "host_vitals", return_value={}), \
              patch.object(runner, "container_vitals", return_value=[{"service": "api"}]):
             result = runner.vitals(self.target, docker_factory=VitalsDocker)
         self.assertEqual("v1", result["release"])
@@ -441,7 +450,6 @@ class RunnerTests(unittest.TestCase):
             {**before, "active": {"id": "second", "status": "rolled_back"}},
         ):
             with self.subTest(after=after), patch.object(runner, "state", side_effect=[before, after]), \
-                 patch.object(runner, "host_vitals", return_value={}), \
                  patch.object(runner, "container_vitals", return_value=[{"service": "api"}]):
                 result = runner.vitals(self.target, docker_factory=VitalsDocker)
                 self.assertIsNone(result["release"])
@@ -453,7 +461,6 @@ class RunnerTests(unittest.TestCase):
             observed = {"project": "pilot-test", "condition": condition,
                         "current": {"id": "first", "release": "v1"}, "active": {"id": "second", "status": "running"}}
             with self.subTest(condition=condition), patch.object(runner, "state", return_value=observed), \
-                 patch.object(runner, "host_vitals", return_value={}), \
                  patch.object(runner, "container_vitals", return_value=[{"service": "api"}]):
                 result = runner.vitals(self.target, docker_factory=VitalsDocker)
                 self.assertIsNone(result["release"])

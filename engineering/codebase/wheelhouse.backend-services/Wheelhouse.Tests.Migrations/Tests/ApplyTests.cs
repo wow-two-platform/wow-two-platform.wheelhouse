@@ -18,7 +18,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
     /// <summary>The five tables the 001-baseline migration creates.</summary>
     private static readonly string[] SchemaTables = ["servers", "products", "deployments", "domains", "secrets"];
 
-    /// <summary>Builds a migrator over the shared container DB reading the real embedded wheelhouse migrations (001-baseline through 008-product-manifests).</summary>
+    /// <summary>Builds a migrator over the shared container DB reading the real embedded wheelhouse migrations (001-baseline through 009-server-vitals).</summary>
     private MigratorHarness CreateMigrator(Action<WoW.Two.Sdk.Beta.Be.Data.Migrations.Bespoke.MigrationOptions>? configure = null) =>
         MigratorHarness.CreatePostgres(fixture.ConnectionString, typeof(WheelhouseDbContext).Assembly, configure);
 
@@ -30,10 +30,10 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
 
         await using var migrator = CreateMigrator();
 
-        // First apply runs all eight real migrations in order.
+        // First apply runs all nine real migrations in order.
         var applied = Unwrap(await migrator.Runner.ApplyPendingAsync("startup", CancellationToken.None));
         applied.Should().Equal("001-baseline", "002-snake-enums", "003-audit-updated-at", "004-audit-trail", "005-vitals-samples",
-            "006-product-catalog", "007-inventory", "008-product-manifests");
+            "006-product-catalog", "007-inventory", "008-product-manifests", "009-server-vitals");
 
         // Every control-plane table the baseline declares now exists.
         foreach (var table in SchemaTables)
@@ -51,16 +51,16 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         // The migrator's own bookkeeping table exists, with one row per migration stamped by the host label.
         (await migrator.HasTableAsync("migration_history")).Should().BeTrue();
         var history = await migrator.ReadHistoryAsync();
-        history.Select(r => r.Ordinal).Should().Equal(1, 2, 3, 4, 5, 6, 7, 8);
+        history.Select(r => r.Ordinal).Should().Equal(1, 2, 3, 4, 5, 6, 7, 8, 9);
         history.Select(r => r.Name).Should().Equal(
             "baseline", "snake-enums", "audit-updated-at", "audit-trail", "vitals-samples", "product-catalog", "inventory",
-            "product-manifests");
+            "product-manifests", "server-vitals");
         history.Should().OnlyContain(r => r.AppliedBy == "startup");
         history.Should().OnlyContain(r => r.Checksum.Length == 64); // SHA-256 hex digest recorded at apply time.
 
         // GetStatus: all applied, nothing pending / drifted / orphaned.
         var status = Unwrap(await migrator.Runner.GetStatusAsync(CancellationToken.None));
-        status.Applied.Select(a => a.Ordinal).Should().Equal(1, 2, 3, 4, 5, 6, 7, 8);
+        status.Applied.Select(a => a.Ordinal).Should().Equal(1, 2, 3, 4, 5, 6, 7, 8, 9);
         status.Pending.Should().BeEmpty();
         status.Drifted.Should().BeEmpty();
         status.Orphaned.Should().BeEmpty();
@@ -68,7 +68,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         // Second apply against an up-to-date DB is a no-op: no labels returned, history unchanged.
         var second = Unwrap(await migrator.Runner.ApplyPendingAsync("startup", CancellationToken.None));
         second.Should().BeEmpty();
-        (await migrator.ReadHistoryAsync()).Should().HaveCount(8);
+        (await migrator.ReadHistoryAsync()).Should().HaveCount(9);
     }
 
     [Fact]
@@ -79,7 +79,8 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         await using var migrator = CreateMigrator(o => o.AllowRollback = true);
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
 
-        // Roll back the two latest migrations (008-product-manifests, then 007-inventory).
+        // Roll back the three latest migrations (009-server-vitals, 008-product-manifests, then 007-inventory).
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: null, CancellationToken.None));
         Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: null, CancellationToken.None));
         Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: null, CancellationToken.None));
 
@@ -90,11 +91,11 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         (await migrator.HasTableAsync("product_metadata")).Should().BeTrue();
         (await migrator.HasIndexAsync("ix_servers_host")).Should().BeTrue("the placeholder servers table comes back");
 
-        // 007 and 008 are pending again — rollback returned them to the source-but-not-applied state.
+        // 007 through 009 are pending again — rollback returned them to the source-but-not-applied state.
         (await migrator.HasTableAsync("product_manifests")).Should().BeFalse();
         var status = Unwrap(await migrator.Runner.GetStatusAsync(CancellationToken.None));
         status.Applied.Select(a => a.Ordinal).Should().Equal(1, 2, 3, 4, 5, 6);
-        status.Pending.Select(p => p.Ordinal).Should().Equal(7, 8);
+        status.Pending.Select(p => p.Ordinal).Should().Equal(7, 8, 9);
     }
 
     [Fact]
@@ -103,9 +104,8 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         await fixture.ResetAsync();
         await using var migrator = CreateMigrator(o => o.AllowRollback = true);
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
-        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: null, CancellationToken.None));
-        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: null, CancellationToken.None));
-        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: null, CancellationToken.None));
+        for (var reversal = 0; reversal < 4; reversal++) // 009 down to 006.
+            Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: null, CancellationToken.None));
 
         // The legacy registry named ForeverPin 'forever-pin'; the runner always called it 'foreverpin'.
         await using var connection = await migrator.OpenConnectionAsync();
@@ -182,25 +182,74 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
             "INSERT INTO product_manifests (product_id, repository, branch, commit_sha, name, description, services, created_at_utc, updated_at_utc) " +
             $"VALUES ('00000000-0000-0000-0000-000000000001', 'owner/pilot', 'main', '{new string('a', 40)}', 'Pilot', 'x', '[]', now(), now())");
 
-        // Apply → Rollback: the table goes and the rest of the schema, products included, is untouched.
+        // Apply → Rollback (009 first, then 008): the table goes and the rest of the schema, products included, is untouched.
         var products = await Scalar(connection, "SELECT count(*) FROM products");
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: null, CancellationToken.None));
         Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: null, CancellationToken.None));
         (await migrator.HasTableAsync("product_manifests")).Should().BeFalse();
         (await Scalar(connection, "SELECT count(*) FROM products")).Should().Be(products);
         (await migrator.ReadHistoryAsync()).Select(h => h.Ordinal).Should().Equal(1, 2, 3, 4, 5, 6, 7);
         Unwrap(await migrator.Runner.GetStatusAsync(CancellationToken.None)).Pending.Select(p => p.Name)
-            .Should().Equal("product-manifests");
+            .Should().Equal("product-manifests", "server-vitals");
 
         // Rollback → Apply: the table is back and empty, since it only ever cached repository files.
-        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal("008-product-manifests");
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should()
+            .Equal("008-product-manifests", "009-server-vitals");
         (await migrator.HasTableAsync("product_manifests")).Should().BeTrue();
         (await Scalar(connection, "SELECT count(*) FROM product_manifests")).Should().Be(0L);
         (await ReadColumnsAsync(connection, "product_manifests")).Should().HaveCount(10);
 
         // A second reversal in the same database is as clean as the first.
         Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: null, CancellationToken.None));
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: null, CancellationToken.None));
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
-        (await migrator.ReadHistoryAsync()).Select(h => h.Ordinal).Should().Equal(1, 2, 3, 4, 5, 6, 7, 8);
+        (await migrator.ReadHistoryAsync()).Select(h => h.Ordinal).Should().Equal(1, 2, 3, 4, 5, 6, 7, 8, 9);
+    }
+
+    [Fact]
+    public async Task ServerVitals_ShouldLiftEachPassHostFiguresIntoServerRows_WhenApplied()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: null, CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+
+        // Two passes read the local host through two targets each; the fleet host's one target could not be read.
+        const string row =
+            "INSERT INTO vitals_samples (id, target_id, server_id, sampled_at_utc, readable, load_percent, memory_percent, " +
+            "disk_percent, containers, healthy_containers, restarts) VALUES (gen_random_uuid(), '{0}', '{1}', '{2}', {3}, {4}, 3, 2, 1)";
+        foreach (var (target, server, at, readable, figures) in new[]
+        {
+            ("pin-test", "local", "2026-10-17T10:00:00Z", true, "20, 50, 40"),
+            ("pin-dev", "local", "2026-10-17T10:00:00Z", false, "NULL, NULL, NULL"),
+            ("pin-dev", "local", "2026-10-17T10:05:00Z", true, "30, 60, 41"),
+            ("pin-test", "local", "2026-10-17T10:05:00Z", true, "30, 60, 41"),
+            ("pin-prod", "vps", "2026-10-17T10:05:00Z", false, "NULL, NULL, NULL"),
+        })
+            await Execute(connection, string.Format(row, target, server, at, readable ? "true" : "false", figures));
+
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal("009-server-vitals");
+
+        // One server row per server and pass, from a readable target row with figures where the pass had one.
+        (await ReadColumnsAsync(connection, "vitals_samples")).Should().Contain(("target_id", "text", true));
+        var lifted = new List<(string, string, bool, double?, int)>();
+        await using (var read = connection.CreateCommand())
+        {
+            read.CommandText = "SELECT server_id, to_char(sampled_at_utc AT TIME ZONE 'UTC', 'HH24:MI'), readable, memory_percent, " +
+                "containers FROM vitals_samples WHERE target_id IS NULL ORDER BY server_id, sampled_at_utc";
+            await using var reader = await read.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                lifted.Add((reader.GetString(0), reader.GetString(1), reader.GetBoolean(2),
+                    reader.IsDBNull(3) ? null : reader.GetDouble(3), reader.GetInt32(4)));
+        }
+        lifted.Should().Equal(("local", "10:00", true, 50.0, 0), ("local", "10:05", true, 60.0, 0), ("vps", "10:05", false, null, 0));
+        (await Scalar(connection, "SELECT count(*) FROM vitals_samples WHERE target_id IS NOT NULL")).Should().Be(5L);
+
+        // Rollback drops the server rows and requires a target again.
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: null, CancellationToken.None));
+        (await Scalar(connection, "SELECT count(*) FROM vitals_samples")).Should().Be(5L);
+        (await ReadColumnsAsync(connection, "vitals_samples")).Should().Contain(("target_id", "text", false));
     }
 
     private static async Task Execute(System.Data.Common.DbConnection connection, string sql)

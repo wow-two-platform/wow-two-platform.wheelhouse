@@ -49,6 +49,17 @@ const ContainerSchema = z.object({
 });
 export const ServerVitalsSchema = z.object({
   collectedAt: z.string(),
+  servers: z
+    .array(
+      z.object({
+        serverId: z.string(),
+        ok: z.boolean(),
+        reason: z.string().nullable().optional(),
+        host: HostSchema.nullable().optional(),
+        problems: z.string().array().optional(),
+      }),
+    )
+    .default([]),
   targets: z.array(
     z.object({
       targetId: z.string(),
@@ -56,7 +67,6 @@ export const ServerVitalsSchema = z.object({
       ok: z.boolean(),
       reason: z.string().nullable().optional(),
       project: z.string().optional(),
-      host: HostSchema.nullable().optional(),
       containers: ContainerSchema.array().nullable().optional(),
       problems: z.string().array().optional(),
       condition: z.enum(TargetCondition).optional(),
@@ -66,7 +76,7 @@ export const ServerVitalsSchema = z.object({
 });
 
 export const VitalsSampleSchema = z.object({
-  targetId: z.string(),
+  targetId: z.string().nullable(),
   serverId: z.string(),
   sampledAt: z.string(),
   readable: z.boolean(),

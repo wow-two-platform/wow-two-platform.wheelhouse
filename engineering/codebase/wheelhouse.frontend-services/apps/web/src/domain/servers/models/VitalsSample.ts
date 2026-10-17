@@ -1,6 +1,7 @@
-/** One target's stored reading; a figure is null where the host hid it or the target could not be read. */
+/** One stored reading: a server's own host figures (`targetId` null) or one target's container health. A figure is
+ * null where the host hid it, the reading does not carry it, or the server or target could not be read. */
 export interface VitalsSample {
-  targetId: string;
+  targetId: string | null;
   serverId: string;
   sampledAt: string;
   readable: boolean;
@@ -22,15 +23,14 @@ export interface TrendPoint {
   value: number;
 }
 
-/** A server's host figures over time, from the samples of its first target (host figures repeat per target). */
+/** A server's host figures over time, from its own host readings. */
 export function hostTrend(
   samples: readonly VitalsSample[],
   serverId: string,
   figure: 'loadPercent' | 'memoryPercent' | 'diskPercent',
 ): TrendPoint[] {
-  const first = samples.find((sample) => sample.serverId === serverId)?.targetId;
   return samples
-    .filter((sample) => sample.targetId === first && sample[figure] !== null)
+    .filter((sample) => sample.serverId === serverId && sample.targetId === null && sample[figure] !== null)
     .map((sample) => ({ at: Date.parse(sample.sampledAt), value: sample[figure] as number }))
     .filter((point) => Number.isFinite(point.at));
 }

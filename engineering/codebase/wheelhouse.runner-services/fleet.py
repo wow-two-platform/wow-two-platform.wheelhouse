@@ -15,6 +15,9 @@ from runner import SLUG, require
 
 VAULT_URL = re.compile(r"https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?")
 HOST = re.compile(r"(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+")
+# Where a target deploys unless its row names another root; also the disk a server's host reading covers before it
+# runs a target.
+DEFAULT_ROOT = "/srv/wheelhouse"
 
 
 class VpsProvider(str, Enum):
@@ -65,7 +68,7 @@ class Target:
     environment: DeploymentEnvironment
     settings: tuple[tuple[str, str], ...]
     network: str
-    root: str = "/srv/wheelhouse"
+    root: str = DEFAULT_ROOT
     smoke: tuple[dict, ...] = ()
     # Site name -> host, for sites the server's pattern does not cover (every prod site).
     sites: tuple[tuple[str, str], ...] = ()
@@ -200,6 +203,23 @@ def ingress_of(server, target):
             "pattern": pattern, "hosts": hosts, "probe": probe, "privateProbe": ingress.private_probe}
 
 
+def ssh_of(root, server):
+    """How the control plane reaches a server: its address and the operator-placed identity under <root>/ssh/<id>/."""
+    identity = Path(root) / "ssh" / server.id
+    return {"host": server.host, "user": server.ssh_user, "port": server.ssh_port,
+            "keyFile": str(identity / "identity"), "knownHostsFile": str(identity / "known_hosts")}
+
+
+def resolve_server(root, identifier):
+    """A server as its own host reading needs it: how to reach it, and the deployment roots whose disks to cover —
+    its targets' roots, or the default root while it runs none."""
+    servers()
+    server = next((item for item in active_servers() if item.id == identifier), None)
+    require(server is not None and SLUG.fullmatch(server.id), "Server is not in the inventory")
+    roots = sorted({target.root for target in active_targets() if target.server_id == server.id}) or [DEFAULT_ROOT]
+    return {"serverId": server.id, "ssh": ssh_of(root, server), "roots": roots}
+
+
 def resolve_target(root, identifier):
     servers()
     catalog = active_targets()
@@ -210,13 +230,11 @@ def resolve_target(root, identifier):
     require(isinstance(target.environment, DeploymentEnvironment), "Unsupported environment")
     server = next((item for item in active_servers() if item.id == target.server_id), None)
     require(server is not None, "Server is not in the inventory")
-    identity = Path(root) / "ssh" / server.id
     return {"serverId": server.id, "provider": server.provider.value,
             "acceptsCandidates": accepts_candidates(target), "acceptsTestBuilds": accepts_test_builds(target),
             "needsConfirmation": needs_confirmation(server, target),
             "requiresTestPass": requires_test_pass(target),
-            "ssh": {"host": server.host, "user": server.ssh_user, "port": server.ssh_port,
-                    "keyFile": str(identity / "identity"), "knownHostsFile": str(identity / "known_hosts")},
+            "ssh": ssh_of(root, server),
             "target": {"product": target.product, "environment": target.environment.value,
                        "root": target.root, "settings": dict(target.settings),
                        "variables": {"PLATFORM_NETWORK": target.network}, "smoke": list(target.smoke),

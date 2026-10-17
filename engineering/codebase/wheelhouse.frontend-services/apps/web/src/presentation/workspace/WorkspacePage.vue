@@ -147,6 +147,10 @@ const selectedMapService = ref<string | null>(null);
 const targetVitals = computed(() =>
   vitals.data.value?.targets.find((item) => item.targetId === target.value?.id),
 );
+/** The environment's host, read from its server itself. */
+const hostVitals = computed(() =>
+  target.value ? ServerExtensions.hostOf(vitals.data.value, target.value.serverId) : null,
+);
 const mapContainers = computed(() =>
   targetVitals.value?.ok &&
   targetVitals.value.condition === TargetCondition.Ready &&
@@ -790,18 +794,16 @@ function openDeploy(job?: DeploymentJob): void {
                           />
                         </template>
                         <div
-                          v-if="targetVitals?.host || !vitals.data.value"
+                          v-if="hostVitals || !vitals.data.value"
                           class="mt-4 grid gap-3 sm:grid-cols-2"
                         >
                           <ResourceMeter
                             label="Host CPU load"
-                            :value="targetVitals?.host ? ServerExtensions.loadPercent(targetVitals.host) : null"
+                            :value="hostVitals ? ServerExtensions.loadPercent(hostVitals) : null"
                             :refreshing="refresh.refreshing.value"
                           /><ResourceMeter
                             label="Host memory"
-                            :value="
-                              targetVitals?.host ? ServerExtensions.memoryPercent(targetVitals.host) : null
-                            "
+                            :value="hostVitals ? ServerExtensions.memoryPercent(hostVitals) : null"
                             :refreshing="refresh.refreshing.value"
                           />
                         </div>
@@ -1035,7 +1037,7 @@ function openDeploy(job?: DeploymentJob): void {
                           },
                           {
                             label: 'Host uptime',
-                            value: Measures.duration(targetVitals?.host?.uptimeSeconds),
+                            value: Measures.duration(hostVitals?.uptimeSeconds),
                           },
                         ]"
                       />

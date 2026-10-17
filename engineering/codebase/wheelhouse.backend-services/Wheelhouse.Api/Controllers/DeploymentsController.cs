@@ -60,12 +60,12 @@ public sealed class DeploymentsController(ISender sender) : ControllerBase
     public async Task<IActionResult> Stats([FromQuery, Range(1, 90)] int days = 30, CancellationToken ct = default) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentReadQuery("stats", days.ToString(CultureInfo.InvariantCulture)), ct));
 
-    /// <summary>Reads every target's host and container vitals without changing them.</summary>
+    /// <summary>Reads every server's host vitals and every target's container vitals without changing them.</summary>
     [HttpGet("vitals")]
     public async Task<IActionResult> Vitals(CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentReadQuery("vitals"), ct));
 
-    /// <summary>Reads stored vitals samples of the last hours (1-720), for one target or every target.</summary>
+    /// <summary>Reads stored vitals samples of the last hours (1-720): one target's, or every server's and target's.</summary>
     [HttpGet("vitals/history")]
     public async Task<IActionResult> VitalsHistory(
         [FromQuery, RegularExpression(Slug)] string? target, [FromQuery, Range(1, 720)] int hours = 24,

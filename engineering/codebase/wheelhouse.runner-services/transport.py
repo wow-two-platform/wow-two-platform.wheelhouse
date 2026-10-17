@@ -507,9 +507,23 @@ def reconcile(root, target_id, job_id, actor):
 
 
 def vitals(root, target_id=None):
-    """Reads every target's (or one target's) host and containers in parallel; a failing target reports why."""
+    """Reads every server's host once and every target's containers, in parallel; a failing read reports why. A server
+    reads its own host, so one that runs no target yet reports its vitals too. With a target, reads that target and
+    the server it runs on."""
     bindings = [binding for binding in fleet.active_targets() if target_id in (None, binding.id)]
     require(target_id is None or bindings, "Target is not in the inventory")
+    hosts = [server for server in fleet.active_servers()
+             if target_id is None or server.id == bindings[0].server_id]
+
+    def read_host(server):
+        try:
+            config = fleet.resolve_server(root, server.id)
+            result = run_remote(Ssh(config["ssh"]), "host", {"roots": config["roots"]}, timeout=60)
+            return {"serverId": server.id, "ok": True, "host": result.get("host"), "problems": result.get("problems", [])}
+        except (Rejected, CommandFailed) as error:
+            return {"serverId": server.id, "ok": False, "reason": reason(error)}
+        except (ValueError, AttributeError):
+            return {"serverId": server.id, "ok": False, "reason": "Host vitals were unreadable"}
 
     def collect(binding):
         try:
@@ -524,8 +538,10 @@ def vitals(root, target_id=None):
                     "reason": "Target vitals were unreadable"}
 
     with ThreadPoolExecutor(max_workers=8) as pool:
-        collected = list(pool.map(collect, bindings))
-    return {"collectedAt": now(), "targets": collected}
+        servers = pool.map(read_host, hosts)
+        collected = pool.map(collect, bindings)
+        servers, collected = list(servers), list(collected)
+    return {"collectedAt": now(), "servers": servers, "targets": collected}
 
 
 FAILED = {"failed", "rolled_back", "rollback_failed", "interrupted"}

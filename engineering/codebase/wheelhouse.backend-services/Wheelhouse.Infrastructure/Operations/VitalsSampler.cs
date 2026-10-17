@@ -6,7 +6,7 @@ using Wheelhouse.Application.Operations;
 
 namespace Wheelhouse.Infrastructure.Operations;
 
-/// <summary>Samples every target's vitals on an interval so the dashboard can show trends. The interval comes from
+/// <summary>Samples every server's and target's vitals on an interval so the dashboard can show trends. The interval comes from
 /// <c>Operations:VitalsSampleMinutes</c> (default 5); zero or less turns sampling off.</summary>
 public sealed class VitalsSampler(IServiceScopeFactory scopes, IConfiguration configuration, ILogger<VitalsSampler> logger)
     : BackgroundService
@@ -29,7 +29,7 @@ public sealed class VitalsSampler(IServiceScopeFactory scopes, IConfiguration co
                 await using var scope = scopes.CreateAsyncScope();
                 var stored = await scope.ServiceProvider.GetRequiredService<VitalsSampling>().SampleOnceAsync(stoppingToken);
                 if (stored is null)
-                    logger.LogWarning("Vitals sampling skipped: the runner could not read the targets");
+                    logger.LogWarning("Vitals sampling skipped: the runner could not read the fleet");
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {

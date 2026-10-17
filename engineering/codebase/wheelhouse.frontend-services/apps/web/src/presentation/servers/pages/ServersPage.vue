@@ -78,9 +78,12 @@ const serverRows = useSkeletonItems(() => (servers.data.value ? visible.value : 
 /** The environment bindings, or placeholder rows until the first read arrives. */
 const targetRows = useSkeletonItems(() => targets.data.value, 3);
 const groups = computed(() => ServerExtensions.byServer(vitals.data.value?.targets ?? []));
-/** The host readings of one server; none for a placeholder panel. */
+/** One server's own host readings, whether or not it runs a target; none for a placeholder panel. */
 const hostOf = (server: Server | undefined) =>
-  server ? ServerExtensions.hostOf(groups.value.get(server.slug) ?? []) : null;
+  server ? ServerExtensions.hostOf(vitals.data.value, server.slug) : null;
+/** Why one server's host could not be read, when the pass says. */
+const hostReason = (server: Server | undefined) =>
+  server ? (ServerExtensions.readingOf(vitals.data.value, server.slug)?.reason ?? null) : null;
 /** The vaults on one server, or a placeholder row until the first vault catalog arrives. */
 const vaultRows = (server: Server | undefined): ReadonlyArray<VaultDefinition | undefined> =>
   vaults.loading.value || !server ? [undefined] : vaultsOn(server.slug);
@@ -185,7 +188,9 @@ const trendWindow = computed(() => {
                 :refreshing="refresh.refreshing.value"
               />
             </div>
-            <Text v-else class="text-sm text-muted-foreground">Host vitals are unavailable.</Text>
+            <Text v-else class="text-sm text-muted-foreground"
+              >Host vitals are unavailable{{ hostReason(server) ? `: ${hostReason(server)}` : '' }}.</Text
+            >
           </DataRegion>
           <section class="mb-5" :aria-label="`${server?.name ?? 'Server'} trends`">
             <div class="mb-2 flex flex-wrap items-center justify-between gap-2">

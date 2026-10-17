@@ -30,22 +30,32 @@ export interface ContainerVitals {
   memoryLimitBytes: number | null;
 }
 
-/** What one target's host and containers looked like; `ok` is false when the target could not be read. */
+/** One server's own host, read whether or not it runs a target; `ok` is false when the server could not be read. */
+export interface ServerHostVitals {
+  serverId: string;
+  ok: boolean;
+  reason?: string | null;
+  host?: HostVitals | null;
+  problems?: string[];
+}
+
+/** What one target's containers looked like; `ok` is false when the target could not be read. Its host is its
+ * server's, in `ServerVitals.servers`. */
 export interface TargetVitals {
   targetId: string;
   serverId: string;
   ok: boolean;
   reason?: string | null;
   project?: string;
-  host?: HostVitals | null;
   containers?: ContainerVitals[] | null;
   problems?: string[];
   condition?: TargetCondition;
   release?: string | null;
 }
 
-/** Every target's vitals from one collection pass. */
+/** Every server's host and every target's containers from one collection pass. */
 export interface ServerVitals {
   collectedAt: string;
+  servers: ServerHostVitals[];
   targets: TargetVitals[];
 }

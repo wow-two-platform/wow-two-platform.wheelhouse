@@ -1,6 +1,6 @@
 # Deployment operations
 
-*Last updated: 2026-10-14*
+*Last updated: 2026-10-17*
 
 ## Ownership and current boundary
 
@@ -295,9 +295,9 @@ every settings file and the target's lock state; each failure names the rule or 
 | `GET /api/deployments/targets/{id}/services/{service}/logs?tail=200` | One service's last container lines (1-1000), never cached |
 | `GET /api/audit?limit=50&before=` | Operator actions, newest first; `before` pages back from a sequence number |
 | `GET /api/audit/verification` | Whether every stored audit entry and link still verifies |
-| `GET /api/deployments/vitals` | Every target's host load, memory, disks, uptime and containers, read in parallel |
+| `GET /api/deployments/vitals` | Every server's own host load, memory, disks and uptime, and every target's containers, read in parallel |
 | `GET /api/deployments/stats?days=30` | Outcomes, success rate, median rollout and recovery, deploys per UTC day (1–90 days) |
-| `GET /api/deployments/vitals/history?hours=24&target=` | Stored readings of the last 1–720 hours, oldest first, for one target or all |
+| `GET /api/deployments/vitals/history?hours=24&target=` | Stored readings of the last 1–720 hours, oldest first: one target's, or every server's and target's |
 | `GET /api/vaults/{vault}/hygiene` | Secrets and product tokens due for rotation; metadata only |
 
 - A lost SSH response is an unknown outcome; inspect target state before retrying.
@@ -313,8 +313,9 @@ restart in `<runner root>/following/`; it never submits, retries or reconciles a
 final only when `completedAt` is present, after rollback or cleanup. Explicit status reads can still observe a later
 target-side acknowledgement. Preserve `jobs/`, `observed/`, `reconciled/` and `following/` with the runner root.
 
-A background sampler reads every target's vitals each `Operations:VitalsSampleMinutes` (default 5; 0 turns it off),
-stores load, memory, the fullest disk and container health in `vitals_samples`, and deletes readings older than 30 days.
+A background sampler reads the vitals each `Operations:VitalsSampleMinutes` (default 5; 0 turns it off), stores each
+server's load, memory and fullest disk (a row with no target) and each target's container health in `vitals_samples`,
+and deletes readings older than 30 days.
 
 ## Rollout steps
 
@@ -343,8 +344,10 @@ The table refuses `UPDATE` and `DELETE`, so rewriting an entry needs someone who
 An intact chain proves no stored entry was edited, reordered or removed from its middle.
 It cannot prove the newest entries were kept; that needs a checkpoint held outside the database.
 
-`vitals` reads `/proc`, filesystem capacity and `docker ps`/`inspect`/`stats` for the target's Compose project;
-it never returns container environment, labels or logs. `stats` reads only the local submission records.
+`vitals` reads each server's `/proc` and filesystem capacity once, from the server itself, so a server with no target
+still reports its host; its disks are its targets' roots (or `/srv/wheelhouse` before it runs one) and Docker's data root.
+It reads `docker ps`/`inspect`/`stats` for each target's Compose project and never returns container environment,
+labels or logs. `stats` reads only the local submission records.
 The overview flags: unreadable or locked targets, missing or unhealthy containers, 3+ restarts, disks over 75%
 (red over 90%), memory over 90%, load over 150% of CPUs, an unrecovered failed rollout, sealed vaults,
 active secrets older than 90 days, and tokens expired, expiring within 14 days or older than 180 days.

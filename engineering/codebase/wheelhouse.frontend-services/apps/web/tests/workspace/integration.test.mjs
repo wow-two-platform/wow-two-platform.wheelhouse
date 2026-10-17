@@ -18,6 +18,8 @@ const bundle = await build({
       export { AuditArea, AuditExtensions } from './src/domain/audit';
       export { compareEnvironments } from './src/domain/deployments/EnvironmentComparison';
       export { hostTrend } from './src/domain/servers/models/VitalsSample';
+      export { ServerExtensions } from './src/domain/servers/ServerExtensions';
+      export { AttentionRules } from './src/domain/overview/AttentionRules';
       export { clearHttpSession } from './src/integration/common';
       export { useServerVitals } from './src/application/servers/useServerVitals';
       export { queryClient, queryPlugin } from './src/bootstrap/query';
@@ -44,6 +46,8 @@ const {
   AuditExtensions,
   compareEnvironments,
   hostTrend,
+  ServerExtensions,
+  AttentionRules,
   clearHttpSession,
   useServerVitals,
   queryClient,
@@ -394,25 +398,47 @@ test("lines environments up dev to prod and offers each published release to the
   assert.equal(unread.columns[1].read, false);
 });
 
-test("reads vitals history and traces one server's host figures from its first target", async () => {
+test("reads vitals history and traces each server's host figures from its own readings", async () => {
   const sample = (targetId, serverId, sampledAt, memoryPercent) => ({ targetId, serverId, sampledAt, readable: true,
-    loadPercent: null, memoryPercent, diskPercent: 40, containers: 2, healthyContainers: 2, restarts: 0 });
+    loadPercent: null, memoryPercent, diskPercent: targetId ? null : 40, containers: targetId ? 2 : 0,
+    healthyContainers: targetId ? 2 : 0, restarts: 0 });
   let requested;
   globalThis.fetch = async (url) => {
     requested = url;
     return json({ data: [
-      sample("pin-dev", "local", "2026-09-28T10:00:00Z", 50),
-      sample("pin-test", "local", "2026-09-28T10:00:00Z", 50),
-      sample("pin-dev", "local", "2026-09-28T10:05:00Z", null),
-      sample("pin-dev", "local", "2026-09-28T10:10:00Z", 70),
-      sample("other-prod", "vps", "2026-09-28T10:10:00Z", 10),
+      sample(null, "local", "2026-09-28T10:00:00Z", 50),
+      sample("pin-dev", "local", "2026-09-28T10:00:00Z", null),
+      sample(null, "local", "2026-09-28T10:05:00Z", null),
+      sample(null, "local", "2026-09-28T10:10:00Z", 70),
+      // A server that runs no target still has a trend.
+      sample(null, "fresh", "2026-09-28T10:10:00Z", 10),
     ] });
   };
   const result = await serversApi.getVitalsHistory(24);
   assert.equal(requested, "/api/deployments/vitals/history?hours=24");
   assert.deepEqual(hostTrend(result.value, "local", "memoryPercent").map((point) => point.value), [50, 70]);
-  assert.deepEqual(hostTrend(result.value, "vps", "diskPercent").map((point) => point.value), [40]);
+  assert.deepEqual(hostTrend(result.value, "fresh", "diskPercent").map((point) => point.value), [40]);
   assert.deepEqual(hostTrend(result.value, "missing", "memoryPercent"), []);
+});
+
+test("a server's host vitals come from the server itself, so one with no target shows them", async () => {
+  const host = (memoryAvailableBytes) => ({ cpus: 2, load: [1, 1, 1], memoryTotalBytes: 100, memoryAvailableBytes,
+    uptimeSeconds: 60, disks: [{ path: "/srv", totalBytes: 100, freeBytes: 5 }] });
+  globalThis.fetch = async () => json({ data: {
+    collectedAt: "2026-10-17T00:00:00Z",
+    servers: [
+      { serverId: "fresh", ok: true, host: host(5), problems: [] },
+      { serverId: "dark", ok: false, reason: "Missing SSH identity file" },
+    ],
+    targets: [],
+  } });
+  const vitals = (await serversApi.getVitals()).value;
+  assert.equal(ServerExtensions.memoryPercent(ServerExtensions.hostOf(vitals, "fresh")), 95);
+  assert.equal(ServerExtensions.hostOf(vitals, "dark"), null);
+  assert.equal(ServerExtensions.readingOf(vitals, "dark").reason, "Missing SSH identity file");
+  assert.equal(ServerExtensions.hostOf(vitals, "missing"), null);
+  assert.deepEqual(AttentionRules.fromVitals(vitals).map((item) => item.id).sort(),
+    ["disk:fresh:/srv", "memory:fresh"]);
 });
 
 test("accepts an explicit empty logout success", async () => {
@@ -470,6 +496,22 @@ test("fills embedded readiness state target from the runner transport outer iden
 test("accepts unavailable targets and nullable host metrics without inventing healthy data", async () => {
   const snapshot = {
     collectedAt: "2026-09-26T00:00:00Z",
+    servers: [
+      {
+        serverId: "server",
+        ok: true,
+        host: {
+          cpus: null,
+          load: null,
+          memoryTotalBytes: null,
+          memoryAvailableBytes: null,
+          uptimeSeconds: null,
+          disks: [],
+        },
+        problems: [],
+      },
+      { serverId: "dark", ok: false, reason: "SSH unavailable" },
+    ],
     targets: [
       {
         targetId: "unreachable",
@@ -481,14 +523,6 @@ test("accepts unavailable targets and nullable host metrics without inventing he
         targetId: "online",
         serverId: "server",
         ok: true,
-        host: {
-          cpus: null,
-          load: null,
-          memoryTotalBytes: null,
-          memoryAvailableBytes: null,
-          uptimeSeconds: null,
-          disks: [],
-        },
         containers: null,
         problems: ["Container details unavailable"],
       },
