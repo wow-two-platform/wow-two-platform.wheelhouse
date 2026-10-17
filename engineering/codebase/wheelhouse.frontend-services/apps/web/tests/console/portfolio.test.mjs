@@ -4,8 +4,9 @@ import { stop } from "esbuild";
 import { bundleModule } from "./BundleModule.mjs";
 import { container, product, target } from "./LoadModule.mjs";
 
-const { groupPortfolio, workspaceOf, ProductStatusRules, EnvironmentHealthRules, Ordering } = await bundleModule(`
+const { groupPortfolio, workspaceOf, browse, workspaceChips, ProductStatusRules, EnvironmentHealthRules, Ordering } = await bundleModule(`
   export { groupPortfolio, workspaceOf } from './src/application/portfolio/Portfolio';
+  export { browse, workspaceChips } from './src/application/portfolio/ProductBrowser';
   export { ProductStatusRules } from './src/domain/products/ProductStatusRules';
   export { EnvironmentHealthRules } from './src/domain/overview/EnvironmentHealth';
   export { Ordering } from './src/domain/common/Ordering';
@@ -99,4 +100,19 @@ test("environment health reads targets, vitals and stats, worst first, and marks
   const history = [{ id: "new", targetId: "other" }, { id: "mine", targetId: dev.id }, { id: "old", targetId: prod.id }];
   assert.equal(EnvironmentHealthRules.lastDeploy([dev.id, prod.id], history).id, "mine");
   assert.equal(EnvironmentHealthRules.lastDeploy([dev.id], undefined), null);
+});
+
+test("the browser's chips are All and each workspace in order, counting the products they show", () => {
+  const hidden = groupPortfolio([ventures, platform], [pin, vault, wheelhouse, stray], false);
+  assert.deepEqual(workspaceChips(hidden).map((chip) => [chip.label, chip.count, chip.path]),
+    [["All", 3, "/products"], ["Platform", 1, "/w/platform"], ["Ventures", 1, "/w/ventures"]]);
+  const shown = groupPortfolio([ventures, platform], [pin, vault, wheelhouse, stray], true);
+  assert.deepEqual(workspaceChips(shown).map((chip) => chip.count), [4, 2, 1]);
+});
+
+test("the browser shows every workspace for All, one for a chosen workspace, and none for an unknown one", () => {
+  const groups = groupPortfolio([ventures, platform], [pin, wheelhouse], false);
+  assert.equal(browse(groups, null).groups.length, 2);
+  assert.deepEqual(browse(groups, "ventures").groups.map((group) => group.workspace.slug), ["ventures"]);
+  assert.deepEqual(browse(groups, "gone"), { groups: [], missing: true });
 });

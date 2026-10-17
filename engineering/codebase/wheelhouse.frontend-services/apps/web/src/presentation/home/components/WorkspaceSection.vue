@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { PortfolioGroup } from '@/application/portfolio';
 import type { useProductReadings } from '@/application/portfolio';
+import type { Product } from '@/domain/products';
 
 /** One workspace's products on the home page. */
 export interface WorkspaceSectionProps {
@@ -21,10 +22,13 @@ import { useSkeletonItems } from '@wow-two-beta/fe/presentation/feedback';
 import { ConsolePaths } from '@/application/navigation';
 import ProductCard from './ProductCard.vue';
 
-/** A workspace's name, product count and product cards; the actions slot holds the workspace's pin toggle. */
+/**
+ * A workspace's name, product count and product cards. The actions slot holds the workspace's pin toggle; the
+ * card-actions slot puts controls on each product's card.
+ */
 defineOptions({ name: 'WorkspaceSection' });
 const props = withDefaults(defineProps<WorkspaceSectionProps>(), { isLoading: false, headingLevel: 2 });
-defineSlots<{ actions?(): unknown }>();
+const slots = defineSlots<{ actions?(): unknown; 'card-actions'?(props: { product: Product }): unknown }>();
 const cards = useSkeletonItems(() => (props.isLoading ? undefined : props.group.products), 3);
 const name = computed(() => props.group.workspace?.name ?? 'No workspace');
 const hidden = computed(() => props.group.total - props.group.products.length);
@@ -61,7 +65,11 @@ const headingId = computed(() => `workspace-${props.group.workspace?.slug ?? 'no
         :environments="product ? props.readings.environmentsOf(product.slug) : undefined"
         :last-deploy="product ? props.readings.lastDeployOf(product.slug) : null"
         :history-loading="props.readings.historyLoading.value"
-      />
+      >
+        <template v-if="slots['card-actions'] && product" #actions
+          ><slot name="card-actions" :product="product"
+        /></template>
+      </ProductCard>
     </div>
     <p v-else class="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
       {{ hidden > 0 ? 'Only inactive products; turn on Show inactive to see them.' : 'No products in this workspace yet.' }}

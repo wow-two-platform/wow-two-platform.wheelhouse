@@ -25,8 +25,9 @@ import { ProductIcon } from '@/presentation/products';
 import EnvironmentDots from './EnvironmentDots.vue';
 
 /**
- * A product at a glance: its mark, name, dev/test/prod health and last deploy. The whole card opens the product; an
- * inactive product is dimmed and labelled.
+ * A product at a glance: its mark, name, environment health and last deploy. The whole card opens the product — its
+ * name is a link stretched over the card — while the actions slot's controls sit above that link; an inactive product
+ * is dimmed and labelled.
  */
 defineOptions({ name: 'ProductCard' });
 const props = withDefaults(defineProps<ProductCardProps>(), {
@@ -34,25 +35,34 @@ const props = withDefaults(defineProps<ProductCardProps>(), {
   lastDeploy: null,
   historyLoading: false,
 });
-defineSlots<{}>();
+defineSlots<{ actions?(): unknown }>();
 const inactive = computed(() => Boolean(props.product && !ProductStatusRules.isActive(props.product)));
 </script>
 <template>
-  <component
-    :is="props.product ? RouterLink : 'div'"
-    v-bind="props.product ? { to: ConsolePaths.product(props.product.slug) } : {}"
-    class="group flex min-w-0 flex-col gap-3 rounded-2xl border border-border bg-card p-4 transition-[border-color,box-shadow,opacity] duration-150 hover:border-primary/40 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring motion-reduce:transition-none"
+  <div
+    class="group relative flex min-w-0 flex-col gap-3 rounded-2xl border border-border bg-card p-4 transition-[border-color,box-shadow,opacity] duration-150 hover:border-primary/40 hover:shadow-sm has-[a[data-card-link]:focus-visible]:outline-2 has-[a[data-card-link]:focus-visible]:outline-offset-2 has-[a[data-card-link]:focus-visible]:outline-ring motion-reduce:transition-none"
     :class="inactive ? 'opacity-60 hover:opacity-90' : ''"
   >
     <div class="flex min-w-0 items-center gap-3">
       <ProductIcon :product-slug="props.product?.slug ?? null" :name="props.product?.name ?? ''" />
       <div class="min-w-0 flex-1">
-        <Text class="truncate text-sm font-semibold text-inherit" skeleton-width="7rem">{{ props.product?.name }}</Text>
+        <Text class="truncate text-sm font-semibold text-inherit" skeleton-width="7rem"
+          ><RouterLink
+            v-if="props.product"
+            :to="ConsolePaths.product(props.product.slug)"
+            data-card-link
+            class="outline-none after:absolute after:inset-0 after:rounded-2xl after:content-['']"
+            >{{ props.product.name }}</RouterLink
+          ></Text
+        >
         <Text class="mt-0.5 truncate text-xs text-muted-foreground" skeleton-width="10rem">{{
           props.product ? props.product.description || props.product.slug : ''
         }}</Text>
       </div>
       <Badge v-if="inactive" variant="neutral" size="sm">Inactive</Badge>
+      <div v-if="$slots.actions && props.product" class="relative z-10 flex shrink-0 items-center gap-0.5">
+        <slot name="actions" />
+      </div>
     </div>
     <EnvironmentDots :environments="props.product ? props.environments : undefined" />
     <div class="flex min-w-0 items-center justify-between gap-3 border-t border-border pt-3 text-xs text-muted-foreground">
@@ -80,5 +90,5 @@ const inactive = computed(() => Boolean(props.product && !ProductStatusRules.isA
       </span>
       <span v-else>None yet</span>
     </div>
-  </component>
+  </div>
 </template>

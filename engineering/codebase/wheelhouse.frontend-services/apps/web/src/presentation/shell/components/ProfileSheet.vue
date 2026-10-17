@@ -56,7 +56,7 @@ watch(
 );
 </script>
 <template>
-  <BottomSheet :open="props.open" :snap-points="[600, '92vh']" @update:open="emit('update:open', $event)">
+  <BottomSheet :open="props.open" :snap-points="[540, '92vh']" @update:open="emit('update:open', $event)">
     <BottomSheetTitle class="sr-only">Account</BottomSheetTitle>
     <div class="flex items-center gap-3 px-1 pb-3">
       <Avatar v-bind="props.user.avatar ? { src: props.user.avatar } : {}" :name="displayName" size="md" />
@@ -92,7 +92,7 @@ watch(
           :model-value="appearance"
           @update:model-value="choose"
         >
-          <ToggleInput v-for="item in AppearanceSchemes" :key="item.value" :value="item.value" size="sm" :title="item.label"
+          <ToggleInput v-for="item in AppearanceSchemes" :key="item.value" :value="item.value" size="md" class="min-w-11" :title="item.label"
             ><component :is="item.icon" :size="14" /><span class="sr-only">{{ item.label }}</span></ToggleInput
           >
         </ToggleGroup>

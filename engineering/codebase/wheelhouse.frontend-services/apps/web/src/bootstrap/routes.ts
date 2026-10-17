@@ -74,9 +74,10 @@ function param(value: unknown): string {
 export const router = createAppRouter(
   [
     placeRoute(HomePlace),
+    // The products browser narrowed to one workspace: the same page as /products, with the workspace chosen.
     {
       path: '/w/:workspace',
-      lazy: () => import('@/presentation/workspaces/pages/WorkspacePage.vue'),
+      lazy: Pages['/products'],
       handle: { title: (route) => param(route.params['workspace']), description: 'A workspace and its products.' },
     },
     // One route for every tab, so moving between tabs keeps the page and its reads; the page answers an unknown tab.
