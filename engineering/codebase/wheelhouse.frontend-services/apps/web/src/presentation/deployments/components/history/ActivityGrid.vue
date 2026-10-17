@@ -132,7 +132,7 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
       <div
         class="grid w-full gap-[3px] p-1.5"
         :style="{
-          gridTemplateColumns: `2rem repeat(${calendar.weeks.length}, minmax(0.875rem, 1.5rem))`,
+          gridTemplateColumns: `2rem repeat(${calendar.weeks.length}, minmax(0.875rem, 2.5rem))`,
           minWidth: `calc(2.75rem + ${calendar.weeks.length} * (0.875rem + 3px))`,
         }"
         role="group"
@@ -165,7 +165,7 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
               :aria-pressed="props.selected === cell.date"
               :aria-current="cell.date === today ? 'date' : undefined"
               :class="[
-                'relative flex aspect-square w-full items-center justify-center rounded-[3px] transition-[outline-color] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary',
+                '@container relative flex aspect-square w-full items-center justify-center rounded-[3px] transition-[outline-color] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary',
                 fill(cell),
                 props.selected === cell.date ? 'outline-2 outline-offset-1 outline-foreground' : '',
                 cell.date === today ? 'ring-2 ring-primary ring-offset-1 ring-offset-card' : '',
@@ -178,8 +178,8 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
               @focus="show($event, cell)"
               @blur="hide"
             >
-              <span v-if="cell.mark === 'failed'" :class="['size-1.5 rounded-full', markColour(cell)]" aria-hidden="true" />
-              <span v-else-if="cell.mark === 'mixed'" :class="['h-0.5 w-2 rounded-full', markColour(cell)]" aria-hidden="true" />
+              <span v-if="cell.mark === 'failed'" :class="['size-[clamp(0.375rem,20cqw,0.625rem)] rounded-full', markColour(cell)]" aria-hidden="true" />
+              <span v-else-if="cell.mark === 'mixed'" :class="['h-[clamp(0.125rem,6cqw,0.1875rem)] w-[clamp(0.5rem,32cqw,0.875rem)] rounded-full', markColour(cell)]" aria-hidden="true" />
               <span v-if="cell.date === today && props.isLive" class="wh-heartbeat" aria-hidden="true" />
             </button>
           </template>
@@ -227,12 +227,14 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
 
 <style scoped>
 /* Today's heartbeat while a rollout runs: a ring that swells and fades. Under reduced motion it holds still and
-   doubles the ring instead, so the state still shows. */
+   doubles the ring instead, so the state still shows. An outline rather than a scaled border: an outline never widens
+   the scroller, so the newest week can sit at the panel's edge without a sideways scrollbar. */
 .wh-heartbeat {
   position: absolute;
-  inset: -3px;
-  border-radius: 5px;
-  border: 2px solid var(--color-primary);
+  inset: 0;
+  border-radius: 3px;
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
   pointer-events: none;
 }
 
@@ -244,23 +246,23 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
 
 @media (prefers-reduced-motion: reduce) {
   .wh-heartbeat {
-    inset: -5px;
-    border-style: dashed;
+    outline-style: dashed;
+    outline-offset: 3px;
   }
 }
 
 @keyframes wh-heartbeat {
   0% {
     opacity: 0.9;
-    transform: scale(1);
+    outline-offset: 1px;
   }
   70% {
     opacity: 0;
-    transform: scale(1.7);
+    outline-offset: 9px;
   }
   100% {
     opacity: 0;
-    transform: scale(1.7);
+    outline-offset: 9px;
   }
 }
 </style>
