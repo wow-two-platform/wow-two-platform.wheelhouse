@@ -27,7 +27,8 @@ an authenticated external client connection remains manual acceptance.
 | `catalog:read` | `list_projects` |
 | `deployments:read` | `list_servers`, `list_targets`, `list_deployments`, `get_deployment_state`, `check_target`, `get_vitals`, `get_health` |
 
-- `list_projects` maps Wheelhouse products to project metadata; secret namespaces are omitted.
+- `list_projects` returns what `GET /api/products` returns to the same key: identity, repository, release source,
+  lifecycle, environment sites and each environment's vault and namespace. Secret values are never returned.
 - `list_targets` omits settings and credential paths.
 - Target-specific tools require an existing lowercase target ID from `list_targets`.
 - `get_health` reports control-plane database readiness, build identity and the local-rehearsal marker.

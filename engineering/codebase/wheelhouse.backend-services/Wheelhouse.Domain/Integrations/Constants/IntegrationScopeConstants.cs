@@ -4,7 +4,7 @@ namespace Wheelhouse.Domain.Integrations.Constants;
 public static class IntegrationScopeConstants
 {
     /// <summary>Holds the scope that reads the product catalog: identities, lifecycle, environments, sites and vault
-    /// namespaces.</summary>
+    /// namespaces, one projection over REST and MCP alike.</summary>
     public const string CatalogRead = "catalog:read";
 
     /// <summary>Holds the scope for read-only MCP fleet, deployment and health observations.</summary>

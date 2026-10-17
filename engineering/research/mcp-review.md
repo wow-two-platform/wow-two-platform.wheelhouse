@@ -29,7 +29,7 @@ write tool or secret.
 | MCP calls are not audited; only last use is stored, per minute | medium | Only audited commands reach the trail; tools are queries | A call filter recording key, tool, target, outcome and duration; required before any write tool |
 | `claude mcp add --header` stores the key in plain text in the local Claude config | medium | Claude Code MCP docs | Keep the key in the Keychain and pass it through a headers helper or an environment variable |
 | Static bearer keys instead of MCP OAuth | low, acceptable | The spec makes authorization optional | Each key is minted by one instance and never forwarded. Move to short-lived OAuth for multiple users, cloud connectors, writes or secrets |
-| `catalog:read` returns vault namespaces over REST but not over MCP | low | Scope constants vs `WheelhouseReadTools.cs` | One projection per scope |
+| `catalog:read` returns vault namespaces over REST but not over MCP | low | Scope constants vs `WheelhouseReadTools.cs` | Done 2026-10-17: both return `ProductDto` |
 | Key generation (~190 bits), hashed storage, uniform failures | ok | SDK API key factory and handler | — |
 | Per-tool scope checks, immediate revocation, audited key creation, no keys in logs | ok | `WheelhouseReadTools.cs`, MCP E2E tests | — |
 

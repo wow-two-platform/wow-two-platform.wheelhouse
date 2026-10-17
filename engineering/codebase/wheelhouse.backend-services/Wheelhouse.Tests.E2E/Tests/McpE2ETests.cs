@@ -30,12 +30,31 @@ public sealed class McpE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBas
         Names(list).Should().Equal("list_projects");
 
         using var projects = await CallAsync(client, "list_projects");
-        projects.RootElement.GetProperty("result").ToString().Should().Contain("foreverpin").And.NotContain("secrets");
+        projects.RootElement.GetProperty("result").ToString().Should().Contain("foreverpin");
 
         var previousRead = Fixture.Deployments.LastRead;
         using var denied = await CallAsync(client, "list_deployments");
         denied.RootElement.TryGetProperty("error", out _).Should().BeTrue();
         Fixture.Deployments.LastRead.Should().Be(previousRead);
+    }
+
+    [Fact]
+    public async Task CatalogKey_ReadsTheSameProjectionOverRestAndMcp()
+    {
+        var key = await CreateKeyAsync("catalog:read");
+        using var client = KeyClient(key.Secret);
+
+        var rest = await client.GetAsync("api/products");
+        rest.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var restBody = JsonDocument.Parse(await rest.Content.ReadAsStringAsync());
+        using var call = await CallAsync(client, "list_projects");
+        using var mcpBody = JsonDocument.Parse(call.RootElement.GetProperty("result").GetProperty("content")[0].GetProperty("text").GetString()!);
+
+        JsonElement.DeepEquals(restBody.RootElement.GetProperty("data"), mcpBody.RootElement).Should().BeTrue();
+        var dev = mcpBody.RootElement.EnumerateArray().Single(p => p.GetProperty("slug").GetString() == "foreverpin")
+            .GetProperty("environments").EnumerateArray().Single(e => e.GetProperty("name").GetString() == "dev");
+        dev.GetProperty("secrets").GetProperty("vault").GetString().Should().Be("pilot-vault");
+        dev.GetProperty("secrets").GetProperty("namespace").GetString().Should().Be("foreverpin-dev");
     }
 
     [Fact]

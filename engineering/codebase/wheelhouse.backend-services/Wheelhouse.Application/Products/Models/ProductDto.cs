@@ -4,7 +4,8 @@ namespace Wheelhouse.Application.Products.Models;
 
 /// <summary>Represents a product as integrations read it: identity, lifecycle, release source and where each
 /// environment is reached — no targets, servers or deployment state. The identity is the cached manifest of the
-/// product's repository when it has a valid one.</summary>
+/// product's repository when it has a valid one. It is the one <c>catalog:read</c> projection: <c>/api/products</c> and
+/// the MCP <c>list_projects</c> tool both return it.</summary>
 public sealed record ProductDto
 {
     /// <summary>Gets the product's identifier.</summary>

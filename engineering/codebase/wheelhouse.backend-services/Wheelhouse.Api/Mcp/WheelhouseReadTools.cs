@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using ModelContextProtocol.Server;
 using Wheelhouse.Application.Deployments;
 using Wheelhouse.Application.Inventory.Constants;
+using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Products.Queries;
 using Wheelhouse.Application.Servers.Models;
 using Wheelhouse.Application.Servers.Queries;
@@ -22,21 +23,15 @@ namespace Wheelhouse.Api.Mcp;
 [McpServerToolType]
 public sealed partial class WheelhouseReadTools(ISender sender, WheelhouseDbContext database, DeploymentSettings deployment)
 {
-    /// <summary>Reads project identities, lifecycle and public site metadata.</summary>
+    /// <summary>Reads the product catalog as <c>GET /api/products</c> returns it: the one <c>catalog:read</c>
+    /// projection, so the two cannot drift.</summary>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The product catalog with secret namespaces omitted.</returns>
+    /// <returns>The product catalog.</returns>
     [McpServerTool(Name = "list_projects", ReadOnly = true, Destructive = false, OpenWorld = false)]
-    [Description("List Wheelhouse projects (products), their repositories, lifecycle and environment sites. Omits secret metadata.")]
+    [Description("List Wheelhouse projects (products): identity, repository, release source, lifecycle, environment sites and the vault namespace each environment's settings belong in. Never returns secret values.")]
     [Authorize(Policy = WheelhouseMcpConfiguration.CatalogPolicy)]
-    public async Task<object> ListProjects(CancellationToken ct)
-    {
-        var products = Read(await sender.SendAsync(new ProductGetAllQuery(), ct));
-        return products.Select(product => new
-        {
-            product.Slug, product.Name, product.Description, product.Homepage, product.Lifecycle, product.Repository, product.Release,
-            Environments = product.Environments.Select(environment => new { environment.Name, environment.Sites })
-        }).ToArray();
-    }
+    public async Task<IReadOnlyList<ProductDto>> ListProjects(CancellationToken ct) =>
+        Read(await sender.SendAsync(new ProductGetAllQuery(), ct));
 
     /// <summary>Reads registered servers without contacting them.</summary>
     /// <param name="ct">The cancellation token.</param>

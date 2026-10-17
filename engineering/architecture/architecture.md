@@ -178,9 +178,11 @@ neither the console's own nor in `Mcp:AllowedOrigins` gets 403, a request withou
 over 64 KiB gets 413. Every `/.well-known/*` path answers 404 rather than the SPA shell, so an OAuth discovery probe
 learns that the endpoint takes keys only. Tool discovery and invocation both enforce scopes.
 `catalog:read` lists projects; `deployments:read` lists servers, targets and deployment history and reads target
-state, readiness, vitals and control-plane health. Tools call existing mediator queries. Their response projections
-omit credential paths, settings paths and secret namespaces. The [MCP runbook](../deployment/mcp.md) owns connection
-details. No initial tool writes, builds, deploys, reconciles, reads logs or reveals secrets.
+state, readiness, vitals and control-plane health. Tools call existing mediator queries. A scope has one projection
+for REST and MCP alike: `list_projects` returns the `ProductDto` list `/api/products` returns, vault namespaces
+included, and never a secret value; the fleet tools' projections omit credential and settings paths. The
+[MCP runbook](../deployment/mcp.md) owns connection details. No initial tool writes, builds, deploys, reconciles, reads
+logs or reveals secrets.
 
 A failed tool call is an MCP tool error (`isError`) whose text is `{ code, message, retryable }`: `code` is the SDK
 error kind REST puts in a problem's `code`, `message` the operator-safe text REST returns as `detail`, and `retryable`
