@@ -1,13 +1,13 @@
 # Wheelhouse — Flows
 
-*Last updated: 2026-09-28*
+*Last updated: 2026-10-17*
 
 - **Build:** push to any branch → CI builds only the services whose paths changed → a candidate bundle
   (`sha-<commit>`) lands as an Actions artifact. A commit without a build can be built from Wheelhouse.
 - **Release:** tag the chosen commit `vX.Y.Z` and publish the GitHub release → changed services build as `X.Y.Z`,
   unchanged ones keep their images and versions → the bundle attaches to the release.
-- **Promote:** deploy any build to dev → deploy the release to test → deploy the same release to prod,
-  which takes only a release that succeeded on test. Typing the target ID skips the test pass.
+- **Promote:** deploy the `main` release to dev → deploy the same release to prod, which takes only a release that
+  succeeded on dev. Typing the target ID skips the dev pass.
 - **Deploy:** choose the environment and the build → confirm (prod on the local server needs the typed target ID) →
   follow the steps: check target, pull, start, verify, publish sites, probe sites, remove unused images →
   open each site from the result.

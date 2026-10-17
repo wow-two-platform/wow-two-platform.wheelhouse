@@ -1,6 +1,6 @@
 # Builds and publishes Wheelhouse like every product, through the shared workflow in wow-two-platform.pipelines:
 #   main          → release vX.Y.Z (X.Y from the newest version-track folder), bundle on the GitHub release
-#   dev / test    → pre-release under dev-latest / test-latest; other branches → candidate sha-<commit>
+#   other branches → candidate sha-<commit>; work happens on main only (no test branch or environment since 2026-10-17)
 #   workflow_dispatch → a candidate for one commit that has no build yet
 # One push event tests/builds its final SHA once, regardless of its commit count.
 # Dev deployment is enabled only after the VPS and environment secrets are provisioned.

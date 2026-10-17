@@ -14,25 +14,28 @@ deploys.
 
 ## Environments
 
-Every product runs `dev`, `test` and `prod` targets, all on one host at once, told apart by Compose project,
-platform-network alias, database, settings files and hostnames. No hardware separates them.
+Products work on `main` only and fix forward, with no long-lived branches. Every `main` release deploys to dev, then
+is promoted to prod. Every product runs `dev` and `prod` targets, both on one host at once, told apart by Compose
+project, platform-network alias, database, settings files and hostnames. No hardware separates them.
 
 | Environment | Takes | Runs |
 |---|---|---|
-| `dev` | A build of any commit or branch, or a release | For work in progress and sharing a feature |
-| `test` | Published releases | For acceptance |
-| `prod` | Published releases that succeeded on test | For customers |
+| `dev` | A build of any commit or branch, or a release | For work in progress and proving each release |
+| `prod` | Published releases that succeeded on dev | For customers |
 
-- The transport refuses a commit build on test or prod, before any file reaches the target.
-- Prod takes a release only after it succeeded on one of the product's test targets.
-- The test pass comes from the local deployment records, else from each test target's verified release.
-- `--skip-test-pass` overrides the gate only with the typed target ID (`--confirm <target>`).
+- The transport refuses a commit build on prod, before any file reaches the target.
+- Prod takes a release only after it succeeded on one of the product's dev targets.
+- The dev pass comes from the local deployment records, else from each dev target's verified release.
+- `--skip-dev-pass` overrides the gate only with the typed target ID (`--confirm <target>`).
 - On the local server, prod deploys only after the operator types the target ID (`--confirm foreverpin-prod`).
+- `test` was retired on 2026-10-17: migration `013-drop-test-environment` deleted its targets and their vitals, and
+  the API refuses it. Its deployment records and audit entries still read, labelled `test (retired)`; a success on a
+  retired test target is no dev pass.
 
 ## Sites
 
 - A release declares its sites: a named entry point on one service's port, optionally a path prefix, public or private.
-- A target names each site's host; dev and test may follow the server's pattern, prod names every host itself.
+- A target names each site's host; dev may follow the server's pattern, prod names every host itself.
 - After a verified rollout the runner writes `<root>/ingress/<product>-<environment>.yml`, a Traefik file-provider route.
 - The route maps the host to `<product>-<environment>-<service>:<port>` on the platform network.
 - The target records each site's URL; Wheelhouse shows Open site links on the target and after a deploy.
@@ -67,7 +70,7 @@ python3 ../wow-two-platform.pipelines/generator/release.py build --repo . --chec
 
 ## Automatic Wheelhouse dev delivery
 
-The first remote target is `wheelhouse-dev`; separate test and prod provisioning remains deferred.
+The first remote target is `wheelhouse-dev`; separate prod provisioning remains deferred.
 Use the reviewed [VPS bootstrap](vps/vps.md) for Ubuntu 26.04 and private HTTPS.
 
 ```text
@@ -114,7 +117,7 @@ later ephemeral Tailscale CI access. No self-hosted GitHub runner is installed o
 | `DEV_DEPLOY_ENABLED` | Variable | Set `true` only after host, private HTTPS, OAuth and registry wiring |
 
 Until enabled, the workflow reports explicitly that deployment was not performed. Enabled runs fail on
-missing configuration. Limit the environment's deployment branch to `main`; test/prod values are not used.
+missing configuration. Limit the environment's deployment branch to `main`; prod values are not used.
 GitHub's job token reads release metadata. GHCR credentials and application secrets live on the VPS under
 the deployment account; they are not copied into build arguments or CI logs.
 
@@ -250,16 +253,16 @@ From the repository root, using the same inventory as the dashboard:
 R=engineering/codebase/wheelhouse.runner-services/transport.py
 python3 $R targets  --root /path/to/inventory
 python3 $R releases --root /path/to/inventory
-python3 $R check    --root /path/to/inventory --target foreverpin-test --bundle <artifact-id>
-python3 $R submit   --root /path/to/inventory --target foreverpin-test --bundle <artifact-id> --actor operator
+python3 $R check    --root /path/to/inventory --target foreverpin-dev --bundle <artifact-id>
+python3 $R submit   --root /path/to/inventory --target foreverpin-dev --bundle <artifact-id> --actor operator
 python3 $R status   --root /path/to/inventory --job <returned-id>
 python3 $R jobs     --root /path/to/inventory
-python3 $R state    --root /path/to/inventory --target foreverpin-test
-python3 $R topology --root /path/to/inventory --target foreverpin-test
-python3 $R reconcile --root /path/to/inventory --target foreverpin-test --job <active-id> --actor operator
-python3 $R vitals   --root /path/to/inventory [--target foreverpin-test]
+python3 $R state    --root /path/to/inventory --target foreverpin-dev
+python3 $R topology --root /path/to/inventory --target foreverpin-dev
+python3 $R reconcile --root /path/to/inventory --target foreverpin-dev --job <active-id> --actor operator
+python3 $R vitals   --root /path/to/inventory [--target foreverpin-dev]
 python3 $R stats    --root /path/to/inventory --days 30
-python3 $R logs     --root /path/to/inventory --target foreverpin-test --service management --tail 200
+python3 $R logs     --root /path/to/inventory --target foreverpin-dev --service management --tail 200
 ```
 
 `check`, `state`, `topology`, `vitals` and `logs` stream the runner over SSH stdin and leave no files on the target.
@@ -367,16 +370,16 @@ Vault-side audit records show Wheelhouse's administrator identity; Wheelhouse's 
 ## Local server
 
 `engineering/deployment/rehearsal/` runs the local server: a disposable SSH target, a Traefik ingress, a registry,
-a product database and, when a `secrets-vault:local` image exists, a vault. It hosts ForeverPin's `dev`, `test` and
-`prod` at once. Dev is the default; test and prod deploy on demand. `WHEELHOUSE_REHEARSAL=1` exposes the local
+a product database and, when a `secrets-vault:local` image exists, a vault. It hosts ForeverPin's `dev` and `prod` at
+once. Dev is the default; prod deploys on demand. `WHEELHOUSE_REHEARSAL=1` exposes the local
 targets, vault and imported bundles; a deployed control plane never sets it.
 
 ```sh
 cd engineering/deployment/rehearsal
 python3 rehearse.py run                                       # server, dev candidate, settings, check, deploy to dev
-python3 rehearse.py bundle --tag v0.0.1-local.1               # a release, which test and prod also take
-python3 rehearse.py settings --env test --tag v0.0.1-local.1
-python3 rehearse.py deploy --env test --tag v0.0.1-local.1
+python3 rehearse.py bundle --tag v0.0.1-local.1               # a release, which prod also takes
+python3 rehearse.py deploy --env dev --tag v0.0.1-local.1       # the dev pass prod requires
+python3 rehearse.py settings --env prod --tag v0.0.1-local.1
 python3 rehearse.py deploy --env prod --tag v0.0.1-local.1 --confirm foreverpin-prod
 python3 rehearse.py bundle --tag v0.0.1-broken.1 --broken     # a release that fails after replacement
 python3 rehearse.py state --env dev
@@ -429,8 +432,8 @@ One-time sign-in setup, on the GitHub account that will operate Wheelhouse:
 Use a Chromium-based browser: it accepts the `Secure` session cookie on `http://localhost`.
 A separate OAuth app with the production callback serves the VPS; the local one stays local.
 
-With a bundle and each environment's settings written, the console lists them for `foreverpin-dev`, `-test` and
-`-prod`. The `v0.3` Verification iteration is the test plan. `rehearse.py down` stops everything; `--volumes` also
+With a bundle and each environment's settings written, the console lists them for `foreverpin-dev` and
+`foreverpin-prod`. The `v0.3` Verification iteration is the test plan. `rehearse.py down` stops everything; `--volumes` also
 drops the console's database, the vault's data and the target's state.
 
 ## Target state and recovery
@@ -483,7 +486,7 @@ A service's recent container output is readable on request through `logs`; Docke
    Set the server's private probe to the private entry point's address so private sites are probed too.
 9. Add the ingress IP to `Deployment:TrustedProxies` in both app settings; no trust-all proxy setting.
 10. Bootstrap Wheelhouse privately or use the operator command from a workstation.
-11. Deploy test, verify real URLs and provider callbacks, restore a backup, promote the same image digests to prod.
+11. Deploy dev, verify real URLs and provider callbacks, restore a backup, promote the same image digests to prod.
 
 Existing product containers keep serving without Wheelhouse. A new VPS is a Servers entry plus its credential files; it uses the same product release.
 Data relocation remains a separately planned copy/restore/cutover operation.

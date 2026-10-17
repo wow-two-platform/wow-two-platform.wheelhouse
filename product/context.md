@@ -1,6 +1,6 @@
 # Wheelhouse — Context
 
-*Last updated: 2026-10-15*
+*Last updated: 2026-10-17*
 
 ## Current state
 
@@ -12,7 +12,7 @@ Operators see deployment history, check a target read-only, reconcile a locked t
 The studio workspace selects a product/environment, shows observed services and release state, and opens contextual details.
 Its portfolio attention list combines host/container vitals, 30-day deployment metrics and vault hygiene.
 Workspace, Deployments, Servers, Secrets, Products and Activity share top navigation and coordinated light/dark themes.
-Every product runs `dev`, `test` and `prod` on one host; dev takes any commit's build, prod only a release that passed test.
+Every product runs `dev` and `prod` on one host; dev takes any commit's build, prod only a release that passed dev.
 Each rollout records its steps, requests its sites through the ingress and removes images old releases alone used.
 Every operator action lands in a hash-chained audit trail. CI tests every push; Wheelhouse releases through the shared pipeline.
 The local server (SSH target, Traefik, vault) exercises all of it end to end at `*.localhost:18080`.
@@ -53,8 +53,10 @@ redirect and editor, real provider callbacks, persisted codes and cookie keys, a
 - Only Wheelhouse prod deploys products, in every environment; dev never holds the products host's key. A flow a
   product needs tested is first added to the canary and exercised from dev. The canary stays tailnet-only; the
   control-plane host opens no public port. Decided 2026-10-15.
-- Each canary environment gets its own tailnet name through a small Tailscale container (`canary-dev`, `canary-test`,
-  `canary`), each with its own trusted certificate; no path prefixes. Decided 2026-10-15.
+- Each canary environment gets its own tailnet name through a small Tailscale container (`canary-dev`, `canary`),
+  each with its own trusted certificate; no path prefixes. Decided 2026-10-15; `canary-test` went with `test`.
+- Products work on `main` only and fix forward, with no long-lived branches: every `main` release deploys to dev, then
+  is promoted to prod. The `test` environment and the `test` branch are dropped everywhere. Decided 2026-10-17.
 - A push that publishes no new release verifies the running dev release instead of restarting it.
 - A product's name, description, homepage and per-service text are a manifest in its own repository
   (`product/product.json`); the database keeps a cache keyed by the commit it was read from, replaced only by a newer

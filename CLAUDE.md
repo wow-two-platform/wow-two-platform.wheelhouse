@@ -118,8 +118,9 @@ rows. Provider/environment choices use enums; no dynamic provider plugins. The l
 `catalog.py`/`fleet.py` and seed the database on the rig only. A product's release source is part of its row.
 Wheelhouse deploys published releases and per-commit builds; it starts a product's build workflow only for a commit
 that has no build, and never builds on a target host.
-Environments are `dev`, `test` and `prod`; dev takes any build, test takes releases and `test` branch builds, and
-prod only a release that succeeded on test (a typed target ID skips that). Every product builds through the shared
-`publish` workflow in `wow-two-platform.pipelines`: `main` releases `vX.Y.Z`, other branches build candidates.
+Environments are `dev` and `prod` (`test` retired 2026-10-17): products work on `main` only and fix forward; every
+`main` release deploys to dev, then is promoted to prod. Dev takes any build, and prod only a release that succeeded
+on dev (a typed target ID skips that). Every product builds through the shared `publish` workflow in
+`wow-two-platform.pipelines`: `main` releases `vX.Y.Z`, other branches build candidates.
 Artifact, registry and fleet rules live in `engineering/architecture/architecture.md`.
 Wheelhouse's own `engineering/deployment/deploy.yml` and `.github/workflows/` build and test it like any product.
