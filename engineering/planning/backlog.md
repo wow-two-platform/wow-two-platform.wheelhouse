@@ -116,7 +116,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Ability to group products into workspaces | feature | User 2026-10-15: personal, wow2 platform, wow2 backbone, wow2 apps, own ventures, other ventures |
 | Add `product/product.json` to ForeverPin, every other product repository and the product template | feature | Decided 2026-10-15: identity text is a manifest in the repository ([convention](../../../../../conventions/design/identity/product-manifest.md)); Wheelhouse and the canary carry one; until a repo does, its row supplies the name and description |
 | Edit a product's identity from the console by committing its manifest | feature | Needs the GitHub App (Hosting group); the console shows manifest-sourced name, description and homepage read-only meanwhile |
 | Refresh a product's manifest on push | feature | A GitHub App push webhook feeds the same commit-keyed row; the 5-minute head check and the Refresh action stay as fallbacks |
@@ -128,6 +127,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Host view with capacity and a portfolio matrix | feature | Beside the per-environment service map |
 | Teardown with a final backup and archive | feature | |
 | Zero-to-live scaffold from the product template | feature | Repository, CI, first deployment |
+| Ability to build one product from several repositories | feature | Parked 2026-10-17: components, each repo with its own manifest and releases, grouped Product → Environment → Component → Service; every product is single-repo today |
 
 ---
 
@@ -146,25 +146,13 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 ## Experience
 
-User 2026-10-15: layout, motion and notifications must work flawlessly and look their best; pull this group first.
-User 2026-10-17: v0.5 is a full platform ideation, check and layout redesign; v0.4's manual checks and the
-carried v0.3 checks were dropped for it (the list stays in git before this commit).
+User 2026-10-15: layout, motion and notifications must work flawlessly and look their best. The rest of this group moved
+to v0.5 on 2026-10-17, a full platform ideation, check and layout redesign; v0.4's manual checks and the carried v0.3
+checks were dropped for it (the list stays in git history).
 
 | Item | Type | Notes |
 |---|---|---|
-| Analyze the console's information architecture | product | Secrets and Activity may not need their own tabs; Workspace could carry activity as widgets. Decides the phone navigation below |
-| Ability to navigate on phones from a bottom bar | feature | User 2026-10-15: bottom menus work best on phones; waits on the analysis above |
-| Ability to follow a deployment in a compact progress notification | feature | Closing the deploy dialog keeps the rollout visible; the SDK feedback bus needs progress notices any app can publish |
-| Ability to see rollout steps and page transitions animate | feature | Steps flip to done with no motion today; sweep transitions across the layout |
-| Ability to swipe a table row on phones for its two main actions | feature | Part of a sweep of intuitive phone gestures, navigation and transitions for the SDK and conventions |
 | Analyze full-page versus modal dialogs | product | Then record the dialog convention in wow2 |
-| Ability to see an icon on each rollout step | feature | Lucide first; a Font Awesome-derived icon pack is planned |
-
-## Product views
-
-| Item | Type | Notes |
-|---|---|---|
-| Ability to see services grouped under their product and environment | feature | User 2026-10-15: products run several services. Servers nests server → target → containers, and the Deployments targets panel is a flat target list. Group both by product, then environment, then service. |
 
 ## SDK adoption
 

@@ -19,6 +19,12 @@ written from it when the version opens.
 | 7 | One manifest per repo replaces `product/product.json` and `engineering/deployment/deploy.yml` | 2026-10-17 |
 | 8 | Fact ownership below | 2026-10-17 |
 | 9 | Non-secret settings and their defaults are declared in the manifest; secret values live only in Secrets Vault | 2026-10-17 |
+| 10 | Non-secret defaults live in the repo's `appsettings.json` plus one `appsettings.{env}.json` per environment; overrides come from environment values or the secret store | 2026-10-17 |
+| 11 | Each service declares its required settings; creating a product loads them into the config store and its secrets into the vault, empty | 2026-10-17 |
+| 12 | A settings editor offers declared choices (enum values, numeric sets) and flags missing values per service and product | 2026-10-17 |
+| 13 | Products and services carry a binary status, active or inactive; inactive ones stay hidden until a toggle shows them | 2026-10-17 |
+| 14 | One `catalog.yml` in wow-two-ws lists every wow2 app (platform, backbone, apps); `repo-registry.md` is generated from it | 2026-10-17 |
+| 15 | One repo per product for now; products spanning several repos (components) wait in the backlog | 2026-10-17 |
 
 | Fact | Owner |
 |---|---|
@@ -33,8 +39,7 @@ written from it when the version opens.
 
 ## Open topics
 
-- A single wow2 catalog that a new Wheelhouse instance loads to create every app.
-- Products that span several repositories, and how their services group.
-- Console layout and navigation on desktop and phone, including pins.
 - Manifest fields and format.
+- Environment names in `appsettings.{env}.json` versus .NET's `Development` / `Production`.
+- Whether Secrets Vault is renamed Secrets Store beside a config store.
 - The deployment contract (`con-t-012` in the wow2 tasks).
