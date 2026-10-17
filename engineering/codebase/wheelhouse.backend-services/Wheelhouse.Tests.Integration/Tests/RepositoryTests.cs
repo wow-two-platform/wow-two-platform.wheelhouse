@@ -61,9 +61,8 @@ public sealed class RepositoryTests(WheelhouseTestDb db) : IAsyncLifetime
             // Stored out of order, and with slugs whose alphabet disagrees with the promotion path.
             foreach (var (slug, product, environment) in new[]
             {
-                ("zeta-prod", zeta, DeploymentEnvironment.Prod), ("alpha-test", alpha, DeploymentEnvironment.Test),
-                ("zeta-dev", zeta, DeploymentEnvironment.Dev), ("alpha-prod", alpha, DeploymentEnvironment.Prod),
-                ("zeta-test", zeta, DeploymentEnvironment.Test), ("alpha-dev", alpha, DeploymentEnvironment.Dev),
+                ("zeta-prod", zeta, DeploymentEnvironment.Prod), ("alpha-prod", alpha, DeploymentEnvironment.Prod),
+                ("zeta-dev", zeta, DeploymentEnvironment.Dev), ("alpha-dev", alpha, DeploymentEnvironment.Dev),
             })
             {
                 var target = InventoryRows.Target(slug, product, server);
@@ -74,7 +73,7 @@ public sealed class RepositoryTests(WheelhouseTestDb db) : IAsyncLifetime
 
         await using var read = db.NewContext();
         (await new TargetsRepository(read).GetAllAsync()).Select(target => target.Slug).Should()
-            .Equal("alpha-dev", "alpha-test", "alpha-prod", "zeta-dev", "zeta-test", "zeta-prod");
+            .Equal("alpha-dev", "alpha-prod", "zeta-dev", "zeta-prod");
     }
 
     [Fact]

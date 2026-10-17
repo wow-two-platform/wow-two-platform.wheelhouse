@@ -47,6 +47,6 @@ public sealed record ProductDto
     /// <summary>Gets the path of the product's icon; it answers not found when the repository carries none.</summary>
     public required string IconUrl { get; init; }
 
-    /// <summary>Gets the product's environments, in dev, test, prod order.</summary>
+    /// <summary>Gets the product's environments, in dev, prod order.</summary>
     public required IReadOnlyList<ProductEnvironmentDto> Environments { get; init; }
 }

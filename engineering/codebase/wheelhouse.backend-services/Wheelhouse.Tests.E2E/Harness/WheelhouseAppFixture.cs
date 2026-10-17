@@ -86,6 +86,8 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
                 // Tests run sampling passes explicitly; the background sampler stays off.
                 ["Operations:VitalsSampleMinutes"] = "0",
                 ["Deployment:FollowSeconds"] = "0",
+                // Every history read asks the stub, so a test sees the records it just wrote.
+                ["Deployment:HistorySeconds"] = "0",
                 // A browser client the operator allowed, beside the console's own origin.
                 ["Mcp:AllowedOrigins:0"] = McpAllowedOrigin,
             }),
@@ -146,8 +148,11 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     private void ResetStubs()
     {
         Deployments.StartRefusal = null;
+        Deployments.Runner = null;
         Deployments.ReadFailure = null;
         Deployments.ReadException = null;
+        Deployments.History.Clear();
+        Deployments.Observations.Clear();
         ProductIcons.Clear();
         ProductManifests.Clear();
         RepositoryFiles.Clear();

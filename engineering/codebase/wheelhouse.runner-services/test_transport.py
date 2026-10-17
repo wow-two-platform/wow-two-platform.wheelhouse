@@ -229,13 +229,13 @@ class TransportTests(unittest.TestCase):
             self.job(str(number), "2026-09-2" + str(number) + "T09:00:00+00:00", "rejected", target=target)
         bindings = tuple(transport.fleet.Target(name, "pilot", "pilot", environment, (), "platform") for name, environment in
                          (("pilot-prod", transport.fleet.DeploymentEnvironment.PROD),
-                          ("pilot-dev", transport.fleet.DeploymentEnvironment.DEV),
-                          ("pilot-test", transport.fleet.DeploymentEnvironment.TEST)))
+                          ("pilot-dev", transport.fleet.DeploymentEnvironment.DEV)))
         moment = transport.datetime.datetime(2026, 9, 26, 12, tzinfo=transport.datetime.timezone.utc)
         with patch.object(transport.fleet, "TARGETS", bindings), patch.dict("os.environ", {}, clear=False):
             transport.os.environ.pop("WHEELHOUSE_REHEARSAL", None)
             result = transport.stats(self.root, 7, moment)
-        self.assertEqual(["pilot-dev", "pilot-test", "pilot-prod", "gone"], [item["targetId"] for item in result["targets"]])
+        # The retired pilot-test is a removed target: its history follows by ID.
+        self.assertEqual(["pilot-dev", "pilot-prod", "gone", "pilot-test"], [item["targetId"] for item in result["targets"]])
 
     def test_stats_measure_the_window_before_for_trends(self):
         self.job("1", "2026-09-10T09:00:00+00:00", "succeeded", "2026-09-10T09:00:00+00:00", "2026-09-10T09:04:00+00:00")
@@ -262,7 +262,7 @@ class TransportTests(unittest.TestCase):
             transport.stats(self.root, 0)
 
     def test_vitals_reads_every_target_and_names_a_failing_one(self):
-        bindings = [transport.fleet.Target(name, "pilot", "pilot", transport.fleet.DeploymentEnvironment.TEST,
+        bindings = [transport.fleet.Target(name, "pilot", "pilot", transport.fleet.DeploymentEnvironment.DEV,
                                            (), "platform") for name in ("pilot-staging", "pilot-broken")]
         config = {"serverId": "pilot", "provider": "Hetzner", "ssh": self.config,
                   "target": {"product": "pilot", "environment": "staging", "root": "/srv/wheelhouse"}}
@@ -292,7 +292,7 @@ class TransportTests(unittest.TestCase):
                         for name in ("busy", "fresh", "dark"))
         bindings = (transport.fleet.Target("pilot-dev", "busy", "pilot", transport.fleet.DeploymentEnvironment.DEV,
                                            (), "platform", root="/srv/pilot"),
-                    transport.fleet.Target("pilot-test", "busy", "pilot", transport.fleet.DeploymentEnvironment.TEST,
+                    transport.fleet.Target("pilot-prod", "busy", "pilot", transport.fleet.DeploymentEnvironment.PROD,
                                            (), "platform", root="/srv/pilot"))
         for server in ("busy", "fresh"):
             (self.root / "ssh" / server).mkdir(parents=True)
@@ -312,7 +312,7 @@ class TransportTests(unittest.TestCase):
                 patch.object(transport, "run_remote", side_effect=remote):
             result = transport.vitals(self.root)
             first = list(calls)
-            one = transport.vitals(self.root, "pilot-test")
+            one = transport.vitals(self.root, "pilot-prod")
         self.assertEqual([("busy", True), ("fresh", True), ("dark", False)],
                          [(item["serverId"], item["ok"]) for item in result["servers"]])
         self.assertEqual({"cpus": 2, "disks": []}, result["servers"][1]["host"])
@@ -321,33 +321,53 @@ class TransportTests(unittest.TestCase):
         hosts = [(host, document) for action, host, document in first if action == "host"]
         self.assertEqual([("busy.example.net", {"roots": ["/srv/pilot"]}),
                           ("fresh.example.net", {"roots": ["/srv/wheelhouse"]})], hosts)
-        self.assertEqual(["pilot-dev", "pilot-test"], [item["targetId"] for item in result["targets"]])
+        self.assertEqual(["pilot-dev", "pilot-prod"], [item["targetId"] for item in result["targets"]])
         self.assertNotIn("host", result["targets"][0])
-        self.assertEqual((["busy"], ["pilot-test"]), ([item["serverId"] for item in one["servers"]],
+        self.assertEqual((["busy"], ["pilot-prod"]), ([item["serverId"] for item in one["servers"]],
                                                       [item["targetId"] for item in one["targets"]]))
 
     def test_logs_read_one_service_through_the_runner_and_bound_the_request(self):
         config = {"serverId": "pilot", "provider": "Hetzner", "ssh": self.config,
-                  "target": {"product": "pilot", "environment": "test", "root": "/srv/wheelhouse"}}
+                  "target": {"product": "pilot", "environment": "dev", "root": "/srv/wheelhouse"}}
 
         def remote(ssh, action, target, *arguments, release=None, timeout=30):
             self.assertEqual(("logs", ("--service", "api", "--tail", "50"), 60), (action, arguments, timeout))
-            return {"project": "pilot-test", "service": "api", "lines": ["started"]}
+            return {"project": "pilot-dev", "service": "api", "lines": ["started"]}
         with patch.object(transport.fleet, "resolve_target", return_value=config), \
                 patch.object(transport, "run_remote", side_effect=remote):
-            result = transport.logs(self.root, "pilot-test", "api", 50)
-            self.assertEqual(("pilot-test", ["started"]), (result["targetId"], result["lines"]))
+            result = transport.logs(self.root, "pilot-dev", "api", 50)
+            self.assertEqual(("pilot-dev", ["started"]), (result["targetId"], result["lines"]))
             for service, tail in (("../api", 50), ("api", 5000)):
                 with self.subTest(service=service, tail=tail), self.assertRaises(ValueError):
-                    transport.logs(self.root, "pilot-test", service, tail)
+                    transport.logs(self.root, "pilot-dev", service, tail)
 
     def test_jobs_carry_the_warnings_a_target_observed(self):
         job = "33333333-3333-4333-8333-333333333333"
         transport.write_json(self.root / "jobs" / (job + ".json"),
-                             {"id": job, "targetId": "pilot-test", "status": "queued", "submittedAt": "2026-09-28T10:00:00+00:00"})
+                             {"id": job, "targetId": "pilot-dev", "status": "queued", "submittedAt": "2026-09-28T10:00:00+00:00"})
         transport.write_json(self.root / "observed" / (job + ".json"),
                              {"status": "succeeded", "warnings": ["Site app did not answer through the ingress"]})
         self.assertEqual(["Site app did not answer through the ingress"], transport.jobs(self.root)[0]["warnings"])
+
+    def test_jobs_name_their_environment_and_mark_a_retired_one(self):
+        records = (("44444444-4444-4444-8444-444444444441", {"environment": "prod"}, {}),
+                   # Recorded before jobs kept their environment: the target journal's project names it.
+                   ("44444444-4444-4444-8444-444444444442", {}, {"project": "foreverpin-test"}),
+                   ("44444444-4444-4444-8444-444444444443", {}, {"project": "foreverpin-dev"}),
+                   # Neither recorded nor observed: the target's current inventory row names it, or nothing does.
+                   ("44444444-4444-4444-8444-444444444444", {"targetId": "pilot-prod"}, {}),
+                   ("44444444-4444-4444-8444-444444444445", {"targetId": "foreverpin-test"}, {}))
+        for number, (job, extra, observed) in enumerate(records):
+            transport.write_json(self.root / "jobs" / (job + ".json"),
+                                 {"id": job, "targetId": "foreverpin-test", "status": "succeeded",
+                                  "submittedAt": "2026-09-2" + str(number) + "T10:00:00+00:00", **extra})
+            if observed:
+                transport.write_json(self.root / "observed" / (job + ".json"), {"status": "succeeded", **observed})
+        bindings = (transport.fleet.Target("pilot-prod", "pilot", "pilot", transport.fleet.DeploymentEnvironment.PROD,
+                                           (), "platform"),)
+        with patch.object(transport.fleet, "active_targets", return_value=bindings):
+            listed = {item["id"][-1]: item["environment"] for item in transport.jobs(self.root)}
+        self.assertEqual({"1": "prod", "2": "test (retired)", "3": "dev", "4": "prod", "5": None}, listed)
 
     def policy_config(self, environment, candidates, confirmation):
         return {"serverId": "local", "provider": "Local", "ssh": self.config,
@@ -375,29 +395,25 @@ class TransportTests(unittest.TestCase):
                     transport.submit(self.root, "pilot-prod", "pilot-ci-1", "max", typed)
         prepare.assert_not_called()
 
-    def test_test_and_prod_refuse_a_build_that_is_not_a_release(self):
+    def test_prod_refuses_a_build_that_is_not_a_release(self):
         bundle = self.candidate_bundle()
-        for environment in ("test", "prod"):
-            config = self.policy_config(environment, False, False)
-            with self.subTest(environment=environment), \
-                    patch.object(transport.fleet, "resolve_target", return_value=config), \
-                    patch.object(transport.artifacts, "prepare", return_value=bundle), \
-                    patch.object(transport, "Ssh") as ssh:
-                with self.assertRaisesRegex(ValueError, "Only dev takes a build"):
-                    transport.submit(self.root, "pilot-" + environment, "pilot-ci-1", "max", "pilot-" + environment)
-                result = transport.check(self.root, "pilot-" + environment, "pilot-ci-1")
-                self.assertEqual((False, "Release kind"), (result["ok"], result["checks"][0]["name"]))
-                ssh.assert_not_called()
+        config = self.policy_config("prod", False, False)
+        with patch.object(transport.fleet, "resolve_target", return_value=config), \
+                patch.object(transport.artifacts, "prepare", return_value=bundle), \
+                patch.object(transport, "Ssh") as ssh:
+            with self.assertRaisesRegex(ValueError, "Only dev takes a build"):
+                transport.submit(self.root, "pilot-prod", "pilot-ci-1", "max", "pilot-prod")
+            result = transport.check(self.root, "pilot-prod", "pilot-ci-1")
+            self.assertEqual((False, "Release kind"), (result["ok"], result["checks"][0]["name"]))
+            ssh.assert_not_called()
 
-    def test_test_takes_a_test_branch_build_and_nothing_else_does(self):
-        tester = {"acceptsCandidates": False, "acceptsTestBuilds": True}
-        transport.admits(tester, {"kind": "candidate", "channel": "test"})
-        for config, manifest in ((tester, {"kind": "candidate", "channel": "dev"}),
-                                 (tester, {"kind": "candidate"}),
-                                 ({"acceptsCandidates": False, "acceptsTestBuilds": False},
-                                  {"kind": "candidate", "channel": "test"})):
-            with self.subTest(config=config, manifest=manifest), self.assertRaisesRegex(ValueError, "Only dev takes"):
-                transport.admits(config, manifest)
+    def test_only_dev_takes_a_build_of_any_branch(self):
+        for channel in ("dev", "test", "branch", None):
+            manifest = {"kind": "candidate", **({"channel": channel} if channel else {})}
+            with self.subTest(channel=channel):
+                transport.admits({"acceptsCandidates": True}, manifest)
+                with self.assertRaisesRegex(ValueError, "Only dev takes"):
+                    transport.admits({"acceptsCandidates": False}, manifest)
 
     def release_bundle(self, release="v1.0.0"):
         bundle = self.candidate_bundle()
@@ -406,23 +422,23 @@ class TransportTests(unittest.TestCase):
         (bundle / "release.json").write_text(json.dumps(manifest))
         return bundle
 
-    def gated(self, test_state=None, skip=False, confirm=None):
-        """Submits a release to pilot-prod with pilot-test as its only test target; SSH marks passing the gate."""
+    def gated(self, dev_state=None, skip=False, confirm=None):
+        """Submits a release to pilot-prod with pilot-dev as its only dev target; SSH marks passing the gate."""
         config = self.policy_config("prod", False, False)
-        config["requiresTestPass"] = True
-        test = transport.fleet.Target("pilot-test", "pilot", "pilot", transport.fleet.DeploymentEnvironment.TEST,
-                                      (), "platform")
+        config["requiresDevPass"] = True
+        dev = transport.fleet.Target("pilot-dev", "pilot", "pilot", transport.fleet.DeploymentEnvironment.DEV,
+                                     (), "platform")
 
         class Reached(Exception):
             pass
 
         def state(root, target_id):
-            if test_state is None:
+            if dev_state is None:
                 raise transport.CommandFailed("SSH connection refused")
-            return {"current": test_state}
+            return {"current": dev_state}
 
         with patch.object(transport.fleet, "resolve_target", return_value=config), \
-                patch.object(transport.fleet, "active_targets", return_value=(test,)), \
+                patch.object(transport.fleet, "active_targets", return_value=(dev,)), \
                 patch.object(transport.artifacts, "prepare", return_value=self.release_bundle()), \
                 patch.object(transport, "target_state", side_effect=state), \
                 patch.object(transport, "Ssh", side_effect=Reached):
@@ -431,26 +447,34 @@ class TransportTests(unittest.TestCase):
             except Reached:
                 return "passed the gate"
 
-    def test_prod_refuses_a_release_that_never_succeeded_on_test(self):
-        with self.assertRaisesRegex(ValueError, "Deploy this release to test first"):
+    def test_prod_refuses_a_release_that_never_succeeded_on_dev(self):
+        with self.assertRaisesRegex(ValueError, "Deploy this release to dev first"):
             self.gated()
-        with self.assertRaisesRegex(ValueError, "Deploy this release to test first"):
-            self.gated(test_state={"release": "v0.9.0"})
+        with self.assertRaisesRegex(ValueError, "Deploy this release to dev first"):
+            self.gated(dev_state={"release": "v0.9.0"})
 
-    def test_prod_takes_a_release_its_test_target_verified(self):
-        self.assertEqual("passed the gate", self.gated(test_state={"release": "v1.0.0"}))
+    def test_prod_takes_a_release_its_dev_target_verified(self):
+        self.assertEqual("passed the gate", self.gated(dev_state={"release": "v1.0.0"}))
 
-    def test_prod_takes_a_release_that_succeeded_on_test_in_local_records(self):
+    def test_prod_takes_a_release_that_succeeded_on_dev_in_local_records(self):
         job = "00000000-0000-4000-8000-000000000001"
         transport.write_json(self.root / "jobs" / (job + ".json"),
-                             {"id": job, "targetId": "pilot-test", "release": "v1.0.0", "status": "running",
+                             {"id": job, "targetId": "pilot-dev", "release": "v1.0.0", "status": "running",
                               "submittedAt": "2026-09-27T10:00:00+00:00"})
         transport.write_json(self.root / "observed" / (job + ".json"),
                              {"status": "succeeded", "completedAt": "2026-09-27T10:05:00+00:00"})
         self.assertEqual("passed the gate", self.gated())
 
-    def test_skipping_the_test_pass_needs_the_typed_target_id(self):
-        with self.assertRaisesRegex(ValueError, "Type the target ID to deploy without a test pass"):
+    def test_a_success_on_a_retired_test_target_is_no_dev_pass(self):
+        job = "00000000-0000-4000-8000-000000000002"
+        transport.write_json(self.root / "jobs" / (job + ".json"),
+                             {"id": job, "targetId": "pilot-test", "release": "v1.0.0", "status": "succeeded",
+                              "submittedAt": "2026-09-27T10:00:00+00:00"})
+        with self.assertRaisesRegex(ValueError, "Deploy this release to dev first"):
+            self.gated()
+
+    def test_skipping_the_dev_pass_needs_the_typed_target_id(self):
+        with self.assertRaisesRegex(ValueError, "Type the target ID to deploy without a dev pass"):
             self.gated(skip=True)
         self.assertEqual("passed the gate", self.gated(skip=True, confirm="pilot-prod"))
 
@@ -458,11 +482,11 @@ class TransportTests(unittest.TestCase):
         with patch.dict("os.environ", {"WHEELHOUSE_REHEARSAL": "1"}):
             listed = {item["id"]: (item["environment"], item["acceptsCandidates"], item["needsConfirmation"])
                       for item in transport.targets(self.root)}
-        self.assertEqual({"foreverpin-dev": ("dev", True, False), "foreverpin-test": ("test", False, False),
-                          "foreverpin-prod": ("prod", False, True), "wheelhouse-dev": ("dev", True, False)}, listed)
+        self.assertEqual({"foreverpin-dev": ("dev", True, False), "foreverpin-prod": ("prod", False, True),
+                          "wheelhouse-dev": ("dev", True, False)}, listed)
         with patch.dict("os.environ", {"WHEELHOUSE_REHEARSAL": "1"}):
-            self.assertEqual([False, False, True, False],
-                             [item["requiresTestPass"] for item in transport.targets(self.root)])
+            self.assertEqual([False, True, False],
+                             [item["requiresDevPass"] for item in transport.targets(self.root)])
 
     def test_cli_rejection_carries_a_safe_reason(self):
         argv = ["transport.py", "template", "--root", str(self.root), "--bundle", "../escape"]

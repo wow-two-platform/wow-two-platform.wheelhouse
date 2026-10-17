@@ -20,6 +20,7 @@ import time
 import uuid
 import fleet
 import artifacts
+import history
 import inventory
 from runner import (PROXIES, SLUG, TERMINAL, CommandFailed, Rejected, now, reason, rejection, require, read_json,
                     write_json, validate_bundle, validate_target, empty_topology)
@@ -113,9 +114,8 @@ def targets(root):
                        "environment": config["target"]["environment"],
                        "serverId": config["serverId"], "provider": config["provider"], "host": config["ssh"]["host"],
                        "acceptsCandidates": config["acceptsCandidates"],
-                       "acceptsTestBuilds": config["acceptsTestBuilds"],
                        "needsConfirmation": config["needsConfirmation"],
-                       "requiresTestPass": config["requiresTestPass"]})
+                       "requiresDevPass": config["requiresDevPass"]})
     return result
 
 
@@ -141,30 +141,28 @@ def latest_sites(root):
     return result
 
 
-def test_pass(root, product, release):
-    """Where this release succeeded on one of the product's test targets: local records first, then each test
-    target's verified release. None when it never has."""
-    tests = [binding.id for binding in fleet.active_targets()
-             if binding.product == product and binding.environment is fleet.DeploymentEnvironment.TEST]
+def dev_pass(root, product, release):
+    """Where this release succeeded on one of the product's dev targets: local records first, then each dev target's
+    verified release. None when it never has."""
+    devs = [binding.id for binding in fleet.active_targets()
+            if binding.product == product and binding.environment is fleet.DeploymentEnvironment.DEV]
     for job in jobs(root, limit=None):
-        if job.get("targetId") in tests and job.get("release") == release and job.get("status") == "succeeded":
+        if job.get("targetId") in devs and job.get("release") == release and job.get("status") == "succeeded":
             return {"targetId": job["targetId"], "at": job.get("completedAt") or job["submittedAt"]}
-    for target_id in tests:
+    for target_id in devs:
         try:
             current = target_state(root, target_id).get("current") or {}
         except (Rejected, CommandFailed, ValueError, OSError):
-            continue  # an unreachable test target proves nothing
+            continue  # an unreachable dev target proves nothing
         if current.get("release") == release:
             return {"targetId": target_id, "at": current.get("completedAt")}
     return None
 
 
 def admits(config, manifest):
-    """Dev takes a build of any commit or branch; test also takes a `test` branch build; prod takes releases only."""
-    if config["acceptsCandidates"] or manifest.get("kind", "release") == "release":
-        return
-    require(config.get("acceptsTestBuilds") and manifest.get("channel") == "test",
-            "Only dev takes a build that is not a release; test also takes a `test` branch build")
+    """Dev takes a build of any commit or branch; prod takes published releases only."""
+    require(config["acceptsCandidates"] or manifest.get("kind", "release") == "release",
+            "Only dev takes a build that is not a release")
 
 
 def releases(root):
@@ -216,17 +214,17 @@ def template(root, bundle_id, service=None):
     return result[service]
 
 
-def submit(root, target_id, bundle_id, actor, confirm=None, skip_test_pass=False):
+def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False):
     config = fleet.resolve_target(root, target_id)
     require(not config["needsConfirmation"] or confirm == target_id,
             "Type the target ID to deploy prod to the local server")
-    require(not skip_test_pass or confirm == target_id, "Type the target ID to deploy without a test pass")
+    require(not skip_dev_pass or confirm == target_id, "Type the target ID to deploy without a dev pass")
     bundle = artifacts.prepare(root, bundle_id, import_bundle)
     manifest = validate_bundle(bundle)
     admits(config, manifest)
-    if config["requiresTestPass"] and not skip_test_pass:
-        require(test_pass(root, config["target"]["product"], manifest["release"]),
-                "Deploy this release to test first, or type the target ID to skip the test pass")
+    if config["requiresDevPass"] and not skip_dev_pass:
+        require(dev_pass(root, config["target"]["product"], manifest["release"]),
+                "Deploy this release to dev first, or type the target ID to skip the dev pass")
     target_root, _ = validate_target(config["target"], manifest)
     require(re.fullmatch(r"/[A-Za-z0-9/_-]+", str(target_root)), "SSH root requires a simple absolute path")
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
@@ -240,8 +238,8 @@ def submit(root, target_id, bundle_id, actor, confirm=None, skip_test_pass=False
         write_json(target_path, config["target"])
         ssh.copy([runner_path, bundle / "release.json", bundle / "compose.json", target_path], remote)
     # Record the submission before launching; remote state remains recoverable if the response is lost.
-    record = {"id": request_id, "targetId": target_id, "bundleId": bundle_id, "release": manifest["release"],
-              "remote": remote, "actor": actor, "status": "submitting", "submittedAt": now(),
+    record = {"id": request_id, "targetId": target_id, "environment": config["target"]["environment"],
+              "bundleId": bundle_id, "release": manifest["release"], "remote": remote, "actor": actor, "status": "submitting", "submittedAt": now(),
               "ssh": config["ssh"], "serverId": config["serverId"]}
     write_json(root / "jobs" / (request_id + ".json"), record)
     command = shlex.join(["python3", remote + "/runner.py", "launch", "--bundle", remote,
@@ -397,9 +395,22 @@ def follow(root, clock=time.time):
     return result
 
 
+def recorded_environment(record, observed, inventory):
+    """The environment a job ran in: as submitted, else the target journal's project (<product>-<environment>), else
+    the target's current one. A retired environment reads marked "(retired)"; an unknown one reads null."""
+    value = record.get("environment")
+    if not isinstance(value, str):
+        project = observed.get("project")
+        value = project.rsplit("-", 1)[-1] if isinstance(project, str) and "-" in project else None
+    if not isinstance(value, str):
+        value = inventory.get(record.get("targetId"))
+    return fleet.environment_label(value) if isinstance(value, str) else None
+
+
 def jobs(root, limit=50):
     # Submission records plus the last observed target outcome; SSH details and remote paths stay local.
     result = []
+    inventory = {binding.id: binding.environment.value for binding in fleet.active_targets()}
     for path in (root / "jobs").glob("*.json") if (root / "jobs").is_dir() else ():
         try:
             record = read_json(path)
@@ -411,7 +422,8 @@ def jobs(root, limit=50):
         submitted = record.get("submittedAt")
         if not isinstance(submitted, str) or not submitted:
             submitted = datetime.datetime.fromtimestamp(path.stat().st_mtime, datetime.timezone.utc).isoformat()
-        item = {"id": record["id"], "targetId": record.get("targetId"), "bundleId": record.get("bundleId"),
+        item = {"id": record["id"], "targetId": record.get("targetId"),
+                "environment": recorded_environment(record, observed, inventory), "bundleId": record.get("bundleId"),
                 "release": record.get("release") or observed.get("release") or record.get("bundleId"),
                 "actor": record.get("actor"), "submittedAt": submitted,
                 "status": observed.get("status") or record.get("status")}
@@ -478,11 +490,11 @@ def check(root, target_id, bundle_id=None):
         return {"targetId": target_id, "ok": False, "checks": checks}
     result["checks"] = checks + [{"name": "SSH connection", "ok": True,
                                   "detail": config["ssh"]["user"] + "@" + config["ssh"]["host"]}] + result["checks"]
-    if manifest is not None and config.get("requiresTestPass"):
-        passed = test_pass(root, config["target"]["product"], manifest["release"])
-        result["checks"].append({"name": "Test pass", "ok": passed is not None,
+    if manifest is not None and config.get("requiresDevPass"):
+        passed = dev_pass(root, config["target"]["product"], manifest["release"])
+        result["checks"].append({"name": "Dev pass", "ok": passed is not None,
                                  "detail": "succeeded on " + passed["targetId"] if passed
-                                 else "not deployed to test yet; deploy it there first or skip by typing the target ID"})
+                                 else "not deployed to dev yet; deploy it there first or skip by typing the target ID"})
         result["ok"] = result.get("ok", False) and passed is not None
     result["targetId"] = target_id
     return result
@@ -638,7 +650,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["import", "sites", "fixtures", "servers", "targets", "vaults", "releases", "template", "submit",
                                            "status", "jobs", "follow", "state", "check", "reconcile", "vitals", "stats", "topology",
-                                           "branches", "commits", "build", "logs"])
+                                           "branches", "commits", "build", "logs", "history", "observation"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
@@ -652,8 +664,8 @@ def main():
     parser.add_argument("--branch")
     parser.add_argument("--commit")
     parser.add_argument("--confirm", help="submit: the target ID, typed, for prod on the local server")
-    parser.add_argument("--skip-test-pass", action="store_true",
-                        help="submit: deploy to prod without a test pass; needs --confirm with the target ID")
+    parser.add_argument("--skip-dev-pass", action="store_true",
+                        help="submit: deploy to prod without a dev pass; needs --confirm with the target ID")
     args = parser.parse_args()
     root = Path(args.root).resolve()
     try:
@@ -676,7 +688,7 @@ def main():
             print(json.dumps(template(root, args.bundle, args.service), indent=2))
             return 0
         elif args.action == "submit":
-            result = submit(root, args.target, args.bundle, args.actor, args.confirm, args.skip_test_pass)
+            result = submit(root, args.target, args.bundle, args.actor, args.confirm, args.skip_dev_pass)
         elif args.action == "branches":
             result = artifacts.branches(args.product)
         elif args.action == "commits":
@@ -685,6 +697,10 @@ def main():
             result = artifacts.request_build(args.product, args.commit)
         elif args.action == "jobs":
             result = jobs(root)
+        elif args.action == "history":
+            result = history.records(root, jobs(root, limit=None))
+        elif args.action == "observation":
+            result = history.observation(root, args.job, observed_outcome)
         elif args.action == "follow":
             result = follow(root)
         elif args.action == "state":

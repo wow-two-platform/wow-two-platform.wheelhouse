@@ -6,9 +6,9 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Deployments;
 
 /// <summary>Submits one reviewed release to one configured target; <paramref name="Confirm"/> is the typed target ID,
-/// and <paramref name="SkipTestPass"/> lets prod take a release that has not succeeded on test.</summary>
+/// and <paramref name="SkipDevPass"/> lets prod take a release that has not succeeded on dev.</summary>
 public sealed record DeploymentStartCommand(
-    string Target, string Release, string Actor, string? Confirm = null, bool SkipTestPass = false)
+    string Target, string Release, string Actor, string? Confirm = null, bool SkipDevPass = false)
     : ICommand<AppResult<JsonElement>>, IAuditedCommand
 {
     /// <inheritdoc />
@@ -18,5 +18,5 @@ public sealed record DeploymentStartCommand(
     public string AuditSubject => Target;
 
     /// <inheritdoc />
-    public string AuditDetail => Release + (SkipTestPass ? ", without a test pass" : "");
+    public string AuditDetail => Release + (SkipDevPass ? ", without a dev pass" : "");
 }

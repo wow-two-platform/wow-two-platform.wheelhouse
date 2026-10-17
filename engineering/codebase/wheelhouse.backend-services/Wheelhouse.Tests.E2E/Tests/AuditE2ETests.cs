@@ -43,7 +43,7 @@ public sealed class AuditE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EB
     [Fact]
     public async Task RefusedDeploy_IsRecordedWithTheRefusalReason()
     {
-        Fixture.Deployments.StartRefusal = "Deploy this release to test first, or type the target ID to skip the test pass";
+        Fixture.Deployments.StartRefusal = "Deploy this release to dev first, or type the target ID to skip the dev pass";
 
         Assert.Equal(HttpStatusCode.Conflict, (await Deploy("pilot-prod", "v2")).StatusCode);
 

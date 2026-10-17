@@ -33,7 +33,7 @@ class FleetTests(unittest.TestCase):
 
     def test_code_binding_selects_host_and_secret_references(self):
         server = fleet.Server('pilot', 'Pilot', fleet.VpsProvider.HETZNER, 'vps.example.net', 'hel1')
-        target = fleet.Target('foreverpin-test', 'pilot', 'foreverpin', fleet.DeploymentEnvironment.TEST,
+        target = fleet.Target('foreverpin-prod', 'pilot', 'foreverpin', fleet.DeploymentEnvironment.PROD,
                               (('management', '/srv/secrets/management.json'), ('redirect', '/srv/secrets/redirect.json')),
                               'platform')
         with patch.object(fleet, 'SERVERS', (server,)), patch.object(fleet, 'TARGETS', (target,)):
@@ -41,7 +41,7 @@ class FleetTests(unittest.TestCase):
             self.assertEqual('hetzner', config['provider'])
             self.assertEqual('vps.example.net', config['ssh']['host'])
             self.assertEqual('/data/deployments/ssh/pilot/identity', config['ssh']['keyFile'])
-            self.assertEqual('test', config['target']['environment'])
+            self.assertEqual('prod', config['target']['environment'])
             self.assertEqual('platform', config['target']['variables']['PLATFORM_NETWORK'])
             self.assertEqual((False, False), (config['acceptsCandidates'], config['needsConfirmation']))
 
@@ -49,14 +49,13 @@ class FleetTests(unittest.TestCase):
         def target(identifier, product, environment):
             return fleet.Target(identifier, 'pilot', product, environment, (), 'platform')
         stored = (target('zeta-prod', 'zeta', fleet.DeploymentEnvironment.PROD),
-                  target('alpha-test', 'alpha', fleet.DeploymentEnvironment.TEST),
                   target('zeta-dev', 'zeta', fleet.DeploymentEnvironment.DEV),
                   target('alpha-prod', 'alpha', fleet.DeploymentEnvironment.PROD),
                   target('alpha-dev', 'alpha', fleet.DeploymentEnvironment.DEV))
         with patch.object(fleet, 'TARGETS', stored), patch.dict('os.environ', {}, clear=False):
             import os
             os.environ.pop('WHEELHOUSE_REHEARSAL', None)
-            self.assertEqual(['alpha-dev', 'alpha-test', 'alpha-prod', 'zeta-dev', 'zeta-prod'],
+            self.assertEqual(['alpha-dev', 'alpha-prod', 'zeta-dev', 'zeta-prod'],
                              [item.id for item in fleet.active_targets()])
 
     def test_local_targets_exist_only_behind_the_switch(self):
@@ -67,7 +66,7 @@ class FleetTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'not in the inventory'):
                 fleet.resolve_target(Path('/data/deployments'), 'foreverpin-dev')
         with patch.dict('os.environ', {'WHEELHOUSE_REHEARSAL': '1'}):
-            self.assertEqual(['foreverpin-dev', 'foreverpin-test', 'foreverpin-prod', 'wheelhouse-dev'],
+            self.assertEqual(['foreverpin-dev', 'foreverpin-prod', 'wheelhouse-dev'],
                              [target.id for target in fleet.active_targets()])
             config = fleet.resolve_target(Path('/data/deployments'), 'foreverpin-dev')
             self.assertEqual(('local', 2222, 'dev', 'local'),
@@ -76,14 +75,20 @@ class FleetTests(unittest.TestCase):
 
     def test_local_prod_needs_typed_confirmation_and_only_dev_takes_candidates(self):
         with patch.dict('os.environ', {'WHEELHOUSE_REHEARSAL': '1'}):
-            policy = {environment: (config['acceptsCandidates'], config['needsConfirmation'], config['requiresTestPass'])
-                      for environment in ('dev', 'test', 'prod')
+            policy = {environment: (config['acceptsCandidates'], config['needsConfirmation'], config['requiresDevPass'])
+                      for environment in ('dev', 'prod')
                       for config in [fleet.resolve_target(Path('/data'), 'foreverpin-' + environment)]}
-            self.assertEqual({'dev': (True, False, False), 'test': (False, False, False), 'prod': (False, True, True)},
-                             policy)
-            self.assertEqual({'dev': False, 'test': True, 'prod': False},
-                             {environment: fleet.resolve_target(Path('/data'), 'foreverpin-' + environment)
-                              ['acceptsTestBuilds'] for environment in ('dev', 'test', 'prod')})
+            self.assertEqual({'dev': (True, False, False), 'prod': (False, True, True)}, policy)
+            self.assertNotIn('acceptsTestBuilds', fleet.resolve_target(Path('/data'), 'foreverpin-dev'))
+            with self.assertRaisesRegex(ValueError, 'not in the inventory'):
+                fleet.resolve_target(Path('/data'), 'foreverpin-test')
+
+    def test_test_is_a_retired_environment(self):
+        self.assertEqual(['dev', 'prod'], [environment.value for environment in fleet.DeploymentEnvironment])
+        with self.assertRaises(ValueError):
+            fleet.DeploymentEnvironment('test')
+        self.assertEqual(('dev', 'prod', 'test (retired)', None),
+                         tuple(fleet.environment_label(value) for value in ('dev', 'prod', 'test', 'staging')))
 
     def test_local_sites_follow_the_localhost_pattern_on_every_environment(self):
         with patch.dict('os.environ', {'WHEELHOUSE_REHEARSAL': '1'}):
@@ -125,10 +130,10 @@ class FleetTests(unittest.TestCase):
         try:
             with patch.dict('os.environ', {'WHEELHOUSE_REHEARSAL': 'network', 'REHEARSAL_STATE': '/host/state'}):
                 importlib.reload(fleet)
-                config = fleet.resolve_target(Path('/data/deployments'), 'foreverpin-test')
+                config = fleet.resolve_target(Path('/data/deployments'), 'foreverpin-prod')
                 self.assertEqual(('target', 22), (config['ssh']['host'], config['ssh']['port']))
                 self.assertEqual('http://vault:8080', fleet.vaults()[0]['url'])
-                self.assertEqual('/host/state/secrets/test/management.json', config['target']['settings']['management'])
+                self.assertEqual('/host/state/secrets/prod/management.json', config['target']['settings']['management'])
         finally:
             importlib.reload(fleet)  # later tests expect the host view
 

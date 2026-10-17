@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Runs the local server: Wheelhouse deploys to a local SSH target, as to a VPS. Never points at a real host.
 
-The local server hosts ForeverPin's dev, test and prod environments at once. Dev is the default; test and prod
-deploy on demand, and prod asks for its target ID typed out.
-Prod takes a release only after it succeeded on test, unless --skip-test-pass comes with the typed ID. Each environment's sites answer through the local
-ingress at http://<site>-foreverpin.<environment>.localhost:18080.
+The local server hosts ForeverPin's dev and prod environments at once. Dev is the default; prod deploys on demand and
+asks for its target ID typed out. Prod takes a release only after it succeeded on dev, unless --skip-dev-pass comes
+with the typed ID. Each environment's sites answer through the local ingress at
+http://<site>-foreverpin.<environment>.localhost:18080.
 
 `self` ships Wheelhouse the way it ships products: its own release generator builds its image and bundle from this
 checkout, and the runner deploys it to the wheelhouse-dev target, at http://console-wheelhouse.dev.localhost:18080.
@@ -38,7 +38,10 @@ PRODUCT = "foreverpin"
 PRODUCT_REPO = WORKBENCH / "ventures" / "10x-venture-forever-pin"
 LOCAL_IMAGES = {"management": "foreverpin-management:local", "redirect": "foreverpin-redirect:local"}
 SITES = {"management": "app", "redirect": "go"}
-ENVIRONMENTS = ("dev", "test", "prod")
+ENVIRONMENTS = ("dev", "prod")
+# Compose projects of environments the rig no longer runs: `test` went on 2026-10-17, `rehearsal` predates
+# environments. `down` still stops what an older rig left running under them.
+RETIRED_ENVIRONMENTS = ("test", "rehearsal")
 INGRESS = "http://{site}-" + PRODUCT + ".{environment}.localhost:18080"
 REGISTRY = "localhost:15000"
 VAULT_IMAGE = "secrets-vault:local"
@@ -280,14 +283,14 @@ def settings(bundle_id, name):
     print("Wrote " + name + " settings for " + bundle_id)
 
 
-def deploy(bundle_id, name, confirm=None, skip_test_pass=False, timeout=420, target=None):
+def deploy(bundle_id, name, confirm=None, skip_dev_pass=False, timeout=420, target=None):
     """Submits the bundle through the same transport the dashboard uses and waits for the outcome."""
     target = target or target_of(name)
     arguments = ["submit", "--target", target, "--bundle", bundle_id, "--actor", "local-server"]
     if confirm:
         arguments += ["--confirm", confirm]
-    if skip_test_pass:
-        arguments.append("--skip-test-pass")
+    if skip_dev_pass:
+        arguments.append("--skip-dev-pass")
     job = transport(*arguments)
     print("Submitted " + job["id"] + " to " + target)
     deadline = time.monotonic() + timeout
@@ -357,8 +360,8 @@ def self_environment():
 
 def down(volumes):
     profiles = ["--profile", "vault", "--profile", "console", "--profile", "dev"]
-    # The runner names each product project <product>-<environment>; `rehearsal` predates environments.
-    for project in (*(PRODUCT + "-" + name for name in (*ENVIRONMENTS, "rehearsal")), SELF_TARGET):
+    # The runner names each product project <product>-<environment>.
+    for project in (*(PRODUCT + "-" + name for name in (*ENVIRONMENTS, *RETIRED_ENVIRONMENTS)), SELF_TARGET):
         run("docker", "compose", "-p", project, "down", *(["--volumes"] if volumes else []),
             env=environment(), capture=False)
     compose(*profiles, "down", *(["--volumes"] if volumes else []), capture=False)
@@ -368,12 +371,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("action", choices=["up", "console", "dev", "bundle", "settings", "check", "deploy", "state",
                                            "run", "self", "down"])
-    parser.add_argument("--env", default="dev", help="dev (default), test or prod")
+    parser.add_argument("--env", default="dev", help="dev (default) or prod")
     parser.add_argument("--tag", help="bundle: a release tag such as v0.0.1-local.1; without it, a dev candidate")
     parser.add_argument("--bundle", help="the bundle ID to use; defaults to the checkout's candidate")
     parser.add_argument("--confirm", help="deploy: the target ID typed out, required for prod")
-    parser.add_argument("--skip-test-pass", action="store_true",
-                        help="deploy: prod takes a release that never succeeded on test (needs --confirm)")
+    parser.add_argument("--skip-dev-pass", action="store_true",
+                        help="deploy: prod takes a release that never succeeded on dev (needs --confirm)")
     parser.add_argument("--volumes", action="store_true")
     parser.add_argument("--broken", action="store_true", help="bundle: build a release that fails after replacement")
     args = parser.parse_args()
@@ -398,7 +401,7 @@ def main():
     elif args.action == "check":
         print(json.dumps(transport("check", "--target", target_of(args.env), "--bundle", chosen()), indent=2))
     elif args.action == "deploy":
-        deploy(chosen(), args.env, args.confirm, args.skip_test_pass)
+        deploy(chosen(), args.env, args.confirm, args.skip_dev_pass)
     elif args.action == "state":
         print(json.dumps(transport("state", "--target", target_of(args.env)), indent=2))
     elif args.action == "run":

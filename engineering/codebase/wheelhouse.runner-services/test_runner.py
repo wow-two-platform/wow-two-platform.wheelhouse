@@ -76,12 +76,12 @@ class VitalsDocker:
             return "aaa111\nbbb222\n"
         if arguments[:2] == ["docker", "inspect"]:
             return json.dumps([
-                {"Id": "aaa111", "Name": "/pilot-test-api-1", "RestartCount": 3,
+                {"Id": "aaa111", "Name": "/pilot-dev-api-1", "RestartCount": 3,
                  "Config": {"Env": ["Database__Connection=DO_NOT_LOG"],
                             "Labels": {"com.docker.compose.service": "api", "secret": "DO_NOT_LOG"}},
                  "State": {"Status": "running", "Running": True, "ExitCode": 0,
                            "StartedAt": "2026-09-26T08:00:00Z", "Health": {"Status": "healthy", "Log": ["DO_NOT_LOG"]}}},
-                {"Id": "bbb222", "Name": "/pilot-test-worker-1", "RestartCount": 0,
+                {"Id": "bbb222", "Name": "/pilot-dev-worker-1", "RestartCount": 0,
                  "Config": {"Labels": {"com.docker.compose.service": "worker"}},
                  "State": {"Status": "exited", "Running": False, "ExitCode": 137, "StartedAt": "2026-09-26T07:00:00Z"}}])
         if arguments[:2] == ["docker", "stats"]:
@@ -97,7 +97,7 @@ class RunnerTests(unittest.TestCase):
         settings = self.root / "settings.json"
         settings.write_text(json.dumps({"Database": {"Connection": "DO_NOT_LOG"}}))
         settings.chmod(0o600)
-        self.target = {"product": "pilot", "environment": "test", "root": str(self.root / "state"),
+        self.target = {"product": "pilot", "environment": "dev", "root": str(self.root / "state"),
                        "settings": {"api": str(settings)}, "minimumFreeBytes": 0}
         self.bundle = self.root / "bundle"
         self.bundle.mkdir()
@@ -127,7 +127,7 @@ class RunnerTests(unittest.TestCase):
         result = self.apply()
         self.assertEqual("succeeded", result["status"])
         self.assertEqual(["preflight", "pull", "up:v1", "verify:v1"], FakeDocker.events)
-        current = runner.read_json(self.root / "state/pilot-test/current.json")
+        current = runner.read_json(self.root / "state/pilot-dev/current.json")
         self.assertEqual(result["id"], current["id"])
         self.assertNotIn("DO_NOT_LOG", json.dumps(result))
 
@@ -168,7 +168,7 @@ class RunnerTests(unittest.TestCase):
         self.save()
         result = self.apply()
         self.assertEqual("failed", result["status"])
-        self.assertEqual(prior["id"], runner.read_json(self.root / "state/pilot-test/current.json")["id"])
+        self.assertEqual(prior["id"], runner.read_json(self.root / "state/pilot-dev/current.json")["id"])
         self.assertNotIn("DO_NOT_LOG", json.dumps(result))
         self.assertEqual(1, FakeDocker.events.count("up:v1"))
 
@@ -179,7 +179,7 @@ class RunnerTests(unittest.TestCase):
         FakeDocker.fail = "v2"
         result = self.apply()
         self.assertEqual("rolled_back", result["status"])
-        self.assertEqual(prior["id"], runner.read_json(self.root / "state/pilot-test/current.json")["id"])
+        self.assertEqual(prior["id"], runner.read_json(self.root / "state/pilot-dev/current.json")["id"])
         self.assertEqual(["up:v2", "pull", "up:v1", "verify:v1"], FakeDocker.events[-4:])
 
     def test_incompatible_failure_never_rolls_back(self):
@@ -192,7 +192,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_interrupted_rollout_requires_explicit_acknowledgement(self):
         job = "00000000-0000-0000-0000-000000000001"
-        runner.write_json(self.root / "state/pilot-test/active.json", {"id": job, "status": "running"})
+        runner.write_json(self.root / "state/pilot-dev/active.json", {"id": job, "status": "running"})
         with self.assertRaisesRegex(ValueError, "reconciliation"):
             self.apply()
         with self.assertRaisesRegex(ValueError, "matching"):
@@ -201,7 +201,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual("succeeded", self.apply()["status"])
 
     def test_concurrent_lock_rejects_second_operator(self):
-        with runner.deployment_lock(self.root / "state/pilot-test"):
+        with runner.deployment_lock(self.root / "state/pilot-dev"):
             with self.assertRaisesRegex(ValueError, "Another deployment"):
                 self.apply()
 
@@ -242,7 +242,7 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "reconciliation"):
             self.apply()
         runner.acknowledge(self.target, failed["id"])
-        self.assertFalse((self.root / "state/pilot-test/current.json").exists())
+        self.assertFalse((self.root / "state/pilot-dev/current.json").exists())
 
     def test_rollback_failure_never_reports_recovered(self):
         self.apply()
@@ -311,7 +311,7 @@ class RunnerTests(unittest.TestCase):
         argv = ["runner.py", "apply", "--target", str(target), "--bundle", str(self.bundle), "--job", job]
         with patch("sys.argv", argv), contextlib.redirect_stderr(io.StringIO()) as stderr:
             self.assertEqual(1, runner.main())
-        record = runner.read_json(self.root / "state/pilot-test/jobs" / (job + ".json"))
+        record = runner.read_json(self.root / "state/pilot-dev/jobs" / (job + ".json"))
         self.assertEqual(("rejected", "Rejected"), (record["status"], record["failure"]))
         self.assertEqual("Missing required setting: api:Billing:SecretKey", record["reason"])
         self.assertEqual(record["reason"], json.loads(stderr.getvalue())["reason"])
@@ -337,7 +337,7 @@ class RunnerTests(unittest.TestCase):
         self.assertNotIn("DO_NOT_LOG", str(raised.exception))
 
     def test_state_reports_ready_running_and_reconciliation(self):
-        base = self.root / "state/pilot-test"
+        base = self.root / "state/pilot-dev"
         self.assertEqual("ready", runner.state(self.target)["condition"])
         job = "00000000-0000-0000-0000-000000000004"
         runner.write_json(base / "active.json", {"id": job, "status": "running", "release": "v1"})
@@ -362,7 +362,7 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual("Target is linux/arm64; release needs linux/amd64", failed["Docker"])
         self.assertEqual("Missing required setting: api:Billing:SecretKey", failed["Settings: api"])
-        self.assertFalse((self.root / "state/pilot-test").exists())
+        self.assertFalse((self.root / "state/pilot-dev").exists())
         self.assertNotIn("DO_NOT_LOG", json.dumps(result))
 
     def test_check_passes_a_ready_target(self):
@@ -406,11 +406,11 @@ class RunnerTests(unittest.TestCase):
                           api["memoryBytes"], api["memoryLimitBytes"], api["exitCode"]))
         self.assertEqual(("worker", "exited", 137, None), (worker["service"], worker["state"], worker["exitCode"],
                                                            worker["cpuPercent"]))
-        self.assertEqual(("pilot-test", "ready", None, []),
+        self.assertEqual(("pilot-dev", "ready", None, []),
                          (result["project"], result["condition"], result["release"], result["problems"]))
         self.assertNotIn("host", result)
         self.assertNotIn("DO_NOT_LOG", json.dumps(result))
-        self.assertFalse((self.root / "state/pilot-test").exists())
+        self.assertFalse((self.root / "state/pilot-dev").exists())
 
     def test_host_reads_the_server_without_a_target(self):
         result = runner.host({"roots": [str(self.root / "not-yet-created"), "/srv/wheelhouse"]})
@@ -433,7 +433,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(["docker ps failed (exit 1); inspect target containers privately"], result["problems"])
 
     def test_vitals_correlate_only_a_stable_ready_release(self):
-        observed = {"project": "pilot-test", "condition": "ready",
+        observed = {"project": "pilot-dev", "condition": "ready",
                     "current": {"id": "first", "release": "v1"}, "active": {"id": "first", "status": "succeeded"}}
         with patch.object(runner, "state", return_value=observed), \
              patch.object(runner, "container_vitals", return_value=[{"service": "api"}]):
@@ -442,7 +442,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual([], result["problems"])
 
     def test_vitals_withhold_release_when_deployment_changes_during_collection(self):
-        before = {"project": "pilot-test", "condition": "ready",
+        before = {"project": "pilot-dev", "condition": "ready",
                   "current": {"id": "first", "release": "v1"}, "active": {"id": "first", "status": "succeeded"}}
         for after in (
             {**before, "current": {"id": "second", "release": "v2"}},
@@ -458,7 +458,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_vitals_withhold_release_while_target_is_not_ready(self):
         for condition in ("running", "needs_reconciliation"):
-            observed = {"project": "pilot-test", "condition": condition,
+            observed = {"project": "pilot-dev", "condition": condition,
                         "current": {"id": "first", "release": "v1"}, "active": {"id": "second", "status": "running"}}
             with self.subTest(condition=condition), patch.object(runner, "state", return_value=observed), \
                  patch.object(runner, "container_vitals", return_value=[{"service": "api"}]):
@@ -484,15 +484,15 @@ class RunnerTests(unittest.TestCase):
         self.save()
         result = self.apply()
         self.assertEqual("succeeded", result["status"])
-        route = runner.read_json(self.root / "state/ingress/pilot-test.yml")
-        self.assertEqual({"pilot-test-app-api": {"rule": "Host(`app-pilot.test.localhost`)",
-                                                 "service": "pilot-test-api-8080", "entryPoints": ["web"]}},
+        route = runner.read_json(self.root / "state/ingress/pilot-dev.yml")
+        self.assertEqual({"pilot-dev-app-api": {"rule": "Host(`app-pilot.dev.localhost`)",
+                                                 "service": "pilot-dev-api-8080", "entryPoints": ["web"]}},
                          route["http"]["routers"])
-        self.assertEqual("http://pilot-test-api:8080",
-                         route["http"]["services"]["pilot-test-api-8080"]["loadBalancer"]["servers"][0]["url"])
+        self.assertEqual("http://pilot-dev-api:8080",
+                         route["http"]["services"]["pilot-dev-api-8080"]["loadBalancer"]["servers"][0]["url"])
         current = runner.state(self.target)["current"]
         self.assertEqual([{"name": "app", "service": "api", "exposure": "public",
-                           "url": "http://app-pilot.test.localhost:18080"}], current["sites"])
+                           "url": "http://app-pilot.dev.localhost:18080"}], current["sites"])
         self.assertEqual(("candidate", "main", "1.2.0+aaaaaaa"),
                          (current["kind"], current["branch"], current["versions"]["api"]["version"]))
 
@@ -502,7 +502,7 @@ class RunnerTests(unittest.TestCase):
         self.manifest["sites"] = {"api": {"app": {"path": "/api"}}}
         self.save()
         self.apply()
-        route = runner.read_json(self.root / "state/ingress/pilot-test.yml")["http"]["routers"]["pilot-test-app-api"]
+        route = runner.read_json(self.root / "state/ingress/pilot-dev.yml")["http"]["routers"]["pilot-dev-app-api"]
         self.assertEqual(("Host(`app.pilot.example`) && PathPrefix(`/api`)", {"certResolver": "letsencrypt"}),
                          (route["rule"], route["tls"]))
         self.assertEqual("https://app.pilot.example/api", runner.state(self.target)["current"]["sites"][0]["url"])
@@ -512,7 +512,7 @@ class RunnerTests(unittest.TestCase):
         self.manifest["sites"] = {"api": {"admin": {"exposure": "private"}}}
         self.save()
         self.assertEqual([], self.apply()["sites"])
-        self.assertFalse((self.root / "state/ingress/pilot-test.yml").exists())
+        self.assertFalse((self.root / "state/ingress/pilot-dev.yml").exists())
 
     def test_a_release_without_sites_removes_the_previous_routes(self):
         self.target["ingress"] = self.local_ingress()
@@ -523,7 +523,7 @@ class RunnerTests(unittest.TestCase):
         self.manifest["release"] = "v2"
         self.save()
         self.assertEqual("succeeded", self.apply()["status"])
-        self.assertFalse((self.root / "state/ingress/pilot-test.yml").exists())
+        self.assertFalse((self.root / "state/ingress/pilot-dev.yml").exists())
 
     def test_invalid_sites_are_refused_before_docker(self):
         for sites, message in (({"worker": {"app": {}}}, "unknown service"), ({"api": {"App": {}}}, "site declaration"),
@@ -574,7 +574,7 @@ class RunnerTests(unittest.TestCase):
                          [(step["name"], step["status"]) for step in result["steps"]])
         self.assertEqual("1 service healthy; 1 smoke check passed", result["steps"][3]["detail"])
         self.assertTrue(all(step["completedAt"] >= step["startedAt"] for step in result["steps"]))
-        saved = runner.read_json(self.root / "state/pilot-test/jobs" / (result["id"] + ".json"))
+        saved = runner.read_json(self.root / "state/pilot-dev/jobs" / (result["id"] + ".json"))
         self.assertEqual(result["steps"], saved["steps"])
 
     def test_steps_mark_the_failed_stage_and_the_rollback(self):
@@ -602,7 +602,7 @@ class RunnerTests(unittest.TestCase):
             FakeDocker.events = []
             result = self.apply()
             # Distinct mtimes order the releases the way their rollouts ran.
-            manifest = self.root / "state/pilot-test/releases" / result["id"] / "release.json"
+            manifest = self.root / "state/pilot-dev/releases" / result["id"] / "release.json"
             os.utime(manifest, (number * 1000, number * 1000))
         removed = [event for event in FakeDocker.events if event.startswith("docker image rm")]
         # v3-v5 stay; v1's image went on the v4 rollout and v2's now; the shared edge image stays with v5.
@@ -648,7 +648,7 @@ class RunnerTests(unittest.TestCase):
         with patch("sys.argv", ["runner.py", "apply", "--bundle", str(self.bundle), "--target", str(target),
                                 "--job", job]), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(1, runner.main())
-        record = runner.read_json(self.root / "state/pilot-test/jobs" / (job + ".json"))
+        record = runner.read_json(self.root / "state/pilot-dev/jobs" / (job + ".json"))
         self.assertEqual("rejected", record["status"])
         self.assertEqual(("Check target", "failed", "Missing required setting: api:Database:Connection"),
                          tuple(record["steps"][0][key] for key in ("name", "status", "detail")))
@@ -690,7 +690,7 @@ class RunnerTests(unittest.TestCase):
                 return "2026-09-28T10:00:00Z started\n2026-09-28T10:00:01Z " + "x" * 3000 + "\n"
 
         result = runner.logs(self.target, "api", 2, docker_factory=LogDocker)
-        self.assertEqual(("pilot-test", "api", 2, True), (result["project"], result["service"], result["tail"],
+        self.assertEqual(("pilot-dev", "api", 2, True), (result["project"], result["service"], result["tail"],
                                                           result["truncated"]))
         self.assertEqual(runner.LOG_LINE_LIMIT, len(result["lines"][1]))
         for service, tail, message in (("API", 10, "Invalid service"), ("api", 0, "1-1000"), ("api", 1001, "1-1000")):
@@ -740,7 +740,7 @@ class ProbeTests(unittest.TestCase):
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), IngressHandler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.address = "http://127.0.0.1:" + str(self.server.server_address[1])
-        self.target = {"product": "pilot", "environment": "test", "root": "/srv/pilot",
+        self.target = {"product": "pilot", "environment": "dev", "root": "/srv/pilot",
                        "ingress": {"scheme": "http", "port": 18080, "entryPoints": ["web"], "privateEntryPoints": [],
                                    "probe": self.address, "hosts": {}}}
 
@@ -750,16 +750,16 @@ class ProbeTests(unittest.TestCase):
 
     def sites(self, *names):
         return [{"name": name, "service": "api", "exposure": "public",
-                 "url": "http://" + name + "-pilot.test.localhost:18080/api"} for name in names]
+                 "url": "http://" + name + "-pilot.dev.localhost:18080/api"} for name in names]
 
     def test_a_site_answers_through_the_ingress_by_its_host_name(self):
-        IngressHandler.routes = {"app-pilot.test.localhost": 200}
+        IngressHandler.routes = {"app-pilot.dev.localhost": 200}
         probed = runner.probe_sites(self.target, self.sites("app"), deadline_seconds=1, interval=0.05)
         self.assertEqual({"ok": True, "status": 200}, probed[0]["probe"])
-        self.assertEqual([("app-pilot.test.localhost", "/api")], IngressHandler.seen)
+        self.assertEqual([("app-pilot.dev.localhost", "/api")], IngressHandler.seen)
 
     def test_an_application_404_answers_but_the_ingress_404_does_not(self):
-        IngressHandler.routes = {"app-pilot.test.localhost": 404}
+        IngressHandler.routes = {"app-pilot.dev.localhost": 404}
         probed = runner.probe_sites(self.target, self.sites("app", "go"), deadline_seconds=0.2, interval=0.05)
         self.assertTrue(probed[0]["probe"]["ok"])
         self.assertEqual({"ok": False, "status": 404, "detail": "The ingress has no route for this host"},
@@ -767,13 +767,13 @@ class ProbeTests(unittest.TestCase):
 
     def test_a_route_that_appears_within_the_deadline_passes(self):
         answers = iter([None, None, 200])
-        IngressHandler.routes = {"app-pilot.test.localhost": lambda: next(answers, 200)}
+        IngressHandler.routes = {"app-pilot.dev.localhost": lambda: next(answers, 200)}
         probed = runner.probe_sites(self.target, self.sites("app"), deadline_seconds=2, interval=0.05)
         self.assertTrue(probed[0]["probe"]["ok"])
         self.assertEqual(3, len(IngressHandler.seen))
 
     def test_gateway_errors_and_an_unreachable_ingress_fail(self):
-        IngressHandler.routes = {"app-pilot.test.localhost": 502}
+        IngressHandler.routes = {"app-pilot.dev.localhost": 502}
         self.assertEqual("The ingress could not reach the service",
                          runner.probe_sites(self.target, self.sites("app"), 0.1, 0.05)[0]["probe"]["detail"])
         self.target["ingress"]["probe"] = "http://127.0.0.1:9"

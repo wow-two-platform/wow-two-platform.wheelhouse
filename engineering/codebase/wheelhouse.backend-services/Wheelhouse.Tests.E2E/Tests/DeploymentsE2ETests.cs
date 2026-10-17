@@ -110,18 +110,18 @@ public sealed class DeploymentsE2ETests(WheelhouseAppFixture fixture) : Wheelhou
         var response = await client.PostAsJsonAsync("/api/deployments", new { target = "foreverpin-prod", release = "v1", confirm = "foreverpin-prod" });
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         Assert.Equal("foreverpin-prod", Fixture.Deployments.LastConfirm);
-        Assert.False(Fixture.Deployments.LastSkipTestPass);
+        Assert.False(Fixture.Deployments.LastSkipDevPass);
     }
 
     [Fact]
-    public async Task Start_ForwardsASkippedTestPass()
+    public async Task Start_ForwardsASkippedDevPass()
     {
         var client = AdminClient;
         client.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "deploy");
         var response = await client.PostAsJsonAsync("/api/deployments",
-            new { target = "foreverpin-prod", release = "v1", confirm = "foreverpin-prod", skipTestPass = true });
+            new { target = "foreverpin-prod", release = "v1", confirm = "foreverpin-prod", skipDevPass = true });
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
-        Assert.True(Fixture.Deployments.LastSkipTestPass);
+        Assert.True(Fixture.Deployments.LastSkipDevPass);
     }
 
     [Fact]

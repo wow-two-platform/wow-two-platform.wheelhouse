@@ -94,7 +94,7 @@ file sealed class FleetVitals(JsonElement vitals) : IDeploymentGateway
         throw new NotSupportedException();
 
     public Task<AppResult<JsonElement>> StartAsync(
-        string target, string release, string actor, string? confirm, bool skipTestPass, CancellationToken ct) =>
+        string target, string release, string actor, string? confirm, bool skipDevPass, CancellationToken ct) =>
         throw new NotSupportedException();
 
     public Task<AppResult<JsonElement>> ReconcileAsync(string target, string job, string actor, CancellationToken ct) =>

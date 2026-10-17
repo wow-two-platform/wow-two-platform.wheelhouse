@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using Wheelhouse.Api.Requests;
 using Wheelhouse.Application.Deployments;
+using Wheelhouse.Application.Deployments.History.Queries;
 using Wheelhouse.Application.Operations;
 using Microsoft.AspNetCore.Mvc;
 using WoW.Two.Sdk.Beta.Be.Mediator;
@@ -23,6 +24,43 @@ public sealed class DeploymentsController(ISender sender) : ControllerBase
     [HttpGet]
     public async Task<IActionResult> History(CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentReadQuery("jobs"), ct));
+
+    /// <summary>Pages the deployments a filter picks, newest first: workspaces, products and <c>product/service</c>
+    /// pairs combine as a union, then status and range narrow; <c>cursor</c> continues a previous page.</summary>
+    [HttpGet("history")]
+    public async Task<IActionResult> HistoryPage(
+        [FromQuery] DeploymentFilterApiRequest filter, [FromQuery] string? cursor, [FromQuery] int limit = 25,
+        CancellationToken ct = default) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentHistoryQuery(filter.ToFilter(), cursor, limit), ct));
+
+    /// <summary>Counts the filter's finished rollouts per day in the IANA time zone <c>tz</c>; without a range, the last
+    /// six months.</summary>
+    [HttpGet("history/activity")]
+    public async Task<IActionResult> Activity(
+        [FromQuery] DeploymentFilterApiRequest filter, [FromQuery] string tz = "UTC", CancellationToken ct = default) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentActivityQuery(filter.ToFilter(), tz), ct));
+
+    /// <summary>Measures the filter's entities over its range (the last 30 days without one) beside the range before
+    /// it; the status filter does not apply.</summary>
+    [HttpGet("history/stats")]
+    public async Task<IActionResult> HistoryStats([FromQuery] DeploymentFilterApiRequest filter, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentStatsQuery(filter.ToFilter()), ct));
+
+    /// <summary>Lists live rollouts with the step each is on; the filter's entities apply.</summary>
+    [HttpGet("running")]
+    public async Task<IActionResult> Running([FromQuery] DeploymentFilterApiRequest filter, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentRunningQuery(filter.ToFilter()), ct));
+
+    /// <summary>Lists, per product, the newest release that succeeded on dev and is not what prod runs.</summary>
+    [HttpGet("promotions")]
+    public async Task<IActionResult> Promotions([FromQuery] DeploymentFilterApiRequest filter, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentPromotionsQuery(filter.ToFilter()), ct));
+
+    /// <summary>Reads one deployment in full from local records: services from and to, steps, sites, warnings and
+    /// what a roll back restores. Never contacts the target.</summary>
+    [HttpGet("{id:guid}/detail")]
+    public async Task<IActionResult> Detail(Guid id, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentDetailQuery(id), ct));
 
     /// <summary>Lists provisioned deployment bindings.</summary>
     [HttpGet("targets")]
@@ -117,7 +155,7 @@ public sealed class DeploymentsController(ISender sender) : ControllerBase
     public async Task<IActionResult> Start(DeploymentStartRequest request, CancellationToken ct)
     {
         var result = await sender.SendAsync(
-            new DeploymentStartCommand(request.Target, request.Release, Actor(), request.Confirm, request.SkipTestPass), ct);
+            new DeploymentStartCommand(request.Target, request.Release, Actor(), request.Confirm, request.SkipDevPass), ct);
         return this.ToActionResult(result, envelope =>
             AcceptedAtAction(nameof(Status), new { id = envelope.Data.GetProperty("id").GetString() }, envelope));
     }

@@ -11,7 +11,7 @@ internal sealed class TargetsRepository(WheelhouseDbContext db) : EfRepository<T
     /// <inheritdoc />
     /// <remarks>
     /// By product slug, then along the promotion path in <see cref="Domain.Targets.Enums.DeploymentEnvironment"/>'s
-    /// declared order (dev, test, prod), then slug. The environment is stored as text, which the database would sort
+    /// declared order (dev, prod), then slug. The environment is stored as text, which the database would sort
     /// alphabetically, so the order is applied in memory.
     /// </remarks>
     public override async Task<IReadOnlyList<TargetEntity>> GetAllAsync(CancellationToken cancellationToken = default)

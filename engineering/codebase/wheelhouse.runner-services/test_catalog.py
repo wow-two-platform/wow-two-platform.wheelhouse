@@ -105,7 +105,7 @@ class SitesTests(unittest.TestCase):
                          transport.latest_sites(self.root))
 
     def test_a_target_without_a_succeeded_rollout_has_no_sites(self):
-        self.record('00000000-0000-0000-0000-000000000004', 'foreverpin-test', 'failed', '2026-09-30T00:00:00+00:00',
+        self.record('00000000-0000-0000-0000-000000000004', 'foreverpin-prod', 'failed', '2026-09-30T00:00:00+00:00',
                     [{'name': 'app', 'url': 'https://broken.example.com'}])
         self.assertEqual({}, transport.latest_sites(self.root))
 

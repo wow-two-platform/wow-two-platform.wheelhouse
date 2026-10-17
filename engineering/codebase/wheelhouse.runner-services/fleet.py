@@ -28,8 +28,19 @@ class VpsProvider(str, Enum):
 
 class DeploymentEnvironment(str, Enum):
     DEV = "dev"
-    TEST = "test"
     PROD = "prod"
+
+
+# Environments a target no longer takes; their old deployment records still read, labelled as retired. `test` went
+# on 2026-10-17, when products moved to `main` only: every release deploys to dev, then is promoted to prod.
+RETIRED_ENVIRONMENTS = ("test",)
+
+
+def environment_label(value):
+    """An environment as a record shows it: a current one by its name, a retired one marked "(retired)"."""
+    if value in RETIRED_ENVIRONMENTS:
+        return value + " (retired)"
+    return value if any(value == environment.value for environment in DeploymentEnvironment) else None
 
 
 @dataclass(frozen=True)
@@ -129,8 +140,8 @@ def active_servers():
 
 
 def promotion_order(targets):
-    """Targets by product, then along the promotion path in DeploymentEnvironment's declared order (dev, test, prod),
-    then ID: the order every listing shows, never the alphabet that puts prod before test."""
+    """Targets by product, then along the promotion path in DeploymentEnvironment's declared order (dev, prod), then
+    ID: the order every listing shows, never the alphabet."""
     path = list(DeploymentEnvironment)
 
     def rank(environment):
@@ -170,17 +181,12 @@ def servers():
 
 
 def accepts_candidates(target):
-    """Dev takes a build of any commit or branch; test and prod take published releases."""
+    """Dev takes a build of any commit or branch; prod takes published releases only."""
     return target.environment is DeploymentEnvironment.DEV
 
 
-def accepts_test_builds(target):
-    """Test also takes a build of the product's `test` branch; prod takes published releases only."""
-    return target.environment is DeploymentEnvironment.TEST
-
-
-def requires_test_pass(target):
-    """Prod takes a release only after it succeeded on one of the product's test targets."""
+def requires_dev_pass(target):
+    """Prod takes a release only after it succeeded on one of the product's dev targets."""
     return target.environment is DeploymentEnvironment.PROD
 
 
@@ -231,9 +237,9 @@ def resolve_target(root, identifier):
     server = next((item for item in active_servers() if item.id == target.server_id), None)
     require(server is not None, "Server is not in the inventory")
     return {"serverId": server.id, "provider": server.provider.value,
-            "acceptsCandidates": accepts_candidates(target), "acceptsTestBuilds": accepts_test_builds(target),
+            "acceptsCandidates": accepts_candidates(target),
             "needsConfirmation": needs_confirmation(server, target),
-            "requiresTestPass": requires_test_pass(target),
+            "requiresDevPass": requires_dev_pass(target),
             "ssh": ssh_of(root, server),
             "target": {"product": target.product, "environment": target.environment.value,
                        "root": target.root, "settings": dict(target.settings),

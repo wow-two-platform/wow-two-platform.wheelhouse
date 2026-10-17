@@ -3,7 +3,7 @@ namespace Wheelhouse.Application.Products.Models;
 /// <summary>Represents one environment of a catalog product.</summary>
 public sealed record ProductEnvironmentDto
 {
-    /// <summary>Gets the environment: <c>dev</c>, <c>test</c> or <c>prod</c>.</summary>
+    /// <summary>Gets the environment: <c>dev</c> or <c>prod</c>.</summary>
     public required string Name { get; init; }
 
     /// <summary>Gets the sites the environment publishes, empty before its first rollout.</summary>

@@ -16,8 +16,9 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
     public Task<AppResult<JsonElement>> ReadAsync(string resource, string? id, CancellationToken ct) =>
         resource switch
         {
-            "sites" or "fixtures" or "targets" or "releases" or "jobs" or "follow" => RunAsync([resource], ct),
+            "sites" or "fixtures" or "targets" or "releases" or "jobs" or "follow" or "history" => RunAsync([resource], ct),
             "status" when Guid.TryParse(id, out _) => RunAsync(["status", "--job", id], ct),
+            "observation" when Guid.TryParse(id, out _) => RunAsync(["observation", "--job", id], ct),
             "state" when id is not null => RunAsync(["state", "--target", id], ct),
             "topology" when id is not null => RunAsync(["topology", "--target", id], ct),
             "branches" when id is not null => RunAsync(["branches", "--product", id], ct),
@@ -32,13 +33,13 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
 
     /// <inheritdoc />
     public Task<AppResult<JsonElement>> StartAsync(
-        string target, string release, string actor, string? confirm, bool skipTestPass, CancellationToken ct)
+        string target, string release, string actor, string? confirm, bool skipDevPass, CancellationToken ct)
     {
         List<string> arguments = ["submit", "--target", target, "--bundle", release, "--actor", actor];
         if (confirm is not null)
             arguments.AddRange(["--confirm", confirm]);
-        if (skipTestPass)
-            arguments.Add("--skip-test-pass");
+        if (skipDevPass)
+            arguments.Add("--skip-dev-pass");
         return RunAsync([.. arguments], ct);
     }
 

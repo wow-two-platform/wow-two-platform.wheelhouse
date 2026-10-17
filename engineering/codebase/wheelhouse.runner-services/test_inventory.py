@@ -68,7 +68,7 @@ class InventoryTests(unittest.TestCase):
                                  (resolved['ssh']['host'], resolved['ssh']['user'], resolved['ssh']['port']))
                 self.assertEqual({'app': 'pilot.example.com'}, resolved['target']['ingress']['hosts'])
                 self.assertEqual({'api': '/srv/settings/pilot/api.json'}, resolved['target']['settings'])
-                self.assertTrue(resolved['requiresTestPass'])
+                self.assertTrue(resolved['requiresDevPass'])
                 self.assertFalse(resolved['needsConfirmation'])
                 self.assertEqual(str(self.root / 'ssh' / 'hel1' / 'identity'), resolved['ssh']['keyFile'])
 
@@ -78,7 +78,11 @@ class InventoryTests(unittest.TestCase):
         broken['targets'][0]['smoke'][0]['status'] = '200'
         unsupported = json.loads(json.dumps(SNAPSHOT))
         unsupported['servers'][0]['provider'] = 'unsupported'
-        for document in (broken, unsupported, {**SNAPSHOT, 'version': 2}, {**SNAPSHOT, 'servers': {}}, ['not', 'an', 'object']):
+        # `test` was retired on 2026-10-17; a stale snapshot naming it waits for the control plane's next export.
+        retired = json.loads(json.dumps(SNAPSHOT))
+        retired['targets'][0]['environment'] = 'test'
+        for document in (broken, unsupported, retired, {**SNAPSHOT, 'version': 2}, {**SNAPSHOT, 'servers': {}},
+                         ['not', 'an', 'object']):
             self.write(document)
             with self.assertRaises(ValueError):
                 inventory.install(self.root)

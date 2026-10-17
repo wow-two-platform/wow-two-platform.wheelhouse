@@ -86,12 +86,14 @@ class BundleContractTests(unittest.TestCase):
         self.assertEqual({"api": ["Database:Connection"]}, validated["requiredConfiguration"])
         self.assertEqual(["api", "edge"], [site["service"] for site in runner.release_sites(validated)])
 
-    def test_dev_test_and_candidate_bundles_pass_the_runner(self):
-        for branch, channel in (("dev", "dev"), ("test", "test"), ("feat/login", "branch"), (None, "branch")):
+    def test_candidate_bundles_pass_the_runner(self):
+        # Products work on `main` only; a build of any other branch is a candidate that only dev takes, whatever
+        # channel the pinned generator names it (v0.1.0 still says `dev` for the dev branch).
+        for branch in ("dev", "feat/login", None):
             with self.subTest(branch=branch):
                 validated = self.bundle(branch)
-                self.assertEqual(("candidate", "sha-" + self.commit[:7], channel),
-                                 (validated["kind"], validated["release"], validated["channel"]))
+                self.assertEqual(("candidate", "sha-" + self.commit[:7]), (validated["kind"], validated["release"]))
+                self.assertNotEqual("release", validated["channel"])
 
     @unittest.skipUnless(HAS_YAML, "PyYAML is not installed for this interpreter")
     def test_wheelhouse_own_descriptor_parses(self):

@@ -12,9 +12,9 @@ class TopologyTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
-        self.target = {"product": "pilot", "environment": "test", "root": str(self.root / "state"),
+        self.target = {"product": "pilot", "environment": "dev", "root": str(self.root / "state"),
                        "settings": {"api": "/DO_NOT_READ/private.json"}, "variables": {"SECRET": "DO_NOT_LOG"}}
-        self.base = self.root / "state/pilot-test"
+        self.base = self.root / "state/pilot-dev"
         self.job = "00000000-0000-0000-0000-000000000001"
         self.bundle = self.base / "releases" / self.job
         self.bundle.mkdir(parents=True)
@@ -135,7 +135,7 @@ class TopologyTests(unittest.TestCase):
                              sites={"api": {"app": {}, "admin": {"path": "/admin", "exposure": "private"}}})
         self.save()
         runner.write_json(self.base / "current.json", {"id": self.job, "release": "v1", "sites": [
-            {"name": "app", "service": "api", "exposure": "public", "url": "http://app-pilot.test.localhost:18080",
+            {"name": "app", "service": "api", "exposure": "public", "url": "http://app-pilot.dev.localhost:18080",
              "probe": {"ok": False, "status": 404, "detail": "The ingress has no route for this host"}},
             {"name": "admin", "service": "api", "exposure": "private", "url": "javascript:alert(1)"}]})
         api, worker = self.read()["services"]
@@ -144,7 +144,7 @@ class TopologyTests(unittest.TestCase):
         self.assertEqual([
             {"name": "admin", "path": "/admin", "port": 8080, "exposure": "private", "url": None, "reachable": None},
             {"name": "app", "path": "/", "port": 8080, "exposure": "public",
-             "url": "http://app-pilot.test.localhost:18080", "reachable": False}], api["sites"])
+             "url": "http://app-pilot.dev.localhost:18080", "reachable": False}], api["sites"])
         self.assertEqual((None, []), (worker["version"], worker["sites"]))
 
     def test_implicit_default_is_not_added_for_explicit_network_or_network_mode(self):
@@ -239,8 +239,8 @@ class TopologyTests(unittest.TestCase):
         with patch.object(transport.fleet, "resolve_target", return_value=config), \
              patch.object(transport, "Ssh"), patch.object(transport, "run_remote", return_value=self.read()) as remote, \
              patch.object(transport.artifacts, "prepare", side_effect=AssertionError("No artifact catalog reads")):
-            result = transport.target_topology(self.root, "pilot-test")
-            self.assertEqual("pilot-test", result["targetId"])
+            result = transport.target_topology(self.root, "pilot-dev")
+            self.assertEqual("pilot-dev", result["targetId"])
             self.assertEqual(("topology", self.target), remote.call_args.args[1:])
 
     def test_transport_unavailable_is_safe_and_keeps_target_identity(self):
@@ -248,9 +248,9 @@ class TopologyTests(unittest.TestCase):
         with patch.object(transport.fleet, "resolve_target", return_value=config), \
              patch.object(transport, "Ssh"), \
              patch.object(transport, "run_remote", side_effect=runner.CommandFailed("DO_NOT_LOG")):
-            result = transport.target_topology(self.root, "pilot-test")
+            result = transport.target_topology(self.root, "pilot-dev")
             self.assert_unavailable(result)
-            self.assertEqual("pilot-test", result["targetId"])
+            self.assertEqual("pilot-dev", result["targetId"])
             self.assertNotIn("DO_NOT_LOG", json.dumps(result))
 
 

@@ -13,7 +13,7 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
     public string? LastJob { get; private set; }
     public string? LastActor { get; private set; }
     public string? LastConfirm { get; private set; }
-    public bool LastSkipTestPass { get; private set; }
+    public bool LastSkipDevPass { get; private set; }
     public (string Product, string Value)? LastBuild { get; private set; }
     public (string Product, string Branch)? LastCommits { get; private set; }
 
@@ -23,22 +23,38 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
     /// <summary>When set, the next starts fail with this runner refusal, as a gate would refuse them.</summary>
     public string? StartRefusal { get; set; }
 
+    /// <summary>When set, reads and starts go to this gateway instead, such as the real runner over a test root.</summary>
+    public IDeploymentGateway? Runner { get; set; }
+
     /// <summary>When set, reads fail with this error, as a timed-out, unreachable or refusing runner would.</summary>
     public AppError? ReadFailure { get; set; }
 
     /// <summary>When set, reads throw this exception, as a defect would.</summary>
     public Exception? ReadException { get; set; }
 
+    /// <summary>The runner's history projection the <c>history</c> read answers; tests add records to it.</summary>
+    public List<object> History { get; } = [];
+
+    /// <summary>The local observation each <c>observation</c> read answers, by submission id; a missing one is refused.</summary>
+    public Dictionary<string, object> Observations { get; } = [];
+
     public Task<AppResult<JsonElement>> ReadAsync(string resource, string? id, CancellationToken ct)
     {
         LastRead = (resource, id);
+        if (Runner is not null)
+            return Runner.ReadAsync(resource, id, ct);
         if (ReadException is not null)
             throw ReadException;
         if (ReadFailure is not null)
             return Task.FromResult(AppResult<JsonElement>.Fail(ReadFailure));
+        if (resource == "observation")
+            return Task.FromResult(Observations.TryGetValue(id!, out var observation)
+                ? AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(observation))
+                : AppResult<JsonElement>.Fail(AppErrorFactory.Conflict("Deployment rejected: Unknown deployment")));
         return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement<object>(resource switch
         {
             "servers" => new object[] { new { id = "pilot-host", name = "Pilot", provider = "Hetzner", host = "vps.example.net", region = "hel1", sshUser = "deploy" } },
+            "history" => History.ToArray(),
             "jobs" => new object[] { new { id = Guid.Empty, targetId = "pilot", release = "v1", status = "failed", reason = "compose up failed (exit 1)" } },
             "state" => new { targetId = id, condition = "needs_reconciliation", active = new { id = Guid.Empty, status = "failed" } },
             "topology" => new { targetId = id, availability = "available", release = "v1", collectedAt = "2026-09-26T12:00:00+00:00",
@@ -64,12 +80,14 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
             new { targetId = target, ok = false, checks = new[] { new { name = "Settings: management", ok = false, detail = "Missing required setting: management:Billing:SecretKey" } } })));
     }
 
-    public Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipTestPass, CancellationToken ct)
+    public Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass, CancellationToken ct)
     {
         LastTarget = target;
         LastRelease = release;
         LastConfirm = confirm;
-        LastSkipTestPass = skipTestPass;
+        LastSkipDevPass = skipDevPass;
+        if (Runner is not null)
+            return Runner.StartAsync(target, release, actor, confirm, skipDevPass, ct);
         if (StartRefusal is not null)
             return Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(StartRefusal)));
         return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(

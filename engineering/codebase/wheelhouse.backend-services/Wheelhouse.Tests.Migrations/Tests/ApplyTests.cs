@@ -23,7 +23,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
     [
         "001-baseline", "002-snake-enums", "003-audit-updated-at", "004-audit-trail", "005-vitals-samples",
         "006-product-catalog", "007-inventory", "008-product-manifests", "009-server-vitals", "010-workspaces",
-        "011-product-status", "012-pins",
+        "011-product-status", "012-pins", "013-drop-test-environment",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -472,6 +472,58 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
             (await Scalar(connection, "SELECT count(*) FROM pins")).Should().Be(0L);
         }
     }
+
+    [Fact]
+    public async Task DropTestEnvironment_ShouldDeleteTestTargetsAndTheirReadings_AndKeepEverythingElse()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 12, CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+
+        // A product on one server in dev, test and prod, each with a reading, beside the server's own host reading.
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000001", "pilot"));
+        await Execute(connection,
+            "INSERT INTO servers (id, slug, name, provider, host, region, ssh_user, ssh_port, ingress, created_at_utc, updated_at_utc) " +
+            "VALUES ('00000000-0000-0000-0000-0000000000a1', 'hel1', 'Helsinki', 'hetzner', 'vps.example.net', 'hel1', " +
+            "'deploy', 22, '{}'::jsonb, now(), now())");
+        foreach (var environment in new[] { "dev", "test", "prod" })
+        {
+            await Execute(connection,
+                "INSERT INTO targets (id, slug, product_id, server_id, environment, network, root, settings, smoke_checks, " +
+                "sites, created_at_utc, updated_at_utc) VALUES (gen_random_uuid(), 'pilot-" + environment + "', " +
+                "'00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a1', '" + environment + "', " +
+                "'platform', '/srv/wheelhouse', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now(), now())");
+            await Execute(connection, ReadingFor("'pilot-" + environment + "'"));
+        }
+        await Execute(connection, ReadingFor("NULL"));
+        await Execute(connection, "INSERT INTO service_statuses (product_id, service, status, created_at_utc, updated_at_utc) " +
+                                  "VALUES ('00000000-0000-0000-0000-000000000001', 'api', 'inactive', now(), now())");
+
+        for (var run = 0; run < 2; run++)
+        {
+            Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(After(12));
+
+            (await Scalar(connection, "SELECT string_agg(slug, ',' ORDER BY slug) FROM targets"))
+                .Should().Be("pilot-dev,pilot-prod");
+            (await Scalar(connection, "SELECT string_agg(COALESCE(target_id, 'host'), ',' ORDER BY target_id) FROM vitals_samples"))
+                .Should().Be("pilot-dev,pilot-prod,host");
+            (await Scalar(connection, "SELECT count(*) FROM products WHERE slug = 'pilot'")).Should().Be(1L);
+            (await Scalar(connection, "SELECT count(*) FROM service_statuses")).Should().Be(1L);
+
+            // Forward-only: the rollback brings nothing back, and applying again finds no test target to delete.
+            Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 12, CancellationToken.None));
+            (await Scalar(connection, "SELECT count(*) FROM targets WHERE environment = 'test'")).Should().Be(0L);
+            (await Scalar(connection, "SELECT count(*) FROM targets")).Should().Be(2L);
+        }
+    }
+
+    /// <summary>The SQL that stores one vitals reading of a target slug, or of its server's host for <c>NULL</c>.</summary>
+    private static string ReadingFor(string target) =>
+        "INSERT INTO vitals_samples (id, target_id, server_id, sampled_at_utc, readable, load_percent, memory_percent, " +
+        "disk_percent, containers, healthy_containers, restarts) " +
+        $"VALUES (gen_random_uuid(), {target}, 'hel1', now(), true, 1, 2, 3, 1, 1, 0)";
 
     private static async Task Execute(System.Data.Common.DbConnection connection, string sql)
     {

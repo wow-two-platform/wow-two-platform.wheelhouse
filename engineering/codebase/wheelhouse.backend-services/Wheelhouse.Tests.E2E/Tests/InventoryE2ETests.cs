@@ -136,26 +136,49 @@ public sealed class InventoryE2ETests(WheelhouseAppFixture fixture) : Wheelhouse
     {
         var response = await ActionClient("target").PostJsonAsync("api/targets", new
         {
-            slug = "foreverpin-test", product = "foreverpin", server = "pilot-host", environment = "test", network = "platform",
-            settings = new[] { new { service = "management", path = "/srv/settings/test/management.json" } },
+            slug = "foreverpin-canary", product = "foreverpin", server = "pilot-host", environment = "dev", network = "platform",
+            settings = new[] { new { service = "management", path = "/srv/settings/canary/management.json" } },
             smokeChecks = new[] { new { service = "management", path = "/api/runtime-config", status = 200 } },
-            sites = new[] { new { site = "app", host = "test.foreverpin.example" } },
+            sites = new[] { new { site = "app", host = "canary.foreverpin.example" } },
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        // Every listing follows the promotion path, never the alphabet that puts prod before test.
+        // Every listing follows the promotion path (dev, prod), then slug — never the alphabet alone.
         var targets = await (await AdminClient.GetAsync("api/targets?product=foreverpin")).ReadEnvelopeAsync<IReadOnlyList<TargetResponse>>();
         targets.Select(target => (target.Slug, target.Environment)).Should()
-            .Equal(("foreverpin-dev", "dev"), ("foreverpin-test", "test"), ("foreverpin-prod", "prod"));
+            .Equal(("foreverpin-canary", "dev"), ("foreverpin-dev", "dev"), ("foreverpin-prod", "prod"));
         var product = await (await AdminClient.GetAsync("api/products/foreverpin")).ReadEnvelopeAsync<ProductResponse>();
-        product.Environments.Select(environment => environment.Name).Should().Equal("dev", "test", "prod");
+        product.Environments.Select(environment => environment.Name).Should().Equal("dev", "dev", "prod");
         Snapshot().GetProperty("targets").EnumerateArray().Select(item => item.GetProperty("id").GetString()).Should()
-            .Equal("foreverpin-dev", "foreverpin-test", "foreverpin-prod");
+            .Equal("foreverpin-canary", "foreverpin-dev", "foreverpin-prod");
 
-        var exported = Snapshot().GetProperty("targets").EnumerateArray().Single(item => item.GetProperty("id").GetString() == "foreverpin-test");
+        var exported = Snapshot().GetProperty("targets").EnumerateArray().Single(item => item.GetProperty("id").GetString() == "foreverpin-canary");
         (exported.GetProperty("environment").GetString(), exported.GetProperty("serverId").GetString(),
                 exported.GetProperty("smoke")[0].GetProperty("status").GetInt32())
-            .Should().Be(("test", "pilot-host", 200));
+            .Should().Be(("dev", "pilot-host", 200));
+    }
+
+    [Theory]
+    [InlineData("\"test\"")]
+    [InlineData("1")]
+    public async Task Targets_ShouldRefuseTheRetiredTestEnvironment_WhenCreatedOrUpdated(string environment)
+    {
+        // `test` was retired on 2026-10-17, and its old enum value 1 never stands in for prod.
+        static StringContent Body(string? slug, string environment) => new(
+            "{" + (slug is null ? "" : "\"slug\":\"" + slug + "\",") + "\"product\":\"foreverpin\",\"server\":\"pilot-host\"," +
+            "\"environment\":" + environment + ",\"network\":\"platform\"}", System.Text.Encoding.UTF8, "application/json");
+
+        (await ActionClient("target").PostAsync("api/targets", Body("foreverpin-test", environment))).StatusCode
+            .Should().Be(HttpStatusCode.BadRequest);
+        (await ActionClient("target").PutAsync("api/targets/foreverpin-dev", Body(null, environment))).StatusCode
+            .Should().Be(HttpStatusCode.BadRequest);
+        // The same update passes with a current environment.
+        (await ActionClient("target").PutAsync("api/targets/foreverpin-dev", Body(null, "\"dev\""))).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        var targets = await (await AdminClient.GetAsync("api/targets?product=foreverpin")).ReadEnvelopeAsync<IReadOnlyList<TargetResponse>>();
+        targets.Select(target => (target.Slug, target.Environment)).Should()
+            .Equal(("foreverpin-dev", "dev"), ("foreverpin-prod", "prod"));
     }
 
     [Fact]
