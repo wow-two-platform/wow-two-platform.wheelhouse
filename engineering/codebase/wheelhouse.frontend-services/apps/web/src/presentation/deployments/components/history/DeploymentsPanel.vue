@@ -79,14 +79,14 @@ function setView(value: unknown): void {
   >
     <template #actions>
       <ToggleGroup variant="segmented" aria-label="View" :model-value="route.view.value" @update:model-value="setView">
-        <ToggleInput :value="DeploymentView.Grid" size="sm" class="min-h-11 md:min-h-0">
+        <ToggleInput :value="DeploymentView.Grid" size="sm" class="max-md:min-h-9">
           <CalendarDays :size="14" aria-hidden="true" /><span class="ml-1">Grid</span>
         </ToggleInput>
-        <ToggleInput :value="DeploymentView.List" size="sm" class="min-h-11 md:min-h-0">
+        <ToggleInput :value="DeploymentView.List" size="sm" class="max-md:min-h-9">
           <List :size="14" aria-hidden="true" /><span class="ml-1">List</span>
         </ToggleInput>
       </ToggleGroup>
-      <RefreshButton variant="ghost" icon-only :refreshing="refresh.refreshing.value" @refresh="refresh.refresh()" />
+      <RefreshButton variant="ghost" size="md" icon-only class="max-md:size-11" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh()" />
     </template>
     <div class="flex min-w-0 flex-col gap-5">
       <DeploymentFilterBar
@@ -115,7 +115,7 @@ function setView(value: unknown): void {
         <section v-if="route.day.value" class="flex min-w-0 flex-col gap-3 border-t border-border pt-4" aria-live="polite">
           <div class="flex items-center justify-between gap-3">
             <h3 class="text-sm font-semibold">{{ dayTitle }}</h3>
-            <Button variant="ghost" tone="neutral" size="sm" :aria-label="`Close ${dayTitle}`" class="min-h-11 md:min-h-9" @click="route.setDay(null)">
+            <Button variant="ghost" tone="neutral" size="sm" :aria-label="`Close ${dayTitle}`" class="max-md:min-h-11" @click="route.setDay(null)">
               <template #leading><X :size="14" aria-hidden="true" /></template>Close
             </Button>
           </div>

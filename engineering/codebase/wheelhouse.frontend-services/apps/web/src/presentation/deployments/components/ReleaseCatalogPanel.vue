@@ -95,7 +95,7 @@ const rows = useSkeletonItems(() => (releases.data.value ? visible.value : undef
             :value="value"
             :label="label" /></SelectPickerContent
       ></SelectPicker>
-      <RefreshButton variant="ghost" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh()" />
+      <RefreshButton variant="ghost" size="md" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh()" />
     </template>
     <DataRegion
       :is-first-load="releases.isFirstLoad.value"
@@ -147,6 +147,8 @@ const rows = useSkeletonItems(() => (releases.data.value ? visible.value : undef
                 variant="ghost"
                 tone="neutral"
                 size="sm"
+                shape="square"
+                class="max-md:size-11"
                 :aria-label="`Deploy ${artifact?.release ?? 'release'}`"
                 title="Deploy this release"
                 @click="artifact && emit('deploy', artifact.id)"

@@ -191,6 +191,7 @@ const trendWindow = computed(() => {
             <Badge>{{ server ? VpsProviderLabels[server.provider] : 'Provider' }}</Badge>
             <Button
               size="sm"
+              shape="square"
               variant="ghost"
               tone="neutral"
               :aria-label="`Edit ${server?.name ?? 'server'}`"
@@ -340,6 +341,7 @@ const trendWindow = computed(() => {
                   <Button
                     :class="vault ? '' : 'ml-auto'"
                     size="sm"
+                    shape="square"
                     variant="ghost"
                     tone="neutral"
                     :aria-label="`Edit ${vault?.name ?? 'vault'}`"

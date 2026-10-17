@@ -130,9 +130,10 @@ function openProductForm(product: Product | null): void {
         <template #card-actions="{ product }">
           <Button
             size="sm"
+            shape="square"
             variant="ghost"
             tone="neutral"
-            class="size-8 px-0 max-md:size-11"
+            class="max-md:size-11"
             :aria-label="`Edit ${product.name}`"
             :title="`Edit ${product.name}`"
             @click="openProductForm(product)"

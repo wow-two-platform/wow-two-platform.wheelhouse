@@ -19,6 +19,16 @@ This document records Wheelhouse-specific choices; the workspace design is in
 - Production: `pnpm deploy` (`scripts/deploy.mjs`) builds the app and copies `apps/web/dist/` into the API's `wwwroot` (single-host serving). Idempotent — `wwwroot` is wiped + repopulated each run.
 - `pnpm typecheck` runs `vue-tsc` and the SFC compiler gate. `pnpm test` (`apps/web/tests/console/`) checks routing and redirects, product selection, the status filter, pin ordering, catalog selection, API decoding, sensitive-form lifecycles and the deployment history rules (calendar colour and intensity, the entity picker's selection model, filter address round trip). `pnpm build` includes typechecking and lazy route bundling.
 
+## Button sizes
+
+Controls that sit together share one height; the row's place sets it.
+
+- **`md` (40px):** the top bar (page actions through `PageHeaderActions`, the sidebar toggle, the profile trigger), dialog and sheet footers, a panel's full-width action, and any row that holds a picker or a segmented control. Every `SelectPicker` trigger is `md`; a segmented `ToggleGroup` takes `sm` items, whose track stands 40px tall.
+- **`sm` (32px):** every other row inside a panel, card, table or list: row and card actions, panel-header buttons, toolbars without a picker, actions inside an alert or empty block, paging.
+- **Phones (below `md`):** a row that grows to the 44px touch target grows whole: labelled buttons and triggers `max-md:min-h-11`, icon-only buttons `max-md:size-11`, segmented items `max-md:min-h-9` (a 44px track). The top bar and dialog footers stay at 40px.
+- **Icon-only buttons** take `shape="square"` at their row's size; `RefreshButton icon-only` does this itself.
+- **Destructive actions** keep `tone="danger"` and their row's size: `DeleteConfirm` is `md` in a dialog footer, where it sits on the left with Cancel and the primary on the right, and `size="sm"` in a list row.
+
 ## Repo-specific deltas
 
 - Control-plane workspace only — single operator, never public. Secret writes and token minting bypass the mutation cache. Plaintext stays inside the active dialog; abort/generation guards prevent dismissed requests restoring it. Failed writes preserve editable input; successful writes and context changes clear values and form baselines.

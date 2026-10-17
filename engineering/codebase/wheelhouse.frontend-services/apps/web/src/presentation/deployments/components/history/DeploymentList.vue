@@ -133,7 +133,7 @@ function open(item: DeploymentItem | undefined, event: MouseEvent): void {
       </TableBody>
     </Table>
     <div v-if="props.hasMore" class="flex justify-center">
-      <Button variant="outline" tone="neutral" size="sm" :is-loading="props.isLoadingMore" class="min-h-11 md:min-h-9" @click="emit('more')"
+      <Button variant="outline" tone="neutral" size="sm" :is-loading="props.isLoadingMore" class="max-md:min-h-11" @click="emit('more')"
         >Load older deployments</Button
       >
     </div>

@@ -65,7 +65,7 @@ const rows = useSkeletonItems(() => props.items, 2);
           <Button
             v-if="item"
             size="sm"
-            class="min-h-11 md:min-h-9"
+            class="max-md:min-h-11"
             :aria-label="`Promote ${item.release} of ${props.productNames.get(item.product) ?? item.product} to prod`"
             @click="emit('promote', item)"
           >

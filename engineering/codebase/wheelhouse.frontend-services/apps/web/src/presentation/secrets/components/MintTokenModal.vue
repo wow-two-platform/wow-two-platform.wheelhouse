@@ -101,6 +101,7 @@ function close(open: boolean): void {
             aria-label="Copy token"
             variant="outline"
             tone="neutral"
+            shape="square"
           />
           <Button @click="close(false)">Done</Button>
         </ModalFooter>

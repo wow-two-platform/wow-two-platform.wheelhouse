@@ -45,9 +45,10 @@ function setActive(value: boolean): void {
       <DropdownMenuTrigger as-child>
         <Button
           size="sm"
+          shape="square"
           variant="ghost"
           tone="neutral"
-          class="size-8 px-0 max-md:size-11"
+          class="max-md:size-11"
           :aria-label="`${props.service} options`"
           ><Ellipsis :size="16"
         /></Button>

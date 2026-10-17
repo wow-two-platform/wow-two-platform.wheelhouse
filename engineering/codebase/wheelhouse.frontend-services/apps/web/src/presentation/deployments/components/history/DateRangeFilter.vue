@@ -56,7 +56,7 @@ function choose(value: Range): void {
   </template>
   <Popover v-else v-model:open="open" placement="bottom-start">
     <PopoverTrigger as-child>
-      <Button variant="outline" tone="neutral" size="sm" class="min-h-9 max-w-full justify-start" :aria-label="`Date range: ${label}`">
+      <Button variant="outline" tone="neutral" size="md" class="max-w-full justify-start" :aria-label="`Date range: ${label}`">
         <template #leading><CalendarRange :size="16" aria-hidden="true" /></template>
         <span class="truncate">{{ label }}</span>
         <ChevronDown :size="14" class="ml-1 shrink-0 text-muted-foreground" aria-hidden="true" />

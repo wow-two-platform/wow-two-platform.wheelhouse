@@ -68,8 +68,8 @@ const summary = computed(() => {
       <Button
         variant="outline"
         tone="neutral"
-        size="sm"
-        class="min-h-9 max-w-full justify-start"
+        size="md"
+        class="max-w-full justify-start"
         :aria-label="`Products and services: ${summary}`"
       >
         <template #leading><Layers :size="16" aria-hidden="true" /></template>

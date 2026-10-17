@@ -153,6 +153,7 @@ function closeEditor(open: boolean): void {
                   variant="ghost"
                   tone="neutral"
                   size="sm"
+                  shape="square"
                   :aria-label="`Rotate ${secret?.key ?? 'secret'}`"
                   title="Write a new version"
                   @click="secret && (editing = { key: secret.key })"

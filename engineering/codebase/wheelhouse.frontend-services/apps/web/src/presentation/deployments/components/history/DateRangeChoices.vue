@@ -74,7 +74,7 @@ function apply(): void {
         <TextInput v-model="to" type="datetime-local" size="sm" />
       </Field>
       <p v-if="problem" class="text-xs text-destructive" role="alert">{{ problem }}</p>
-      <Button type="submit" size="sm" class="min-h-11 md:min-h-9" :is-disabled="!valid">Apply range</Button>
+      <Button type="submit" size="sm" class="max-md:min-h-11" :is-disabled="!valid">Apply range</Button>
     </form>
   </div>
 </template>

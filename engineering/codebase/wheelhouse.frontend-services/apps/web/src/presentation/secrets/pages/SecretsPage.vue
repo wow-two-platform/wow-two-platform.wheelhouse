@@ -129,7 +129,7 @@ function selectNamespace(slug: string): void {
 
 <template>
   <PageHeaderActions>
-    <RefreshButton :refreshing="refreshing" @refresh="refresh" />
+    <RefreshButton size="md" :refreshing="refreshing" @refresh="refresh" />
   </PageHeaderActions>
   <DataRegion
     :is-first-load="isFirstLoad"
@@ -160,7 +160,7 @@ function selectNamespace(slug: string): void {
           "
           @update:model-value="selectVault"
         >
-          <SelectPickerTrigger size="sm" aria-label="Vault">
+          <SelectPickerTrigger aria-label="Vault">
             <SelectPickerValue placeholder="Select a vault" />
           </SelectPickerTrigger>
           <SelectPickerContent>

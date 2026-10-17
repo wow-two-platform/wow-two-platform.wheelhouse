@@ -156,7 +156,8 @@ watch(isDesktop, (desktop) => {
           <Button
             variant="ghost"
             tone="neutral"
-            size="sm"
+            size="md"
+            shape="square"
             class="hidden shrink-0 md:inline-flex"
             :aria-label="isDesktop ? (collapsed ? 'Expand sidebar' : 'Collapse sidebar') : 'Open navigation'"
             :aria-expanded="isDesktop ? !collapsed : drawerOpen"

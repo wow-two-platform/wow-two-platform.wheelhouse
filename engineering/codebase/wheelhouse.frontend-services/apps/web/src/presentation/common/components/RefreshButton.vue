@@ -5,8 +5,9 @@ export interface RefreshButtonProps {
   readonly refreshing: boolean;
   /** The visible label; empty renders an icon-only button named by `label`. Default `Refresh`. */
   readonly label?: string;
-  /** Renders the icon alone, named by `label` for assistive technology. */
+  /** Renders the icon alone, square at its size, named by `label` for assistive technology. */
   readonly iconOnly?: boolean;
+  /** The size of the row the button sits in: `md` in the top bar and beside pickers, `sm` in a panel row. */
   readonly size?: "sm" | "md";
   /** `outline` for a page action, `ghost` inside a panel header. Default `outline`. */
   readonly variant?: "outline" | "ghost";
@@ -34,6 +35,7 @@ const emit = defineEmits<{ refresh: [] }>();
     :variant="props.variant"
     tone="neutral"
     :size="props.size"
+    :shape="props.iconOnly ? 'square' : 'default'"
     :is-loading="props.refreshing"
     :aria-label="props.iconOnly ? props.label : undefined"
     :title="props.iconOnly ? props.label : undefined"

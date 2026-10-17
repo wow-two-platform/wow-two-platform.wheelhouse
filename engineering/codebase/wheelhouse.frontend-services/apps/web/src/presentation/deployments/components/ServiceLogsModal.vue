@@ -103,7 +103,7 @@ watch(lines, async () => {
                 ></SelectPicker
               >
             </div>
-            <RefreshButton :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
+            <RefreshButton size="md" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
           </div>
         </div>
         <Alert

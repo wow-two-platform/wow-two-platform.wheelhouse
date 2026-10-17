@@ -187,15 +187,15 @@ async function remove(): Promise<void> {
             :description="removeError || failureReason(form.state.submitError)"
           />
         </ModalBody>
-        <ModalFooter class="justify-between">
+        <ModalFooter class="sm:justify-between">
           <DeleteConfirm
             v-if="target"
             label="Remove environment"
             :question="`Remove ${target.slug}?`"
             :on-confirm="remove"
           />
-          <span v-else />
-          <span class="flex gap-2">
+          <span v-else class="max-sm:hidden" />
+          <span class="flex flex-col-reverse gap-2 sm:flex-row">
             <Button type="button" variant="outline" tone="neutral" @click="emit('update:open', false)">Cancel</Button>
             <Button type="submit" :is-loading="form.state.isSubmitting">{{ target ? "Save" : "Add environment" }}</Button>
           </span>

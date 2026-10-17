@@ -64,7 +64,7 @@ function remove(key: string): void {
         :model-value="props.filter.status"
         @update:model-value="setStatus"
       >
-        <ToggleInput v-for="status in statuses" :key="status.value" :value="status.value" size="sm" class="min-h-11 md:min-h-0">{{
+        <ToggleInput v-for="status in statuses" :key="status.value" :value="status.value" size="sm" class="max-md:min-h-9">{{
           status.label
         }}</ToggleInput>
       </ToggleGroup>

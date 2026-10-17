@@ -71,7 +71,8 @@ const grid = computed(() => ({ gridTemplateColumns: `repeat(${props.columns.leng
           type="button"
           variant="ghost"
           tone="neutral"
-          size="sm"
+          size="md"
+          shape="square"
           :aria-label="`Remove row ${row.index + 1}`"
           @click="rows.remove(row.index)"
         >

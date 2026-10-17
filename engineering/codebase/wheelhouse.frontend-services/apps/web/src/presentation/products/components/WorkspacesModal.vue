@@ -123,6 +123,7 @@ const moveClass =
                 /></SortableGroupMoveButton>
                 <Button
                   size="sm"
+                  shape="square"
                   variant="ghost"
                   tone="neutral"
                   class="max-md:size-11"
@@ -131,6 +132,7 @@ const moveClass =
                   ><Pencil :size="14"
                 /></Button>
                 <DeleteConfirm
+                  size="sm"
                   label="Delete"
                   :question="`Delete ${workspace.name}? Only an empty workspace can go.`"
                   :on-confirm="() => remove(workspace)"
@@ -141,7 +143,7 @@ const moveClass =
           <p v-if="removeError" role="alert" class="mt-3 text-sm text-destructive">{{ removeError }}</p>
         </DataRegion>
       </ModalBody>
-      <ModalFooter class="justify-between gap-2">
+      <ModalFooter class="sm:justify-between">
         <Button variant="outline" tone="neutral" @click="form = { open: true, workspace: null }">
           <template #leading><Plus :size="16" /></template>New workspace
         </Button>

@@ -108,7 +108,7 @@ function close(open: boolean): void {
           </p>
         </ModalBody>
         <ModalFooter>
-          <CopyButton :text="created.secret" aria-label="Copy key" variant="outline" tone="neutral" />
+          <CopyButton :text="created.secret" aria-label="Copy key" variant="outline" tone="neutral" shape="square" />
           <Button @click="close(false)">Done</Button>
         </ModalFooter>
       </template>
