@@ -70,9 +70,17 @@ function fill(cell: CalendarCell): string {
   return fills[cell.tone][cell.level] ?? "bg-muted";
 }
 
-/** A mark readable on its fill: dark on the light steps, light on the strong ones. */
+/**
+ * A mark readable on its fill in either scheme. The strong steps take the tone's own foreground — white on the light
+ * theme's deep fills, dark on the dark theme's pale ones; the faint steps take the text colour, except the dark theme's
+ * second step, already pale enough for the tone's dark foreground.
+ */
 function markColour(cell: CalendarCell): string {
-  return cell.level >= 3 ? "bg-white/90" : "bg-foreground/65";
+  const warning = cell.tone === "warning";
+  if (cell.level >= 3) return warning ? "bg-warning-foreground/90" : "bg-destructive-foreground/90";
+  if (cell.level === 2)
+    return warning ? "bg-foreground/65 dark:bg-warning-foreground/90" : "bg-foreground/65 dark:bg-destructive-foreground/90";
+  return "bg-foreground/65";
 }
 
 /** Keeps the newest weeks in view: on a phone the calendar scrolls sideways and opens at today. */
@@ -197,13 +205,13 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
         <span class="flex items-center gap-1"><span class="size-3 rounded-[3px] bg-success" aria-hidden="true" />succeeded</span>
         <span class="flex items-center gap-1">
           <span class="flex size-3 items-center justify-center rounded-[3px] bg-destructive" aria-hidden="true"
-            ><span class="size-1 rounded-full bg-white/90"
+            ><span class="size-1 rounded-full bg-destructive-foreground/90"
           /></span>
           failed
         </span>
         <span class="flex items-center gap-1">
           <span class="flex size-3 items-center justify-center rounded-[3px] bg-warning" aria-hidden="true"
-            ><span class="h-0.5 w-1.5 rounded-full bg-white/90"
+            ><span class="h-0.5 w-1.5 rounded-full bg-warning-foreground/90"
           /></span>
           mixed
         </span>
