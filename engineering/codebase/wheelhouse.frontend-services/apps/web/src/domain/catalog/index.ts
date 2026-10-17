@@ -4,6 +4,7 @@ export {
   type Catalog,
   type CatalogEntry,
   type CatalogImportResult,
+  type CatalogImportWarning,
   type CatalogSource,
   type CatalogWorkspace,
 } from './Catalog';

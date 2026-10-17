@@ -51,6 +51,10 @@ test("the import result and the source read as one line each", () => {
     commit: "4f2c9e1a7b3d" }), "wow-two/wow-two-ws@4f2c9e1");
   assert.equal(CatalogRules.sourceLabel({ repository: "wow-two/wow-two-ws", path: "catalog.yml", ref: "main", commit: null }),
     "wow-two/wow-two-ws@main");
+  const warnings = [1, 2, 3].map((index) => ({ slug: `app-${index}`, message: "created without images" }));
+  assert.equal(CatalogRules.warningLine({ warnings }),
+    "app-1: created without images; app-2: created without images; and 1 more");
+  assert.equal(CatalogRules.warningLine({ warnings: [] }), "");
 });
 
 test("the catalog decodes, and an import posts its slugs with the catalog action and reads counts or lists", async () => {
@@ -66,7 +70,7 @@ test("the catalog decodes, and an import posts its slugs with the catalog action
   assert.equal(catalog.ok, true);
   assert.equal(catalog.value.workspaces[0].description, "");
   const result = await catalogApi.importEntries(["hijinx", "museums"]);
-  assert.deepEqual(result.value, { createdWorkspaces: 1, createdProducts: 2, movedProducts: 0 });
+  assert.deepEqual(result.value, { createdWorkspaces: 1, createdProducts: 2, movedProducts: 0, warnings: [] });
   assert.equal(requests[1].url, "/api/catalog/import");
   assert.equal(requests[1].options.method, "POST");
   assert.equal(requests[1].options.headers.get("X-Wheelhouse-Action"), "catalog");

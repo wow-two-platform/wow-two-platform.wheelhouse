@@ -68,7 +68,12 @@ async function runImport(): Promise<void> {
   if (!slugs.length || importing.value) return;
   const result = await importEntries(slugs);
   if (result.ok) {
-    notify({ tone: NoticeTone.Success, title: 'Catalog imported', description: CatalogRules.summary(result.value) });
+    const warnings = CatalogRules.warningLine(result.value);
+    notify({
+      tone: warnings ? NoticeTone.Warning : NoticeTone.Success,
+      title: 'Catalog imported',
+      description: warnings ? `${CatalogRules.summary(result.value)} ${warnings}.` : CatalogRules.summary(result.value),
+    });
     selected.value = [];
   } else {
     notify({ tone: NoticeTone.Danger, title: 'The import did not run', description: failureReason(result.failure) });
@@ -166,7 +171,7 @@ async function runImport(): Promise<void> {
               v-else-if="column.key === 'state'"
               size="sm"
               :variant="States[CatalogRules.stateOf(row)].variant"
-              :title="CatalogRules.stateOf(row) === 'external' ? `Deployed by ${row.deploy}` : undefined"
+              :title="CatalogRules.stateOf(row) !== 'external' ? undefined : row.deploy === 'none' ? 'Not deployed' : `Deployed by ${row.deploy}`"
               >{{ States[CatalogRules.stateOf(row)].label }}</Badge
             >
           </template>

@@ -51,8 +51,15 @@ export const CatalogRules = {
   sourceLabel: (source: CatalogSource): string =>
     `${source.repository}@${source.commit ? source.commit.slice(0, 7) : source.ref}`,
 
+  /** The notes an import left, two at most and a count of the rest; empty when it left none. */
+  warningLine: (result: Pick<CatalogImportResult, 'warnings'>): string => {
+    const shown = result.warnings.slice(0, 2).map((warning) => `${warning.slug}: ${warning.message}`);
+    const more = result.warnings.length - shown.length;
+    return shown.join('; ') + (more > 0 ? `; and ${more} more` : '');
+  },
+
   /** The line a finished import reports. */
-  summary: (result: CatalogImportResult): string => {
+  summary: (result: Omit<CatalogImportResult, 'warnings'>): string => {
     const parts = [
       result.createdProducts ? `added ${count(result.createdProducts, 'product')}` : null,
       result.createdWorkspaces ? `created ${count(result.createdWorkspaces, 'workspace')}` : null,

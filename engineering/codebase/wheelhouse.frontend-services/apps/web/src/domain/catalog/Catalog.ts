@@ -37,12 +37,20 @@ export interface Catalog {
   entries: CatalogEntry[];
 }
 
+/** A note about one entry of an import: skipped, or created without something. */
+export interface CatalogImportWarning {
+  slug: string;
+  /** What happened, in operator-safe words. */
+  message: string;
+}
+
 /** What an import changed. */
 export interface CatalogImportResult {
   createdWorkspaces: number;
   createdProducts: number;
   /** Existing products that moved into the workspace the catalog names. */
   movedProducts: number;
+  warnings: CatalogImportWarning[];
 }
 
 /** The deployer an importable entry names. */

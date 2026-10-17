@@ -36,6 +36,7 @@ const ImportResultSchema = z.object({
   createdWorkspaces: Changed,
   createdProducts: Changed,
   movedProducts: Changed,
+  warnings: z.array(z.object({ slug: z.string(), message: z.string() })).default([]),
 });
 
 /** The wow2 catalog Wheelhouse reads from the workspace repository; imports carry the `catalog` action. */
