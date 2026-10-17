@@ -62,7 +62,7 @@ The API accepts target and release IDs only. It cannot upload arbitrary Compose,
 
 ## Execution model
 
-1. Validate the manifest, digests, Compose hash and environment identity; refuse a commit build on test or prod.
+1. Validate the manifest, digests, Compose hash and environment identity; refuse a commit build on prod.
 2. Take the target lock that dashboard and operator share; refuse an unresolved interrupted rollout.
 3. Check Docker, Compose, required settings, free disk and release platform.
 4. Pull every image before replacing any running container.
@@ -109,7 +109,7 @@ server that a target or vault still uses cannot be deleted. Product images never
 
 On the local rig the runner holds the local server's fixtures. The API seeds them at startup: fixture products only
 where the database lacks them, the local server, its targets and vault rewritten on every start, since their hosts,
-ports and paths depend on where Wheelhouse runs. Fixtures never apply outside the rig. Every product runs `dev`, `test` and `prod` on one host, separated by Compose project, network alias,
+ports and paths depend on where Wheelhouse runs. Fixtures never apply outside the rig. Every product runs `dev` and `prod` on one host, separated by Compose project, network alias,
 database, settings files and hostnames. Moving a stateful product needs a backup, a write freeze, a verified restore
 and an explicit cutover; a second host definition does not make a service redundant.
 
@@ -269,7 +269,7 @@ is true only for transient kinds, a runner timeout (`OperationTimeout`) or an un
 reaches an agent. A refused scope stays a JSON-RPC error.
 
 Future mutation tools require explicit scopes and the same handler/runner gates as the console: prod takes only a
-release that passed test, and bypassing that gate requires its typed target ID. They remain backlog work.
+release that passed dev, and bypassing that gate requires its typed target ID. They remain backlog work.
 
 ## Deployment outcome observation
 
@@ -285,6 +285,39 @@ The follower stops observing only completed outcomes. Explicit status reads can 
 direct target-side acknowledgement. Transport failures and unknown receipts do not become rollout failures or
 automatic retries. Missing receipts still require operator recovery. This projection does not introduce deployment
 database ownership or mutation MCP tools.
+
+### Deployment history
+
+The runner's `history` action (`history.py`) returns every submission with its last observation, what its cached bundle
+declares (product, kind, branch, rollback compatibility, each service's image digest and version, when its source
+published it) and, while it is live, the step it is on; `observation --job` returns one submission's steps, sites
+and warnings. Both read local files only. `RunnerDeploymentRecords` holds one history read for
+`Deployment:HistorySeconds` (3) so a page's concurrent reads share one runner process, and skips a malformed record.
+`DeploymentHistoryService` joins it with the inventory: target → product and environment (a removed target keeps the
+bundle's product and the environment recorded at submission), product → workspace, the target's previous success, and each service against
+it (changed when the image digest differs; every service is new on a target's first rollout). The API filters and
+aggregates; nothing is stored.
+
+- Filters, on every read below: repeated `workspace`, `product` and `service` (`product/service`) combine as a union —
+  a service matches a deployment that changed it, or any deployment of its product whose bundle the runner no longer
+  holds; `status` `all` | `succeeded` (warnings included) | `failed` (failed, rolled back, rollback failed,
+  interrupted); `from` inclusive and `to` exclusive (ISO-8601). Malformed values are 400.
+- `GET /api/deployments/history` pages newest first: `limit` 1-100 (25), and an opaque `cursor` of the last item's
+  submission instant and id, so a new submission never shifts a later page. Each item carries product, workspace,
+  environment, release, bundle, status and outcome (`succeeded` | `failed` | `refused` | `pending` | `unknown`),
+  duration, changed services (null when the bundle is unknown) and, while live, the current step.
+- `GET /api/deployments/history/activity?tz=` counts finished rollouts per local day in an IANA zone (default `UTC`,
+  range six months, at most 731 days); only days with a rollout are listed, and the status filter applies.
+- `GET /api/deployments/history/stats` measures the entities over the range (30 days by default) beside the range of
+  equal length before it, as the runner's statistics always have; the status filter does not apply.
+- `GET /api/deployments/running` lists live rollouts with their step; `GET /api/deployments/promotions` lists, per
+  product and prod target, the newest release (never a commit build) that succeeded on dev and is not what prod runs —
+  left out while a prod rollout of it runs or prod runs it or a later release.
+- `GET /api/deployments/{id}/detail` answers one deployment: each service from and to, the previous success, the
+  observation's steps, sites and warnings (`observed` false when unreadable), and `rollback`, the previous release,
+  only when this rollout is what its target runs and its release declares the previous images compatible.
+- `GET /api/deployments` (50 newest) and `GET /api/deployments/stats?days=` stay for Home, the product overview and the
+  MCP `list_deployments` tool.
 
 ## Secrets vaults
 
