@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create the canary's dev, test and prod databases and settings files on the VPS, never printing a secret."""
+"""Create the canary's dev and prod databases and settings files on the VPS, never printing a secret."""
 import argparse
 import json
 import os
@@ -13,7 +13,7 @@ import prepare
 
 PRODUCT = "wheelhousecanary"
 # Each environment answers on its own tailnet node, named in platform.compose.yml.
-NODES = {"dev": "canary-dev", "test": "canary-test", "prod": "canary"}
+NODES = {"dev": "canary-dev", "prod": "canary"}
 
 
 def prepare_canary(root, tailnet, database=prepare.create_database):
@@ -56,7 +56,7 @@ def main():
         print("Canary configuration refused. Check the tailnet name, existing files and the platform database.",
               file=sys.stderr)
         return 1
-    print("Canary configuration created for dev, test and prod. No credentials were printed.")
+    print("Canary configuration created for dev and prod. No credentials were printed.")
     return 0
 
 

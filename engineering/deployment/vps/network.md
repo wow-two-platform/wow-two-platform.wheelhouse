@@ -1,6 +1,6 @@
 # Network and access
 
-*Last updated: 2026-10-16*
+*Last updated: 2026-10-17*
 
 How the control-plane host is reached and how its containers are kept apart. Host-specific values (tailnet name,
 addresses, accounts) stay out of this public repository; the operator keeps them in private notes.
@@ -27,7 +27,7 @@ port. Serve is tailnet-only; never use Funnel.
 |---|---|---|
 | Owner devices (laptop, phone) | none (owned by the owner) | Each other; the control host on 443, 8443, 22; canary nodes on 443 |
 | Control-plane host | `tag:control` | Nothing on the tailnet |
-| Canary nodes (one per environment) | `tag:canary` | Nothing on the tailnet |
+| Canary nodes (`canary-dev`, `canary`: one per environment) | `tag:canary` | Nothing on the tailnet |
 
 - A tag must exist in the policy before a machine can carry it: save the policy first, then tag the machine.
 - Tagging changes a machine's ownership from the user to the tag. Tagged machines don't appear in `autogroup:self`.
@@ -54,12 +54,13 @@ CI onto the tailnet first (Hosting backlog).
 | Network | Subnet, gateway | Members |
 |---|---|---|
 | `control` | `172.30.1.0/24`, `172.30.1.1` | Prod and dev consoles; PostgreSQL `172.30.1.3`; Traefik `172.30.1.2` |
-| `platform` | `172.30.0.0/24`, `172.30.0.1` | Product and canary workloads; canary tailnet nodes `172.30.0.10–12`; PostgreSQL `172.30.0.3`; Traefik `172.30.0.2` |
+| `platform` | `172.30.0.0/24`, `172.30.0.1` | Product and canary workloads; canary tailnet nodes `172.30.0.10` (dev) and `172.30.0.12` (prod); PostgreSQL `172.30.0.3`; Traefik `172.30.0.2` |
 
 - A workload shares PostgreSQL and Traefik with the consoles but no network with them, so it cannot open a console.
 - Traefik's console entry points (`private` :8080, `dev` :8082) attach [control-only.yml](control-only.yml), which
   accepts only loopback and the two gateways. A workload that forges a console hostname at Traefik gets 403.
-- The `canary` entry point (:8084) stays open to the canary nodes and the host.
+- The `canary` entry point (:8084) stays open to the canary nodes and the host. `172.30.0.11` was the retired
+  `canary-test` node (removed 2026-10-17 with the `test` environment); it is left unassigned.
 - Console targets set `PLATFORM_NETWORK=control`; product and canary targets set `platform`.
 - Consoles trust forwarded headers only from Traefik's `control` address `172.30.1.2`.
 - PostgreSQL and both bridges sit on fixed addresses so forwarded-header trust stays explicit; [bootstrap.sh](bootstrap.sh)

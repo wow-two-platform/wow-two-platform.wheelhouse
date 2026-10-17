@@ -1,6 +1,6 @@
 # Wheelhouse dev VPS
 
-*Last updated: 2026-10-16*
+*Last updated: 2026-10-17*
 
 This bootstrap prepares the private control-plane host on Ubuntu 26.04 amd64: `wheelhouse-prod` and
 `wheelhouse-dev` side by side, each with its own database and sign-in. GitHub builds the image; the existing
@@ -12,7 +12,7 @@ This bootstrap prepares the private control-plane host on Ubuntu 26.04 amd64: `w
 |---|---|---|
 | [Host bootstrap](bootstrap.sh) | Verified VPS, administrator | Docker/Compose/Python/OpenSSH, deploy account, network, platform files |
 | [Configuration generator](prepare.py) | VPS, deployment account | Each console's database credentials, settings and target JSON |
-| [Canary generator](prepare_canary.py) | VPS, deployment account | The canary's dev, test and prod databases and settings files |
+| [Canary generator](prepare_canary.py) | VPS, deployment account | The canary's dev and prod databases and settings files |
 | [Runner authorization](authorize-runner.sh) | VPS, administrator | A console's own runner SSH identity for this host |
 | [Identity template](identity.example.json) | Copy to a private VPS file | Real OAuth credentials and owner allowlist, supplied by the operator |
 | [Platform Compose](platform.compose.yml) | VPS | PostgreSQL 16, private Traefik ingress and the canary's tailnet nodes |
@@ -215,16 +215,36 @@ Each environment answers on its own tailnet node, so every one has its own name 
 
 ```text
 canary-dev.<tailnet>  -> Tailscale container 172.30.0.10 -> Traefik canary :8084 -> wheelhousecanary-dev
-canary-test.<tailnet> -> Tailscale container 172.30.0.11 -> Traefik canary :8084 -> wheelhousecanary-test
 canary.<tailnet>      -> Tailscale container 172.30.0.12 -> Traefik canary :8084 -> wheelhousecanary-prod
 ```
 
 - The tailnet policy owns `tag:canary`; a reusable tagged auth key sits in `/srv/wheelhouse/private/tailscale-canary.env`
   as `TS_AUTHKEY=…`. Each node logs in once and keeps its state in its own volume.
-- `prepare_canary.py --tailnet <tailnet>` creates `wheelhousecanary_{dev,test,prod}` and `config/canary-{env}.json`.
+- `prepare_canary.py --tailnet <tailnet>` creates `wheelhousecanary_{dev,prod}` and `config/canary-{env}.json`.
 - `sudo bash authorize-runner.sh wheelhouse-dev <server-id>` gives dev Wheelhouse its own key for this host; the
   server's address inside the console is the host's `platform` bridge address, `172.30.0.1`.
 - Only Wheelhouse prod deploys products. Dev never receives a products host's key.
+
+### Retiring `test` (2026-10-17)
+
+Products work on `main` only; every release deploys to dev, then is promoted to prod. Wheelhouse's migration
+`013-drop-test-environment` deletes each console's test targets on its next boot. The host keeps what the retired
+environment left until the operator removes it, as the deployment account in `/srv/wheelhouse/platform`:
+
+```sh
+# Install this repository's platform.compose.yml as compose.yml (bootstrap.sh does the same), then drop the orphan node.
+docker compose --env-file host.env -f compose.yml up -d --remove-orphans
+docker volume rm wheelhouse-platform_canary-test
+# The canary's test stack, its route, state, settings and database.
+docker compose -p wheelhousecanary-test down
+rm -f /srv/wheelhouse/ingress/wheelhousecanary-test.yml /srv/wheelhouse/config/canary-test.json
+rm -rf /srv/wheelhouse/wheelhousecanary-test
+docker compose --env-file host.env -f compose.yml exec -T postgres psql -U postgres -v ON_ERROR_STOP=1 \
+  -c 'DROP DATABASE IF EXISTS wheelhousecanary_test' -c 'DROP ROLE IF EXISTS wheelhousecanary_test'
+```
+
+Then remove the `canary-test` machine in the Tailscale admin console (Machines › canary-test › Remove).
+`172.30.0.11` stays unassigned.
 
 ## GitHub-hosted CI access
 
