@@ -1,3 +1,11 @@
+<script lang="ts">
+/** The deployable catalog, across products or for one. */
+export interface ReleaseCatalogPanelProps {
+  /** Keeps one product's releases and drops the product picker and column; every product's without it. */
+  readonly product?: string | null;
+}
+</script>
+
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { Rocket } from "lucide-vue-next";
@@ -27,8 +35,12 @@ import { useRefresh } from "@/bootstrap/query";
 import { useReleaseArtifacts } from "@/application/deployments";
 import { Panel, RefreshButton } from "@/presentation/common/components";
 
-/** Lists the deployable catalog: published releases and commit builds from approved repositories, newest first. */
+/**
+ * Lists the deployable catalog: published releases and commit builds from approved repositories, newest first. A
+ * product page passes its product, so the panel lists that product's releases only.
+ */
 defineOptions({ name: "ReleaseCatalogPanel" });
+const props = withDefaults(defineProps<ReleaseCatalogPanelProps>(), { product: null });
 const emit = defineEmits<{ deploy: [bundleId: string] }>();
 
 const KindFilter = { all: "Releases and builds", release: "Releases", candidate: "Commit builds" } as const;
@@ -36,7 +48,9 @@ type KindFilter = keyof typeof KindFilter;
 
 const releases = useReleaseArtifacts();
 const refresh = useRefresh(releases.refetch);
-const product = ref<string | null>(null);
+const picked = ref<string | null>(null);
+/** The product the list keeps: the page's own, or the one picked. */
+const product = computed(() => props.product ?? picked.value);
 const kind = ref<KindFilter>("all");
 const products = computed(() =>
   [...new Set((releases.data.value ?? []).map((artifact) => artifact.product))].sort(),
@@ -60,7 +74,7 @@ const rows = useSkeletonItems(() => (releases.data.value ? visible.value : undef
     description="Published releases go anywhere; a commit's build goes to dev only and expires after 14 days."
   >
     <template #actions>
-      <SelectPicker v-model="product" is-clearable clear-label="All products"
+      <SelectPicker v-if="!props.product" v-model="picked" is-clearable clear-label="All products"
         ><SelectPickerTrigger aria-label="Product" width="11rem"
           ><SelectPickerValue placeholder="All products" /></SelectPickerTrigger
         ><SelectPickerContent
@@ -96,7 +110,7 @@ const rows = useSkeletonItems(() => (releases.data.value ? visible.value : undef
       <Table density="compact" is-hoverable has-sticky-header container-class-name="max-h-[24rem] overflow-auto">
         <TableHead>
           <TableRow>
-            <TableHeaderCell>Release</TableHeaderCell><TableHeaderCell>Product</TableHeaderCell
+            <TableHeaderCell>Release</TableHeaderCell><TableHeaderCell v-if="!props.product">Product</TableHeaderCell
             ><TableHeaderCell>Commit</TableHeaderCell><TableHeaderCell>Published</TableHeaderCell
             ><TableHeaderCell><span class="sr-only">Actions</span></TableHeaderCell>
           </TableRow>
@@ -112,7 +126,7 @@ const rows = useSkeletonItems(() => (releases.data.value ? visible.value : undef
                 }}</Badge>
               </span>
             </TableCell>
-            <TableCell class="text-xs">{{ artifact?.product }}</TableCell>
+            <TableCell v-if="!props.product" class="text-xs">{{ artifact?.product }}</TableCell>
             <!-- A placeholder row leaves composite cells empty, so each draws one bar. -->
             <TableCell class="font-mono text-xs">
               <span v-if="artifact" class="block min-w-0">

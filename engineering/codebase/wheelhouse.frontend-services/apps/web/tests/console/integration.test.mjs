@@ -368,7 +368,10 @@ test("pages the audit trail and names each action and chain break in words", asy
   };
   assert.equal((await auditApi.list(100, 4)).value[0].sequence, 3);
   assert.equal((await auditApi.verify()).value.brokenSequence, 2);
-  assert.deepEqual(requests, ["/api/audit?limit=100&before=4", "/api/audit/verification"]);
+  await auditApi.list(50, null, "transcript forge");
+  assert.deepEqual(requests,
+    ["/api/audit?limit=100&before=4", "/api/audit/verification", "/api/audit?limit=50&product=transcript%20forge"]);
+  assert.equal(AuditExtensions.label("service.status"), "Changed a service’s status");
   assert.equal(AuditExtensions.label("vault.secret.set"), "Set a secret");
   assert.equal(AuditExtensions.label("future.action"), "future.action");
   assert.equal(AuditExtensions.inArea("build.request", AuditArea.Deployments), true);

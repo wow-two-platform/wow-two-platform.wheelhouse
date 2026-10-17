@@ -19,12 +19,19 @@ const Labels: Record<string, string> = {
   'product.create': 'Registered a product',
   'product.update': 'Updated a product',
   'product.delete': 'Removed a product',
+  'product.status': 'Changed a product’s status',
+  'product.workspace': 'Moved a product to a workspace',
+  'product.refresh': 'Read a product’s manifest again',
+  'service.status': 'Changed a service’s status',
+  'target.create': 'Added an environment',
+  'target.update': 'Updated an environment',
+  'target.delete': 'Removed an environment',
 };
 const AreaPrefixes: Record<AuditArea, readonly string[]> = {
   [AuditArea.All]: [''],
   [AuditArea.Deployments]: ['deployment.', 'build.'],
   [AuditArea.Secrets]: ['vault.'],
-  [AuditArea.Products]: ['product.'],
+  [AuditArea.Products]: ['product.', 'service.', 'target.'],
 };
 
 /** Pure display rules for audit entries. */

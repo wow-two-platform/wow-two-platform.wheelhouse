@@ -71,7 +71,11 @@ const sidebarWidth = computed(() => (isRail.value ? SidebarWidth.Rail : SidebarW
 const crumbs = computed(() =>
   scopeOf({
     path: route.path,
-    params: { workspace: param(route.params['workspace']), product: param(route.params['product']) },
+    params: {
+      workspace: param(route.params['workspace']),
+      product: param(route.params['product']),
+      tab: param(route.params['tab']),
+    },
     query: { env: query('env'), inspect: query('inspect'), item: query('item') },
     title: typeof route.meta['title'] === 'string' ? route.meta['title'] : null,
     workspaces: portfolio.workspaces.workspaces.value,
