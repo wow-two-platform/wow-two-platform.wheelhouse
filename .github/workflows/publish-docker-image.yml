@@ -59,7 +59,7 @@ jobs:
   publish:
     needs: current
     if: needs.current.outputs.eligible == 'true'
-    uses: wow-two-platform/wow-two-platform.pipelines/.github/workflows/publish.yml@v0.1.0
+    uses: wow-two-platform/wow-two-platform.pipelines/.github/workflows/publish.yml@v0.2.0
     with:
       commit: ${{ inputs.commit }}
 
