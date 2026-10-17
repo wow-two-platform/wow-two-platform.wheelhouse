@@ -249,6 +249,8 @@ Leftovers of the v0.4 sweep. Items marked *decision* wait on the owner.
 | Extract a schema decoder and problem reason → UI SDK HTTP client | engineering | `integration/common/client.ts` |
 | Extract a status strip and tone classes → UI SDK | engineering | `WorkspacePage.vue` |
 | Make the Sparkline time-based with thresholds → UI SDK | engineering | `TrendLine.vue` |
+| Extract the MCP request guard → be sdk | engineering | `McpRequestGuard.cs`: Origin 403 and a 64 KiB body cap that `MapAuthenticatedMcp` lacks |
+| Adopt be sdk reserved SPA prefixes for `/.well-known` | engineering | Replaces the extra 404 fallback in `HostConfiguration.cs` once the SDK ships it |
 
 ---
 
