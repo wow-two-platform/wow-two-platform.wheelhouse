@@ -69,5 +69,12 @@ export function scopeOf(input: ScopeInput): ScopeCrumb[] {
     ];
   }
   if (input.path === ConsolePaths.home) return [home];
+  // One deployment sits under the Deployments page, so its crumb leads back to the list.
+  if (input.path.startsWith(`${ConsolePaths.deployments}/`))
+    return [
+      home,
+      crumb('page', 'Deployments', { path: ConsolePaths.deployments, query: {} }),
+      crumb('page', input.title ?? 'Deployment', { path: input.path, query: {} }),
+    ];
   return [home, crumb('page', input.title ?? input.path, { path: input.path, query: {} })];
 }

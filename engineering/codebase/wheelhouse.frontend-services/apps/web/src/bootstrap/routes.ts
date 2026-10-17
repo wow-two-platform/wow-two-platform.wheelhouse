@@ -87,6 +87,15 @@ export const router = createAppRouter(
       handle: { title: (route) => param(route.params['product']), description: 'A product, environment by environment.' },
     },
     ...[...PrimaryPlaces, ...GlobalPlaces, ...SettingsPlaces].map(placeRoute),
+    // One deployment: its rollout, services, sites and actions. The id is a submission's UUID.
+    {
+      path: '/deployments/:id',
+      lazy: () => import('@/presentation/deployments/pages/DeploymentDetailPage.vue'),
+      handle: {
+        title: (route) => `Deployment ${param(route.params['id']).slice(0, 8)}`,
+        description: 'One rollout: its steps, services, sites and what needs a look.',
+      },
+    },
     { path: '/fleet', redirect: '/servers' },
     { path: '*', redirect: '/' },
   ],
