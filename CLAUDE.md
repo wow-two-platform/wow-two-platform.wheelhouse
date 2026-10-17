@@ -21,6 +21,7 @@ engineering/              ← the execution (build · ship · run)
 └── codebase/
     ├── wheelhouse.backend-services/   ← .NET 10 Clean Architecture solution (Wheelhouse.BackendServices.slnx)
     ├── wheelhouse.frontend-services/  ← pnpm workspace; apps/web = Vue 3 + Vite + Tailwind v4 + the fe sdk @wow-two-beta/fe
+    │                                     (Home · /w/:workspace · /p/:product; sidebar, rail and phone bottom bar)
     └── wheelhouse.runner-services/    ← Python operator runner: fleet, catalog, SSH transport, target executor
 ```
 
@@ -52,7 +53,7 @@ dotnet run --project Wheelhouse.Api --launch-profile https   # 8210 https / 8211
 # Frontend (pnpm workspace; the app lives in apps/web)
 cd engineering/codebase/wheelhouse.frontend-services && pnpm install && pnpm dev   # HTTPS 5174, proxies /api → HTTPS 8210; Node 24
 pnpm dev:http   # plain HTTP for headless previews (GitHub sign-in needs HTTPS)
-pnpm test       # inventory, selection, protocol and sensitive-form lifecycle checks
+pnpm test       # routing, selection, status filter, pins, catalog, protocol and sensitive-form checks
 pnpm build      # vue-tsc + SFC compiler gate + route-split production bundle
 pnpm deploy     # build + copy apps/web/dist into Wheelhouse.Api/wwwroot
 
@@ -89,7 +90,7 @@ Reserve unit for I/O-free logic; everything user-facing is covered e2e. Full rul
 
 ## Beta SDK usage (per workspace direction)
 
-- **Frontend → fe sdk `@wow-two-beta/fe` (`0.0.18`, in `apps/web/package.json`).** Use its components (Button, Card,
+- **Frontend → fe sdk `@wow-two-beta/fe` (`0.0.19`, in `apps/web/package.json`).** Use its components (Button, Card,
   Badge, Heading, Text, EmptyState, Alert, Spinner, TextInput, …) before hand-rolling. Tailwind v4 wiring: `index.css`
   imports `tailwindcss` + `@wow-two-beta/fe/styles.css` and `@source`s the package's `dist` so its
   utility classes are generated. Shared capability gaps belong in the SDK. Product composition stays local.
