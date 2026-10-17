@@ -72,6 +72,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Vault consumer in the backend SDK | feature | Startup resolution, bounded timeout, fail-closed; unblocks ForeverPin adoption |
 | Scoped management credential for Wheelhouse | check | Vault-side change; replaces the shared administrator password |
 | Mint expiring product tokens | feature | The vault takes an expiry and rotates since its v0.3; the gateway still sends a name only |
+| Ability to share one setting or secret value across products | feature | User 2026-10-17: products declare their own keys; Wheelhouse links keys that hold the same value and must change together to one row; otherwise rows stay separate |
 
 ---
 
