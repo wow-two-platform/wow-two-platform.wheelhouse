@@ -73,3 +73,17 @@ export interface ServiceTopology {
   readonly dependencies: readonly TopologyDependency[];
   readonly warnings: readonly string[];
 }
+
+/**
+ * The topology without some services and the dependencies that touch them, for hiding inactive services. Networks and
+ * volumes stay, so every remaining reference still names a declared resource. Hiding nothing returns it unchanged.
+ */
+export function withoutServices(topology: ServiceTopology, hidden: readonly string[]): ServiceTopology {
+  if (!hidden.length) return topology;
+  const gone = new Set(hidden);
+  return {
+    ...topology,
+    services: topology.services.filter((service) => !gone.has(service.name)),
+    dependencies: topology.dependencies.filter((edge) => !gone.has(edge.from) && !gone.has(edge.to)),
+  };
+}

@@ -1,11 +1,17 @@
 import { z } from "zod";
 import { defaultMapFieldPath } from "@wow-two-beta/fe/forms-engine";
 import { InventoryRules } from "@/domain/common";
-import type { Product, ReleaseImage, SaveProductRequest } from "@/domain/products";
+import { ProductStatus, type Product, type ReleaseImage, type SaveProductRequest } from "@/domain/products";
 
-/** Represents a product's editable fields, flat; the release source applies only while the product publishes. */
+/**
+ * Represents a product's editable fields, flat; the release source applies only while the product publishes. The
+ * workspace and the status save through their own requests once the product itself is saved.
+ */
 export interface ProductFormModel {
   slug: string;
+  /** The workspace the product belongs to; null leaves a new product in the host's default workspace. */
+  workspaceId: string | null;
+  active: boolean;
   name: string;
   description: string;
   repository: string;
@@ -20,6 +26,8 @@ export interface ProductFormModel {
 export const productFormSchema = z
   .object({
     slug: z.string().trim().regex(InventoryRules.slug, "Start with a lowercase letter; use lowercase letters, digits and dashes."),
+    workspaceId: z.string().nullable(),
+    active: z.boolean(),
     name: z.string().trim().min(1, "Enter a name."),
     description: z.string().trim(),
     repository: z.string().trim().regex(InventoryRules.repository, "Use owner/name."),
@@ -34,10 +42,12 @@ export const productFormSchema = z
       context.addIssue({ code: "custom", path: ["asset"], message: "Enter the release asset." });
   });
 
-/** Creates detached editing state from a product, or blank for a new one. */
-export function productFormOf(product: Product | null): ProductFormModel {
+/** Creates detached editing state from a product, or blank for a new one in the given workspace. */
+export function productFormOf(product: Product | null, workspaceId: string | null = null): ProductFormModel {
   return {
     slug: product?.slug ?? "",
+    workspaceId: product ? product.workspaceId : workspaceId,
+    active: product ? product.status === ProductStatus.Active : true,
     name: product?.name ?? "",
     description: product?.description ?? "",
     repository: product?.repository.name ?? "",
@@ -49,10 +59,11 @@ export function productFormOf(product: Product | null): ProductFormModel {
   };
 }
 
-/** The request a submitted form sends; the slug goes only with a new product. */
+/** The request a submitted form sends; the slug and the workspace go only with a new product. */
 export function productRequestOf(values: ProductFormModel, isNew: boolean): SaveProductRequest {
   return {
     ...(isNew ? { slug: values.slug } : {}),
+    ...(isNew && values.workspaceId ? { workspaceId: values.workspaceId } : {}),
     name: values.name,
     description: values.description,
     repository: values.repository,
@@ -66,4 +77,16 @@ export function productRequestOf(values: ProductFormModel, isNew: boolean): Save
 /** Maps a host error path onto the flat form: `Release.Images[0].Image` lands on `images[0].image`. */
 export function productFieldPath(serverPath: string): string {
   return defaultMapFieldPath(serverPath).replace(/^release\./, "");
+}
+
+/** What a saved product still needs after its own request: a move to another workspace, a status change, or both. */
+export function productFollowUpsOf(
+  values: ProductFormModel,
+  saved: Pick<Product, "workspaceId" | "status">,
+): { workspaceId: string | null; status: ProductStatus | null } {
+  const status = values.active ? ProductStatus.Active : ProductStatus.Inactive;
+  return {
+    workspaceId: values.workspaceId && values.workspaceId !== saved.workspaceId ? values.workspaceId : null,
+    status: status !== saved.status ? status : null,
+  };
 }

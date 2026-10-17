@@ -20,7 +20,7 @@ import {
   RelativeTime,
   Text,
 } from "@wow-two-beta/fe/presentation/display";
-import { ToggleGroup, ToggleInput } from "@wow-two-beta/fe/presentation/forms";
+import { SwitchField, ToggleGroup, ToggleInput } from "@wow-two-beta/fe/presentation/forms";
 import {
   DataRegion,
   SkeletonState,
@@ -31,7 +31,7 @@ import {
 import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
 import { ConsolePaths } from "@/application/navigation";
 import { workspaceOf } from "@/application/portfolio";
-import { useLastEnvironment } from "@/application/preferences";
+import { useLastEnvironment, useShowInactive } from "@/application/preferences";
 import { useProducts } from "@/application/products";
 import { useServerVitals } from "@/application/servers";
 import { useWorkspaces } from "@/application/workspaces";
@@ -59,9 +59,10 @@ import {
   TargetCondition,
   type DeploymentJob,
 } from "@/domain/deployments";
-import { ProductStatusRules } from "@/domain/products";
+import { ProductStatus, ProductStatusRules } from "@/domain/products";
 import { ServerExtensions } from "@/domain/servers";
 import { EnvironmentOrder, type DeploymentEnvironment } from "@/domain/targets";
+import { withoutServices } from "@/domain/topology";
 import {
   DeployModal,
   DeploymentSteps,
@@ -73,6 +74,7 @@ import {
 import { RefreshButton } from "@/presentation/common/components";
 import { ResourceMeter } from "@/presentation/servers";
 import EnvironmentCompare from "./EnvironmentCompare.vue";
+import ServiceActions from "./ServiceActions.vue";
 import ServiceMap from "./ServiceMap.vue";
 import { ProductIcon, RepositoryActions } from "@/presentation/products";
 
@@ -91,6 +93,7 @@ const history = useDeploymentHistory();
 const releases = useReleaseArtifacts();
 const deploy = useDeployModal();
 const lastEnvironment = useLastEnvironment();
+const showInactive = useShowInactive();
 const reconciling = ref(false);
 const inspectorElement = ref<HTMLElement | null>(null);
 /** The service whose container output the log viewer reads; null while it is closed. */
@@ -149,6 +152,10 @@ const selection = computed(() =>
 const product = computed(() => selection.value.product);
 const target = computed(() => selection.value.target);
 const workspace = computed(() => workspaceOf(workspaces.workspaces.value, product.value?.product));
+/** The product's catalog record, whose status and inactive services the page shows and changes. */
+const record = computed(() => product.value?.product ?? null);
+/** The services the page leaves out: the inactive ones, until "Show inactive" is on. */
+const hiddenServices = computed(() => (showInactive.value ? [] : (record.value?.inactiveServices ?? [])));
 const state = useTargetState(() => target.value?.id ?? null);
 const topology = useTargetTopology(() => target.value?.id ?? null);
 const serviceView = ref<"map" | "list">("map");
@@ -169,6 +176,13 @@ const mapContainers = computed(() =>
   targetVitals.value.release === topology.data.value.release
     ? (targetVitals.value.containers ?? null)
     : null,
+);
+/** The map's declaration and readings without the hidden services. */
+const visibleTopology = computed(() =>
+  topology.data.value ? withoutServices(topology.data.value, hiddenServices.value) : null,
+);
+const visibleMapContainers = computed(
+  () => mapContainers.value?.filter((item) => !hiddenServices.value.includes(item.service)) ?? null,
 );
 const targetHistory = computed(() =>
   (history.data.value ?? []).filter((job) => job.targetId === target.value?.id),
@@ -194,7 +208,10 @@ const recentRows = useSkeletonItems(
 );
 /** The environment's observed services, or placeholder cards until the vitals first arrive. */
 const serviceCards = useSkeletonItems(
-  () => (vitals.data.value ? (targetVitals.value?.containers ?? []) : undefined),
+  () =>
+    vitals.data.value
+      ? (targetVitals.value?.containers ?? []).filter((item) => !hiddenServices.value.includes(item.service))
+      : undefined,
   2,
 );
 const drift = computed(() =>
@@ -218,6 +235,11 @@ const refresh = useRefresh(() =>
     ...(inspected.value?.kind === "deployment" ? [outcome.refetch()] : []),
   ]),
 );
+
+/** Marks the product active or inactive; the change shows at once and rolls back if the host refuses it. */
+function setActive(value: boolean): void {
+  if (record.value) void products.setStatus(record.value, value ? ProductStatus.Active : ProductStatus.Inactive);
+}
 
 /** Whether the product has a target in the environment, so its segment can be chosen. */
 function hasEnvironment(environment: DeploymentEnvironment): boolean {
@@ -440,8 +462,14 @@ function openDeploy(job?: DeploymentJob): void {
                     </div>
                   </div>
                 </div>
-                <div v-if="product?.product" class="flex flex-wrap items-center gap-2 text-sm">
-                  <RepositoryActions :repository="product.product.repository.name" :runner-product="product.key" />
+                <div v-if="record" class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                  <SwitchField
+                    :model-value="ProductStatusRules.isActive(record)"
+                    size="sm"
+                    label="Active"
+                    @update:model-value="setActive"
+                  />
+                  <RepositoryActions :repository="record.repository.name" :runner-product="product?.key ?? null" />
                 </div>
               </div>
               <div v-if="product && !product.targets.length" class="mt-5 rounded-xl bg-muted/50 p-4">
@@ -519,6 +547,7 @@ function openDeploy(job?: DeploymentJob): void {
               v-if="product"
               :targets="product.targets"
               :releases="releases.data.value ?? []"
+              :hidden-services="hiddenServices"
               @promote="deploy.openDeploy($event)"
             />
             <section
@@ -559,10 +588,10 @@ function openDeploy(job?: DeploymentJob): void {
                 /></template>
                 <SkeletonStateGroup class="contents" :is-loading="refresh.refreshing.value">
                   <ServiceMap
-                    v-if="topology.data.value"
+                    v-if="visibleTopology"
                     :key="target.id"
-                    :topology="topology.data.value"
-                    :containers="mapContainers"
+                    :topology="visibleTopology"
+                    :containers="visibleMapContainers"
                     :selected-service="
                       selectedMapService ??
                       (inspected?.kind === 'service'
@@ -605,39 +634,50 @@ function openDeploy(job?: DeploymentJob): void {
                     {{ problem }}
                   </p>
                   <div class="grid gap-3 sm:grid-cols-2">
-                    <button
+                    <!-- The card's name is a stretched button that opens the inspector; the controls sit above it. -->
+                    <div
                       v-for="(service, index) in serviceCards"
                       :key="service?.service ?? `placeholder-${index}`"
-                      type="button"
-                      class="rounded-xl border p-4 text-left transition-colors hover:border-primary/50 focus-visible:outline-2 focus-visible:outline-ring"
-                      :class="
+                      class="relative rounded-xl border p-4 transition-colors focus-within:border-primary/50 hover:border-primary/50"
+                      :class="[
                         service &&
                         inspected?.kind === 'service' &&
                         inspected.service.service === service.service
                           ? 'border-primary bg-primary-soft/40'
-                          : 'border-border bg-background/40'
-                      "
-                      @click="service && inspect('service', service.service)"
+                          : 'border-border bg-background/40',
+                        service && !ProductStatusRules.isServiceActive(record, service.service) ? 'opacity-60' : '',
+                      ]"
                     >
                       <span class="flex items-start justify-between gap-2"
                         ><span
                           class="flex size-9 items-center justify-center rounded-lg border border-border bg-card"
                           ><Box :size="18" class="text-primary" /></span
-                        ><Text
-                          as="span"
-                          class="text-xs capitalize"
-                          :class="
-                            service && ServerExtensions.isHealthy(service)
-                              ? 'text-success'
-                              : 'text-destructive'
-                          "
-                          >{{ service ? ServerExtensions.containerLabel(service) : "" }}</Text
-                        ></span
+                        ><span class="relative z-10 flex items-center gap-1"
+                          ><Badge
+                            v-if="service && !ProductStatusRules.isServiceActive(record, service.service)"
+                            size="sm"
+                            variant="neutral"
+                            >Inactive</Badge
+                          ><Text
+                            as="span"
+                            class="text-xs capitalize"
+                            :class="
+                              service && ServerExtensions.isHealthy(service)
+                                ? 'text-success'
+                                : 'text-destructive'
+                            "
+                            >{{ service ? ServerExtensions.containerLabel(service) : "" }}</Text
+                          ><ServiceActions v-if="service" :product="record" :service="service.service" /></span
+                      ></span>
+                      <button
+                        type="button"
+                        class="mt-4 block max-w-full break-all text-left text-sm font-semibold after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:outline-none"
+                        :disabled="!service"
+                        @click="service && inspect('service', service.service)"
                       >
-                      <Text as="span" class="mt-4 block break-all text-sm font-semibold text-inherit">{{
-                        service?.service
-                      }}</Text
-                      ><Text as="span" class="mt-1 block text-xs text-muted-foreground"
+                        <Text as="span" class="text-inherit">{{ service?.service }}</Text>
+                      </button>
+                      <Text as="span" class="mt-1 block text-xs text-muted-foreground"
                         ><template v-if="service">{{ service.restarts }} restarts</template></Text
                       >
                       <span
@@ -651,7 +691,7 @@ function openDeploy(job?: DeploymentJob): void {
                           service ? Measures.bytes(service.memoryBytes) : "0 B"
                         }}</SkeletonStateSlot></span
                       >
-                    </button>
+                    </div>
                   </div>
                   <template v-if="targetVitals">
                     <p
@@ -776,9 +816,12 @@ function openDeploy(job?: DeploymentJob): void {
               <template v-if="inspected?.kind === 'service'"
                 ><div>
                   <Box :size="26" class="mb-4 text-primary" />
-                  <h3 class="break-all text-lg font-semibold">
-                    {{ inspected.service.service }}
-                  </h3>
+                  <div class="flex items-start justify-between gap-2">
+                    <h3 class="break-all text-lg font-semibold">
+                      {{ inspected.service.service }}
+                    </h3>
+                    <ServiceActions :product="record" :service="inspected.service.service" />
+                  </div>
                   <p class="mt-1 text-sm capitalize text-muted-foreground">
                     {{ ServerExtensions.containerLabel(inspected.service) }}
                   </p>

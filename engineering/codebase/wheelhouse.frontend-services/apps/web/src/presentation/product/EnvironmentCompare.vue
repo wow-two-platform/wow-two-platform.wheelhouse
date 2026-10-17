@@ -7,6 +7,8 @@ export interface EnvironmentCompareProps {
   readonly targets: readonly DeploymentTarget[];
   /** The release catalog; a promotion needs the release's bundle. */
   readonly releases: readonly ReleaseArtifact[];
+  /** Services left out of the rows: the inactive ones while they are hidden. */
+  readonly hiddenServices?: readonly string[];
 }
 </script>
 
@@ -30,13 +32,15 @@ import { compareEnvironments } from "@/domain/deployments";
 /** Lays a product's environments side by side: each service's version per environment, and the release each
  * environment could hand to the next one along dev → test → prod. */
 defineOptions({ name: "EnvironmentCompare" });
-const props = defineProps<EnvironmentCompareProps>();
+const props = withDefaults(defineProps<EnvironmentCompareProps>(), { hiddenServices: () => [] });
 const emit = defineEmits<{ promote: [selection: { target: string; release: string }] }>();
 
 const states = useTargetStates(() => props.targets);
 const comparison = computed(() =>
   compareEnvironments(props.targets, states.data.value, props.releases),
 );
+/** The rows shown: every service but the hidden ones. Promotions still move whole environments. */
+const rows = computed(() => comparison.value.rows.filter((row) => !props.hiddenServices.includes(row.service)));
 </script>
 
 <template>
@@ -64,7 +68,7 @@ const comparison = computed(() =>
         </TableRow>
       </TableHead>
       <TableBody>
-        <TableRow v-for="row in comparison.rows" :key="row.service">
+        <TableRow v-for="row in rows" :key="row.service">
           <TableCell class="text-sm font-medium">{{ row.service }}</TableCell>
           <TableCell
             v-for="(version, index) in row.versions"
@@ -82,7 +86,7 @@ const comparison = computed(() =>
             >
           </TableCell>
         </TableRow>
-        <TableRow v-if="!comparison.rows.length">
+        <TableRow v-if="!rows.length">
           <TableCell :col-span="comparison.columns.length + 1" class="text-sm text-muted-foreground">
             No environment has a verified release with service versions yet.
           </TableCell>

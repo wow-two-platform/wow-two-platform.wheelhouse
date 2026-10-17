@@ -11,6 +11,7 @@ const bundle = await build({
       export * from './src/application/targets/TargetForms';
       export * from './src/application/servers/ServerForms';
       export { vaultDefinitionFormOf, vaultDefinitionFormSchema, vaultDefinitionRequestOf } from './src/application/secrets/VaultDefinitionForms';
+      export * from './src/application/workspaces/WorkspaceForms';
     `,
     resolveDir: process.cwd(),
   },
@@ -54,6 +55,29 @@ test("a product round-trips through its form, and a product without releases sen
   assert.equal(forms.productRequestOf(values, true).slug, "foreverpin");
   values.images[0].service = "edited";
   assert.equal(product.release.images[0].service, "api", "the form edits a detached copy");
+});
+
+test("a product's workspace goes with its creation, and a saved product's moves and status changes follow", () => {
+  const blank = forms.productFormOf(null, "w-platform");
+  assert.equal(blank.workspaceId, "w-platform");
+  assert.equal(blank.active, true);
+  assert.equal(forms.productRequestOf({ ...blank, slug: "logs" }, true).workspaceId, "w-platform");
+  assert.equal("workspaceId" in forms.productRequestOf(forms.productFormOf(null), true), false);
+  assert.equal("workspaceId" in forms.productRequestOf(forms.productFormOf(product), false), false);
+  const values = forms.productFormOf(product);
+  assert.deepEqual(forms.productFollowUpsOf(values, product), { workspaceId: null, status: null });
+  assert.deepEqual(forms.productFollowUpsOf({ ...values, workspaceId: "w-platform", active: false }, product),
+    { workspaceId: "w-platform", status: "inactive" });
+  assert.deepEqual(forms.productFollowUpsOf({ ...values, workspaceId: null }, product), { workspaceId: null, status: null });
+});
+
+test("a workspace form sends its slug only when new, and an emptied description clears it", () => {
+  const workspace = { id: "w-platform", slug: "platform", name: "Platform", description: "Shared apps.", order: 0 };
+  const values = forms.workspaceFormOf(workspace);
+  assert.deepEqual(forms.updateWorkspaceRequestOf({ ...values, description: "" }), { name: "Platform", description: "" });
+  assert.deepEqual(forms.createWorkspaceRequestOf({ slug: "labs", name: "Labs", description: "" }), { slug: "labs", name: "Labs" });
+  assert.equal(forms.workspaceFormSchema.safeParse({ slug: "Labs!", name: "Labs", description: "" }).success, false);
+  assert.equal(forms.workspaceFormSchema.safeParse({ slug: "labs", name: " ", description: "" }).success, false);
 });
 
 test("the product schema trims, refuses a bad slug and asks for an asset only while publishing", () => {

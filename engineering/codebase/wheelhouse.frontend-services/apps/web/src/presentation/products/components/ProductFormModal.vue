@@ -1,13 +1,18 @@
 <script lang="ts">
 import type { ProductOperations } from "@/application/products";
 import type { Product } from "@/domain/products";
+import type { Workspace } from "@/domain/workspaces";
 
 /** Product creation and editing; the slug is fixed once the product exists. */
 export interface ProductFormModalProps {
   readonly open: boolean;
   /** The product to edit, or null to add one. */
   readonly product: Product | null;
-  readonly operations: Pick<ProductOperations, "create" | "update" | "remove">;
+  readonly operations: Pick<ProductOperations, "create" | "update" | "remove" | "setStatus" | "moveToWorkspace">;
+  /** The workspaces a product can belong to, in custom order. */
+  readonly workspaces?: readonly Workspace[];
+  /** The workspace a new product starts in; the host's default when absent. */
+  readonly defaultWorkspaceId?: string | null;
 }
 </script>
 
@@ -15,7 +20,17 @@ export interface ProductFormModalProps {
 import { computed, ref } from "vue";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
-import { Field, SwitchField, TextAreaInput, TextInput } from "@wow-two-beta/fe/presentation/forms";
+import {
+  Field,
+  SelectPicker,
+  SelectPickerContent,
+  SelectPickerItem,
+  SelectPickerTrigger,
+  SelectPickerValue,
+  SwitchField,
+  TextAreaInput,
+  TextInput,
+} from "@wow-two-beta/fe/presentation/forms";
 import {
   Modal,
   ModalBody,
@@ -29,6 +44,7 @@ import { useFormDialogSession } from "@wow-two-beta/fe/forms-engine";
 import { useAppForm } from "@/bootstrap/form";
 import {
   productFieldPath,
+  productFollowUpsOf,
   productFormOf,
   productFormSchema,
   productRequestOf,
@@ -37,9 +53,13 @@ import { identityNoteOf, isIdentityReadOnly } from "@/domain/products";
 import { failureReason } from "@/integration/common";
 import { DeleteConfirm, RowsField } from "@/presentation/common/components";
 
-/** Edits a product's identity and release source, and removes a product nothing runs any more. */
+/**
+ * Edits a product's identity, workspace, status and release source, and removes a product nothing runs any more. The
+ * workspace and the status save through their own requests once the product is saved; a refusal there shows as a
+ * toast and the saved product stays.
+ */
 defineOptions({ name: "ProductFormModal" });
-const props = defineProps<ProductFormModalProps>();
+const props = withDefaults(defineProps<ProductFormModalProps>(), { workspaces: () => [], defaultWorkspaceId: null });
 const emit = defineEmits<{ "update:open": [open: boolean]; saved: [slug: string]; removed: [] }>();
 defineSlots<{}>();
 
@@ -57,6 +77,9 @@ const form = useAppForm({
       ? await props.operations.update(props.product.slug, body)
       : await props.operations.create(body);
     if (result.ok) {
+      const followUps = productFollowUpsOf(values, result.value);
+      if (followUps.workspaceId) await props.operations.moveToWorkspace(result.value, followUps.workspaceId);
+      if (followUps.status) await props.operations.setStatus(result.value, followUps.status);
       emit("saved", result.value.slug);
       emit("update:open", false);
     }
@@ -67,7 +90,7 @@ const form = useAppForm({
 /** Starts each session from the product being edited, or blank, once the opening update has set both props. */
 useFormDialogSession(form, {
   open: () => props.open,
-  initialValues: () => productFormOf(props.product),
+  initialValues: () => productFormOf(props.product, props.defaultWorkspaceId),
   onOpen: () => (removeError.value = ""),
 });
 
@@ -111,6 +134,31 @@ async function remove(): Promise<void> {
           <Field v-if="product?.homepage" label="Homepage" is-read-only>
             <TextInput :model-value="product.homepage" autocomplete="off" />
           </Field>
+          <div class="grid items-end gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <form.Field name="workspaceId" v-slot="field">
+              <Field label="Workspace" v-bind="product ? {} : { helper: 'Left empty, it joins the default workspace' }">
+                <SelectPicker
+                  :model-value="field.value"
+                  :get-option-label="(id) => props.workspaces.find((item) => item.id === id)?.name ?? String(id)"
+                  @update:model-value="(value: unknown) => field.setValue(typeof value === 'string' ? value : null)"
+                  ><SelectPickerTrigger aria-label="Workspace"
+                    ><SelectPickerValue placeholder="Choose a workspace" /></SelectPickerTrigger
+                  ><SelectPickerContent
+                    ><SelectPickerItem
+                      v-for="workspace in props.workspaces"
+                      :key="workspace.id"
+                      :item-key="workspace.id"
+                      :label="workspace.name"
+                      >{{ workspace.name }}</SelectPickerItem
+                    ></SelectPickerContent
+                  ></SelectPicker
+                >
+              </Field>
+            </form.Field>
+            <form.Field name="active" v-slot="field">
+              <SwitchField v-model="field.value" label="Active" wrapper-class-name="pb-2" />
+            </form.Field>
+          </div>
           <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
             <form.Field name="repository" is-required v-slot="field">
               <Field label="Repository">

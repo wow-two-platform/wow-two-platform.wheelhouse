@@ -1,4 +1,4 @@
-export { TopologyAvailability } from "./ServiceTopology";
+export { TopologyAvailability, withoutServices } from "./ServiceTopology";
 export type {
   ServiceTopology,
   TopologyService,

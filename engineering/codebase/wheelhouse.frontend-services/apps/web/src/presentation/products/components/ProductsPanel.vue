@@ -15,6 +15,8 @@ import { Alert, DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentati
 import { SearchInput } from "@wow-two-beta/fe/presentation/forms";
 import { ListDetailLayout } from "@wow-two-beta/fe/presentation/layout";
 import { useProducts } from "@/application/products";
+import { workspaceOf } from "@/application/portfolio";
+import { useWorkspaces } from "@/application/workspaces";
 import { failureReason } from "@/integration/common";
 import { RefreshButton } from "@/presentation/common/components";
 import { useListDetailRoute } from "@/presentation/common/hooks";
@@ -41,6 +43,7 @@ const emit = defineEmits<{ "update:creating": [value: boolean] }>();
 const productOperations = useProducts();
 const { products, isFirstLoad, hasData, error, reload } = productOperations;
 const servers = useServers();
+const workspaces = useWorkspaces();
 const editing = ref(false);
 const targetForm = ref<{ open: boolean; target: InventoryTarget | null }>({ open: false, target: null });
 const search = ref("");
@@ -212,6 +215,14 @@ async function refreshIdentity(): Promise<void> {
               <Text class="mt-2 max-w-prose text-sm text-muted-foreground" skeleton-width="18rem">
                 {{ selected?.description }}
               </Text>
+              <div v-if="selected" class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                <span class="rounded-full border border-border bg-muted/50 px-2.5 py-0.5 font-medium text-muted-foreground">{{
+                  workspaceOf(workspaces.workspaces.value, selected)?.name ?? "No workspace"
+                }}</span>
+                <Badge size="sm" :variant="ProductStatusRules.isActive(selected) ? 'success' : 'neutral'">{{
+                  ProductStatusRules.isActive(selected) ? "Active" : "Inactive"
+                }}</Badge>
+              </div>
               <a
                 v-if="selected && homepageLinkOf(selected)"
                 :href="homepageLinkOf(selected)?.href"
@@ -368,6 +379,7 @@ async function refreshIdentity(): Promise<void> {
     :open="productForm"
     :product="props.creating ? null : selected"
     :operations="productOperations"
+    :workspaces="workspaces.workspaces.value"
     @update:open="closeProductForm"
     @saved="selectProduct"
   />
