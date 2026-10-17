@@ -35,6 +35,9 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     /// <summary>The runner root the host exports its inventory snapshot to; a temporary folder per run.</summary>
     public string InventoryRoot { get; } = Directory.CreateTempSubdirectory("wheelhouse-inventory-").FullName;
 
+    /// <summary>The browser origin configured in <c>Mcp:AllowedOrigins</c>.</summary>
+    public const string McpAllowedOrigin = "http://localhost:6274";
+
     /// <summary>The shared runner stub — answers the deployment reads and records what was submitted.</summary>
     public StubDeploymentGateway Deployments { get; } = new();
 
@@ -79,6 +82,8 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
                 // Tests run sampling passes explicitly; the background sampler stays off.
                 ["Operations:VitalsSampleMinutes"] = "0",
                 ["Deployment:FollowSeconds"] = "0",
+                // A browser client the operator allowed, beside the console's own origin.
+                ["Mcp:AllowedOrigins:0"] = McpAllowedOrigin,
             }),
             ConfigureServicesHook = services =>
             {

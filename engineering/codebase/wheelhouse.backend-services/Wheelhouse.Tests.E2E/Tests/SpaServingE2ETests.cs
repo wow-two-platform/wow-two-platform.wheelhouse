@@ -55,6 +55,22 @@ public sealed class SpaServingE2ETests(WheelhouseAppFixture fixture) : Wheelhous
         body.Should().NotContain("<!doctype html");
     }
 
+    [Theory]
+    [InlineData("/.well-known/oauth-protected-resource")]
+    [InlineData("/.well-known/oauth-protected-resource/mcp")]
+    [InlineData("/.well-known/oauth-authorization-server")]
+    [InlineData("/.well-known/openid-configuration")]
+    [InlineData("/.well-known/security.txt")]
+    public async Task GetWellKnownPath_Returns404Json_NotSpaShell(string path)
+    {
+        // MCP clients probe OAuth discovery here; an HTML 200 would read as a broken authorization server.
+        var response = await AnonymousClient.GetAsync(path);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().Contain("json");
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("<div id=\"root\">");
+    }
+
     [Fact]
     public async Task GetUnknownApiRoute_WithHtmlAccept_StillReturns404Json()
     {

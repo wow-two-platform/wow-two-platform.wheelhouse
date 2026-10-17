@@ -13,7 +13,12 @@ an authenticated external client connection remains manual acceptance.
 - Keep the key in the MCP client's secret or environment storage; never commit it.
 - Keep the endpoint on Tailscale or an SSH tunnel, matching the control plane's private-network policy.
 - Browser login cookies do not authenticate the MCP endpoint.
-- Use a client supporting Streamable HTTP and a custom Bearer credential; OAuth discovery is not implemented.
+- Use a client supporting Streamable HTTP and a custom Bearer credential; OAuth discovery is not implemented, and
+  every `/.well-known/*` path answers 404.
+- A request carrying an `Origin` header gets 403 unless it is the console's own origin or listed in
+  `Mcp:AllowedOrigins` (`scheme://host[:port]`, empty by default). CLI clients send no `Origin` and pass.
+- Request bodies over 64 KiB get 413; an `initialize` or a tool call takes a few KiB at most.
+- Both checks run before authentication, in the product's `McpRequestGuard`.
 
 ## Scopes and tools
 
@@ -42,7 +47,9 @@ an authenticated external client connection remains manual acceptance.
 
 ## Delivery status
 
-The implementation uses the SDK `Ai/Mcp` host helpers. Every be sdk family reference now uses
+The implementation uses the SDK `Ai/Mcp` host helpers. The be sdk MCP host has no Origin check or endpoint body
+limit, and its SPA fallback reserves only `/api`, so the guard and the `/.well-known/*` 404 are product-local until
+the SDK provides them. Every be sdk family reference now uses
 the publicly verified `10.0.67-beta` release. No production deployment is established here.
 
 ## Adoption verification — 2026-10-06

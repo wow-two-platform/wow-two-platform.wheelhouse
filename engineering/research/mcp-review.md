@@ -16,8 +16,8 @@ write tool or secret.
 | One flat Docker network holds Postgres, both consoles, Traefik and the canary nodes and apps; any container on it reaches a console's `/mcp` without Tailscale (a key is still required) | medium | `deployment/vps/platform.compose.yml`, `vps/prepare.py` | Split into `control` (Traefik, consoles, Postgres) and `workloads` (Traefik plus product apps) |
 | No tailnet policy is kept; Tailscale's default allows every node, so canary nodes reach :443, :8443 and :22 | medium, unverified | `platform.compose.yml` only advertises `tag:canary` | Grants: owner devices → consoles; CI tag → SSH; `tag:canary` → nothing. Test from a canary node |
 | A compromised console reaches the host through its runner key on the deploy account | medium | `vps/authorize-runner.sh` | Keep tool arguments validated; later a forced-command account |
-| No Origin check (the spec says MUST, 403); mitigated by allowed hosts, key-only auth with no cookies and no CORS | low | `Api/Mcp/WheelhouseMcpConfiguration.cs` | A small middleware: a foreign Origin gets 403 |
-| `/mcp` inherits the 30 MB body limit | low | SDK request limits | About 64 KB on the endpoint |
+| No Origin check (the spec says MUST, 403); mitigated by allowed hosts, key-only auth with no cookies and no CORS | low | `Api/Mcp/WheelhouseMcpConfiguration.cs` | Done 2026-10-17: `McpRequestGuard` answers 403; `Mcp:AllowedOrigins` |
+| `/mcp` inherits the 30 MB body limit | low | SDK request limits | Done 2026-10-17: 64 KiB, then 413 |
 | The canary entry point cannot reach the consoles | ok | Console routers match their host on the `private` and `dev` entry points only | Confirm with a `Host:` header from a canary node |
 | TLS terminates at Serve; Traefik binds loopback; forwarded headers are trusted from known proxies only | ok | `platform.compose.yml` | Accept; tailnet node names appear in public certificate logs |
 
@@ -41,7 +41,7 @@ write tool or secret.
 | No rate or concurrency limit; each runner tool spawns Python and SSH for up to 110 s | medium | Rate limiting is off | A concurrency cap of 2–4 and a per-key rate limit on `/mcp` |
 | Cloud connectors (claude.ai, ChatGPT) cannot reach a tailnet-only host | ok, by design | Provider docs | Use Claude Code or Codex on tailnet devices; never Funnel |
 | With the database down, authentication fails first, so `get_health` never reports it | low | API key handler writes last use | Best-effort last-use write; `/health` for liveness |
-| OAuth-probing clients get the SPA's HTML at `/.well-known/*` | low | SPA fallback | 404 for `/.well-known/*` |
+| OAuth-probing clients get the SPA's HTML at `/.well-known/*` | low | SPA fallback | Done 2026-10-17: 404 for `/.well-known/*` |
 | Stateless mode gives older clients no in-protocol confirmation | low, blocks writes | MCP C# SDK stateless remarks | Approval for writes happens outside the protocol |
 | The 2026-07-28 protocol path is untested in Wheelhouse | low | E2E tests use 2025-11-25 | E2E coverage for discovery and the method header |
 | Protocol versions, timeouts, cancellation, argument validation, no shell | ok | SDK MCP host, `DeploymentGateway.cs` | — |

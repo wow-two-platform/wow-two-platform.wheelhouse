@@ -173,7 +173,10 @@ whose policy names the key scheme; every other endpoint stays cookie-only throug
 key management is the operator's alone. A key's actions audit as `key:{name}`.
 
 The private `/mcp` endpoint uses the SDK's stateless Streamable HTTP host (`Ai/Mcp`). Every request authenticates
-with a Bearer integration key; browser cookies are excluded. Tool discovery and invocation both enforce scopes.
+with a Bearer integration key; browser cookies are excluded. Before authentication, a request whose `Origin` is
+neither the console's own nor in `Mcp:AllowedOrigins` gets 403, a request without one (a CLI client) passes, and a body
+over 64 KiB gets 413. Every `/.well-known/*` path answers 404 rather than the SPA shell, so an OAuth discovery probe
+learns that the endpoint takes keys only. Tool discovery and invocation both enforce scopes.
 `catalog:read` lists projects; `deployments:read` lists servers, targets and deployment history and reads target
 state, readiness, vitals and control-plane health. Tools call existing mediator queries. Their response projections
 omit credential paths, settings paths and secret namespaces. The [MCP runbook](../deployment/mcp.md) owns connection

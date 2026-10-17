@@ -167,6 +167,50 @@ public sealed class McpE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBas
     }
 
     [Fact]
+    public async Task ForeignOrigin_IsRefusedBeforeAuthentication()
+    {
+        var key = await CreateKeyAsync("catalog:read");
+        using var client = KeyClient(key.Secret);
+
+        (await SendAsync(client, "tools/list", origin: "https://rebound.example")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await SendAsync(client, "tools/list", origin: "http://localhost:8443")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await SendAsync(client, "tools/list", origin: "null")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await SendAsync(AnonymousClient, "tools/list", origin: "https://rebound.example")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task ConsoleAndConfiguredOrigins_AndOriginlessClients_ReachTheTools()
+    {
+        var key = await CreateKeyAsync("catalog:read");
+        using var client = KeyClient(key.Secret);
+
+        // The test host is reached at http://localhost, so that is the console's own origin here.
+        foreach (var origin in new[] { "http://localhost", WheelhouseAppFixture.McpAllowedOrigin, null })
+        {
+            using var list = await ReadAsync(await SendAsync(client, "tools/list", origin: origin));
+            Names(list).Should().Equal("list_projects");
+        }
+    }
+
+    [Fact]
+    public async Task OversizedBody_Is413_WhetherDeclaredOrStreamed()
+    {
+        var key = await CreateKeyAsync("deployments:read");
+        using var client = KeyClient(key.Secret);
+
+        var declared = new ByteArrayContent(new byte[64 * 1024 + 1]);
+        declared.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        (await PostAsync(client, declared)).StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+
+        // JsonContent streams without a Content-Length, so only the bytes read can bound it.
+        (await PostAsync(client, ToolCall(new string('a', 70_000)))).StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+
+        // A body within the limit still reaches the tool, which refuses the name itself.
+        using var within = await ReadAsync(await PostAsync(client, ToolCall(new string('a', 60_000))));
+        within.RootElement.GetProperty("result").GetProperty("isError").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Revocation_StopsMcpAccessOnTheFollowingRequest()
     {
         var key = await CreateKeyAsync("catalog:read", "deployments:read");
@@ -227,14 +271,22 @@ public sealed class McpE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBas
     private static async Task<JsonDocument> CallAsync(HttpClient client, string name, object? arguments = null) =>
         await ReadAsync(await SendAsync(client, "tools/call", new { name, arguments = arguments ?? new { } }));
 
-    private static Task<HttpResponseMessage> SendAsync(HttpClient client, string method, object? parameters = null)
+    private static Task<HttpResponseMessage> SendAsync(
+        HttpClient client, string method, object? parameters = null, string? origin = null) =>
+        PostAsync(client, JsonContent.Create(new { jsonrpc = "2.0", id = 1, method, @params = parameters ?? new { } }), origin);
+
+    private static JsonContent ToolCall(string target) => JsonContent.Create(new
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
-        {
-            Content = JsonContent.Create(new { jsonrpc = "2.0", id = 1, method, @params = parameters ?? new { } })
-        };
+        jsonrpc = "2.0", id = 1, method = "tools/call", @params = new { name = "check_target", arguments = new { target } }
+    });
+
+    private static Task<HttpResponseMessage> PostAsync(HttpClient client, HttpContent content, string? origin = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = content };
         request.Headers.Add("Accept", "application/json, text/event-stream");
         request.Headers.Add("MCP-Protocol-Version", "2025-11-25");
+        if (origin is not null)
+            request.Headers.Add("Origin", origin);
         return client.SendAsync(request);
     }
 
