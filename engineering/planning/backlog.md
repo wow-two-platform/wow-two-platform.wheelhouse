@@ -126,6 +126,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Cost per product and host | feature | Feeds the micro-SaaS kill gates |
 | Host view with capacity and a portfolio matrix | feature | Beside the per-environment service map |
 | Teardown with a final backup and archive | feature | |
+| Fix the console requesting icons a repository doesn't have | fix | Return no icon URL when the repo has none; the console now remembers each 404 for 12 hours |
 | Zero-to-live scaffold from the product template | feature | Repository, CI, first deployment |
 | Ability to build one product from several repositories | feature | Parked 2026-10-17: components, each repo with its own manifest and releases, grouped Product → Environment → Component → Service; every product is single-repo today |
 
