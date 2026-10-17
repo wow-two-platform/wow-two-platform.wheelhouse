@@ -5,7 +5,7 @@ import type { DeploymentJob } from "@/domain/deployments";
 import { EnvironmentHealthRules, type EnvironmentReading } from "@/domain/overview";
 
 /**
- * Each product's dev, test and prod health and its newest deployment, from the targets, vitals, deployment stats and
+ * Each product's dev and prod health and its newest deployment, from the targets, vitals, deployment stats and
  * history the console already reads. Nothing here asks the host for more.
  */
 export function useProductReadings() {

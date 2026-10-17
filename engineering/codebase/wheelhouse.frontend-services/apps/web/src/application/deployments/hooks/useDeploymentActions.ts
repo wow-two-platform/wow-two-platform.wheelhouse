@@ -23,12 +23,12 @@ export function useStartDeployment() {
         target,
         release,
         confirm,
-        skipTestPass,
+        skipDevPass,
       }: {
         target: string;
         release: string;
         confirm?: string;
-        skipTestPass?: boolean;
+        skipDevPass?: boolean;
       },
       { signal },
     ) =>
@@ -36,7 +36,7 @@ export function useStartDeployment() {
         target,
         release,
         confirm,
-        skipTestPass,
+        skipDevPass,
         signal,
       ),
     invalidates: ({ target }) => [

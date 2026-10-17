@@ -91,7 +91,9 @@ test("environment health reads targets, vitals and stats, worst first, and marks
   ] };
   const readings = EnvironmentHealthRules.ofProduct("foreverpin", [dev, prod], { vitals });
   assert.deepEqual(readings.map((item) => [item.environment, item.health]),
-    [["dev", "healthy"], ["test", "missing"], ["prod", "failing"]]);
+    [["dev", "healthy"], ["prod", "failing"]]);
+  assert.deepEqual(EnvironmentHealthRules.ofProduct("foreverpin", [prod], { vitals }).map((item) => [item.environment, item.health]),
+    [["dev", "missing"], ["prod", "failing"]]);
   assert.deepEqual(EnvironmentHealthRules.ofProduct("foreverpin", [dev], { vitals: undefined })[0].health, "unknown");
   const stats = { targets: [{ targetId: dev.id, failingSince: "2026-10-16T00:00:00Z" }] };
   assert.equal(EnvironmentHealthRules.ofTarget(dev, { vitals, stats }), "failing");

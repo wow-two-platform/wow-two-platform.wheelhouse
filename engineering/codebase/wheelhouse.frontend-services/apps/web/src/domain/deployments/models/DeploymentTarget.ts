@@ -6,12 +6,10 @@ export interface DeploymentTarget {
   serverId: string;
   provider: string;
   host: string;
-  /** Dev takes a build of any commit or branch; test and prod take published releases. */
+  /** Dev takes a build of any commit or branch; prod takes published releases only. */
   acceptsCandidates: boolean;
-  /** Test also takes a build of the product's `test` branch. */
-  acceptsTestBuilds: boolean;
   /** Prod on the local server deploys only after the operator types the target ID. */
   needsConfirmation: boolean;
-  /** Prod takes a release only after it succeeded on test; typing the target ID skips the pass. */
-  requiresTestPass: boolean;
+  /** Prod takes a release only after it succeeded on dev; typing the target ID skips the pass. */
+  requiresDevPass: boolean;
 }

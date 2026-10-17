@@ -22,20 +22,20 @@ const bundle = await build({
 const domain = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
 after(() => stop());
 
-test("environments follow the promotion path dev, test, prod, never the alphabet", () => {
-  assert.deepEqual(domain.EnvironmentOrder, ["dev", "test", "prod"]);
+test("environments follow the promotion path dev, then prod; the retired test sorts after it", () => {
+  assert.deepEqual(domain.EnvironmentOrder, ["dev", "prod"]);
   assert.deepEqual(domain.EnvironmentOrder, Object.values(domain.DeploymentEnvironment));
-  const sorted = ["prod", "rehearsal", "test", "dev"].sort((a, b) => domain.environmentRank(a) - domain.environmentRank(b));
-  assert.deepEqual(sorted, ["dev", "test", "prod", "rehearsal"]);
+  const sorted = ["prod", "test", "dev"].sort((a, b) => domain.environmentRank(a) - domain.environmentRank(b));
+  assert.deepEqual(sorted, ["dev", "prod", "test"]);
 });
 
 test("the comparison lines environments up along the path whatever order the targets arrive in", () => {
-  const targets = ["prod", "dev", "test"].map((environment) =>
+  const targets = ["prod", "dev"].map((environment) =>
     target({ id: `foreverpin-${environment}`, environment }),
   );
-  const comparison = domain.compareEnvironments(targets, [undefined, undefined, undefined], []);
+  const comparison = domain.compareEnvironments(targets, [undefined, undefined], []);
   assert.deepEqual(
     comparison.columns.map((column) => column.environment),
-    ["dev", "test", "prod"],
+    ["dev", "prod"],
   );
 });

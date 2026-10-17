@@ -16,7 +16,7 @@ import WorkspaceSection from '../components/WorkspaceSection.vue';
 
 /**
  * The portfolio home: what needs attention, the pins, then every workspace in the operator's order with its products'
- * dev, test and prod health and last deploy. Inactive products stay hidden until "Show inactive" is on.
+ * dev and prod health and last deploy. Inactive products stay hidden until "Show inactive" is on.
  */
 defineOptions({ name: 'HomePage' });
 const portfolio = usePortfolio();

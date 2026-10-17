@@ -261,7 +261,7 @@ test("sends a typed prod confirmation and an explicit build action", async () =>
     target: "foreverpin-prod",
     release: "release",
     confirm: "foreverpin-prod",
-    skipTestPass: true,
+    skipDevPass: true,
   });
   assert.equal(
     requests[2].url,
@@ -281,7 +281,7 @@ test("decodes environment rules, commit builds, and only http site links", async
           { id: "foreverpin-dev", product: "foreverpin", environment: "dev",
             serverId: "local", provider: "Local", host: "127.0.0.1",
             acceptsCandidates: true, needsConfirmation: false },
-          { id: "legacy", product: "foreverpin", environment: "test",
+          { id: "legacy", product: "foreverpin", environment: "prod",
             serverId: "local", provider: "Local", host: "127.0.0.1" },
         ],
       });
@@ -307,8 +307,8 @@ test("decodes environment rules, commit builds, and only http site links", async
   };
   const targets = await deploymentsApi.listTargets();
   assert.deepEqual(
-    targets.value.map((item) => [item.acceptsCandidates, item.needsConfirmation]),
-    [[true, false], [false, false]],
+    targets.value.map((item) => [item.acceptsCandidates, item.needsConfirmation, item.requiresDevPass]),
+    [[true, false, false], [false, false, false]],
   );
   const releases = await deploymentsApi.listReleases();
   assert.deepEqual(releases.value.map((item) => item.kind), ["candidate", "release"]);
@@ -382,26 +382,29 @@ test("pages the audit trail and names each action and chain break in words", asy
 test("lines environments up dev to prod and offers each published release to the next one", () => {
   const target = (environment) => ({ id: `pin-${environment}`, product: "pin", environment, serverId: "local",
     provider: "Local", host: "127.0.0.1", acceptsCandidates: environment === "dev", needsConfirmation: false,
-    requiresTestPass: environment === "prod" });
+    requiresDevPass: environment === "prod" });
   const state = (release, kind, versions) => ({ targetId: "", project: "", condition: "ready", active: null,
     current: { id: "job", release, kind, versions } });
   const releases = [{ id: "pin-v1-1", product: "pin", release: "v1.1", kind: "release", prerelease: false,
     publishedAt: "2026-09-28T00:00:00Z", provider: "github" }];
   const comparison = compareEnvironments(
-    [target("prod"), target("dev"), target("test")],
+    [target("prod"), target("dev")],
     [
       state("v1.0", "release", { api: { version: "1.0", changedIn: "v1.0" } }),
-      state("sha-abc", "candidate", { api: { version: "1.1+abc", changedIn: "sha-abc" } }),
       state("v1.1", "release", { api: { version: "1.1", changedIn: "v1.1" } }),
     ],
     releases,
   );
-  assert.deepEqual(comparison.columns.map((column) => column.environment), ["dev", "test", "prod"]);
-  assert.equal(comparison.columns[0].promotion, null); // a commit's build never leaves dev
-  assert.deepEqual(comparison.columns[1].promotion,
+  assert.deepEqual(comparison.columns.map((column) => column.environment), ["dev", "prod"]);
+  assert.deepEqual(comparison.columns[0].promotion,
     { targetId: "pin-prod", environment: "prod", bundleId: "pin-v1-1", release: "v1.1" });
-  assert.deepEqual(comparison.rows[0].pending, [true, true, false]);
-  const unread = compareEnvironments([target("test"), target("prod")],
+  assert.equal(comparison.columns[1].promotion, null); // prod is the end of the path
+  assert.deepEqual(comparison.rows[0].pending, [true, false]);
+  const built = compareEnvironments([target("dev"), target("prod")],
+    [state("sha-abc", "candidate", { api: { version: "1.1+abc", changedIn: "sha-abc" } }),
+      state("v1.0", "release", { api: { version: "1.0", changedIn: "v1.0" } })], releases);
+  assert.equal(built.columns[0].promotion, null); // a commit's build never leaves dev
+  const unread = compareEnvironments([target("dev"), target("prod")],
     [state("v1.1", "release", {}), undefined], releases);
   assert.equal(unread.columns[0].promotion, null);
   assert.equal(unread.columns[1].read, false);

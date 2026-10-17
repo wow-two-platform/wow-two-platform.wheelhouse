@@ -30,7 +30,7 @@ import { useTargetStates } from "@/application/deployments";
 import { compareEnvironments } from "@/domain/deployments";
 
 /** Lays a product's environments side by side: each service's version per environment, and the release each
- * environment could hand to the next one along dev → test → prod. */
+ * environment could hand to the next one along dev → prod. */
 defineOptions({ name: "EnvironmentCompare" });
 const props = withDefaults(defineProps<EnvironmentCompareProps>(), { hiddenServices: () => [] });
 const emit = defineEmits<{ promote: [selection: { target: string; release: string }] }>();

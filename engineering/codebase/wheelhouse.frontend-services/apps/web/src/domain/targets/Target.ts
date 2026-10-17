@@ -1,12 +1,12 @@
-/** Which stage of a product a target runs. */
+/** Which stage of a product a target runs: every `main` release deploys to dev, then is promoted to prod.
+ * `test` was retired on 2026-10-17; old records naming it read "test (retired)". */
 export const DeploymentEnvironment = {
   Dev: 'dev',
-  Test: 'test',
   Prod: 'prod',
 } as const;
 export type DeploymentEnvironment = (typeof DeploymentEnvironment)[keyof typeof DeploymentEnvironment];
 
-/** The promotion path every product follows — dev, test, prod — in the order `DeploymentEnvironment` declares. */
+/** The promotion path every product follows — dev, then prod — in the order `DeploymentEnvironment` declares. */
 export const EnvironmentOrder: readonly DeploymentEnvironment[] = Object.values(DeploymentEnvironment);
 
 /** An environment's place on the promotion path; an unknown environment sorts after it. */

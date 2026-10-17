@@ -63,7 +63,7 @@ export const EnvironmentHealthRules = {
   },
 
   /**
-   * Dev, test and prod for one product, in promotion order. An environment with several targets shows the worst of
+   * Dev and prod for one product, in promotion order. An environment with several targets shows the worst of
    * them, so a failing one is never hidden behind a healthy one.
    */
   ofProduct: (

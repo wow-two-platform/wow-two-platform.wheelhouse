@@ -83,7 +83,7 @@ const outcome = useDeploymentOutcome(jobId, () => (jobId.value ? JobStatus.Queue
 const selectedTarget = computed(() =>
   targets.data.value?.find((item) => item.id === target.value),
 );
-// Dev takes a build of any commit or branch; test also takes a `test` branch build; prod takes releases only.
+// Dev takes a build of any commit or branch; prod takes releases only.
 const takesBuilds = computed(
   () => selectedTarget.value?.acceptsCandidates === true,
 );
@@ -91,14 +91,11 @@ const available = computed(() =>
   (releases.data.value ?? []).filter(
     (item) =>
       item.product === selectedTarget.value?.product &&
-      (takesBuilds.value ||
-        item.kind === "release" ||
-        (selectedTarget.value?.acceptsTestBuilds === true &&
-          item.branch === "test")),
+      (takesBuilds.value || item.kind === "release"),
   ),
 );
 const typed = ref("");
-const skipTest = ref(false);
+const skipDev = ref(false);
 const branch = ref("main");
 const requested = ref<string | null>(null);
 const buildProduct = () =>
@@ -110,19 +107,19 @@ const cannotBuild = computed(() =>
   (commits.data.value ?? []).some((entry) => entry.canBuild === false),
 );
 const build = useRequestBuild();
-// Local prod always needs the typed target ID; any prod needs it to skip the test pass.
+// Local prod always needs the typed target ID; any prod needs it to skip the dev pass.
 const typedNeeded = computed(
-  () => Boolean(selectedTarget.value?.needsConfirmation) || skipTest.value,
+  () => Boolean(selectedTarget.value?.needsConfirmation) || skipDev.value,
 );
 const confirmed = computed(
   () => !typedNeeded.value || typed.value === target.value,
 );
 const typedLabel = computed(() =>
-  selectedTarget.value?.needsConfirmation && skipTest.value
+  selectedTarget.value?.needsConfirmation && skipDev.value
     ? `Type ${target.value} to confirm`
     : selectedTarget.value?.needsConfirmation
       ? `Type ${target.value} to deploy prod to the local server`
-      : `Type ${target.value} to deploy without a test pass`,
+      : `Type ${target.value} to deploy without a dev pass`,
 );
 const settled = computed(
   () => outcome.data.value?.status === JobStatus.Succeeded,
@@ -157,7 +154,7 @@ watch(
     jobId.value = null;
     readiness.value = null;
     typed.value = "";
-    skipTest.value = false;
+    skipDev.value = false;
     requested.value = null;
     check.reset();
     start.reset();
@@ -171,7 +168,7 @@ watch(
 watch([target, release], () => {
   readiness.value = null;
   typed.value = "";
-  skipTest.value = false;
+  skipDev.value = false;
   check.reset();
 });
 
@@ -245,7 +242,7 @@ async function deploy(): Promise<void> {
     target: target.value,
     release: release.value,
     ...(typedNeeded.value ? { confirm: typed.value } : {}),
-    ...(skipTest.value ? { skipTestPass: true } : {}),
+    ...(skipDev.value ? { skipDevPass: true } : {}),
   });
   if (!result.ok) return;
   jobId.value = result.value.id;
@@ -546,14 +543,14 @@ function close(open: boolean): void {
               }}
             </dd>
           </dl>
-          <template v-if="selectedTarget?.requiresTestPass">
+          <template v-if="selectedTarget?.requiresDevPass">
             <p class="text-sm text-muted-foreground">
-              Prod takes a release only after it succeeded on test. Check
+              Prod takes a release only after it succeeded on dev. Check
               readiness to see whether this one has.
             </p>
             <CheckboxField
-              v-model="skipTest"
-              label="Deploy without a test pass"
+              v-model="skipDev"
+              label="Deploy without a dev pass"
               :disabled="start.loading.value"
             />
           </template>

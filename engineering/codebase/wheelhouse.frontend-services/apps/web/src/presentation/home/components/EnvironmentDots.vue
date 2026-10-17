@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { EnvironmentReading } from '@/domain/overview';
 
-/** A product's dev, test and prod health as three labelled dots. */
+/** A product's dev and prod health as two labelled dots. */
 export interface EnvironmentDotsProps {
   /** The readings in promotion order; undefined draws placeholders during a first load. */
   readonly environments: readonly EnvironmentReading[] | undefined;
@@ -22,7 +22,7 @@ import { EnvironmentHealthLabels } from '@/domain/overview';
 import { EnvironmentOrder } from '@/domain/targets';
 import { SkeletonState } from '@wow-two-beta/fe/presentation/feedback';
 
-/** Shows dev, test and prod side by side, each named, with a dot for its health; colour is never the only signal. */
+/** Shows dev and prod side by side, each named, with a dot for its health; colour is never the only signal. */
 defineOptions({ name: 'EnvironmentDots' });
 const props = defineProps<EnvironmentDotsProps>();
 defineSlots<{}>();

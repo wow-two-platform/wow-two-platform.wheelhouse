@@ -45,7 +45,7 @@ test("tool pages sit under Home with their own title, and Home alone is Home", (
 test("links carry only the parameters they need", () => {
   assert.deepEqual(productLocation("wheelhouse"), { path: "/p/wheelhouse", query: {} });
   assert.deepEqual(serviceLocation("wheelhouse", "api", null), { path: "/p/wheelhouse", query: { inspect: "service", item: "api" } });
-  assert.deepEqual(serviceLocation("wheelhouse", "api", "test").query, { env: "test", inspect: "service", item: "api" });
+  assert.deepEqual(serviceLocation("wheelhouse", "api", "prod").query, { env: "prod", inspect: "service", item: "api" });
   assert.equal(ConsolePaths.workspace("a b"), "/w/a%20b");
 });
 
