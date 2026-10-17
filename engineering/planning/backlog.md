@@ -55,6 +55,11 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 |---|---|---|
 | Checkpoint the newest audit entries outside Wheelhouse | feature | The chain shows edits, not truncation of the newest entries |
 | Ability to see an unreadable host in the attention list | feature | Servers shows the reason since v0.4; the attention list skips it |
+| Show the manifest's service names and descriptions on the product page | feature | They showed only on the old Products detail, removed in v0.5 |
+| Compact the product header on phones | fix | It pushes the tabs below the fold |
+| Preselect the product's targets when deploying from its Releases tab | feature | |
+| Point vault attention items at `/secrets?vault=…` | fix | |
+| Drop the duplicate "Host vitals are unavailable" line under an unreachable server's alert | fix | |
 
 ---
 
@@ -76,6 +81,11 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Item | Type | Notes |
 |---|---|---|
 | Rehearse every deployment flow from dev on a sample app | feature | Promotion from dev to prod ships; this proves each flow end to end |
+| Store deployment history in PostgreSQL with retention | engineering | v0.5 reads runner job files on each request (3 s cache) and filters in the API; SQL filtering and retention scale past a few hundred jobs |
+| Point MCP `list_deployments` at the filtered history | engineering | It still reads `GET /api/deployments`; the v0.5 history endpoints take workspace, product, service, status and dates |
+| Clear the history cache on submit and reconcile | fix | A new rollout can take up to 3 s to appear |
+| Show the release in a deployment page's breadcrumb | fix | The trail reads "Deployment" because the route title doesn't reach `ScopeBar` |
+| Cover the Deployments page with browser end-to-end tests | engineering | Grid, filters, list paging and the detail page have unit tests only |
 | Roll prod back by promoting the previous release | feature | Dev-to-prod promotion exists |
 | Run each app's migrations as a rollout step and show their state | feature | User decision 2026-10-14: apps own their SQL; the runner migrates with the new image between pull and start; prod waits for test. The app database's own migration journal stays the authority; Wheelhouse reads it at deploy and keeps what it saw in the job history, never a second table. Rollback scripts run only on a confirmed operator action |
 | Mount a GitHub token that can start product builds | check | `WHEELHOUSE_GITHUB_TOKEN_FILE` with Actions write on each product; the Build button needs it |
