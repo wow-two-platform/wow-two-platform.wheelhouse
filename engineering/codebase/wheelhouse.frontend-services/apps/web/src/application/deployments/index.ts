@@ -18,6 +18,15 @@ export {
   useTargetCheck,
 } from "./hooks/useDeploymentActions";
 export {
+  operatorTimeZone,
+  useDeploymentActivity,
+  useDeploymentDetail,
+  useDeploymentPages,
+  useDeploymentPromotions,
+  useDeploymentRangeStats,
+  useRunningDeployments,
+} from "./hooks/useDeploymentHistoryViews";
+export {
   DeploymentQueryKeys,
   DeploymentView,
   mergeDeploymentQuery,

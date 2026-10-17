@@ -1,4 +1,14 @@
 export {
+  DeploymentOutcome,
+  type CurrentStep,
+  type DeploymentItem,
+} from './models/DeploymentItem';
+export type { DeploymentPage } from './models/DeploymentPage';
+export type { ActivityDay, DeploymentActivity } from './models/DeploymentActivity';
+export type { DeploymentRangeStats, RangeMeasures } from './models/DeploymentRangeStats';
+export type { DeploymentPromotion } from './models/DeploymentPromotion';
+export type { DeploymentDetail, DeploymentReference, DeploymentSite, ServiceChange } from './models/DeploymentDetail';
+export {
   DefaultFilter,
   DefaultPreset,
   DefaultRange,
@@ -21,3 +31,13 @@ export {
   type EntityTree,
   type EntityWorkspace,
 } from './EntitySelection';
+export {
+  ActivityCalendar,
+  type Calendar,
+  type CalendarCell,
+  type CalendarMonth,
+  type CalendarWeek,
+  type CellLevel,
+  type CellMark,
+  type CellTone,
+} from './ActivityCalendar';

@@ -14,4 +14,12 @@ export const DeploymentKeys = {
   commitsAll: ["deployments", "commits"] as const,
   logs: (target: string, service: string, tail: number) =>
     ["deployments", "logs", target, service, tail] as const,
+  /** Every history view (pages, calendar, measures, promotions): what a finished rollout changes. */
+  historyViews: ["deployments", "history", "view"] as const,
+  historyPage: (filter: string, limit: number) => ["deployments", "history", "view", "page", filter, limit] as const,
+  activity: (filter: string, tz: string) => ["deployments", "history", "view", "activity", filter, tz] as const,
+  rangeStats: (filter: string) => ["deployments", "history", "view", "stats", filter] as const,
+  promotions: (filter: string) => ["deployments", "history", "view", "promotions", filter] as const,
+  running: (filter: string) => ["deployments", "history", "running", filter] as const,
+  detail: (id: string) => ["deployments", "history", "detail", id] as const,
 };

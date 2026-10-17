@@ -3,6 +3,7 @@ import { createQueryClient, useQueryCache } from '@wow-two-beta/fe/query';
 
 export {
   useAppQuery,
+  useAppInfiniteQuery,
   useAppQueries,
   useAppMutation,
   useOptimisticMutation,
