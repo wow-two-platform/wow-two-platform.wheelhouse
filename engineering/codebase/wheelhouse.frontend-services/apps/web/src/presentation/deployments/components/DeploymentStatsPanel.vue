@@ -22,12 +22,12 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
-} from "@wow-two-beta/ui-vue/presentation/display";
+} from "@wow-two-beta/fe/presentation/display";
 import {
   DataRegion,
   SkeletonStateSlot,
   useSkeletonItems,
-} from "@wow-two-beta/ui-vue/presentation/feedback";
+} from "@wow-two-beta/fe/presentation/feedback";
 
 import { useDeploymentStats } from "@/application/deployments";
 import { Measures } from "@/domain/common";

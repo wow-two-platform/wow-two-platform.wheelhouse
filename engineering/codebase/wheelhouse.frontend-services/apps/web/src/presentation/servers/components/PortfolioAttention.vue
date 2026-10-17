@@ -2,8 +2,8 @@
 import { computed } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { CheckCircle2 } from "lucide-vue-next";
-import { Text } from "@wow-two-beta/ui-vue/presentation/display";
-import { DataRegion, useSkeletonItems } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { Text } from "@wow-two-beta/fe/presentation/display";
+import { DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
 import { useDeploymentStats } from "@/application/deployments";
 import { useVaults, useVaultsHygiene } from "@/application/secrets";
 import { useServerVitals } from "@/application/servers";

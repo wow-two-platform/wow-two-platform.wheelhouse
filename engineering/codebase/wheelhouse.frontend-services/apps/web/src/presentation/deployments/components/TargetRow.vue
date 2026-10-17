@@ -13,9 +13,9 @@ export interface TargetRowProps {
 <script setup lang="ts">
 import { computed, ref } from "vue";
 
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Badge, Text } from "@wow-two-beta/ui-vue/presentation/display";
-import { Spinner } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Badge, Text } from "@wow-two-beta/fe/presentation/display";
+import { Spinner } from "@wow-two-beta/fe/presentation/feedback";
 
 import { useRefresh } from "@/bootstrap/query";
 import { useTargetState } from "@/application/deployments";

@@ -25,13 +25,13 @@ import {
   GitBranch,
   GitCommitHorizontal,
 } from "lucide-vue-next";
-import { Button, CopyButton } from "@wow-two-beta/ui-vue/presentation/actions";
+import { Button, CopyButton } from "@wow-two-beta/fe/presentation/actions";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@wow-two-beta/ui-vue/presentation/overlays";
-import { Spinner } from "@wow-two-beta/ui-vue/presentation/feedback";
+} from "@wow-two-beta/fe/presentation/overlays";
+import { Spinner } from "@wow-two-beta/fe/presentation/feedback";
 import {
   useProductBranches,
   useProductCommits,

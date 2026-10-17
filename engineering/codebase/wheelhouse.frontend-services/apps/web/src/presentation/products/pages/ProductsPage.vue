@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { Plus } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { PageHeaderActions } from "@wow-two-beta/ui-vue/presentation/layout";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
 import ProductsPanel from "../components/ProductsPanel.vue";
 
 /** Renders the products route with its toolbar action. */

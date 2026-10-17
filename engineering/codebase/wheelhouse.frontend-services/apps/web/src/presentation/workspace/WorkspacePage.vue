@@ -13,14 +13,14 @@ import {
   Server,
   ShieldCheck,
 } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
 import {
   Badge,
   DescriptionGroup,
   EmptyState,
   RelativeTime,
   Text,
-} from "@wow-two-beta/ui-vue/presentation/display";
+} from "@wow-two-beta/fe/presentation/display";
 import {
   SearchInput,
   SelectPicker,
@@ -30,18 +30,18 @@ import {
   SelectPickerItem,
   ToggleGroup,
   ToggleInput,
-} from "@wow-two-beta/ui-vue/presentation/forms";
+} from "@wow-two-beta/fe/presentation/forms";
 import {
   DataRegion,
   SkeletonState,
   SkeletonStateGroup,
   SkeletonStateSlot,
   useSkeletonItems,
-} from "@wow-two-beta/ui-vue/presentation/feedback";
+} from "@wow-two-beta/fe/presentation/feedback";
 import {
   ListDetailLayout,
   PageHeaderActions,
-} from "@wow-two-beta/ui-vue/presentation/layout";
+} from "@wow-two-beta/fe/presentation/layout";
 import { useProducts } from "@/application/products";
 import { useServerVitals } from "@/application/servers";
 import {

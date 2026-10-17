@@ -9,8 +9,8 @@ import {
 import {
   ApiFailureFactory,
   type ApiFailure,
-} from "@wow-two-beta/ui-vue/foundation/http";
-import type { Result } from "@wow-two-beta/ui-vue/foundation/results";
+} from "@wow-two-beta/fe/foundation/http";
+import type { Result } from "@wow-two-beta/fe/foundation/results";
 import { useQueryCache } from "@/bootstrap/query";
 import { secretsApi } from "@/integration/secrets";
 import { SecretKeys } from "./SecretKeys";

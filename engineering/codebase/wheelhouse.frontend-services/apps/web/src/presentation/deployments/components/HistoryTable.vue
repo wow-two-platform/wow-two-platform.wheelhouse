@@ -15,7 +15,7 @@ export interface HistoryTableProps {
 <script setup lang="ts">
 import { RotateCcw } from "lucide-vue-next";
 
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
 import {
   RelativeTime,
   Table,
@@ -24,8 +24,8 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
-} from "@wow-two-beta/ui-vue/presentation/display";
-import { useSkeletonItems } from "@wow-two-beta/ui-vue/presentation/feedback";
+} from "@wow-two-beta/fe/presentation/display";
+import { useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
 
 import { JobStatus } from "@/domain/deployments";
 

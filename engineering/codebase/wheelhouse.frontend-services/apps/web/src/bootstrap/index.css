@@ -1,16 +1,16 @@
 @import 'tailwindcss';
 
-/* Beta UI design tokens (@theme) shipped by the library — gives us bg-primary,
+/* The fe sdk design tokens (@theme) — gives us bg-primary,
    text-foreground, bg-card, border-border, etc. */
-@import '@wow-two-beta/ui-vue/styles.css';
+@import '@wow-two-beta/fe/styles.css';
 
 /* The shared platform theme: Wheelhouse's chalk and forest palette and its ambient backdrop, applied by
    `theme-platform` on <html> (index.html) with `dark` from the colour-mode provider. After styles.css, so it wins. */
-@import '@wow-two-beta/ui-vue/themes.css';
+@import '@wow-two-beta/fe/themes.css';
 
-/* Tailwind v4 ignores node_modules by default — point it at the beta UI's compiled
+/* Tailwind v4 ignores node_modules by default — point it at the fe sdk's compiled
    output so the utility classes its components emit actually get generated. */
-@source '../../node_modules/@wow-two-beta/ui-vue/dist';
+@source '../../node_modules/@wow-two-beta/fe/dist';
 
 /* App-only tokens the platform theme does not carry: navigation follows the theme's palette; the chart series
    are Wheelhouse's own. */

@@ -25,7 +25,7 @@ engineering/                      ← the execution (build · ship · run)
     │   ├── Wheelhouse.Infrastructure← integration clients and bounded deployment gateway
     │   ├── Wheelhouse.Persistence   ← EF Core PostgreSQL context, repositories, SQL migrations
     │   └── Wheelhouse.Api           ← slim host, controllers, serves the SPA from wwwroot
-    ├── wheelhouse.frontend-services/        ← pnpm workspace; apps/web = Vue 3 + Vite + Tailwind v4 + @wow-two-beta/ui-vue
+    ├── wheelhouse.frontend-services/        ← pnpm workspace; apps/web = Vue 3 + Vite + Tailwind v4 + @wow-two-beta/fe
     └── wheelhouse.runner-services/          ← Python runner: fleet, release catalog, SSH transport, target executor
 ```
 
@@ -63,7 +63,7 @@ Container startup requires an explicit database password and owner login; see
 ## Stack
 
 - **Backend:** .NET 10, Clean Architecture, the be sdk `WoW2.Sdk.Beta.Be` (mediator, results, identity), EF Core 10 + PostgreSQL.
-- **Frontend:** Vue 3, Vue Router, Vite 6, Tailwind v4, `@wow-two-beta/ui-vue` component library.
+- **Frontend:** Vue 3, Vue Router, Vite 6, Tailwind v4, the fe sdk `@wow-two-beta/fe`.
 - **Runtime (target):** Docker + Traefik per Hetzner VPS; images from GHCR.
 
 The original design spec lives in the workspace at `wow-two-ws/ideas/wheelhouse-spec.md`.

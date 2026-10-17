@@ -11,10 +11,10 @@ export interface CreateKeyModalProps {
 
 <script setup lang="ts">
 import { onBeforeUnmount, ref, shallowRef, watch } from "vue";
-import { Button, CopyButton } from "@wow-two-beta/ui-vue/presentation/actions";
-import { CodeText } from "@wow-two-beta/ui-vue/presentation/display";
-import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
-import { CheckboxField, Field, TextInput } from "@wow-two-beta/ui-vue/presentation/forms";
+import { Button, CopyButton } from "@wow-two-beta/fe/presentation/actions";
+import { CodeText } from "@wow-two-beta/fe/presentation/display";
+import { Alert } from "@wow-two-beta/fe/presentation/feedback";
+import { CheckboxField, Field, TextInput } from "@wow-two-beta/fe/presentation/forms";
 import {
   Modal,
   ModalBody,
@@ -23,7 +23,7 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from "@wow-two-beta/ui-vue/presentation/overlays";
+} from "@wow-two-beta/fe/presentation/overlays";
 import { useAppForm } from "@/bootstrap/form";
 import {
   createIntegrationKeyForm,

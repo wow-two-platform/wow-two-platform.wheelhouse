@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defaultMapFieldPath } from "@wow-two-beta/ui-vue/forms-engine";
+import { defaultMapFieldPath } from "@wow-two-beta/fe/forms-engine";
 import { InventoryRules } from "@/domain/common";
 import type { Product, ReleaseImage, SaveProductRequest } from "@/domain/products";
 

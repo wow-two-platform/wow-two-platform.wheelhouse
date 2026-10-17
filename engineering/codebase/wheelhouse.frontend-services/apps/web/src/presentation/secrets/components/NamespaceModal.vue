@@ -8,9 +8,9 @@ export interface NamespaceModalProps {
 
 <script setup lang="ts">
 import { onBeforeUnmount, watch } from "vue";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
-import { Field, TextInput } from "@wow-two-beta/ui-vue/presentation/forms";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Alert } from "@wow-two-beta/fe/presentation/feedback";
+import { Field, TextInput } from "@wow-two-beta/fe/presentation/forms";
 import {
   Modal,
   ModalContent,
@@ -19,7 +19,7 @@ import {
   ModalDescription,
   ModalBody,
   ModalFooter,
-} from "@wow-two-beta/ui-vue/presentation/overlays";
+} from "@wow-two-beta/fe/presentation/overlays";
 import { useAppForm } from "@/bootstrap/form";
 import { useNamespaceCreate } from "@/application/secrets";
 import {

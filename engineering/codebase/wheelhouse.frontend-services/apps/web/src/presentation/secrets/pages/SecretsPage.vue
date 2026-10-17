@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { ChevronLeft, KeyRound } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
 import {
   Badge,
   EmptyState,
@@ -9,20 +9,20 @@ import {
   TabsGroupList,
   TabsGroupTab,
   TabsGroupPanel,
-} from "@wow-two-beta/ui-vue/presentation/display";
+} from "@wow-two-beta/fe/presentation/display";
 import {
   Alert,
   DataRegion,
   SkeletonStateGroup,
   SkeletonStateSlot,
-} from "@wow-two-beta/ui-vue/presentation/feedback";
+} from "@wow-two-beta/fe/presentation/feedback";
 import {
   SelectPicker,
   SelectPickerTrigger,
   SelectPickerValue,
   SelectPickerContent,
   SelectPickerItem,
-} from "@wow-two-beta/ui-vue/presentation/forms";
+} from "@wow-two-beta/fe/presentation/forms";
 import {
   SecretKeys,
   useVaultHygiene,
@@ -35,7 +35,7 @@ import { VaultStatus } from "@/domain/secrets";
 import {
   ListDetailLayout,
   PageHeaderActions,
-} from "@wow-two-beta/ui-vue/presentation/layout";
+} from "@wow-two-beta/fe/presentation/layout";
 import { Panel, RefreshButton } from "@/presentation/common/components";
 import { useListDetailRoute } from "@/presentation/common/hooks";
 import NamespaceList from "../components/NamespaceList.vue";
@@ -222,6 +222,7 @@ function selectNamespace(slug: string): void {
           :is-detail-open="listDetail.isDetailOpen.value"
           list-width="15rem"
           back-label="Namespaces"
+          back-class="mb-0 bg-card px-2 pt-2"
           class="min-h-96 overflow-hidden rounded-2xl border border-border"
           @back="listDetail.back"
         >
@@ -238,11 +239,9 @@ function selectNamespace(slug: string): void {
           </template>
           <!-- The pane has no gutter of its own, so the phone back control sits in a bar above the namespace. -->
           <template #back="{ back, label }">
-            <div class="-mb-2 bg-card px-2 pt-2">
-              <Button variant="ghost" tone="neutral" size="sm" @click="back"
-                ><template #leading><ChevronLeft :size="16" /></template>{{ label }}</Button
-              >
-            </div>
+            <Button variant="ghost" tone="neutral" size="sm" @click="back"
+              ><template #leading><ChevronLeft :size="16" /></template>{{ label }}</Button
+            >
           </template>
           <template #detail>
             <section class="h-full min-w-0 bg-card p-4 lg:p-5">

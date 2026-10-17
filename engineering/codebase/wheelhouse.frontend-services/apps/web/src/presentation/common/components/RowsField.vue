@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { AppForm } from "@wow-two-beta/ui-vue/forms-engine";
+import type { AppForm } from "@wow-two-beta/fe/forms-engine";
 
 /** One column of a rows field. */
 export interface RowsFieldColumn {
@@ -25,9 +25,9 @@ export interface RowsFieldProps<TValues extends object> {
 <script setup lang="ts" generic="TValues extends object">
 import { computed } from "vue";
 import { Plus, X } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Field, NumberInput, TextInput } from "@wow-two-beta/ui-vue/presentation/forms";
-import { useFieldArray } from "@wow-two-beta/ui-vue/forms-engine";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Field, NumberInput, TextInput } from "@wow-two-beta/fe/presentation/forms";
+import { useFieldArray } from "@wow-two-beta/fe/forms-engine";
 
 /** Renders column headings, a row of inputs per record with its remove control, the list's own errors and one add
  * control. Cells and the list take the host's refusals at their own paths. */

@@ -1,4 +1,4 @@
-import { formatBytes, formatDuration } from '@wow-two-beta/ui-vue/foundation/formatters';
+import { formatBytes, formatDuration } from '@wow-two-beta/fe/foundation/formatters';
 
 const DAY_MS = 86_400_000;
 const MOMENT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });

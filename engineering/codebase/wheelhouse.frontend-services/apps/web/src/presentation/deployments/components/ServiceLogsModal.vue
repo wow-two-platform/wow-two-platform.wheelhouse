@@ -13,15 +13,15 @@ export interface ServiceLogsModalProps {
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Alert, Spinner } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Alert, Spinner } from "@wow-two-beta/fe/presentation/feedback";
 import {
   SelectPicker,
   SelectPickerContent,
   SelectPickerItem,
   SelectPickerTrigger,
   SelectPickerValue,
-} from "@wow-two-beta/ui-vue/presentation/forms";
+} from "@wow-two-beta/fe/presentation/forms";
 import {
   Modal,
   ModalBody,
@@ -30,7 +30,7 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from "@wow-two-beta/ui-vue/presentation/overlays";
+} from "@wow-two-beta/fe/presentation/overlays";
 
 import { useRefresh } from "@/bootstrap/query";
 import { useServiceLogs } from "@/application/deployments";

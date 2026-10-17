@@ -9,4 +9,4 @@ export {
 export {
   ApiError,
   type ApiFailure,
-} from "@wow-two-beta/ui-vue/foundation/http";
+} from "@wow-two-beta/fe/foundation/http";

@@ -11,7 +11,7 @@ export interface TokensTableProps {
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from "vue";
 import { Plus } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
 import {
   Badge,
   RelativeTime,
@@ -21,14 +21,14 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
-} from "@wow-two-beta/ui-vue/presentation/display";
+} from "@wow-two-beta/fe/presentation/display";
 import {
   DataRegion,
   SkeletonStateSlot,
   StatusIndicator,
   useSkeletonItems,
-} from "@wow-two-beta/ui-vue/presentation/feedback";
-import { ConfirmPopover } from "@wow-two-beta/ui-vue/presentation/overlays";
+} from "@wow-two-beta/fe/presentation/feedback";
+import { ConfirmPopover } from "@wow-two-beta/fe/presentation/overlays";
 import { useTokenChanges, useVaultTokens } from "@/application/secrets";
 import MintTokenModal from "./MintTokenModal.vue";
 

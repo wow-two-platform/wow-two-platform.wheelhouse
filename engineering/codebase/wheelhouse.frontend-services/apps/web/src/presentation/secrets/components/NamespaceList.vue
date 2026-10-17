@@ -9,9 +9,9 @@ export interface NamespaceListProps {
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { Plus } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Text } from "@wow-two-beta/ui-vue/presentation/display";
-import { DataRegion, useSkeletonItems } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Text } from "@wow-two-beta/fe/presentation/display";
+import { DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
 import { useVaultNamespaces } from "@/application/secrets";
 import NamespaceModal from "./NamespaceModal.vue";
 

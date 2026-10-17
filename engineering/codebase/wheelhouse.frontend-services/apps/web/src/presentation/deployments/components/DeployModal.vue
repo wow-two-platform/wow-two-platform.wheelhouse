@@ -18,8 +18,8 @@ export interface DeployModalProps {
 import { computed, ref, shallowRef, watch } from "vue";
 import { ArrowLeft, Hammer, Rocket, ShieldCheck } from "lucide-vue-next";
 
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Alert, Spinner } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Alert, Spinner } from "@wow-two-beta/fe/presentation/feedback";
 import {
   Field,
   SelectPicker,
@@ -29,7 +29,7 @@ import {
   SelectPickerValue,
   CheckboxField,
   TextInput,
-} from "@wow-two-beta/ui-vue/presentation/forms";
+} from "@wow-two-beta/fe/presentation/forms";
 import {
   Modal,
   ModalBody,
@@ -39,7 +39,7 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from "@wow-two-beta/ui-vue/presentation/overlays";
+} from "@wow-two-beta/fe/presentation/overlays";
 
 import {
   useDeploymentOutcome,

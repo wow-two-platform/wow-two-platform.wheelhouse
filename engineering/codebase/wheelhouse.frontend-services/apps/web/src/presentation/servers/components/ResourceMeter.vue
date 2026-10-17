@@ -8,8 +8,8 @@ export interface ResourceMeterProps {
 }
 </script>
 <script setup lang="ts">
-import { Text } from '@wow-two-beta/ui-vue/presentation/display';
-import { MeterBar, useSkeletonState } from '@wow-two-beta/ui-vue/presentation/feedback';
+import { Text } from '@wow-two-beta/fe/presentation/display';
+import { MeterBar, useSkeletonState } from '@wow-two-beta/fe/presentation/feedback';
 import { USAGE_THRESHOLDS } from '@/domain/servers';
 
 /** Presents a current resource snapshot without inventing history or unknown values. */

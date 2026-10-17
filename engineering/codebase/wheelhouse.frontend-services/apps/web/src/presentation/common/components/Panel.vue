@@ -6,7 +6,7 @@ export interface PanelProps {
 }
 </script>
 <script setup lang="ts">
-import { Card, SectionHeading } from '@wow-two-beta/ui-vue/presentation/display';
+import { Card, SectionHeading } from '@wow-two-beta/fe/presentation/display';
 
 /**
  * Groups related operational data and its local actions. The SDK heading's smallest step is `text-lg`, so the

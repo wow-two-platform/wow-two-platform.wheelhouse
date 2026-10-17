@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { KeyRound, Plus } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
 import {
   Badge,
   RelativeTime,
@@ -11,10 +11,10 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
-} from "@wow-two-beta/ui-vue/presentation/display";
-import { Alert, DataRegion, useSkeletonItems } from "@wow-two-beta/ui-vue/presentation/feedback";
-import { ConfirmPopover } from "@wow-two-beta/ui-vue/presentation/overlays";
-import { PageHeaderActions } from "@wow-two-beta/ui-vue/presentation/layout";
+} from "@wow-two-beta/fe/presentation/display";
+import { Alert, DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
+import { ConfirmPopover } from "@wow-two-beta/fe/presentation/overlays";
+import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
 import { useIntegrationKeys } from "@/application/integrations";
 import type { IntegrationKey } from "@/domain/integrations";
 import { Panel } from "@/presentation/common/components";

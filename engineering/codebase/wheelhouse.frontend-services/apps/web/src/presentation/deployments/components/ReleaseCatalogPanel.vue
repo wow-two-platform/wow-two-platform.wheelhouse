@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { Rocket } from "lucide-vue-next";
 
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
 import {
   Badge,
   RelativeTime,
@@ -13,15 +13,15 @@ import {
   TableHeaderCell,
   TableRow,
   Text,
-} from "@wow-two-beta/ui-vue/presentation/display";
-import { DataRegion, useSkeletonItems } from "@wow-two-beta/ui-vue/presentation/feedback";
+} from "@wow-two-beta/fe/presentation/display";
+import { DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
 import {
   SelectPicker,
   SelectPickerContent,
   SelectPickerItem,
   SelectPickerTrigger,
   SelectPickerValue,
-} from "@wow-two-beta/ui-vue/presentation/forms";
+} from "@wow-two-beta/fe/presentation/forms";
 
 import { useRefresh } from "@/bootstrap/query";
 import { useReleaseArtifacts } from "@/application/deployments";

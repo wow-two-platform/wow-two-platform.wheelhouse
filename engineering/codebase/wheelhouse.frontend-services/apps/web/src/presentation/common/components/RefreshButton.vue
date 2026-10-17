@@ -14,7 +14,7 @@ export interface RefreshButtonProps {
 </script>
 <script setup lang="ts">
 import { RefreshCw } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
 
 /**
  * Swaps the refresh icon for the SDK spinner and dims while running, keeping the label and the width (`Button`

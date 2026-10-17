@@ -11,7 +11,7 @@ export interface JobStatusIndicatorProps {
 </script>
 
 <script setup lang="ts">
-import { StatusIndicator } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { StatusIndicator } from "@wow-two-beta/fe/presentation/feedback";
 
 import { DeploymentExtensions } from "@/domain/deployments";
 

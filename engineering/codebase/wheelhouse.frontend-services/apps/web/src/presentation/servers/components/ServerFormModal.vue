@@ -13,8 +13,8 @@ export interface ServerFormModalProps {
 
 <script setup lang="ts">
 import { ref } from "vue";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 import {
   Field,
   NumberInput,
@@ -25,7 +25,7 @@ import {
   SelectPickerValue,
   TagsInput,
   TextInput,
-} from "@wow-two-beta/ui-vue/presentation/forms";
+} from "@wow-two-beta/fe/presentation/forms";
 import {
   Modal,
   ModalBody,
@@ -34,8 +34,8 @@ import {
   ModalHeader,
   ModalTitle,
   ModalSize,
-} from "@wow-two-beta/ui-vue/presentation/overlays";
-import { useFormDialogSession } from "@wow-two-beta/ui-vue/forms-engine";
+} from "@wow-two-beta/fe/presentation/overlays";
+import { useFormDialogSession } from "@wow-two-beta/fe/forms-engine";
 import { useAppForm } from "@/bootstrap/form";
 import {
   serverFieldPath,

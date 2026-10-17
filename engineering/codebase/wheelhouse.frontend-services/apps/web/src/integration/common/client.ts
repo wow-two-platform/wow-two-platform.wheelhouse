@@ -3,11 +3,11 @@ import {
   createRequestScope,
   ApiFailureFactory,
   type ApiFailure,
-} from "@wow-two-beta/ui-vue/foundation/http";
+} from "@wow-two-beta/fe/foundation/http";
 import {
   ResultExtensions,
   type Result,
-} from "@wow-two-beta/ui-vue/foundation/results";
+} from "@wow-two-beta/fe/foundation/results";
 import type { ZodType } from "zod";
 
 const sessionScope = createRequestScope();

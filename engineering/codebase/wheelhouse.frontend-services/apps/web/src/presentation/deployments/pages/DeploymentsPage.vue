@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Rocket } from "lucide-vue-next";
 
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { DataRegion, SkeletonStateGroup } from "@wow-two-beta/ui-vue/presentation/feedback";
-import { PageHeaderActions } from "@wow-two-beta/ui-vue/presentation/layout";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { DataRegion, SkeletonStateGroup } from "@wow-two-beta/fe/presentation/feedback";
+import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
 
 import { useRefresh } from "@/bootstrap/query";
 import { useDeploymentHistory } from "@/application/deployments";

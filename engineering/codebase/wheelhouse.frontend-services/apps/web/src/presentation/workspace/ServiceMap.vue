@@ -24,9 +24,9 @@ import {
   Layers,
   Server,
 } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Badge, EmptyState, RelativeTime } from "@wow-two-beta/ui-vue/presentation/display";
-import { CanvasArea } from "@wow-two-beta/ui-vue/presentation/layout";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Badge, EmptyState, RelativeTime } from "@wow-two-beta/fe/presentation/display";
+import { CanvasArea } from "@wow-two-beta/fe/presentation/layout";
 import { TopologyAvailability } from "@/domain/topology";
 import {
   buildServiceMapLayout,

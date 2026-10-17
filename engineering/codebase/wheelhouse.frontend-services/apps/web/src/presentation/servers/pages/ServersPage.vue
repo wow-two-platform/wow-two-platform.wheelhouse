@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { RouterLink } from 'vue-router';
 import { KeyRound, Pencil, Plus, Server as ServerIcon } from 'lucide-vue-next';
-import { Button } from '@wow-two-beta/ui-vue/presentation/actions';
+import { Button } from '@wow-two-beta/fe/presentation/actions';
 import {
   Badge,
   RelativeTime,
@@ -13,16 +13,16 @@ import {
   TableCell,
   TableHeaderCell,
   Text,
-} from '@wow-two-beta/ui-vue/presentation/display';
-import { DataRegion, useSkeletonItems } from '@wow-two-beta/ui-vue/presentation/feedback';
+} from '@wow-two-beta/fe/presentation/display';
+import { DataRegion, useSkeletonItems } from '@wow-two-beta/fe/presentation/feedback';
 import {
   SelectPicker,
   SelectPickerTrigger,
   SelectPickerValue,
   SelectPickerContent,
   SelectPickerItem,
-} from '@wow-two-beta/ui-vue/presentation/forms';
-import { PageHeaderActions } from '@wow-two-beta/ui-vue/presentation/layout';
+} from '@wow-two-beta/fe/presentation/forms';
+import { PageHeaderActions } from '@wow-two-beta/fe/presentation/layout';
 import { useServerChanges, useServers, useServerVitals, useVitalsHistory } from '@/application/servers';
 import { useVaultDefinitions } from '@/application/secrets';
 import { useDeploymentTargets } from '@/application/deployments';

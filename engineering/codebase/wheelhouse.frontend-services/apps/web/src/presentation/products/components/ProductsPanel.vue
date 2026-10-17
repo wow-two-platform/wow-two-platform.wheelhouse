@@ -9,9 +9,9 @@ export interface ProductsPanelProps {
 import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { ChevronLeft, ChevronRight, ExternalLink, KeyRound, Package, Pencil, Plus, Search } from "lucide-vue-next";
-import { Button, CopyButton } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Badge, Text } from "@wow-two-beta/ui-vue/presentation/display";
-import { Alert, DataRegion, useSkeletonItems } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { Button, CopyButton } from "@wow-two-beta/fe/presentation/actions";
+import { Badge, Text } from "@wow-two-beta/fe/presentation/display";
+import { Alert, DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
 import {
   SearchInput,
   SelectPicker,
@@ -19,8 +19,8 @@ import {
   SelectPickerItem,
   SelectPickerTrigger,
   SelectPickerValue,
-} from "@wow-two-beta/ui-vue/presentation/forms";
-import { ListDetailLayout } from "@wow-two-beta/ui-vue/presentation/layout";
+} from "@wow-two-beta/fe/presentation/forms";
+import { ListDetailLayout } from "@wow-two-beta/fe/presentation/layout";
 import { useProducts } from "@/application/products";
 import { failureReason } from "@/integration/common";
 import { RefreshButton } from "@/presentation/common/components";
@@ -147,6 +147,7 @@ async function changeLifecycle(value: string | null): Promise<void> {
   <ListDetailLayout
     :is-detail-open="listDetail.isDetailOpen.value"
     back-label="Products"
+    back-class="mb-0 bg-card px-3 pt-2"
     class="wh-glass min-h-[26rem] overflow-hidden rounded-2xl border"
     @back="listDetail.back"
   >
@@ -224,11 +225,9 @@ async function changeLifecycle(value: string | null): Promise<void> {
 
     <!-- The pane has no gutter of its own, so the phone back control sits in a bar above the details. -->
     <template #back="{ back, label }">
-      <div class="-mb-2 bg-card px-3 pt-2">
-        <Button variant="ghost" tone="neutral" size="sm" @click="back"
-          ><template #leading><ChevronLeft :size="16" /></template>{{ label }}</Button
-        >
-      </div>
+      <Button variant="ghost" tone="neutral" size="sm" @click="back"
+        ><template #leading><ChevronLeft :size="16" /></template>{{ label }}</Button
+      >
     </template>
     <template #detail>
       <section aria-label="Product details" class="h-full min-w-0 bg-card p-5 sm:p-7">

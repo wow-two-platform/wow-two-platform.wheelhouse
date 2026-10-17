@@ -1,4 +1,4 @@
-import { createAppRouter, type AppRoute, type LazyRoute } from '@wow-two-beta/ui-vue/router';
+import { createAppRouter, type AppRoute, type LazyRoute } from '@wow-two-beta/fe/router';
 
 /** Keeps primary destinations stable while route content loads on demand. */
 export const AppPlaces = [

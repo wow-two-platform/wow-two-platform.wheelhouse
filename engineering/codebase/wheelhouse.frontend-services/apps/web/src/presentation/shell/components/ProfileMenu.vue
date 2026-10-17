@@ -13,8 +13,8 @@ export interface ProfileMenuProps {
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { Check, ChevronDown, KeyRound, LogOut, Monitor, Moon, Sun } from 'lucide-vue-next';
-import { useColorMode } from '@wow-two-beta/ui-vue/foundation/primitives';
-import { Avatar } from '@wow-two-beta/ui-vue/presentation/display';
+import { useColorMode } from '@wow-two-beta/fe/foundation/primitives';
+import { Avatar } from '@wow-two-beta/fe/presentation/display';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -24,7 +24,7 @@ import {
   MenuRadioGroup,
   MenuRadioItem,
   MenuSeparator,
-} from '@wow-two-beta/ui-vue/presentation/nav';
+} from '@wow-two-beta/fe/presentation/nav';
 
 /** Keeps appearance and account actions available from every workspace destination. */
 defineOptions({ name: 'ProfileMenu' });

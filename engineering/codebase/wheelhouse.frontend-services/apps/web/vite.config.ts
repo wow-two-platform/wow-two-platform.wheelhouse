@@ -3,7 +3,7 @@ import vue from "@vitejs/plugin-vue";
 import tailwindcss from "@tailwindcss/vite";
 import mkcert from "vite-plugin-mkcert";
 import { fileURLToPath } from "node:url";
-import { colorModeScript } from "@wow-two-beta/ui-vue/foundation/primitives";
+import { colorModeScript } from "@wow-two-beta/fe/foundation/primitives";
 import { ThemeStorageKey } from "./src/bootstrap/theme";
 
 /** Holds the build's version: CI passes `APP_VERSION`; a local build is `dev`. */

@@ -28,7 +28,7 @@ const aliases = new Map([
   ["@/bootstrap/query", cacheUrl],
   [
     "@/bootstrap/form",
-    import.meta.resolve("@wow-two-beta/ui-vue/forms-engine/house"),
+    import.meta.resolve("@wow-two-beta/fe/forms-engine/house"),
   ],
 ]);
 

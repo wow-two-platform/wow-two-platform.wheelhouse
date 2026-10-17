@@ -10,13 +10,13 @@ export interface SetSecretModalProps {
 
 <script setup lang="ts">
 import { onBeforeUnmount, watch } from "vue";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 import {
   Field,
   PasswordInput,
   TextInput,
-} from "@wow-two-beta/ui-vue/presentation/forms";
+} from "@wow-two-beta/fe/presentation/forms";
 import {
   Modal,
   ModalContent,
@@ -25,7 +25,7 @@ import {
   ModalDescription,
   ModalBody,
   ModalFooter,
-} from "@wow-two-beta/ui-vue/presentation/overlays";
+} from "@wow-two-beta/fe/presentation/overlays";
 import { useAppForm } from "@/bootstrap/form";
 import { useSecretChanges } from "@/application/secrets";
 import {

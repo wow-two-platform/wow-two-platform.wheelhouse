@@ -14,7 +14,7 @@ export interface TrendLineProps {
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { Text } from "@wow-two-beta/ui-vue/presentation/display";
+import { Text } from "@wow-two-beta/fe/presentation/display";
 
 import { USAGE_THRESHOLDS } from "@/domain/servers";
 

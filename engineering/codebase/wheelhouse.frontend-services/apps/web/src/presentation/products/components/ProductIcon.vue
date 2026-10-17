@@ -26,8 +26,8 @@ const SizeClass = {
 <script setup lang="ts">
 import { computed } from "vue";
 import { useProductIcon } from "@/application/products/useProductIcon";
-import { useColorMode } from "@wow-two-beta/ui-vue/foundation/primitives";
-import { Avatar } from "@wow-two-beta/ui-vue/presentation/display";
+import { useColorMode } from "@wow-two-beta/fe/foundation/primitives";
+import { Avatar } from "@wow-two-beta/fe/presentation/display";
 
 /**
  * Renders the product's own icon for the active theme on the SDK `Avatar`, falling back to a stable tinted monogram so

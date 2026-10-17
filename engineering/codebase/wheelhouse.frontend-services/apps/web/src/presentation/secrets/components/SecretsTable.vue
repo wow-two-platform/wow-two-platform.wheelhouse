@@ -14,7 +14,7 @@ interface SecretEditor {
 <script setup lang="ts">
 import { computed, shallowRef, watch } from "vue";
 import { KeyRound, Plus } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
 import {
   Badge,
   RelativeTime,
@@ -24,14 +24,14 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
-} from "@wow-two-beta/ui-vue/presentation/display";
+} from "@wow-two-beta/fe/presentation/display";
 import {
   Alert,
   DataRegion,
   SkeletonStateSlot,
   StatusIndicator,
   useSkeletonItems,
-} from "@wow-two-beta/ui-vue/presentation/feedback";
+} from "@wow-two-beta/fe/presentation/feedback";
 import { useSecretChanges, useVaultSecrets } from "@/application/secrets";
 import { SecretState } from "@/domain/secrets";
 import SetSecretModal from "./SetSecretModal.vue";

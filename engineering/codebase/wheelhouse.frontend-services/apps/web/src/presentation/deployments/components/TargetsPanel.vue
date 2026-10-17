@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, DataRegion, useSkeletonItems } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { Alert, DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
 
 import {
   useDeploymentTargets,

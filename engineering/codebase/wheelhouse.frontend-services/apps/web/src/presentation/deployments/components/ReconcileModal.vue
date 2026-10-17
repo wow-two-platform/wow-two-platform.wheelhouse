@@ -16,9 +16,9 @@ export interface ReconcileModalProps {
 import { failureReason } from "@/integration/common";
 import { computed, ref, watch } from "vue";
 
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
-import { Field, TextInput } from "@wow-two-beta/ui-vue/presentation/forms";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Alert } from "@wow-two-beta/fe/presentation/feedback";
+import { Field, TextInput } from "@wow-two-beta/fe/presentation/forms";
 import {
   AlertModal,
   AlertModalContent,
@@ -27,7 +27,7 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from "@wow-two-beta/ui-vue/presentation/overlays";
+} from "@wow-two-beta/fe/presentation/overlays";
 
 import { useReconcileTarget } from "@/application/deployments";
 

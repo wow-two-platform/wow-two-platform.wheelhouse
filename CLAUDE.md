@@ -20,7 +20,7 @@ engineering/              ← the execution (build · ship · run)
 │   └── planning/ = backlog.md + version-track/v{X.Y}/ (newest folder = active version)
 └── codebase/
     ├── wheelhouse.backend-services/   ← .NET 10 Clean Architecture solution (Wheelhouse.BackendServices.slnx)
-    ├── wheelhouse.frontend-services/  ← pnpm workspace; apps/web = Vue 3 + Vite + Tailwind v4 + @wow-two-beta/ui-vue
+    ├── wheelhouse.frontend-services/  ← pnpm workspace; apps/web = Vue 3 + Vite + Tailwind v4 + the fe sdk @wow-two-beta/fe
     └── wheelhouse.runner-services/    ← Python operator runner: fleet, catalog, SSH transport, target executor
 ```
 
@@ -89,9 +89,9 @@ Reserve unit for I/O-free logic; everything user-facing is covered e2e. Full rul
 
 ## Beta SDK usage (per workspace direction)
 
-- **Frontend → `@wow-two-beta/ui-vue` (`0.0.16`, in `apps/web/package.json`).** Use its components (Button, Card,
+- **Frontend → fe sdk `@wow-two-beta/fe` (`0.0.18`, in `apps/web/package.json`).** Use its components (Button, Card,
   Badge, Heading, Text, EmptyState, Alert, Spinner, TextInput, …) before hand-rolling. Tailwind v4 wiring: `index.css`
-  imports `tailwindcss` + `@wow-two-beta/ui-vue/styles.css` and `@source`s the package's `dist` so its
+  imports `tailwindcss` + `@wow-two-beta/fe/styles.css` and `@source`s the package's `dist` so its
   utility classes are generated. Shared capability gaps belong in the SDK. Product composition stays local.
 - **Backend → be sdk `WoW2.Sdk.Beta.Be` (adopted, `10.0.67-beta`).** `v0.2` migrated every layer onto
   the SDK: host floor (`AddApiDefaults`/`UseApiDefaults`), mediator + results + validation, identity

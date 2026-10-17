@@ -11,8 +11,8 @@ export interface DeleteConfirmProps {
 </script>
 <script setup lang="ts">
 import { Trash2 } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { ConfirmPopover } from "@wow-two-beta/ui-vue/presentation/overlays";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { ConfirmPopover } from "@wow-two-beta/fe/presentation/overlays";
 
 /** Renders a quiet delete button whose confirmation the SDK popover asks. */
 defineOptions({ name: "DeleteConfirm" });

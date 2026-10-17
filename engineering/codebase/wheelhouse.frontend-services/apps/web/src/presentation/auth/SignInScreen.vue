@@ -7,9 +7,9 @@ export interface SignInScreenProps {
 
 <script setup lang="ts">
 import { Github } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
-import { Card } from "@wow-two-beta/ui-vue/presentation/display";
-import { Alert } from "@wow-two-beta/ui-vue/presentation/feedback";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Card } from "@wow-two-beta/fe/presentation/display";
+import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 import { BrandWordmark } from "@/presentation/shell";
 
 /** Renders the private operator sign-in gate. */

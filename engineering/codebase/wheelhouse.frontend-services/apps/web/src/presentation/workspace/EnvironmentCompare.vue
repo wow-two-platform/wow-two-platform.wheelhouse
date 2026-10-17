@@ -14,7 +14,7 @@ export interface EnvironmentCompareProps {
 import { computed } from "vue";
 import { ArrowRight } from "lucide-vue-next";
 
-import { Button } from "@wow-two-beta/ui-vue/presentation/actions";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
 import {
   Table,
   TableBody,
@@ -22,7 +22,7 @@ import {
   TableHead,
   TableHeaderCell,
   TableRow,
-} from "@wow-two-beta/ui-vue/presentation/display";
+} from "@wow-two-beta/fe/presentation/display";
 
 import { useTargetStates } from "@/application/deployments";
 import { compareEnvironments } from "@/domain/deployments";

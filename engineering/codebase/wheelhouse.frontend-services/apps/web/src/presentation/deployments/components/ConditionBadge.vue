@@ -9,7 +9,7 @@ export interface ConditionBadgeProps {
 </script>
 
 <script setup lang="ts">
-import { Badge } from "@wow-two-beta/ui-vue/presentation/display";
+import { Badge } from "@wow-two-beta/fe/presentation/display";
 
 import { DeploymentExtensions } from "@/domain/deployments";
 

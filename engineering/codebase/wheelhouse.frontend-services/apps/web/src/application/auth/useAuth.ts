@@ -2,8 +2,8 @@ import { onMounted, onScopeDispose, ref, type Ref } from "vue";
 import {
   ApiFailureFactory,
   type ApiFailure,
-} from "@wow-two-beta/ui-vue/foundation/http";
-import type { Result } from "@wow-two-beta/ui-vue/foundation/results";
+} from "@wow-two-beta/fe/foundation/http";
+import type { Result } from "@wow-two-beta/fe/foundation/results";
 import { clearQuerySession } from "@/bootstrap/query";
 import type { CurrentUser } from "@/domain/auth";
 import { authApi } from "@/integration/auth";

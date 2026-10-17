@@ -9,9 +9,9 @@ export interface AppLayoutProps {
 <script setup lang="ts">
 import { useTemplateRef, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
-import { Badge } from '@wow-two-beta/ui-vue/presentation/display';
-import { AppShell, AppShellContent, AppShellHeader, AppShellMain } from '@wow-two-beta/ui-vue/presentation/layout';
-import { AppNavLink, RoutePageHeader } from '@wow-two-beta/ui-vue/router';
+import { Badge } from '@wow-two-beta/fe/presentation/display';
+import { AppShell, AppShellContent, AppShellHeader, AppShellMain } from '@wow-two-beta/fe/presentation/layout';
+import { AppNavLink, RoutePageHeader } from '@wow-two-beta/fe/router';
 import { useApiConnection } from '@/application/system';
 import { BrandWordmark, ProfileMenu } from '@/presentation/shell';
 import { AppPlaces } from './routes';
@@ -39,12 +39,12 @@ watch(
   <!-- The shell owns the viewport: the header spans the full window and only the main region scrolls, so no
        platform scrollbar ever cuts the header short. -->
   <AppShell class="surface-ambient">
-    <!-- The SDK glass bar keeps the console's glass edge and depth. `min-w-0` stops the navigation's full width
-         widening the shell's single grid column past a phone screen; the navigation scrolls instead. -->
+    <!-- The SDK glass bar keeps the console's glass edge and depth. The shell's column floors at zero, so the
+         navigation's full width never widens it past a phone screen; the navigation scrolls instead. -->
     <AppShellHeader
       height="auto"
       variant="glass"
-      class="min-w-0 border-(--wh-glass-edge) p-0 shadow-(--wh-glass-shadow)"
+      class="border-(--wh-glass-edge) p-0 shadow-(--wh-glass-shadow)"
     >
       <!-- One row on wider screens; on phones the navigation wraps to its own row and scrolls sideways. Its edges
            follow the content's gutter and 1536px measure. -->

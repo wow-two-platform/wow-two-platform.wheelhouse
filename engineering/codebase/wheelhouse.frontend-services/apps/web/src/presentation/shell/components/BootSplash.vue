@@ -8,7 +8,7 @@ export interface BootSplashProps {
 }
 </script>
 <script setup lang="ts">
-import { SplashScreen } from '@wow-two-beta/ui-vue/presentation/feedback';
+import { SplashScreen } from '@wow-two-beta/fe/presentation/feedback';
 import BrandWordmark from './BrandWordmark.vue';
 
 /**
