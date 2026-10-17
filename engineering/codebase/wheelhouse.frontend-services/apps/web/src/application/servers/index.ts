@@ -6,6 +6,7 @@ import { DeploymentKeys } from "@/application/deployments/DeploymentKeys";
 import { ServerKeys } from "./ServerKeys";
 
 export { ServerKeys } from "./ServerKeys";
+export { hostedProductsOf, type HostedProduct } from "./ServerHosting";
 export { useServerVitals } from "./useServerVitals";
 
 /** The inventory's servers. */

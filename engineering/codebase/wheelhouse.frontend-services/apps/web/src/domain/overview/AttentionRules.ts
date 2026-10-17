@@ -78,6 +78,30 @@ export const AttentionRules = {
     return items;
   },
 
+  /**
+   * What makes one server degraded for the products it hosts: the server or its targets could not be read, it is
+   * overloaded or short on memory, or a disk is nearly full. Warnings below those lines (a disk past 75%, a restarting
+   * container) stay on the attention list without degrading the server.
+   */
+  ofServer: (vitals: ServerVitals, serverId: string): AttentionItem[] => {
+    const reading = ServerExtensions.readingOf(vitals, serverId);
+    const items: AttentionItem[] =
+      reading && !reading.ok
+        ? [{ id: `unreachable-server:${serverId}`, tone: 'danger', title: `${serverId} could not be read`,
+            detail: reading.reason ?? 'Wheelhouse could not reach the server.', href: '/servers' }]
+        : [];
+    const own = new Set(vitals.targets.filter((target) => target.serverId === serverId).map((target) => target.targetId));
+    const degrading = AttentionRules.fromVitals(vitals).filter(
+      (item) =>
+        (item.id.startsWith('unreachable:') && own.has(item.id.slice('unreachable:'.length))) ||
+        item.id === `load:${serverId}` ||
+        item.id === `memory:${serverId}` ||
+        (item.id.startsWith(`disk:${serverId}:`) && item.tone === 'danger'),
+    );
+    // An unreachable server already says why its targets could not be read.
+    return items.length ? items : degrading;
+  },
+
   /** Targets whose latest finished rollout failed and has not been followed by a success. */
   fromStats: (stats: DeploymentStats): AttentionItem[] =>
     stats.targets

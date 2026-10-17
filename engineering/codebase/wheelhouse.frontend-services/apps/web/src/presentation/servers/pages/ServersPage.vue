@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { RouterLink } from 'vue-router';
-import { KeyRound, Pencil, Plus, Server as ServerIcon } from 'lucide-vue-next';
+import { ExternalLink, KeyRound, Pencil, Plus, Server as ServerIcon } from 'lucide-vue-next';
 import { Button } from '@wow-two-beta/fe/presentation/actions';
 import {
   Badge,
@@ -23,10 +23,18 @@ import {
   SelectPickerItem,
 } from '@wow-two-beta/fe/presentation/forms';
 import { PageHeaderActions } from '@wow-two-beta/fe/presentation/layout';
-import { useServerChanges, useServers, useServerVitals, useVitalsHistory } from '@/application/servers';
+import {
+  hostedProductsOf,
+  useServerChanges,
+  useServers,
+  useServerVitals,
+  useVitalsHistory,
+  type HostedProduct,
+} from '@/application/servers';
 import { useVaultDefinitions } from '@/application/secrets';
 import { useDeploymentTargets } from '@/application/deployments';
-import { productLocation, type ConsoleLocation } from '@/application/navigation';
+import { productLocation, vaultLocation, type ConsoleLocation } from '@/application/navigation';
+import { useProducts } from '@/application/products';
 import { useRefresh } from '@/bootstrap/query';
 import {
   ServerExtensions,
@@ -39,16 +47,22 @@ import {
 } from '@/domain/servers';
 import type { VaultDefinition } from '@/domain/secrets';
 import { Measures } from '@/domain/common';
+import { AttentionRules, type AttentionItem } from '@/domain/overview';
 import { Panel, RefreshButton } from '@/presentation/common/components';
+import { ProductIcon } from '@/presentation/products';
 import PortfolioAttention from '../components/PortfolioAttention.vue';
 import ResourceMeter from '../components/ResourceMeter.vue';
 import TrendLine from '../components/TrendLine.vue';
 import ServerFormModal from '../components/ServerFormModal.vue';
 import VaultFormModal from '../components/VaultFormModal.vue';
 
-/** Presents the inventory's servers, their vaults and their current, timestamped resource readings. */
+/**
+ * Presents the inventory's servers: the products each hosts, their vaults and their current, timestamped resource
+ * readings. A server that cannot be read, or runs overloaded, names the products it affects; each opens its page.
+ */
 defineOptions({ name: 'ServersPage' });
 const servers = useServers();
+const products = useProducts();
 const serverChanges = useServerChanges();
 const vaults = useVaultDefinitions();
 const serverForm = ref<{ open: boolean; server: Server | null }>({ open: false, server: null });
@@ -70,10 +84,27 @@ const productLinks = computed(() => {
   return links;
 });
 const refresh = useRefresh(() => Promise.all([servers.refetch(), vitals.refetch(), targets.refetch()]));
+/** The products a server hosts, from the targets that place a product environment on it. */
+const hostedOf = (server: Server | undefined): HostedProduct[] =>
+  server ? hostedProductsOf(server.slug, targets.data.value ?? [], products.products.value) : [];
+/** Why a server is degraded for the products it hosts: unreachable, overloaded, short on memory or disk. */
+const impactOf = (server: Server | undefined): AttentionItem[] =>
+  server && vitals.data.value ? AttentionRules.ofServer(vitals.data.value, server.slug) : [];
+/** The impact's tone: danger when anything is unreadable or full, warning for load alone. */
+const impactTone = (items: readonly AttentionItem[]) => (items.some((item) => item.tone === 'danger') ? 'danger' : 'warning');
 const provider = ref<string | null>(null);
-const visible = computed(() =>
-  (servers.data.value ?? []).filter((server) => !provider.value || server.provider === provider.value),
-);
+/** The servers the provider filter keeps, degraded ones first — unreadable or full before overloaded — else in order. */
+const visible = computed(() => {
+  const rank = (server: Server) => {
+    const items = impactOf(server);
+    return items.length ? (impactTone(items) === 'danger' ? 0 : 1) : 2;
+  };
+  return (servers.data.value ?? [])
+    .filter((server) => !provider.value || server.provider === provider.value)
+    .map((server, index) => ({ server, index, rank: rank(server) }))
+    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .map((entry) => entry.server);
+});
 /** The servers, or placeholder panels until the first inventory read arrives. */
 const serverRows = useSkeletonItems(() => (servers.data.value ? visible.value : undefined), 2);
 /** The environment bindings, or placeholder rows until the first read arrives. */
@@ -168,6 +199,34 @@ const trendWindow = computed(() => {
               <Pencil :size="14" />
             </Button>
           </template>
+          <!-- A degraded server leads with what is wrong and the products that feel it. -->
+          <div
+            v-if="impactOf(server).length"
+            role="alert"
+            class="mb-5 rounded-xl p-4"
+            :class="
+              impactTone(impactOf(server)) === 'danger'
+                ? 'bg-destructive-soft text-destructive-soft-foreground'
+                : 'bg-warning-soft text-warning-soft-foreground'
+            "
+          >
+            <p v-for="item in impactOf(server)" :key="item.id" class="text-sm">
+              <span class="font-semibold">{{ item.title }}.</span> {{ item.detail }}
+            </p>
+            <template v-if="hostedOf(server).length">
+              <p class="mt-3 text-xs font-semibold">Affects</p>
+              <ul role="list" class="mt-1.5 flex flex-wrap gap-1.5">
+                <li v-for="item in hostedOf(server)" :key="item.slug">
+                  <RouterLink
+                    :to="productLocation(item.slug)"
+                    class="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-background/70 px-2 py-1 text-xs font-medium text-foreground hover:bg-background focus-visible:outline-2 focus-visible:outline-ring max-md:min-h-11"
+                    ><ProductIcon :product-slug="item.slug" :name="item.name" size="xs" />{{ item.name
+                    }}<span class="font-normal text-muted-foreground">{{ item.environments.join(' · ') }}</span></RouterLink
+                  >
+                </li>
+              </ul>
+            </template>
+          </div>
           <DataRegion :is-first-load="vitals.isFirstLoad.value" loading-label="Reading host vitals" class="mb-5">
             <div v-if="hostOf(server) || !server || vitals.isFirstLoad.value" class="grid gap-3 sm:grid-cols-2">
               <ResourceMeter
@@ -193,6 +252,23 @@ const trendWindow = computed(() => {
               >Host vitals are unavailable{{ hostReason(server) ? `: ${hostReason(server)}` : '' }}.</Text
             >
           </DataRegion>
+          <section class="mb-5" :aria-label="`${server?.name ?? 'Server'} products`">
+            <h3 class="mb-2 text-xs font-medium text-muted-foreground">Products</h3>
+            <DataRegion :is-first-load="targets.isFirstLoad.value || products.isFirstLoad.value" loading-label="Reading products">
+              <ul v-if="hostedOf(server).length" role="list" class="flex flex-wrap gap-2">
+                <li v-for="item in hostedOf(server)" :key="item.slug">
+                  <RouterLink
+                    :to="productLocation(item.slug)"
+                    class="inline-flex min-h-9 items-center gap-2 rounded-xl border border-border bg-background/40 px-2.5 py-1.5 text-sm font-medium transition-colors hover:border-primary/40 focus-visible:outline-2 focus-visible:outline-ring max-md:min-h-11"
+                    :class="item.active ? '' : 'opacity-60'"
+                    ><ProductIcon :product-slug="item.slug" :name="item.name" size="xs" />{{ item.name
+                    }}<span class="text-xs font-normal text-muted-foreground">{{ item.environments.join(' · ') }}</span></RouterLink
+                  >
+                </li>
+              </ul>
+              <p v-else class="text-sm text-muted-foreground">No product runs here yet.</p>
+            </DataRegion>
+          </section>
           <section class="mb-5" :aria-label="`${server?.name ?? 'Server'} trends`">
             <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h3 class="text-xs font-medium text-muted-foreground">Trends · sampled every few minutes</h3>
@@ -256,8 +332,13 @@ const trendWindow = computed(() => {
                   <Text as="span" class="min-w-0 truncate font-mono text-xs text-muted-foreground" skeleton-width="12rem">{{
                     vault?.url
                   }}</Text>
+                  <Button v-if="vault" as-child class="ml-auto" size="sm" variant="ghost" tone="neutral">
+                    <RouterLink :to="vaultLocation(vault.slug)" :title="`Administer ${vault.name}'s namespaces`"
+                      ><ExternalLink :size="14" />Secrets</RouterLink
+                    >
+                  </Button>
                   <Button
-                    class="ml-auto"
+                    :class="vault ? '' : 'ml-auto'"
                     size="sm"
                     variant="ghost"
                     tone="neutral"
