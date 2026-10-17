@@ -229,7 +229,8 @@ canary.<tailnet>      -> Tailscale container 172.30.0.12 -> Traefik canary :8084
 
 Products work on `main` only; every release deploys to dev, then is promoted to prod. Wheelhouse's migration
 `013-drop-test-environment` deletes each console's test targets on its next boot. The host keeps what the retired
-environment left until the operator removes it, as the deployment account in `/srv/wheelhouse/platform`:
+environment left until the operator removes it: copy this folder to the host and run `sudo bash retire-test.sh`,
+which does the following, as the deployment account in `/srv/wheelhouse/platform`:
 
 ```sh
 # Install this repository's platform.compose.yml as compose.yml (bootstrap.sh does the same), then drop the orphan node.

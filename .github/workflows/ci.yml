@@ -60,6 +60,7 @@ jobs:
           bash -n engineering/deployment/vps/bootstrap.sh
           bash -n engineering/deployment/vps/authorize-runner.sh
           bash -n engineering/deployment/vps/migrate-control-network.sh
+          bash -n engineering/deployment/vps/retire-test.sh
           WHEELHOUSE_DEPLOY_UID=1000 WHEELHOUSE_DEPLOY_GID=1000 docker compose -f engineering/deployment/vps/platform.compose.yml config --quiet
 
   frontend:
