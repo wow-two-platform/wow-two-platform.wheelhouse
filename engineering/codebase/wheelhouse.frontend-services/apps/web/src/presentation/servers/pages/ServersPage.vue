@@ -26,6 +26,7 @@ import { PageHeaderActions } from '@wow-two-beta/fe/presentation/layout';
 import { useServerChanges, useServers, useServerVitals, useVitalsHistory } from '@/application/servers';
 import { useVaultDefinitions } from '@/application/secrets';
 import { useDeploymentTargets } from '@/application/deployments';
+import { productLocation, type ConsoleLocation } from '@/application/navigation';
 import { useRefresh } from '@/bootstrap/query';
 import {
   ServerExtensions,
@@ -60,12 +61,12 @@ const vaultForm = ref<{ open: boolean; server: string; vault: VaultDefinition | 
 const vaultsOn = (server: string) => vaults.vaults.value.filter((vault) => vault.server === server);
 const vitals = useServerVitals();
 const targets = useDeploymentTargets();
-/** Each target opens in the workspace under its product, whose catalog slug the target names. */
-const workspaceLinks = computed(() => {
-  const links = new Map<string, { path: string; query: { product: string; target: string; inspect: string } }>();
+/** Each target opens on its product's page, in its environment, whose catalog slug the target names. */
+const productLinks = computed(() => {
+  const links = new Map<string, ConsoleLocation>();
   if (targets.loading.value || targets.error.value) return links;
   for (const target of targets.data.value ?? [])
-    links.set(target.id, { path: '/', query: { product: target.product, target: target.id, inspect: 'target' } });
+    links.set(target.id, productLocation(target.product, { env: target.environment, inspect: 'target' }));
   return links;
 });
 const refresh = useRefresh(() => Promise.all([servers.refetch(), vitals.refetch(), targets.refetch()]));
@@ -341,8 +342,8 @@ const trendWindow = computed(() => {
                 ><TableCell
                   ><div v-if="target" class="min-w-0">
                     <RouterLink
-                      v-if="workspaceLinks.has(target.id)"
-                      :to="workspaceLinks.get(target.id)!"
+                      v-if="productLinks.has(target.id)"
+                      :to="productLinks.get(target.id)!"
                       class="font-medium text-primary hover:underline"
                       >{{ target.environment }}</RouterLink
                     >

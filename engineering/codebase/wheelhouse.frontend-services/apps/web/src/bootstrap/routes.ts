@@ -1,8 +1,15 @@
 import { createAppRouter, type AppRoute, type LazyRoute } from '@wow-two-beta/fe/router';
+import { legacyProductRedirect } from '@/application/navigation/ConsolePaths';
 
-/** Keeps primary destinations stable while route content loads on demand. */
-export const AppPlaces = [
-  { path: '/', label: 'Workspace', description: 'Your products, environments, and the details that matter.' },
+/** The portfolio home: every workspace and its products. */
+export const HomePlace = {
+  path: '/',
+  label: 'Home',
+  description: 'Every workspace and its products, with what needs you first.',
+} as const;
+
+/** The portfolio-wide operations the sidebar lists under Operations. */
+export const OperationPlaces = [
   {
     path: '/deployments',
     label: 'Deployments',
@@ -10,21 +17,29 @@ export const AppPlaces = [
   },
   { path: '/servers', label: 'Servers', description: 'Your servers and their services, with current resource readings.' },
   { path: '/secrets', label: 'Secrets', description: 'Vault namespaces, write-only secrets, and product tokens.' },
-  { path: '/products', label: 'Products', description: 'Your portfolio, as the product catalog defines it.' },
   { path: '/activity', label: 'Activity', description: 'Every operator action, chained so an edited entry shows.' },
 ] as const;
 
-/** Keeps account-level destinations out of the primary navigation; the profile menu opens them. */
+/** Registry administration: products, their environments and the workspaces that group them. */
+export const ManagementPlaces = [
+  { path: '/products', label: 'Products', description: 'Your portfolio, as the product catalog defines it.' },
+] as const;
+
+/** Account-level destinations, under Settings. */
 export const SettingsPlaces = [
   { path: '/settings/keys', label: 'Integration keys', description: 'Scoped keys other programs present to read Wheelhouse.' },
 ] as const;
 
-/** A place in the console: its URL, its title and the line under it. */
-type Place = (typeof AppPlaces)[number] | (typeof SettingsPlaces)[number];
+/** A fixed place in the console: its URL, its title and the line under it. */
+type Place =
+  | typeof HomePlace
+  | (typeof OperationPlaces)[number]
+  | (typeof ManagementPlaces)[number]
+  | (typeof SettingsPlaces)[number];
 
 /** The page lazily loaded for each place. @internal */
 const Pages: Record<Place['path'], LazyRoute> = {
-  '/': () => import('@/presentation/workspace/WorkspacePage.vue'),
+  '/': () => import('@/presentation/home/pages/HomePage.vue'),
   '/deployments': () => import('@/presentation/deployments/pages/DeploymentsPage.vue'),
   '/servers': () => import('@/presentation/servers/pages/ServersPage.vue'),
   '/secrets': () => import('@/presentation/secrets/pages/SecretsPage.vue'),
@@ -33,20 +48,41 @@ const Pages: Record<Place['path'], LazyRoute> = {
   '/settings/keys': () => import('@/presentation/integrations/pages/IntegrationKeysPage.vue'),
 };
 
-/** A place's route: its handle carries the title (header and document title) and the description. @internal */
+/** A place's route: its handle carries the title (scope bar and document title) and the description. @internal */
 function placeRoute(place: Place): AppRoute {
   return { path: place.path, lazy: Pages[place.path], handle: { title: place.label, description: place.description } };
 }
 
+/** Reads a path parameter as one string. @internal */
+function param(value: unknown): string {
+  return Array.isArray(value) ? String(value[0] ?? '') : String(value ?? '');
+}
+
 /**
- * Resolves the existing public URLs to Vue route components. vue-router carries the query and hash through a redirect,
- * so `/fleet?…` lands on `/servers?…`; the explicit catch-all is matched before the SDK's own not-found route.
+ * Resolves the public URLs to route components. vue-router carries the query through a redirect, so `/fleet?…` lands on
+ * `/servers?…`; the explicit catch-all is matched before the SDK's own not-found route. An old Workspace link
+ * (`/?product=x&target=…`) opens the product's own page with its other parameters.
  */
 export const router = createAppRouter(
   [
-    ...[...AppPlaces, ...SettingsPlaces].map(placeRoute),
+    placeRoute(HomePlace),
+    {
+      path: '/w/:workspace',
+      lazy: () => import('@/presentation/workspaces/pages/WorkspacePage.vue'),
+      handle: { title: (route) => param(route.params['workspace']), description: 'A workspace and its products.' },
+    },
+    {
+      path: '/p/:product',
+      lazy: () => import('@/presentation/product/ProductPage.vue'),
+      handle: { title: (route) => param(route.params['product']), description: 'A product, environment by environment.' },
+    },
+    ...[...OperationPlaces, ...ManagementPlaces, ...SettingsPlaces].map(placeRoute),
     { path: '/fleet', redirect: '/servers' },
     { path: '*', redirect: '/' },
   ],
   { titleSuffix: 'Wheelhouse', routePersistence: false, scrollRestoration: false },
 );
+
+/* A global guard rather than the home route's own: a route's guard runs only when the route is entered, and an old
+   link followed from the home page changes only the query. */
+router.beforeEach((to) => (to.path === HomePlace.path ? (legacyProductRedirect(to.query) ?? true) : true));

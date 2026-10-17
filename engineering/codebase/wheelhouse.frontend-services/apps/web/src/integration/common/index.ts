@@ -2,6 +2,7 @@ export {
   clearHttpSession,
   failureReason,
   request,
+  requestAccepted,
   requestData,
   requestEmpty,
   type RequestOptions,

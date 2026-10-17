@@ -13,12 +13,12 @@
     "typecheck": "vue-tsc -p tsconfig.app.json --noEmit && node scripts/check-sfc.mjs",
     "build": "pnpm typecheck && vite build",
     "preview": "vite preview",
-    "test": "node --test tests/workspace/*.test.mjs",
+    "test": "node --test tests/console/*.test.mjs",
     "format": "prettier --write \"src/**/*.{ts,vue,css}\" scripts/check-sfc.mjs *.json vite.config.ts index.html"
   },
   "dependencies": {
     "@tanstack/vue-query": "^5.103.2",
-    "@wow-two-beta/fe": "0.0.18",
+    "@wow-two-beta/fe": "0.0.19",
     "lucide-vue-next": "^0.460.0",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0",

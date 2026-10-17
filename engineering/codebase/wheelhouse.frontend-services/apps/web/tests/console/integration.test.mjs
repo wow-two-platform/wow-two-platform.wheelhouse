@@ -76,7 +76,10 @@ const product = {
   slug: "test",
   name: "Test",
   description: "A test product.",
-  lifecycle: "building",
+  id: "p-test",
+  workspaceId: "w-ventures",
+  status: "active",
+  inactiveServices: [],
   repository: { name: "owner/repository", url: "https://github.com/owner/repository", defaultBranch: "main" },
   release: { asset: "test-release.tar.gz", workflow: null, images: [{ service: "api", image: "ghcr.io/owner/test/api" }] },
   homepage: null,
@@ -89,21 +92,24 @@ const product = {
   ],
 };
 
-test("serializes a lifecycle write once with its action and same-origin cookie credentials", async () => {
-  let captured;
+test("serializes a status write once with its action and same-origin cookie credentials", async () => {
+  const requests = [];
   globalThis.fetch = async (url, options) => {
-    captured = { url, options };
-    return json({ data: { ...product, lifecycle: "live" } });
+    requests.push({ url, options });
+    return requests.length === 1 ? json({ data: { ...product, status: "inactive" } }) : new Response(null, { status: 204 });
   };
-  const result = await productsApi.updateLifecycle(product.slug, "live");
-  assert.equal(result.ok, true);
-  assert.equal(result.value.lifecycle, "live");
-  assert.deepEqual(result.value.environments, product.environments);
-  assert.equal(captured.url, "/api/products/test/lifecycle");
-  assert.equal(captured.options.method, "PUT");
-  assert.equal(captured.options.credentials, "same-origin");
-  assert.equal(captured.options.headers.get("X-Wheelhouse-Action"), "lifecycle");
-  assert.deepEqual(JSON.parse(captured.options.body), { lifecycle: "live" });
+  assert.equal((await productsApi.updateStatus("p-test", "inactive")).ok, true);
+  assert.equal((await productsApi.updateServiceStatus("p-test", "api worker", "active")).ok, true);
+  assert.equal((await productsApi.moveToWorkspace("p-test", "w-platform")).ok, true);
+  assert.deepEqual(
+    requests.map(({ url, options }) => [url, options.method, options.headers.get("X-Wheelhouse-Action"), JSON.parse(options.body)]),
+    [
+      ["/api/products/p-test/status", "PUT", "status", { status: "inactive" }],
+      ["/api/products/p-test/services/api%20worker/status", "PUT", "status", { status: "active" }],
+      ["/api/products/p-test/workspace", "PUT", "workspace", { workspaceId: "w-platform" }],
+    ],
+  );
+  assert.equal(requests[0].options.credentials, "same-origin");
 });
 
 test("writes inventory rows with their own actions and decodes what the server stored", async () => {
@@ -449,7 +455,8 @@ test("accepts an explicit empty logout success", async () => {
 test("rejects a missing management envelope and malformed consumed product fields", async () => {
   for (const payload of [
     [product],
-    { data: [{ ...product, lifecycle: "invented" }] },
+    { data: [{ ...product, status: "invented" }] },
+    { data: [{ ...product, inactiveServices: undefined }] },
     { data: [{ slug: "partial" }] },
   ]) {
     globalThis.fetch = async () => json(payload);

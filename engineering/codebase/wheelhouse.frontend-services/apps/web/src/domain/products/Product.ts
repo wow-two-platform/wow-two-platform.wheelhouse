@@ -1,12 +1,9 @@
-/** Where a catalog product stands in the portfolio. */
-export const ProductLifecycle = {
-  Idea: 'idea',
-  Building: 'building',
-  Live: 'live',
-  Paused: 'paused',
-  Killed: 'killed',
+/** Whether a product or a service is in use; inactive ones stay hidden until the operator shows them. */
+export const ProductStatus = {
+  Active: 'active',
+  Inactive: 'inactive',
 } as const;
-export type ProductLifecycle = (typeof ProductLifecycle)[keyof typeof ProductLifecycle];
+export type ProductStatus = (typeof ProductStatus)[keyof typeof ProductStatus];
 
 /** A site an environment publishes; a private one is reached over the private network only. */
 export interface ProductSite {
@@ -76,8 +73,10 @@ export interface ProductIdentity {
   services: ProductServiceIdentity[];
 }
 
-/** A product as the database defines it, with the lifecycle the operator records. */
+/** A product as the database defines it, with the workspace and status the operator records. */
 export interface Product {
+  /** The product's row identifier, when the host sends one; pins and catalog entries may name a product by it. */
+  id?: string | undefined;
   /** The product's identifier everywhere: targets, releases and URLs. */
   slug: string;
   /** From the manifest when the repository carries a valid one, else the product's own row. */
@@ -86,7 +85,11 @@ export interface Product {
   /** The product's public address, from its manifest; null when it gives none. */
   homepage: string | null;
   identity: ProductIdentity;
-  lifecycle: ProductLifecycle;
+  /** The workspace the product belongs to; null while it belongs to none. */
+  workspaceId: string | null;
+  status: ProductStatus;
+  /** The services the operator marked inactive, by their key in the product's deployment. */
+  inactiveServices: string[];
   repository: ProductRepository;
   /** Null when only hand-imported bundles deploy. */
   release: ProductRelease | null;
@@ -97,6 +100,8 @@ export interface Product {
 /** A product's editable definition; the slug is fixed once the product exists. */
 export interface SaveProductRequest {
   slug?: string;
+  /** The workspace a new product joins; the host picks its default workspace when absent. Only creation sends it. */
+  workspaceId?: string;
   name: string;
   description: string;
   repository: string;

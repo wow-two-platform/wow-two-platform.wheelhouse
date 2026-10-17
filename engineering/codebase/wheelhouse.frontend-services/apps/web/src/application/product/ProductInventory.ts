@@ -1,8 +1,8 @@
 import type { DeploymentTarget } from '@/domain/deployments';
 import type { Product } from '@/domain/products';
 
-/** Represents one product in the workspace navigator, keyed by its catalog slug. */
-export interface WorkspaceProduct {
+/** Represents one product with its targets, keyed by its catalog slug. */
+export interface InventoryProduct {
   /** The product's slug, which its targets name as their product. */
   readonly key: string;
   /** The catalog entry, or null for targets whose product the catalog did not return. */
@@ -10,16 +10,16 @@ export interface WorkspaceProduct {
   readonly targets: readonly DeploymentTarget[];
 }
 
-/** Represents the complete navigator inventory, including targets outside the catalog. */
-export interface WorkspaceInventory {
-  readonly products: readonly WorkspaceProduct[];
+/** Represents the complete product inventory, including targets outside the catalog. */
+export interface ProductInventory {
+  readonly products: readonly InventoryProduct[];
 }
 
 /** Builds from successfully loaded reads: catalog products in their order, then any uncataloged target products. */
-export function buildWorkspaceInventory(
+export function buildProductInventory(
   products: readonly Product[],
   targets: readonly DeploymentTarget[],
-): WorkspaceInventory {
+): ProductInventory {
   const groups = new Map<string, DeploymentTarget[]>();
   for (const target of targets) {
     const group = groups.get(target.product) ?? [];
@@ -27,7 +27,7 @@ export function buildWorkspaceInventory(
     groups.set(target.product, group);
   }
 
-  const entries: WorkspaceProduct[] = products.map((product) => ({
+  const entries: InventoryProduct[] = products.map((product) => ({
     key: product.slug,
     product,
     targets: groups.get(product.slug) ?? [],

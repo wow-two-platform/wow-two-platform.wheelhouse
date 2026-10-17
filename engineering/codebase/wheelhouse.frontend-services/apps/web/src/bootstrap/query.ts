@@ -1,7 +1,15 @@
 import { feedbackQueryErrors } from '@wow-two-beta/fe/feedback';
 import { createQueryClient, useQueryCache } from '@wow-two-beta/fe/query';
 
-export { useAppQuery, useAppQueries, useAppMutation, useQueryCache, useRefresh, queryPlugin } from '@wow-two-beta/fe/query';
+export {
+  useAppQuery,
+  useAppQueries,
+  useAppMutation,
+  useOptimisticMutation,
+  useQueryCache,
+  useRefresh,
+  queryPlugin,
+} from '@wow-two-beta/fe/query';
 
 /**
  * Owns the operator session's in-memory server cache. A failed read or write becomes a toast (`App.vue` mounts the

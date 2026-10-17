@@ -74,6 +74,25 @@ export function requestData<T>(
   });
 }
 
+/**
+ * Sends an operator write whose answer the console does not read: any success counts, empty or with a body, and the
+ * caller reloads what changed. Failures keep their status and diagnostics.
+ */
+export async function requestAccepted(
+  path: string,
+  options: RequestOptions = {},
+): Promise<Result<void, ApiFailure>> {
+  const result = await client.request(path, {
+    ...options,
+    signal: options.signal ?? null,
+    response: "text",
+    ...(options.action
+      ? { headers: { "X-Wheelhouse-Action": options.action } }
+      : {}),
+  });
+  return result.ok ? ResultExtensions.ok(undefined) : result;
+}
+
 /** Accepts an explicitly empty successful response for logout and resource deletion. */
 export function requestEmpty(path: string, options: RequestOptions = {}) {
   return client.request(path, {

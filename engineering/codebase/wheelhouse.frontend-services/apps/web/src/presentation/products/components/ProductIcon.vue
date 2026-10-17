@@ -9,7 +9,8 @@ export interface ProductIconProps {
   readonly service?: string | null | undefined;
   /** The product's name, for the monogram and its tint. */
   readonly name: string;
-  readonly size?: "sm" | "md" | "lg";
+  /** `xs` sits in a navigation row; `sm`, `md` and `lg` in lists, cards and headers. */
+  readonly size?: "xs" | "sm" | "md" | "lg";
   /** The symbol alone beside a name, the symbol with its wordmark where the icon stands alone. */
   readonly form?: IconForm | undefined;
   /** The brand's colors, or one flat ink on a surface that tints its icons. */
@@ -18,6 +19,7 @@ export interface ProductIconProps {
 
 /** @internal The rounding and monogram type per size; the image keeps a small inset so edge-to-edge marks still breathe. */
 const SizeClass = {
+  xs: "size-5 rounded-md text-[10px] [&>img]:p-0.5!",
   sm: "size-8 rounded-lg text-xs",
   md: "size-10 rounded-lg text-sm",
   lg: "size-12 rounded-xl text-base",
@@ -56,7 +58,7 @@ const tint = computed(() => ({
 <template>
   <Avatar
     shape="square"
-    :size="props.size"
+    :size="props.size === 'xs' ? 'sm' : props.size"
     v-bind="icon.src.value ? { src: icon.src.value } : {}"
     :fallback="icon.monogram.value"
     alt=""

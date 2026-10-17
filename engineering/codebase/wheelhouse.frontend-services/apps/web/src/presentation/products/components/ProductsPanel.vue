@@ -12,14 +12,7 @@ import { ChevronLeft, ChevronRight, ExternalLink, KeyRound, Package, Pencil, Plu
 import { Button, CopyButton } from "@wow-two-beta/fe/presentation/actions";
 import { Badge, Text } from "@wow-two-beta/fe/presentation/display";
 import { Alert, DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
-import {
-  SearchInput,
-  SelectPicker,
-  SelectPickerContent,
-  SelectPickerItem,
-  SelectPickerTrigger,
-  SelectPickerValue,
-} from "@wow-two-beta/fe/presentation/forms";
+import { SearchInput } from "@wow-two-beta/fe/presentation/forms";
 import { ListDetailLayout } from "@wow-two-beta/fe/presentation/layout";
 import { useProducts } from "@/application/products";
 import { failureReason } from "@/integration/common";
@@ -28,7 +21,7 @@ import { useListDetailRoute } from "@/presentation/common/hooks";
 import { useServers } from "@/application/servers";
 import { useTargets } from "@/application/targets";
 import {
-  ProductLifecycle,
+  ProductStatusRules,
   homepageLinkOf,
   identityProblemOf,
   serviceIdentitiesOf,
@@ -40,30 +33,19 @@ import ProductIcon from "./ProductIcon.vue";
 import ProductFormModal from "./ProductFormModal.vue";
 import TargetFormModal from "./TargetFormModal.vue";
 
-/** Presents the portfolio's products with a contextual inspector: their definition, lifecycle and environments. */
+/** Presents the portfolio's products with a contextual inspector: their definition, status and environments. */
 defineOptions({ name: "ProductsPanel" });
 const props = defineProps<ProductsPanelProps>();
 const emit = defineEmits<{ "update:creating": [value: boolean] }>();
 
-/** @internal Each lifecycle's label and badge, in portfolio order. */
-const Lifecycles = [
-  { value: ProductLifecycle.Idea, label: "Idea", variant: "outline" },
-  { value: ProductLifecycle.Building, label: "Building", variant: "info" },
-  { value: ProductLifecycle.Live, label: "Live", variant: "success" },
-  { value: ProductLifecycle.Paused, label: "Paused", variant: "warning" },
-  { value: ProductLifecycle.Killed, label: "Killed", variant: "danger" },
-] as const;
-
 const productOperations = useProducts();
-const { products, isFirstLoad, hasData, error, reload, setLifecycle } = productOperations;
+const { products, isFirstLoad, hasData, error, reload } = productOperations;
 const servers = useServers();
 const editing = ref(false);
 const targetForm = ref<{ open: boolean; target: InventoryTarget | null }>({ open: false, target: null });
 const search = ref("");
-/* `?product=` names the inspected product, the same parameter the Workspace reads; on phones it opens the detail. */
+/* `?product=` names the inspected product; on phones it opens the detail. */
 const listDetail = useListDetailRoute(["product"]);
-const saving = ref(false);
-const saveError = ref<string | null>(null);
 const refreshing = ref(false);
 const refreshError = ref<string | null>(null);
 const visibleProducts = computed(() => {
@@ -85,9 +67,8 @@ const selected = computed(
     null,
 );
 const selectedSlug = computed(() => selected.value?.slug ?? null);
-/** Clears a stale save or refresh failure when the inspected product changes. */
+/** Clears a stale refresh failure when the inspected product changes. */
 watch(selectedSlug, () => {
-  saveError.value = null;
   refreshError.value = null;
 });
 const targets = useTargets(selectedSlug);
@@ -96,9 +77,9 @@ const productForm = computed(() => props.creating || editing.value);
 const environmentOf = (target: InventoryTarget) =>
   selected.value?.environments.find((environment) => environment.name === target.environment) ?? null;
 
-/** Inspects a product. The Workspace's environment and inspector parameters belonged to the previous product. */
+/** Inspects a product. */
 function selectProduct(slug: string): void {
-  void listDetail.select({ product: slug, target: null, inspect: null, item: null });
+  void listDetail.select({ product: slug });
 }
 
 /** Closes the product form, whichever opened it. */
@@ -106,11 +87,6 @@ function closeProductForm(open: boolean): void {
   if (open) return;
   editing.value = false;
   emit("update:creating", false);
-}
-
-/** Looks up a lifecycle's label and badge. @internal */
-function lifecycle(value: ProductLifecycle) {
-  return Lifecycles.find((item) => item.value === value) ?? Lifecycles[1];
 }
 
 /** Reads the product's manifest again now; a repository GitHub cannot be read for leaves the cached copy and says so. */
@@ -124,21 +100,6 @@ async function refreshIdentity(): Promise<void> {
     if (!result.ok) refreshError.value = failureReason(result.failure);
   } finally {
     refreshing.value = false;
-  }
-}
-
-/** Records the chosen lifecycle once the server accepts it. */
-async function changeLifecycle(value: string | null): Promise<void> {
-  const product = selected.value;
-  const next = Lifecycles.find((item) => item.value === value)?.value;
-  if (!product || !next || next === product.lifecycle || saving.value) return;
-  saving.value = true;
-  saveError.value = null;
-  try {
-    const result = await setLifecycle(product.slug, next);
-    if (!result.ok) saveError.value = result.failure.message;
-  } finally {
-    saving.value = false;
   }
 }
 </script>
@@ -213,9 +174,11 @@ async function changeLifecycle(value: string | null): Promise<void> {
                   {{ product?.slug }}
                 </Text>
               </div>
-              <Badge size="sm" :variant="product ? lifecycle(product.lifecycle).variant : 'neutral'">{{
-                product ? lifecycle(product.lifecycle).label : "Building"
-              }}</Badge>
+              <Badge
+                size="sm"
+                :variant="product && ProductStatusRules.isActive(product) ? 'success' : 'neutral'"
+                >{{ product && !ProductStatusRules.isActive(product) ? "Inactive" : "Active" }}</Badge
+              >
               <ChevronRight :size="16" class="shrink-0 text-muted-foreground" />
             </button>
           </div>
@@ -271,7 +234,7 @@ async function changeLifecycle(value: string | null): Promise<void> {
                 /></template>
               </Text>
             </div>
-            <div class="flex w-64 items-start gap-2">
+            <div class="flex items-start gap-2">
               <RefreshButton
                 icon-only
                 label="Refresh from repository"
@@ -281,32 +244,6 @@ async function changeLifecycle(value: string | null): Promise<void> {
               <Button variant="outline" tone="neutral" size="sm" aria-label="Edit product" @click="editing = true">
                 <Pencil :size="14" />
               </Button>
-              <div class="min-w-0 flex-1">
-              <SelectPicker
-                :model-value="selected?.lifecycle ?? null"
-                :get-option-label="(value) => lifecycle(value as ProductLifecycle).label"
-                :is-disabled="saving"
-                @update:model-value="changeLifecycle"
-                ><SelectPickerTrigger aria-label="Lifecycle"
-                  ><SelectPickerValue placeholder="Lifecycle" /></SelectPickerTrigger
-                ><SelectPickerContent
-                  ><SelectPickerItem
-                    v-for="item in Lifecycles"
-                    :key="item.value"
-                    :item-key="item.value"
-                    :label="item.label"
-                    >{{ item.label }}</SelectPickerItem
-                  ></SelectPickerContent
-                ></SelectPicker
-              >
-              <p
-                v-if="saveError"
-                role="alert"
-                class="mt-2 text-xs text-destructive"
-              >
-                {{ saveError }}
-              </p>
-              </div>
             </div>
           </div>
           <template v-if="selected">

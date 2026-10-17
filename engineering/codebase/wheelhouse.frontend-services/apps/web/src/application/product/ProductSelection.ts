@@ -1,69 +1,77 @@
 import type { DeploymentJob, DeploymentTarget } from '@/domain/deployments';
 import type { ContainerVitals, ServerVitals } from '@/domain/servers';
 
-import type { WorkspaceInventory, WorkspaceProduct } from './WorkspaceInventory';
+import type { InventoryProduct, ProductInventory } from './ProductInventory';
 
-/** Represents the requested URL selection; null means absent, while an empty string remains explicit. */
-export interface WorkspaceSelection {
+/**
+ * Represents the requested selection on a product page; null means absent, while an empty string remains explicit.
+ * The product comes from the path, the environment from `?env=`; `targetId` carries an old link's `?target=` until the
+ * page rewrites it as the environment.
+ */
+export interface ProductSelection {
   readonly productKey: string | null;
+  readonly environment: string | null;
   readonly targetId: string | null;
   readonly inspector: string | null;
   readonly itemId: string | null;
 }
 
 /** Defines a completed inventory read or an unresolved loading/error state. */
-export type WorkspaceRead<T> =
+export type SelectionRead<T> =
   | { readonly status: 'ready'; readonly data: T }
   | { readonly status: 'loading' }
   | { readonly status: 'error' };
 
 /** Represents an inspector anchored to an observed target, service or submission. */
-export type WorkspaceInspector =
+export type ProductInspector =
   | { readonly kind: 'target'; readonly target: DeploymentTarget }
   | { readonly kind: 'service'; readonly target: DeploymentTarget; readonly service: ContainerVitals }
   | { readonly kind: 'deployment'; readonly target: DeploymentTarget; readonly job: DeploymentJob };
 
-/** Defines the reads needed to resolve a requested workspace selection. */
-export interface WorkspaceSelectionInput {
-  readonly requested: WorkspaceSelection;
-  readonly inventory: WorkspaceRead<WorkspaceInventory>;
-  readonly vitals?: WorkspaceRead<ServerVitals>;
-  readonly history?: WorkspaceRead<readonly DeploymentJob[]>;
+/** Defines the reads needed to resolve a requested product selection. */
+export interface ProductSelectionInput {
+  readonly requested: ProductSelection;
+  readonly inventory: SelectionRead<ProductInventory>;
+  readonly vitals?: SelectionRead<ServerVitals>;
+  readonly history?: SelectionRead<readonly DeploymentJob[]>;
 }
 
 /** Defines why an explicit selection cannot resolve within its requested scope. */
-export type WorkspaceSelectionIssue =
+export type ProductSelectionIssue =
   | 'product-not-found' | 'ambiguous-product' | 'target-not-found' | 'ambiguous-target'
   | 'target-required' | 'invalid-inspector' | 'service-not-found' | 'ambiguous-service'
   | 'deployment-not-found' | 'ambiguous-deployment' | 'deployment-target-mismatch';
 
 /** Represents a resolved selection or the exact scope that remains unavailable. */
-export type WorkspaceSelectionResult = {
-  readonly requested: WorkspaceSelection;
-  readonly product: WorkspaceProduct | null;
+export type ProductSelectionResult = {
+  readonly requested: ProductSelection;
+  readonly product: InventoryProduct | null;
   readonly target: DeploymentTarget | null;
 } & (
-  | { readonly status: 'ready'; readonly selection: WorkspaceSelection; readonly inspector: WorkspaceInspector | null }
+  | { readonly status: 'ready'; readonly selection: ProductSelection; readonly inspector: ProductInspector | null }
   | { readonly status: 'loading' | 'error'; readonly scope: 'inventory' | 'service' | 'deployment' }
-  | { readonly status: 'unavailable'; readonly issue: WorkspaceSelectionIssue }
+  | { readonly status: 'unavailable'; readonly issue: ProductSelectionIssue }
 );
 
-/** Represents a workspace visit without an explicit product, target or inspector. */
-export const EmptyWorkspaceSelection: WorkspaceSelection = {
-  productKey: null, targetId: null, inspector: null, itemId: null,
+/** Represents a visit without an explicit product, environment or inspector. */
+export const EmptyProductSelection: ProductSelection = {
+  productKey: null, environment: null, targetId: null, inspector: null, itemId: null,
 };
 
 /** Reads literal selection identifiers without normalizing or discarding invalid explicit values. */
-export function readWorkspaceSelection(search: URLSearchParams): WorkspaceSelection {
-  return { productKey: search.get('product'), targetId: search.get('target'),
+export function readProductSelection(productKey: string | null, search: URLSearchParams): ProductSelection {
+  return { productKey, environment: search.get('env'), targetId: search.get('target'),
     inspector: search.get('inspect'), itemId: search.get('item') };
 }
 
-/** Returns updated selection parameters while preserving unrelated parameters and the original instance. */
-export function writeWorkspaceSelection(search: URLSearchParams, selection: WorkspaceSelection): URLSearchParams {
+/**
+ * Returns updated selection parameters while preserving unrelated parameters and the original instance. The
+ * environment is written as `env`; an old `target` parameter is dropped, since the environment now names it.
+ */
+export function writeProductSelection(search: URLSearchParams, selection: ProductSelection): URLSearchParams {
   const updated = new URLSearchParams(search);
-  const values = [['product', selection.productKey], ['target', selection.targetId],
-    ['inspect', selection.inspector], ['item', selection.itemId]] as const;
+  updated.delete('target');
+  const values = [['env', selection.environment], ['inspect', selection.inspector], ['item', selection.itemId]] as const;
   for (const [key, value] of values) {
     if (value === null) updated.delete(key);
     else updated.set(key, value);
@@ -71,8 +79,16 @@ export function writeWorkspaceSelection(search: URLSearchParams, selection: Work
   return updated;
 }
 
+/** The targets a request names: an old link's literal target, else the environment, else the first. @internal */
+function requestedTargets(product: InventoryProduct | null, requested: ProductSelection): readonly DeploymentTarget[] {
+  const targets = product?.targets ?? [];
+  if (requested.targetId !== null) return targets.filter((item) => item.id === requested.targetId);
+  if (requested.environment !== null) return targets.filter((item) => item.environment === requested.environment);
+  return targets.slice(0, 1);
+}
+
 /** Resolves defaults only for absent parameters; pending reads and invalid explicit identifiers never switch scope. */
-export function resolveWorkspaceSelection(input: WorkspaceSelectionInput): WorkspaceSelectionResult {
+export function resolveProductSelection(input: ProductSelectionInput): ProductSelectionResult {
   const { requested, inventory } = input;
   const empty = { requested, product: null, target: null };
   if (inventory.status !== 'ready') return { ...empty, status: inventory.status, scope: 'inventory' };
@@ -85,16 +101,15 @@ export function resolveWorkspaceSelection(input: WorkspaceSelectionInput): Works
   if (!product && requested.productKey !== null)
     return { ...empty, status: 'unavailable', issue: 'product-not-found' };
 
-  const targets = requested.targetId === null
-    ? product?.targets.slice(0, 1) ?? []
-    : product?.targets.filter((item) => item.id === requested.targetId) ?? [];
+  const targets = requestedTargets(product, requested);
   const target = targets[0] ?? null;
   const context = { requested, product, target };
   if (targets.length > 1) return { ...context, target: null, status: 'unavailable', issue: 'ambiguous-target' };
-  if (!target && requested.targetId !== null)
+  if (!target && (requested.targetId !== null || requested.environment !== null))
     return { ...context, status: 'unavailable', issue: 'target-not-found' };
 
-  const selection = { ...requested, productKey: product?.key ?? null, targetId: target?.id ?? null };
+  const selection = { ...requested, productKey: product?.key ?? null, environment: target?.environment ?? null,
+    targetId: target?.id ?? null };
   if (requested.inspector === null && requested.itemId === null)
     return { ...context, status: 'ready', selection, inspector: target ? { kind: 'target', target } : null };
   if (requested.inspector !== 'target' && requested.inspector !== 'service' && requested.inspector !== 'deployment')

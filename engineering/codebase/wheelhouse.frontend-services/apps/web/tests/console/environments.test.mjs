@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { resolve } from "node:path";
 import { build, stop } from "esbuild";
-import { target } from "./LoadWorkspaceModule.mjs";
+import { target } from "./LoadModule.mjs";
 
 // Bundle the real domain rules: the one environment order and the comparison that reads it.
 const bundle = await build({

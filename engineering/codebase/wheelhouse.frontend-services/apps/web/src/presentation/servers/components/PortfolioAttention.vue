@@ -4,44 +4,14 @@ import { RouterLink, useRoute } from "vue-router";
 import { CheckCircle2 } from "lucide-vue-next";
 import { Text } from "@wow-two-beta/fe/presentation/display";
 import { DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
-import { useDeploymentStats } from "@/application/deployments";
-import { useVaults, useVaultsHygiene } from "@/application/secrets";
-import { useServerVitals } from "@/application/servers";
-import { AttentionRules } from "@/domain/overview";
+import { usePortfolioAttention } from "@/application/overview";
 
 /** Lists what needs the operator across every product: unreachable hosts, failing containers, rotation debt. */
 defineOptions({ name: "PortfolioAttention" });
 defineSlots<{}>();
 
 const route = useRoute();
-const vitals = useServerVitals();
-const stats = useDeploymentStats();
-const vaults = useVaults();
-const hygiene = useVaultsHygiene(() => vaults.data.value ?? []);
-const attention = computed(() =>
-  AttentionRules.sort([
-    ...(vitals.data.value ? AttentionRules.fromVitals(vitals.data.value) : []),
-    ...(stats.data.value ? AttentionRules.fromStats(stats.data.value) : []),
-    ...(vaults.data.value ?? []).flatMap((vault) =>
-      AttentionRules.fromVault(vault, hygiene.byVault.value.get(vault.id)),
-    ),
-  ]),
-);
-const incomplete = computed(() =>
-  Boolean(
-    vitals.error.value ||
-    stats.error.value ||
-    vaults.error.value ||
-    hygiene.errors.value.length,
-  ),
-);
-const loading = computed(
-  () =>
-    vitals.loading.value ||
-    stats.loading.value ||
-    vaults.loading.value ||
-    hygiene.loading.value,
-);
+const { items: attention, incomplete, loading } = usePortfolioAttention();
 /** The first read: nothing to list yet while any source still loads. */
 const firstLoad = computed(() => loading.value && !attention.value.length);
 /** The items, or one placeholder row during the first read. */

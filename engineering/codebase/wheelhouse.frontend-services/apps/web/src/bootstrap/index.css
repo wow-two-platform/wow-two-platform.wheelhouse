@@ -124,3 +124,59 @@ html {
 body {
   margin: 0;
 }
+
+/* The top bar's scope trail stays on one line: ancestors truncate first, separators never do. Phones drop Home (the
+   bottom bar holds it) and keep the last two steps. The SDK Breadcrumb wraps by default; one-line truncation is an
+   fe sdk candidate. */
+.wh-scope-trail ol {
+  flex-wrap: nowrap;
+}
+.wh-scope-trail li {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wh-scope-trail li[aria-hidden='true'] {
+  flex-shrink: 0;
+  overflow: visible;
+}
+.wh-scope-trail li:last-child {
+  flex-shrink: 0;
+  max-width: 100%;
+  font-weight: 600;
+}
+@media (max-width: 767.98px) {
+  .wh-scope-trail li:nth-last-child(n + 4),
+  .wh-scope-trail li:first-child:not(:last-child),
+  .wh-scope-trail li:first-child:not(:last-child) + li {
+    display: none;
+  }
+}
+
+/* The page actions outlet: its heading is for assistive technology only, so it takes no room; a page without actions
+   leaves no empty row. On phones one action stays beside the trail; several take a row of their own under it and
+   scroll sideways inside it when they outgrow it. */
+.wh-page-actions > div:first-child {
+  display: contents;
+}
+.wh-page-actions:not(:has([data-page-header-actions] > *)) {
+  position: absolute;
+}
+@media (max-width: 767.98px) {
+  .wh-page-actions {
+    order: 9999;
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .wh-page-actions:has([data-page-header-actions] > :only-child) {
+    order: 0;
+    width: auto;
+  }
+  .wh-page-actions > div:last-child {
+    min-width: 0;
+    max-width: 100%;
+    flex-shrink: 1;
+    overflow-x: auto;
+  }
+}

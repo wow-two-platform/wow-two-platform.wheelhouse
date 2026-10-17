@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { container, loadWorkspaceModule, product, target } from './LoadWorkspaceModule.mjs';
+import { container, loadProductModule, product, target } from './LoadModule.mjs';
 
-const { buildWorkspaceInventory } = await loadWorkspaceModule('WorkspaceInventory');
-const { EmptyWorkspaceSelection, readWorkspaceSelection, resolveWorkspaceSelection, writeWorkspaceSelection } =
-  await loadWorkspaceModule('WorkspaceSelection');
+const { buildProductInventory } = await loadProductModule('ProductInventory');
+const { EmptyProductSelection, readProductSelection, resolveProductSelection, writeProductSelection } =
+  await loadProductModule('ProductSelection');
 const selectedTarget = target();
 const otherTarget = target({ id: 'foreverpin-production', environment: 'production' });
-const inventory = { status: 'ready', data: buildWorkspaceInventory([product()], [selectedTarget, otherTarget]) };
-const baseSelection = { productKey: 'foreverpin', targetId: selectedTarget.id, inspector: null, itemId: null };
+const inventory = { status: 'ready', data: buildProductInventory([product()], [selectedTarget, otherTarget]) };
+const baseSelection = { productKey: 'foreverpin', environment: null, targetId: selectedTarget.id, inspector: null, itemId: null };
 const serviceSelection = { ...baseSelection, inspector: 'service', itemId: 'management' };
 const jobSelection = { ...baseSelection, inspector: 'deployment', itemId: 'submission-id' };
 const job = { id: 'submission-id', targetId: selectedTarget.id, status: 'succeeded' };
@@ -18,16 +18,16 @@ const vitals = { status: 'ready', data: { collectedAt: '2026-09-26T00:00:00Z',
   targets: [{ targetId: selectedTarget.id, serverId: 'rehearsal', ok: true, containers: [container()] }] } };
 
 function resolve(requested = baseSelection, reads = {}) {
-  return resolveWorkspaceSelection({ inventory, requested, ...reads });
+  return resolveProductSelection({ inventory, requested, ...reads });
 }
 
 test('defaults absent selections to the first actual product and target', () => {
-  const result = resolve(EmptyWorkspaceSelection);
+  const result = resolve(EmptyProductSelection);
   assert.equal(result.status, 'ready');
   assert.equal(result.product.key, baseSelection.productKey);
   assert.equal(result.target, selectedTarget);
   assert.equal(result.inspector.kind, 'target');
-  assert.deepEqual(result.selection, baseSelection);
+  assert.deepEqual(result.selection, { ...baseSelection, environment: selectedTarget.environment });
 });
 
 test('resolves an explicit target inside the selected product', () => {
@@ -54,7 +54,7 @@ test('does not replace unavailable explicit products or targets', () => {
 test('never selects a target belonging to another product', () => {
   const standalone = target({ id: 'other-rehearsal', product: 'other' });
   const result = resolve({ ...baseSelection, targetId: standalone.id },
-    { inventory: { status: 'ready', data: buildWorkspaceInventory([product()], [selectedTarget, standalone]) } });
+    { inventory: { status: 'ready', data: buildProductInventory([product()], [selectedTarget, standalone]) } });
   assert.equal(result.status, 'unavailable');
   assert.equal(result.issue, 'target-not-found');
 });
@@ -134,13 +134,13 @@ test('rejects ambiguous submission IDs', () => {
 });
 
 test('keeps empty and unconfigured inventory states ready without inventing a target', () => {
-  const empty = resolve(EmptyWorkspaceSelection, { inventory: { status: 'ready', data: { products: [] } } });
+  const empty = resolve(EmptyProductSelection, { inventory: { status: 'ready', data: { products: [] } } });
   assert.equal(empty.status, 'ready');
   assert.equal(empty.product, null);
   assert.equal(empty.target, null);
   assert.equal(empty.inspector, null);
-  const unconfigured = resolve(EmptyWorkspaceSelection,
-    { inventory: { status: 'ready', data: buildWorkspaceInventory([product()], []) } });
+  const unconfigured = resolve(EmptyProductSelection,
+    { inventory: { status: 'ready', data: buildProductInventory([product()], []) } });
   assert.equal(unconfigured.status, 'ready');
   assert.equal(unconfigured.product.key, baseSelection.productKey);
   assert.equal(unconfigured.target, null);
@@ -148,7 +148,7 @@ test('keeps empty and unconfigured inventory states ready without inventing a ta
 
 test('rejects an explicit inspector when no target exists', () => {
   const result = resolve({ ...serviceSelection, targetId: null },
-    { inventory: { status: 'ready', data: buildWorkspaceInventory([product()], []) } });
+    { inventory: { status: 'ready', data: buildProductInventory([product()], []) } });
   assert.equal(result.status, 'unavailable');
   assert.equal(result.issue, 'target-required');
 });
@@ -181,18 +181,46 @@ test('rejects ambiguous explicit product and target identifiers', () => {
 });
 
 test('URL round-trips literal identifiers and preserves explicit empty parameters', () => {
-  const value = { productKey: 'runner:forever-pin', targetId: 'actual-target', inspector: 'service', itemId: 'worker+queue' };
-  assert.deepEqual(readWorkspaceSelection(writeWorkspaceSelection(new URLSearchParams(), value)), value);
-  assert.deepEqual(readWorkspaceSelection(new URLSearchParams('product=&target=&inspect=&item=')),
-    { productKey: '', targetId: '', inspector: '', itemId: '' });
+  const value = { productKey: 'runner:forever-pin', environment: 'dev', targetId: null, inspector: 'service',
+    itemId: 'worker+queue' };
+  assert.deepEqual(readProductSelection(value.productKey, writeProductSelection(new URLSearchParams(), value)), value);
+  assert.deepEqual(readProductSelection('', new URLSearchParams('env=&target=&inspect=&item=')),
+    { productKey: '', environment: '', targetId: '', inspector: '', itemId: '' });
 });
 
 test('URL updates preserve unrelated parameters without mutating the original search', () => {
-  const original = new URLSearchParams('view=activity&product=old&target=old&inspect=service&item=old');
+  const original = new URLSearchParams('view=activity&env=old&target=old&inspect=service&item=old');
   const previous = original.toString();
-  const updated = writeWorkspaceSelection(original, EmptyWorkspaceSelection);
+  const updated = writeProductSelection(original, EmptyProductSelection);
   assert.equal(updated.toString(), 'view=activity');
   assert.equal(original.toString(), previous);
+});
+
+test('selects a target by its environment, and never another environment for a missing one', () => {
+  const byEnvironment = resolve({ ...baseSelection, targetId: null, environment: otherTarget.environment });
+  assert.equal(byEnvironment.status, 'ready');
+  assert.equal(byEnvironment.target, otherTarget);
+  assert.equal(byEnvironment.selection.environment, otherTarget.environment);
+  const missing = resolve({ ...baseSelection, targetId: null, environment: 'staging' });
+  assert.equal(missing.status, 'unavailable');
+  assert.equal(missing.issue, 'target-not-found');
+  assert.equal(missing.target, null);
+});
+
+test('names an old link\'s literal target by its environment and drops the target parameter', () => {
+  const result = resolve({ ...baseSelection, targetId: otherTarget.id, inspector: 'target' });
+  assert.equal(result.status, 'ready');
+  assert.equal(result.selection.environment, otherTarget.environment);
+  const params = writeProductSelection(new URLSearchParams(`target=${otherTarget.id}&inspect=target`), result.selection);
+  assert.deepEqual(Object.fromEntries(params), { env: otherTarget.environment, inspect: 'target' });
+});
+
+test('refuses to choose between two targets of one environment', () => {
+  const twin = target({ id: 'foreverpin-rehearsal-2' });
+  const result = resolve({ ...baseSelection, targetId: null, environment: selectedTarget.environment },
+    { inventory: { status: 'ready', data: buildProductInventory([product()], [selectedTarget, twin]) } });
+  assert.equal(result.status, 'unavailable');
+  assert.equal(result.issue, 'ambiguous-target');
 });
 
 test('resolution leaves requested values and inventory records untouched', () => {

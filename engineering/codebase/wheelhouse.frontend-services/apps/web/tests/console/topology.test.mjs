@@ -8,14 +8,14 @@ import { compileScript, parse } from "@vue/compiler-sfc";
 const bundle = await build({
   stdin: {
     contents: `
-      export { buildServiceMapLayout } from './src/presentation/workspace/serviceMap/ServiceMapLayout';
-      export { describeServiceObservation } from './src/presentation/workspace/serviceMap/ServiceObservation';
-      export { describeServiceVersion } from './src/presentation/workspace/serviceMap/ServiceVersion';
+      export { buildServiceMapLayout } from './src/presentation/product/serviceMap/ServiceMapLayout';
+      export { describeServiceObservation } from './src/presentation/product/serviceMap/ServiceObservation';
+      export { describeServiceVersion } from './src/presentation/product/serviceMap/ServiceVersion';
       export { ServiceTopologySchema } from './src/integration/topology/schemas';
       export { topologyApi } from './src/integration/topology';
       export { useTargetTopology, TopologyKeys } from './src/application/topology';
       export { queryClient, queryPlugin } from './src/bootstrap/query';
-      export { default as ServiceMap } from './src/presentation/workspace/ServiceMap.vue';
+      export { default as ServiceMap } from './src/presentation/product/ServiceMap.vue';
       export { createRenderer, nextTick, ref } from 'vue';
     `,
     resolveDir: process.cwd(),

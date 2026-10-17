@@ -1,6 +1,6 @@
 export {
   ProductIdentitySource,
-  ProductLifecycle,
+  ProductStatus,
   type Product,
   type ProductEnvironment,
   type ProductIdentity,
@@ -31,3 +31,4 @@ export {
   shortCommitOf,
   type ServiceIdentityView,
 } from './ProductIdentity';
+export { ProductStatusRules } from './ProductStatusRules';
