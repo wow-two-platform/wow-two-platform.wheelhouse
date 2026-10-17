@@ -47,7 +47,7 @@
 ### `codebase/wheelhouse.frontend-services/` (pnpm workspace)
 | App | What it is |
 |---|---|
-| `apps/web` (`@wheelhouse/web`) | Control-plane workspace — deployments, servers, secrets, products, activity, integration keys |
+| `apps/web` (`@wheelhouse/web`) | Control-plane console — home, workspaces, product pages, deployments, servers, secrets, activity, catalog, integration keys |
 
 ### `codebase/wheelhouse.runner-services/` (Python)
 | File | What it is |
