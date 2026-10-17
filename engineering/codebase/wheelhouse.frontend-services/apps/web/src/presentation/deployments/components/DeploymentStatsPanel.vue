@@ -8,7 +8,6 @@ export interface DeploymentStatsPanelProps {
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { RouterLink, useRoute } from "vue-router";
 
 import {
   RelativeTime,
@@ -41,7 +40,6 @@ const props = withDefaults(defineProps<DeploymentStatsPanelProps>(), {
   showTargets: false,
 });
 const stats = useDeploymentStats(30);
-const route = useRoute();
 const recent = computed(() => stats.data.value?.daily.slice(-14) ?? []);
 const chartSeries = computed(() => [
   {
@@ -131,14 +129,6 @@ function difference(
     title="Portfolio deployments · 30 days"
     description="All products and environments, from complete submission records."
   >
-    <template #actions>
-      <RouterLink
-        class="text-sm text-primary hover:underline"
-        :to="{ path: '/deployments', query: route.query }"
-      >
-        History
-      </RouterLink>
-    </template>
     <!-- The panel has no refresh control, so a failed first load offers its own retry. -->
     <DataRegion
       :is-first-load="stats.isFirstLoad.value"
