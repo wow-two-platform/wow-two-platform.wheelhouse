@@ -6,6 +6,7 @@ export const PreferenceKeys = {
   showInactive: "wheelhouse.show-inactive",
   sidebarCollapsed: "wheelhouse.sidebar-collapsed",
   environment: "wheelhouse.environment",
+  collapsedWorkspaces: "wheelhouse.sidebar-collapsed-workspaces",
 } as const;
 
 /** Reads a remembered value; storage that is blocked or full reads as nothing remembered. @internal */
@@ -49,6 +50,19 @@ const environment = preference<DeploymentEnvironment | null>(
   (value) => value ?? "",
 );
 
+const collapsedWorkspaces = preference<string[]>(
+  PreferenceKeys.collapsedWorkspaces,
+  (raw) => {
+    try {
+      const value: unknown = JSON.parse(raw ?? "[]");
+      return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+    } catch {
+      return [];
+    }
+  },
+  (value) => JSON.stringify(value),
+);
+
 /** Whether inactive products and services show everywhere — the one "Show inactive" switch. */
 export function useShowInactive(): Ref<boolean> {
   return showInactive;
@@ -62,4 +76,19 @@ export function useSidebarCollapsed(): Ref<boolean> {
 /** The environment the operator last chose on a product page; a pinned service opens in it. */
 export function useLastEnvironment(): Ref<DeploymentEnvironment | null> {
   return environment;
+}
+
+/**
+ * Which sidebar workspaces are collapsed, by workspace id. A workspace starts expanded, so one created or imported later
+ * shows its products until the operator folds it.
+ */
+export function useWorkspaceExpansion() {
+  return {
+    isExpanded: (id: string) => !collapsedWorkspaces.value.includes(id),
+    toggle: (id: string) => {
+      collapsedWorkspaces.value = collapsedWorkspaces.value.includes(id)
+        ? collapsedWorkspaces.value.filter((item) => item !== id)
+        : [...collapsedWorkspaces.value, id];
+    },
+  };
 }

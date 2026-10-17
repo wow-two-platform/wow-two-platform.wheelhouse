@@ -5,18 +5,22 @@ export interface PinnedNavProps {
 }
 </script>
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, defineAsyncComponent, ref } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
-import { Check, Pencil } from 'lucide-vue-next';
+import { Check, Pencil, Pin } from 'lucide-vue-next';
 import { SkeletonState } from '@wow-two-beta/fe/presentation/feedback';
 import { SidebarMenuItem, SidebarMenuSection } from '@wow-two-beta/fe/presentation/nav';
 import { usePinned, type PinnedEntry } from '@/application/pins';
-import { PinEditor, PinIcon } from '@/presentation/pins';
+import { PinIcon } from '@/presentation/pins';
 
 /**
  * Pinned workspaces, products and services in the operator's order. Edit turns the rows into a reorder list; the rail
- * shows the pins as icons and leaves editing to the full sidebar.
+ * shows the pins as icons with a pin badge, so a pinned workspace never looks like the workspace entry below it, and
+ * leaves editing to the full sidebar.
  */
+/** The editor loads when editing starts; it draws on the SDK's sortable list, which browsing never needs. @internal */
+const PinEditor = defineAsyncComponent(() => import('@/presentation/pins/PinEditor.vue'));
+
 defineOptions({ name: 'PinnedNav' });
 const props = withDefaults(defineProps<PinnedNavProps>(), { collapsed: false });
 const emit = defineEmits<{ navigate: [] }>();
@@ -58,7 +62,14 @@ function isCurrent(entry: PinnedEntry): boolean {
         as-child
         :is-active="isCurrent(entry)"
       >
-        <template #icon><PinIcon :entry="entry" /></template>
+        <template #icon
+          ><span class="relative inline-flex"
+            ><PinIcon :entry="entry" /><!-- In the rail a pin and its workspace or product would share a mark; a pin
+            badge tells them apart. --><span
+              v-if="props.collapsed"
+              class="absolute -end-1 -top-1 flex size-3 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background"
+              ><Pin :size="7" :stroke-width="2.5" /></span></span
+        ></template>
         <RouterLink
           :to="entry.location!"
           :title="props.collapsed ? (entry.detail ? `${entry.label} · ${entry.detail}` : entry.label) : undefined"

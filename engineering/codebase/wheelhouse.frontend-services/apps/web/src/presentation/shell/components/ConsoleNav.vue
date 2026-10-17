@@ -6,9 +6,9 @@ export interface ConsoleNavProps {
 }
 </script>
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, defineAsyncComponent } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
-import { BookOpen, Boxes, Plug, History, House, KeyRound, LayoutGrid, Rocket, Server, Settings } from 'lucide-vue-next';
+import { BookOpen, Boxes, History, House, KeyRound, Plug, Rocket, Server, Settings } from 'lucide-vue-next';
 import { DataRegion, SkeletonState } from '@wow-two-beta/fe/presentation/feedback';
 import {
   SidebarMenu,
@@ -17,16 +17,18 @@ import {
   SidebarMenuSection,
 } from '@wow-two-beta/fe/presentation/nav';
 import { ConsolePaths } from '@/application/navigation';
-import { usePortfolio } from '@/application/portfolio';
-import { ProductStatusRules } from '@/domain/products';
+import { usePortfolio } from '@/application/portfolio/usePortfolio';
 import { ProductIcon } from '@/presentation/products';
 import PinnedNav from './PinnedNav.vue';
-import ShowInactiveSwitch from './ShowInactiveSwitch.vue';
+import WorkspaceNavGroup from './WorkspaceNavGroup.vue';
+
+/** The switch draws on the SDK's forms bundle, which a first visit otherwise skips; its row keeps its height. @internal */
+const ShowInactiveSwitch = defineAsyncComponent(() => import('./ShowInactiveSwitch.vue'));
 
 /**
- * Lists every destination: Home, the pins in custom order, the workspaces with their products, the portfolio
- * operations and settings. In the rail a workspace is one icon that opens its page; its products show once the sidebar
- * expands.
+ * Lists every destination: Home and the portfolio operations first, then the pins in custom order, then the
+ * workspaces with their products — the part that grows — and settings at the foot. The rail keeps the same order; a
+ * workspace there is one icon that opens its page, and its products show once the sidebar expands.
  */
 defineOptions({ name: 'ConsoleNav' });
 const props = withDefaults(defineProps<ConsoleNavProps>(), { collapsed: false });
@@ -35,8 +37,9 @@ defineSlots<{}>();
 const route = useRoute();
 const portfolio = usePortfolio();
 
-/** @internal The portfolio-wide operations, each with its icon. */
-const Operations = [
+/** @internal The fixed destinations, each with its icon: Home and the portfolio-wide operations. */
+const Destinations = [
+  { path: ConsolePaths.home, label: 'Home', icon: House },
   { path: ConsolePaths.deployments, label: 'Deployments', icon: Rocket },
   { path: ConsolePaths.servers, label: 'Servers', icon: Server },
   { path: ConsolePaths.secrets, label: 'Secrets', icon: KeyRound },
@@ -75,10 +78,16 @@ const labelClass = computed(() => (props.collapsed ? 'sr-only' : 'min-w-0 flex-1
       :is-collapsed="props.collapsed"
       class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]"
     >
-      <SidebarMenuItem as-child :is-active="isAt(ConsolePaths.home)">
-        <template #icon><House :size="16" /></template>
-        <RouterLink :to="ConsolePaths.home" :title="tip('Home')" @click="emit('navigate')"
-          ><span :class="labelClass">Home</span></RouterLink
+      <!-- The fixed destinations lead, so they never fall below the fold under the growing workspace tree. -->
+      <SidebarMenuItem
+        v-for="place in Destinations"
+        :key="place.path"
+        as-child
+        :is-active="isAt(place.path)"
+      >
+        <template #icon><component :is="place.icon" :size="16" /></template>
+        <RouterLink :to="place.path" :title="tip(place.label)" @click="emit('navigate')"
+          ><span :class="labelClass">{{ place.label }}</span></RouterLink
         >
       </SidebarMenuItem>
 
@@ -107,7 +116,7 @@ const labelClass = computed(() => (props.collapsed ? 'sr-only' : 'min-w-0 flex-1
                   v-for="group in groups"
                   :key="group.key"
                   as-child
-                  :is-active="Boolean(group.workspace) && route.params.workspace === group.workspace?.slug"
+                  :is-active="Boolean(group.workspace) && route.params['workspace'] === group.workspace?.slug"
                 >
                   <template #icon
                     ><ProductIcon :name="group.workspace?.name ?? 'No workspace'" size="xs"
@@ -121,60 +130,21 @@ const labelClass = computed(() => (props.collapsed ? 'sr-only' : 'min-w-0 flex-1
                 </SidebarMenuItem>
               </template>
               <template v-else>
-                <SidebarMenuGroup
+                <WorkspaceNavGroup
                   v-for="group in groups"
                   :key="group.key"
-                  :label="group.workspace?.name ?? 'No workspace'"
-                  :default-open="true"
-                >
-                  <template #icon><ProductIcon :name="group.workspace?.name ?? 'No workspace'" size="xs" /></template>
-                  <SidebarMenuItem
-                    v-if="group.workspace"
-                    as-child
-                    :is-active="route.params.workspace === group.workspace.slug"
-                  >
-                    <template #icon><LayoutGrid :size="14" /></template>
-                    <RouterLink :to="ConsolePaths.workspace(group.workspace.slug)" @click="emit('navigate')"
-                      ><span :class="labelClass">Overview</span
-                      ><span class="text-xs tabular-nums text-muted-foreground">{{ group.products.length }}</span></RouterLink
-                    >
-                  </SidebarMenuItem>
-                  <SidebarMenuItem
-                    v-for="product in group.products"
-                    :key="product.slug"
-                    as-child
-                    :is-active="route.params.product === product.slug"
-                  >
-                    <template #icon><ProductIcon :product-slug="product.slug" :name="product.name" size="xs" /></template>
-                    <RouterLink
-                      :to="ConsolePaths.product(product.slug)"
-                      :class="ProductStatusRules.isActive(product) ? '' : 'opacity-60'"
-                      @click="emit('navigate')"
-                      ><span :class="labelClass">{{ product.name }}</span></RouterLink
-                    >
-                  </SidebarMenuItem>
-                  <li v-if="!group.products.length" class="px-2.5 py-1.5 text-xs text-muted-foreground">
-                    {{ group.total ? 'Only inactive products' : 'No products yet' }}
-                  </li>
-                </SidebarMenuGroup>
+                  :group="group"
+                  @navigate="emit('navigate')"
+                />
               </template>
             </ul>
           </DataRegion>
         </li>
       </SidebarMenuSection>
-
-      <SidebarMenuSection label="Operations">
-        <SidebarMenuItem v-for="place in Operations" :key="place.path" as-child :is-active="isAt(place.path)">
-          <template #icon><component :is="place.icon" :size="16" /></template>
-          <RouterLink :to="place.path" :title="tip(place.label)" @click="emit('navigate')"
-            ><span :class="labelClass">{{ place.label }}</span></RouterLink
-          >
-        </SidebarMenuItem>
-      </SidebarMenuSection>
     </SidebarMenu>
 
     <div class="shrink-0 border-t border-border pt-3">
-      <ShowInactiveSwitch v-if="!props.collapsed" class="mb-1 min-h-9" />
+      <div v-if="!props.collapsed" class="mb-1 min-h-9"><ShowInactiveSwitch class="min-h-9" /></div>
       <SidebarMenu aria-label="Settings" :is-collapsed="props.collapsed">
         <SidebarMenuGroup v-if="!props.collapsed" label="Settings" :default-open="SettingsLinks.some((link) => isAt(link.path))">
           <template #icon><Settings :size="16" /></template>

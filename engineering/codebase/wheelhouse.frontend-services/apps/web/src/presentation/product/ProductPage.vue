@@ -78,7 +78,8 @@ import { PinKind } from "@/domain/pins";
 import { PinToggle } from "@/presentation/pins";
 import ServiceActions from "./ServiceActions.vue";
 import ServiceMap from "./ServiceMap.vue";
-import { ProductIcon, RepositoryActions } from "@/presentation/products";
+import { ProductIcon } from "@/presentation/products";
+import RepositoryActions from "@/presentation/products/components/RepositoryActions.vue";
 
 /**
  * One product on its own page: its environments, services and deployments, scoped by the environment the top bar's

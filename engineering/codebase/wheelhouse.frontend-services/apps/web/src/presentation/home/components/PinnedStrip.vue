@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { defineAsyncComponent, ref } from 'vue';
 import { RouterLink } from 'vue-router';
 import { Check, Pencil } from 'lucide-vue-next';
 import { Button } from '@wow-two-beta/fe/presentation/actions';
 import { DataRegion, SkeletonState } from '@wow-two-beta/fe/presentation/feedback';
 import { usePinned } from '@/application/pins';
-import { PinEditor, PinIcon } from '@/presentation/pins';
+import { PinIcon } from '@/presentation/pins';
 
 /**
  * The pins on the home page, in the operator's order: a row that scrolls sideways, with Edit for reordering and
  * unpinning. On phones it leads the page, since the sidebar that also lists pins is absent there.
  */
+/** The editor loads when editing starts; it draws on the SDK's sortable list, which browsing never needs. @internal */
+const PinEditor = defineAsyncComponent(() => import('@/presentation/pins/PinEditor.vue'));
+
 defineOptions({ name: 'PinnedStrip' });
 defineSlots<{}>();
 const pinned = usePinned();

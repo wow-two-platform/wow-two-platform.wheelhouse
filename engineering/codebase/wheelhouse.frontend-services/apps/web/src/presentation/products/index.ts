@@ -1,2 +1,2 @@
 export { default as ProductIcon } from "./components/ProductIcon.vue";
-export { default as RepositoryActions } from "./components/RepositoryActions.vue";
+// `RepositoryActions.vue` brings a popover and the branch and commit reads; import it by path, never through here.

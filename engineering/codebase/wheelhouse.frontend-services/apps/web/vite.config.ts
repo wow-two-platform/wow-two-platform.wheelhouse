@@ -30,6 +30,21 @@ function themeScript(): Plugin {
   };
 }
 
+/**
+ * The framework libraries every page runs on — Vue with its router, and the query cache with the schema decoder — in
+ * chunks of their own: the boot chunk loads them in parallel, and their hashes outlive console releases. The fe sdk
+ * stays in Rollup's own chunking, so code only a lazily loaded page needs never moves into the first load.
+ */
+const FrameworkChunks: ReadonlyArray<readonly [chunk: string, pattern: RegExp]> = [
+  ["vendor-vue", /\/node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(?:vue|@vue\/[^/]+|vue-router)\//],
+  ["vendor-data", /\/node_modules\/(?:\.pnpm\/[^/]+\/node_modules\/)?(?:@tanstack\/[^/]+|zod)\//],
+];
+
+/** Names the framework chunk a module belongs to, if any. @internal */
+function frameworkChunk(id: string): string | undefined {
+  return FrameworkChunks.find(([, pattern]) => pattern.test(id))?.[0];
+}
+
 // The SPA is served from the .NET host's wwwroot in production (base '/', same-origin "/api/...").
 // In dev, Vite runs over HTTPS (vite-plugin-mkcert → a locally-trusted cert, so the Secure auth
 // cookie is kept and the OAuth redirect has no cert interstitial) and proxies "/api" to the backend's
@@ -49,6 +64,7 @@ export default defineConfig(({ command, mode }) => {
     build: {
       outDir: "dist",
       emptyOutDir: true,
+      rollupOptions: { output: { manualChunks: frameworkChunk } },
     },
     server: {
       port: Number(process.env.VITE_PORT ?? 5174),

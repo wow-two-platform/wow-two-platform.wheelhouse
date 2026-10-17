@@ -1,5 +1,5 @@
 import { computed } from "vue";
-import { usePortfolio } from "@/application/portfolio";
+import { usePortfolio } from "@/application/portfolio/usePortfolio";
 import { useLastEnvironment } from "@/application/preferences";
 import { resolvePins } from "./PinnedEntries";
 import { usePins } from "./usePins";

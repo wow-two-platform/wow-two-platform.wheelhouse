@@ -10,7 +10,7 @@ export interface AppLayoutProps {
 const SidebarWidth = { Full: '248px', Rail: '64px' } as const;
 </script>
 <script setup lang="ts">
-import { computed, ref, useTemplateRef, watch } from 'vue';
+import { computed, defineAsyncComponent, ref, useTemplateRef, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import { PanelLeft } from 'lucide-vue-next';
 import { TailwindBreakpoints, useBreakpoint } from '@wow-two-beta/fe/foundation/device';
@@ -23,9 +23,8 @@ import {
   AppShellMain,
   AppShellSidebar,
 } from '@wow-two-beta/fe/presentation/layout';
-import { Drawer, DrawerContent, DrawerTitle } from '@wow-two-beta/fe/presentation/overlays';
 import { scopeOf } from '@/application/navigation';
-import { usePortfolio } from '@/application/portfolio';
+import { usePortfolio } from '@/application/portfolio/usePortfolio';
 import { useSidebarCollapsed } from '@/application/preferences';
 import { useApiConnection } from '@/application/system';
 import {
@@ -36,6 +35,9 @@ import {
   ProfileMenu,
   ScopeBar,
 } from '@/presentation/shell';
+
+/** The tablet's drawer loads the first time it opens; desktops and phones never need it. @internal */
+const NavDrawer = defineAsyncComponent(() => import('@/presentation/shell/components/NavDrawer.vue'));
 
 /**
  * The console frame. Desktop: a sidebar that collapses to an icon rail, remembered across visits. Tablet: the rail,
@@ -52,6 +54,8 @@ const portfolio = usePortfolio();
 const collapsed = useSidebarCollapsed();
 const breakpoint = useBreakpoint(TailwindBreakpoints);
 const drawerOpen = ref(false);
+/** True from the first time the drawer opens; until then its code is not loaded. */
+const drawerWanted = ref(false);
 const consoleVersion = __APP_VERSION__;
 /** A numbered build shows as `v0.3.4`; a local build shows `dev`. @internal */
 const versionLabel = /^\d/.test(consoleVersion) ? `v${consoleVersion}` : consoleVersion;
@@ -89,7 +93,10 @@ function query(key: string): string | null {
 /** Desktop: collapse or expand the sidebar. Tablet: open the full sidebar over the content. @internal */
 function toggleSidebar(): void {
   if (isDesktop.value) collapsed.value = !collapsed.value;
-  else drawerOpen.value = true;
+  else {
+    drawerWanted.value = true;
+    drawerOpen.value = true;
+  }
 }
 
 /* The main region is the scroll container, so a new page starts at its top. A selection inside a page (a query
@@ -182,10 +189,5 @@ watch(isDesktop, (desktop) => {
     <PhoneNav @sign-out="emit('signOut')" />
   </AppShell>
   <!-- Tablets keep the rail beside the content; the full sidebar opens over it. -->
-  <Drawer v-if="breakpoint === 'md'" v-model:open="drawerOpen" side="left">
-    <DrawerContent class="w-72 max-w-[85%] p-3">
-      <DrawerTitle class="sr-only">Navigation</DrawerTitle>
-      <ConsoleNav @navigate="drawerOpen = false" />
-    </DrawerContent>
-  </Drawer>
+  <NavDrawer v-if="breakpoint === 'md' && drawerWanted" v-model:open="drawerOpen" />
 </template>
