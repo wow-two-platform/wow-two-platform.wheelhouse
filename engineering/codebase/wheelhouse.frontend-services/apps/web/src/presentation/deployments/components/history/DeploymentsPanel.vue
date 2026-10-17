@@ -3,6 +3,8 @@
 export interface DeploymentsPanelProps {
   /** Locks the entity filter to this product, as a product's Deployments tab does. */
   readonly lockedProduct?: string | null;
+  /** Holds the filter bar inside the panel; off where the page sets the filter above it, as the Deployments page does. */
+  readonly hasFilterBar?: boolean;
 }
 </script>
 
@@ -33,10 +35,10 @@ import DeploymentList from "./DeploymentList.vue";
 /**
  * Deployments under one shared filter, shown two ways: a calendar of outcomes per day (Grid), whose day expands into
  * that day's deployments, or every deployment newest first (List). The filter, the view and the expanded day live in
- * the address.
+ * the address; the filter bar sits in the panel unless the page holds it above.
  */
 defineOptions({ name: "DeploymentsPanel" });
-const props = withDefaults(defineProps<DeploymentsPanelProps>(), { lockedProduct: null });
+const props = withDefaults(defineProps<DeploymentsPanelProps>(), { lockedProduct: null, hasFilterBar: true });
 const route = useDeploymentViewRoute(() => props.lockedProduct);
 const portfolio = usePortfolio();
 const tree = computed(() => buildEntityTree(portfolio.groups.value, portfolio.showInactive.value));
@@ -74,7 +76,9 @@ function setView(value: unknown): void {
     :description="
       props.lockedProduct
         ? 'This product\'s rollouts by day, or every one newest first.'
-        : 'Rollouts by day, or every one newest first, under one filter.'
+        : props.hasFilterBar
+          ? 'Rollouts by day, or every one newest first, under one filter.'
+          : 'Rollouts by day, or every one newest first, under the filter above.'
     "
   >
     <template #actions>
@@ -90,6 +94,7 @@ function setView(value: unknown): void {
     </template>
     <div class="flex min-w-0 flex-col gap-5">
       <DeploymentFilterBar
+        v-if="props.hasFilterBar"
         :filter="route.filter.value"
         :tree="tree"
         :is-entity-locked="Boolean(props.lockedProduct)"
