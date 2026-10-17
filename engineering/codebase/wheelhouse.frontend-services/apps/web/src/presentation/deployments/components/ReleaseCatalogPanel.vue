@@ -103,10 +103,11 @@ const rows = useSkeletonItems(() => (releases.data.value ? visible.value : undef
         </TableHead>
         <TableBody>
           <TableRow v-for="(artifact, index) in rows" :key="artifact?.id ?? `placeholder-${index}`">
+            <!-- The kind sits beside the version and wraps under it only when the cell is too narrow. -->
             <TableCell>
-              <span class="block min-w-0">
-                <Text as="span" class="block font-mono text-xs font-medium">{{ artifact?.release }}</Text>
-                <Badge class="mt-1" :variant="artifact?.kind === 'candidate' ? 'neutral' : 'success'">{{
+              <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <Text as="span" class="font-mono text-xs font-medium">{{ artifact?.release }}</Text>
+                <Badge :variant="artifact?.kind === 'candidate' ? 'neutral' : 'success'">{{
                   artifact?.kind === "candidate" ? "Commit build" : artifact?.prerelease ? "Pre-release" : "Release"
                 }}</Badge>
               </span>
