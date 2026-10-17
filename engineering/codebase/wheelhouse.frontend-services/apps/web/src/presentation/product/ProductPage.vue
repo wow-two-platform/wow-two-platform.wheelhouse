@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, useTemplateRef, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, useTemplateRef, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import {
@@ -23,6 +23,7 @@ import ProductOverview from "./tabs/ProductOverview.vue";
 const ProductReleases = defineAsyncComponent(() => import("./tabs/ProductReleases.vue"));
 const ProductSecrets = defineAsyncComponent(() => import("./tabs/ProductSecrets.vue"));
 const ProductActivity = defineAsyncComponent(() => import("./tabs/ProductActivity.vue"));
+const ProductDeployments = defineAsyncComponent(() => import("./tabs/ProductDeployments.vue"));
 
 /**
  * One product on its own page: the header — what it is and what applies to all of it — over its tabs: Overview
@@ -66,6 +67,18 @@ function chooseTab(value: string): void {
   const query = value === ProductTabs[0]!.value ? { ...route.query } : env ? { env } : {};
   void router.push({ path: ConsolePaths.product(productKey.value, value), query });
 }
+
+/* On a phone the tab list scrolls sideways; the chosen tab, such as Deployments at its end, scrolls into view. */
+watch(
+  () => [tab.value.value, firstLoad.value] as const,
+  async () => {
+    await nextTick();
+    document
+      .querySelector<HTMLElement>('[aria-label="Product sections"] [role="tab"][aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  },
+  { immediate: true, flush: "post" },
+);
 
 /* An address naming no tab opens Overview, keeping its query. */
 watch(
@@ -124,6 +137,9 @@ watch(
       </TabsGroupPanel>
       <TabsGroupPanel :value="ProductTab.Activity" class="min-w-0">
         <ProductActivity :product="productKey" />
+      </TabsGroupPanel>
+      <TabsGroupPanel :value="ProductTab.Deployments" class="min-w-0">
+        <ProductDeployments :product="productKey" />
       </TabsGroupPanel>
     </TabsGroup>
   </DataRegion>

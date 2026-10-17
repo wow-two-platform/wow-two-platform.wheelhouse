@@ -8,6 +8,8 @@ export const ProductTab = {
   Secrets: 'secrets',
   /** The audit trail's entries about the product. */
   Activity: 'activity',
+  /** The product's rollouts by day or newest first, under the shared deployments filter. */
+  Deployments: 'deployments',
 } as const;
 export type ProductTabValue = (typeof ProductTab)[keyof typeof ProductTab];
 
@@ -26,6 +28,7 @@ export const ProductTabs: readonly ProductTabEntry[] = [
   { value: ProductTab.Releases, label: 'Releases' },
   { value: ProductTab.Secrets, label: 'Secrets' },
   { value: ProductTab.Activity, label: 'Activity' },
+  { value: ProductTab.Deployments, label: 'Deployments' },
 ];
 
 /** The tab an address names: a known tab, Overview without one, or null for a segment no tab answers to. */
