@@ -9,15 +9,23 @@ import {
 import { ServerKeys } from "@/application/servers";
 import { TopologyKeys } from "@/application/topology";
 import { useAppQuery, useInvalidate } from "@/bootstrap/query";
-import { DeploymentExtensions } from "@/domain/deployments";
+import { DeploymentExtensions, type JobStatus } from "@/domain/deployments";
 import { deploymentsApi } from "@/integration/deployments";
 
 import { DeploymentKeys } from "../DeploymentKeys";
 
 const PollMilliseconds = 3000;
 
-/** Follows a reactive submission ID until its target records a final outcome. */
-export function useDeploymentOutcome(id: MaybeRefOrGetter<string | null>) {
+/**
+ * Follows a reactive submission ID until its target records a final outcome. `listed` is the status the caller already
+ * shows for the job — a history row's, or `queued` for a job just submitted. Only a job that finishes after it was seen
+ * pending refreshes the history, statistics, vitals, state and topology beside it; opening a job that had already
+ * finished refetches none of them.
+ */
+export function useDeploymentOutcome(
+  id: MaybeRefOrGetter<string | null>,
+  listed: MaybeRefOrGetter<JobStatus | null | undefined> = null,
+) {
   const invalidate = useInvalidate();
   /** Mirrors `pending` below; the query reads its options before `pending` exists. @internal */
   const polling = shallowRef(false);
@@ -43,6 +51,9 @@ export function useDeploymentOutcome(id: MaybeRefOrGetter<string | null>) {
     { immediate: true },
   );
 
+  /** The last status this hook read for a job; a new job starts from the caller's listed status. @internal */
+  let last: { readonly job: string; readonly status: JobStatus } | null = null;
+
   watch(
     () =>
       [
@@ -51,7 +62,15 @@ export function useDeploymentOutcome(id: MaybeRefOrGetter<string | null>) {
         outcome.data.value?.targetId,
       ] as const,
     ([job, status, target]) => {
-      if (!job || !status || DeploymentExtensions.isPending(status)) return;
+      if (!job || !status) return;
+      const before = last?.job === job ? last.status : toValue(listed);
+      last = { job, status };
+      if (
+        DeploymentExtensions.isPending(status) ||
+        !before ||
+        !DeploymentExtensions.isPending(before)
+      )
+        return;
       void invalidate(DeploymentKeys.history);
       void invalidate(DeploymentKeys.statsAll);
       void invalidate(ServerKeys.vitals);
@@ -60,6 +79,7 @@ export function useDeploymentOutcome(id: MaybeRefOrGetter<string | null>) {
         void invalidate(TopologyKeys.target(target));
       }
     },
+    { immediate: true },
   );
 
   return { ...outcome, pending };

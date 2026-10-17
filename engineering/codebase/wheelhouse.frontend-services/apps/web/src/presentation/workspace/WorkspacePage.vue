@@ -163,8 +163,9 @@ const targetHistory = computed(() =>
 const inspected = computed(() =>
   selection.value.status === "ready" ? selection.value.inspector : null,
 );
-const outcome = useDeploymentOutcome(() =>
-  inspected.value?.kind === "deployment" ? inspected.value.job.id : null,
+const outcome = useDeploymentOutcome(
+  () => (inspected.value?.kind === "deployment" ? inspected.value.job.id : null),
+  () => (inspected.value?.kind === "deployment" ? inspected.value.job.status : null),
 );
 const inspectedJob = computed(() =>
   inspected.value?.kind === "deployment"

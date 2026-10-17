@@ -78,7 +78,8 @@ const target = ref("");
 const release = ref("");
 const jobId = ref<string | null>(null);
 const readiness = shallowRef<TargetCheck | null>(null);
-const outcome = useDeploymentOutcome(jobId);
+// A followed job was just submitted, so it starts queued.
+const outcome = useDeploymentOutcome(jobId, () => (jobId.value ? JobStatus.Queued : null));
 const selectedTarget = computed(() =>
   targets.data.value?.find((item) => item.id === target.value),
 );
