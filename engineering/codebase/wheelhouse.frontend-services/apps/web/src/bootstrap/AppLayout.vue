@@ -41,8 +41,9 @@ const NavDrawer = defineAsyncComponent(() => import('@/presentation/shell/compon
 
 /**
  * The console frame. Desktop: a sidebar that collapses to an icon rail, remembered across visits. Tablet: the rail,
- * with the full sidebar in an overlay drawer. Phone: no sidebar; a bottom bar in the shell's footer row. The top bar
- * names the scope and carries the page's actions on every class.
+ * with the full sidebar in an overlay drawer. Phone: no sidebar; a bottom bar in the shell's footer row. Every class
+ * leads with the same four destinations — Home, Products, Deployments, Servers. The top bar names the scope, carries
+ * the page's actions and ends in the profile menu, which holds every other place.
  */
 defineOptions({ name: 'AppLayout' });
 const props = defineProps<AppLayoutProps>();
@@ -186,7 +187,7 @@ watch(isDesktop, (desktop) => {
         <slot />
       </AppShellContent>
     </AppShellMain>
-    <PhoneNav @sign-out="emit('signOut')" />
+    <PhoneNav />
   </AppShell>
   <!-- Tablets keep the rail beside the content; the full sidebar opens over it. -->
   <NavDrawer v-if="breakpoint === 'md' && drawerWanted" v-model:open="drawerOpen" />

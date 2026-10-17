@@ -4,9 +4,14 @@ import { stop } from "esbuild";
 import { bundleModule } from "./BundleModule.mjs";
 import { product } from "./LoadModule.mjs";
 
-const { scopeOf, legacyProductRedirect, productLocation, serviceLocation, ConsolePaths } = await bundleModule(`
-  export { scopeOf } from './src/application/navigation/Scope';
-  export { legacyProductRedirect, productLocation, serviceLocation, ConsolePaths } from './src/application/navigation/ConsolePaths';
+const {
+  scopeOf, legacyProductRedirect, productLocation, serviceLocation, vaultLocation, ConsolePaths, productTabOf, ProductTabs,
+  primaryDestinationOf, PrimaryPaths,
+} = await bundleModule(`
+  export {
+    scopeOf, legacyProductRedirect, productLocation, serviceLocation, vaultLocation, ConsolePaths, productTabOf, ProductTabs,
+    primaryDestinationOf, PrimaryPaths,
+  } from './src/application/navigation';
 `);
 after(() => stop());
 
@@ -49,4 +54,39 @@ test("an old Workspace link keeps every other parameter and needs a product", ()
     { path: "/p/foreverpin", query: { target: "fp-dev", inspect: "target", view: "a" } });
   assert.equal(legacyProductRedirect({ target: "fp-dev" }), null);
   assert.equal(legacyProductRedirect({ product: "" }), null);
+});
+
+test("a product's tabs are addressed by path, Overview by the product's own address", () => {
+  assert.equal(ProductTabs[0].value, "overview");
+  assert.deepEqual(ProductTabs.slice(0, 4).map((tab) => tab.label), ["Overview", "Releases", "Secrets", "Activity"]);
+  assert.equal(ConsolePaths.product("wheelhouse"), "/p/wheelhouse");
+  assert.equal(ConsolePaths.product("wheelhouse", "overview"), "/p/wheelhouse");
+  assert.equal(ConsolePaths.product("wheelhouse", "activity"), "/p/wheelhouse/activity");
+  assert.deepEqual(productLocation("wheelhouse", { env: "prod" }, "secrets"), { path: "/p/wheelhouse/secrets", query: { env: "prod" } });
+  assert.equal(productTabOf(null).value, "overview");
+  assert.equal(productTabOf("releases").label, "Releases");
+  assert.equal(productTabOf("no-such-tab"), null);
+});
+
+test("a tab other than Overview closes the scope instead of the inspected service", () => {
+  const crumbs = scopeOf({ ...base, path: "/p/wheelhouse/releases", params: { product: "wheelhouse", tab: "releases" },
+    query: { env: "prod", inspect: "service", item: "api" } });
+  assert.deepEqual(crumbs.map((crumb) => [crumb.level, crumb.label]),
+    [["home", "Home"], ["workspace", "Platform"], ["product", "Wheelhouse"], ["tab", "Releases"]]);
+  assert.deepEqual(crumbs[3].location, { path: "/p/wheelhouse/releases", query: {} });
+  assert.equal(scopeOf({ ...base, path: "/p/wheelhouse", params: { product: "wheelhouse", tab: "overview" } }).length, 3);
+});
+
+test("every page belongs to one of the four primary destinations, or to the profile menu", () => {
+  assert.deepEqual(PrimaryPaths, ["/", "/products", "/deployments", "/servers"]);
+  for (const [path, destination] of [
+    ["/", "/"], ["/products", "/products"], ["/w/platform", "/products"], ["/p/wheelhouse/releases", "/products"],
+    ["/deployments", "/deployments"], ["/deployments/job-1", "/deployments"], ["/servers", "/servers"],
+    ["/activity", null], ["/secrets", null], ["/settings/keys", null], ["/productsx", null], ["/pins", null],
+  ]) assert.equal(primaryDestinationOf(path), destination, path);
+});
+
+test("a vault link opens the Secrets page on that vault and namespace", () => {
+  assert.deepEqual(vaultLocation("hel1-vault"), { path: "/secrets", query: { vault: "hel1-vault" } });
+  assert.deepEqual(vaultLocation("hel1-vault", "foreverpin-prod").query, { vault: "hel1-vault", namespace: "foreverpin-prod" });
 });

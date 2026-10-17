@@ -11,11 +11,18 @@ export interface ConsoleLocation {
   readonly query: Record<string, string>;
 }
 
+import { ProductTab, type ProductTabValue } from './ProductTabs';
+
 /** The console's addresses. */
 export const ConsolePaths = {
   home: '/',
+  /** The products browser narrowed to one workspace. */
   workspace: (slug: string) => `/w/${encodeURIComponent(slug)}`,
-  product: (slug: string) => `/p/${encodeURIComponent(slug)}`,
+  /** A product page on one of its tabs; Overview is the product's own address. */
+  product: (slug: string, tab: ProductTabValue | string = ProductTab.Overview) =>
+    tab === ProductTab.Overview
+      ? `/p/${encodeURIComponent(slug)}`
+      : `/p/${encodeURIComponent(slug)}/${encodeURIComponent(tab)}`,
   products: '/products',
   deployments: '/deployments',
   servers: '/servers',
@@ -32,9 +39,21 @@ function defined(values: Record<string, string | null | undefined>): Record<stri
   );
 }
 
-/** A product page, optionally scoped to an environment and an inspected item. */
-export function productLocation(slug: string, query: ProductQuery = {}): ConsoleLocation {
-  return { path: ConsolePaths.product(slug), query: defined({ env: query.env, inspect: query.inspect, item: query.item }) };
+/** A product page, optionally scoped to an environment and an inspected item, on its Overview unless a tab is named. */
+export function productLocation(
+  slug: string,
+  query: ProductQuery = {},
+  tab: ProductTabValue | string = ProductTab.Overview,
+): ConsoleLocation {
+  return {
+    path: ConsolePaths.product(slug, tab),
+    query: defined({ env: query.env, inspect: query.inspect, item: query.item }),
+  };
+}
+
+/** The Secrets page opened on one vault, and on one of its namespaces when named. */
+export function vaultLocation(vault: string, namespace?: string | null): ConsoleLocation {
+  return { path: ConsolePaths.secrets, query: defined({ vault, namespace }) };
 }
 
 /** A service of a product in the given environment, or the product's default one when none is chosen. */

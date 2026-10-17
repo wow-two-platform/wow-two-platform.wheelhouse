@@ -8,24 +8,30 @@ export const HomePlace = {
   description: 'Every workspace and its products, with what needs you first.',
 } as const;
 
-/** The portfolio-wide operations the sidebar lists under Operations. */
-export const OperationPlaces = [
+/**
+ * The primary destinations after Home — the entities the console navigates by — in the order the sidebar, the icon
+ * rail and the phone's bottom bar show them.
+ */
+export const PrimaryPlaces = [
+  { path: '/products', label: 'Products', description: 'Every product, by workspace.' },
   {
     path: '/deployments',
     label: 'Deployments',
     description: 'Published releases, readiness checks, and rollout outcomes.',
   },
-  { path: '/servers', label: 'Servers', description: 'Your servers and their services, with current resource readings.' },
-  { path: '/secrets', label: 'Secrets', description: 'Vault namespaces, write-only secrets, and product tokens.' },
+  { path: '/servers', label: 'Servers', description: 'Your servers, the products they host and their readings.' },
+] as const;
+
+/**
+ * Portfolio-wide views the profile menu opens. Secrets and activity belong to products — each product page has them
+ * as tabs — so these are the views across every product.
+ */
+export const GlobalPlaces = [
   { path: '/activity', label: 'Activity', description: 'Every operator action, chained so an edited entry shows.' },
+  { path: '/secrets', label: 'Secrets', description: 'Vault namespaces, write-only secrets, and product tokens.' },
 ] as const;
 
-/** Registry administration: products, their environments and the workspaces that group them. */
-export const ManagementPlaces = [
-  { path: '/products', label: 'Products', description: 'Your portfolio, as the product catalog defines it.' },
-] as const;
-
-/** Account-level destinations, under Settings. */
+/** Account-level destinations, under Settings in the profile menu. */
 export const SettingsPlaces = [
   { path: '/settings/keys', label: 'Integration keys', description: 'Scoped keys other programs present to read Wheelhouse.' },
   { path: '/settings/catalog', label: 'Catalog', description: 'Every wow2 app the workspace catalog lists, ready to import.' },
@@ -34,8 +40,8 @@ export const SettingsPlaces = [
 /** A fixed place in the console: its URL, its title and the line under it. */
 type Place =
   | typeof HomePlace
-  | (typeof OperationPlaces)[number]
-  | (typeof ManagementPlaces)[number]
+  | (typeof PrimaryPlaces)[number]
+  | (typeof GlobalPlaces)[number]
   | (typeof SettingsPlaces)[number];
 
 /** The page lazily loaded for each place. @internal */
@@ -73,12 +79,13 @@ export const router = createAppRouter(
       lazy: () => import('@/presentation/workspaces/pages/WorkspacePage.vue'),
       handle: { title: (route) => param(route.params['workspace']), description: 'A workspace and its products.' },
     },
+    // One route for every tab, so moving between tabs keeps the page and its reads; the page answers an unknown tab.
     {
-      path: '/p/:product',
+      path: '/p/:product/:tab?',
       lazy: () => import('@/presentation/product/ProductPage.vue'),
       handle: { title: (route) => param(route.params['product']), description: 'A product, environment by environment.' },
     },
-    ...[...OperationPlaces, ...ManagementPlaces, ...SettingsPlaces].map(placeRoute),
+    ...[...PrimaryPlaces, ...GlobalPlaces, ...SettingsPlaces].map(placeRoute),
     { path: '/fleet', redirect: '/servers' },
     { path: '*', redirect: '/' },
   ],

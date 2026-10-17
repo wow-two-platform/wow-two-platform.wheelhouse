@@ -1,11 +1,15 @@
 import type { Product } from '@/domain/products';
 import type { Workspace } from '@/domain/workspaces';
 import { ConsolePaths, productLocation, serviceLocation, type ConsoleLocation } from './ConsolePaths';
+import { ProductTab, productTabOf } from './ProductTabs';
 
 /** Which level of the hierarchy a crumb names. */
-export type ScopeLevel = 'home' | 'workspace' | 'product' | 'service' | 'page';
+export type ScopeLevel = 'home' | 'workspace' | 'product' | 'tab' | 'service' | 'page';
 
-/** One step of the scope the top bar shows: Home › Workspace › Product › Service, or Home › a tool page. */
+/**
+ * One step of the scope the top bar shows: Home › Workspace › Product › Service on a product's Overview,
+ * Home › Workspace › Product › Tab on its other tabs, or Home › a tool page.
+ */
 export interface ScopeCrumb {
   readonly level: ScopeLevel;
   readonly label: string;
@@ -17,7 +21,7 @@ export interface ScopeCrumb {
 /** What the scope is read from: the route and the inventory the console already holds. */
 export interface ScopeInput {
   readonly path: string;
-  readonly params: Readonly<{ workspace?: string | null; product?: string | null }>;
+  readonly params: Readonly<{ workspace?: string | null; product?: string | null; tab?: string | null }>;
   readonly query: Readonly<{ env?: string | null; inspect?: string | null; item?: string | null }>;
   /** The route's own title, for a tool page. */
   readonly title: string | null;
@@ -48,6 +52,9 @@ export function scopeOf(input: ScopeInput): ScopeCrumb[] {
     const trail = [home, ...(workspace ? [workspaceCrumb(workspace)] : [])];
     const env = input.query.env ?? null;
     trail.push(crumb('product', product?.name ?? productSlug, productLocation(productSlug, { env }), productSlug));
+    const tab = input.params.tab ? productTabOf(input.params.tab) : null;
+    if (tab && tab.value !== ProductTab.Overview)
+      return [...trail, crumb('tab', tab.label, productLocation(productSlug, {}, tab.value), productSlug)];
     if (input.query.inspect === 'service' && input.query.item)
       trail.push(crumb('service', input.query.item, serviceLocation(productSlug, input.query.item, env), productSlug));
     return trail;
