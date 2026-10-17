@@ -123,6 +123,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Notify deploy outcomes and alerts | feature | Needs the alert channel (completeness Point 6) |
 | Stream a service's logs live | feature | Recent lines on request exist |
 | Checkpoint the newest audit entries outside Wheelhouse | feature | The chain shows edits, not truncation of the newest entries |
+| Ability to see an unreadable host in the attention list | feature | Servers shows the reason since v0.4; the attention list skips it |
 
 ---
 
@@ -259,6 +260,7 @@ Leftovers of the v0.4 sweep. Items marked *decision* wait on the owner.
 | Item | Type | Notes |
 |---|---|---|
 | Retire the placeholder deployment, domain and secret tables | issue | Outcome following uses durable runner files; deployment database ownership remains separate; domains and secrets stay elsewhere |
+| Return `servers[]` from the shared `StubDeploymentGateway` vitals | check | The v0.4 server-vitals E2E test carries its own stub instead |
 | Rename the runner's `fleet.py` and `rehearse.py` | check | The screen says Servers and local server; both now hold shapes and rig fixtures only |
 | Rename backend tests to `{Unit}_Should{Expectation}_When{Condition}` | check | Tests older than the v0.3 catalog predate the testing convention's naming rule |
 | Adopt the product template's ESLint, Prettier config and `format:check` gates | check | 86 app files predate a formatter config; format once in a dedicated commit |
