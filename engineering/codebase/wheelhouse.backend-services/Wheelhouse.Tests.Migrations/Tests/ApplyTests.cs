@@ -23,7 +23,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
     [
         "001-baseline", "002-snake-enums", "003-audit-updated-at", "004-audit-trail", "005-vitals-samples",
         "006-product-catalog", "007-inventory", "008-product-manifests", "009-server-vitals", "010-workspaces",
-        "011-product-status",
+        "011-product-status", "012-pins",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -399,6 +399,77 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
             (await Scalar(connection, "SELECT string_agg(slug || ':' || status, ',' ORDER BY slug) FROM products"))
                 .Should().Be("foreverpin:active,wheelhouse:inactive");
             (await Scalar(connection, "SELECT count(*) FROM service_statuses")).Should().Be(0L);
+        }
+    }
+
+    [Fact]
+    public async Task Pins_ShouldHoldOnePinPerOwnerAndTargetAndGoWithIt_WhenApplied()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator();
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+
+        (await ReadColumnsAsync(connection, "pins")).Should().Equal(
+            ("id", "uuid", false), ("owner", "text", false), ("kind", "text", false), ("workspace_id", "uuid", true),
+            ("product_id", "uuid", true), ("service", "text", true), ("sort_order", "integer", false),
+            ("created_at_utc", "timestamp with time zone", false));
+        (await migrator.HasIndexAsync("ix_pins_target")).Should().BeTrue();
+        (await migrator.HasIndexAsync("ix_pins_owner_order")).Should().BeTrue();
+
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000001", "pilot"));
+        const string pin =
+            "INSERT INTO pins (id, owner, kind, workspace_id, product_id, service, sort_order, created_at_utc) " +
+            "VALUES (gen_random_uuid(), '{0}', '{1}', {2}, {3}, {4}, 0, now())";
+        const string workspace = "(SELECT id FROM workspaces WHERE slug = 'own-ventures')";
+        const string product = "'00000000-0000-0000-0000-000000000001'";
+        await Execute(connection, string.Format(pin, "max", "workspace", workspace, "NULL", "NULL"));
+        await Execute(connection, string.Format(pin, "max", "product", "NULL", product, "NULL"));
+        await Execute(connection, string.Format(pin, "max", "service", "NULL", product, "'api'"));
+        await Execute(connection, string.Format(pin, "other", "product", "NULL", product, "NULL"));
+
+        // An owner pins a target once, its null parts included; a pin names exactly the target its kind takes.
+        foreach (var refused in new[]
+        {
+            string.Format(pin, "max", "product", "NULL", product, "NULL"),
+            string.Format(pin, "max", "workspace", workspace, "NULL", "NULL"),
+            string.Format(pin, "max", "workspace", "NULL", "NULL", "NULL"),
+            string.Format(pin, "max", "product", workspace, product, "NULL"),
+            string.Format(pin, "max", "service", "NULL", product, "NULL"),
+            string.Format(pin, "max", "product", "NULL", "gen_random_uuid()", "NULL"),
+        })
+        {
+            var insert = async () => await Execute(connection, refused);
+            await insert.Should().ThrowAsync<Npgsql.PostgresException>(refused);
+        }
+
+        // A pin goes with the product or workspace it points at.
+        await Execute(connection, "DELETE FROM products WHERE slug = 'pilot'");
+        (await Scalar(connection, "SELECT string_agg(owner || ':' || kind, ',') FROM pins")).Should().Be("max:workspace");
+        await Execute(connection, "DELETE FROM products");
+        await Execute(connection, "DELETE FROM workspaces");
+        (await Scalar(connection, "SELECT count(*) FROM pins")).Should().Be(0L);
+    }
+
+    [Fact]
+    public async Task Pins_ShouldRollBackToNoPinsAndApplyAgain_WhenReversed()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        await Execute(connection,
+            "INSERT INTO pins (id, owner, kind, workspace_id, sort_order, created_at_utc) " +
+            "SELECT gen_random_uuid(), 'max', 'workspace', id, 0, now() FROM workspaces");
+
+        for (var cycle = 0; cycle < 2; cycle++)
+        {
+            Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 11, CancellationToken.None));
+            (await migrator.HasTableAsync("pins")).Should().BeFalse();
+            (await Scalar(connection, "SELECT count(*) FROM workspaces")).Should().Be(1L);
+
+            Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(After(11));
+            (await Scalar(connection, "SELECT count(*) FROM pins")).Should().Be(0L);
         }
     }
 

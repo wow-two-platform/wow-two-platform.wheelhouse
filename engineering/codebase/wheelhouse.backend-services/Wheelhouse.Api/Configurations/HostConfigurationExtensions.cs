@@ -96,6 +96,7 @@ public static class HostConfigurationExtensions
             o.Predicate = check => !check.Tags.Contains(WheelhouseDatabase.ReadinessTag));
 
         builder.Services.AddScoped<IWorkspacesRepository, WorkspacesRepository>();
+        builder.Services.AddScoped<IPinsRepository, PinsRepository>();
         builder.Services.AddScoped<IProductsRepository, ProductsRepository>();
         builder.Services.AddScoped<IProductManifestsRepository, EfProductManifests>();
         builder.Services.AddScoped<IServiceStatusesRepository, ServiceStatusesRepository>();

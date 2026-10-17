@@ -134,3 +134,12 @@ public sealed record IntegrationKeyResponse(
 /// <param name="Key">The key as kept.</param>
 /// <param name="Secret">The secret, shown once.</param>
 public sealed record IntegrationKeyWithSecretResponse(IntegrationKeyResponse Key, string Secret);
+
+/// <summary>Response shape for a pin (mirrors the host's <c>PinDto</c> — enum read as its string name).</summary>
+/// <param name="Id">The pin's identifier.</param>
+/// <param name="Kind"><c>workspace</c>, <c>product</c> or <c>service</c>.</param>
+/// <param name="WorkspaceId">The pinned workspace.</param>
+/// <param name="ProductId">The pinned product, or the pinned service's product.</param>
+/// <param name="Service">The pinned service's key.</param>
+/// <param name="Order">Its place in the operator's order.</param>
+public sealed record PinResponse(Guid Id, string Kind, Guid? WorkspaceId, Guid? ProductId, string? Service, int Order);

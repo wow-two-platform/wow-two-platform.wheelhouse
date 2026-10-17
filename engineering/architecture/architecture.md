@@ -158,6 +158,23 @@ with the product. The key is taken as given, since the repository declares a pro
 - `ProductDto` carries `id`, `workspaceId`, `status` and `inactiveServices` (sorted keys); `/api/products` and the MCP
   `list_projects` tool share it.
 
+### Pins
+
+An operator pins workspaces, products and services to keep them one click away, in a custom order (`pins`: id, owner
+= the signed-in GitHub login, kind `workspace` | `product` | `service`, `workspace_id`, `product_id`, `service`,
+`sort_order`, `created_at_utc`). A pin names exactly the target its kind takes (a check constraint); a service pin is
+(`product_id`, service key) with no environment, so one pin covers every environment. An owner pins a target once
+(unique index with `NULLS NOT DISTINCT`, PostgreSQL 15+), and a pin goes with its workspace or product (cascade).
+Pins are a preference: they never reach the audit trail and are not inventory.
+
+- `GET /api/pins` lists the operator's own `{ id, kind, workspaceId, productId, service, order }` in order.
+- `POST /api/pins` `{ kind, workspaceId?, productId?, service? }` adds a pin last (201) or answers the existing pin
+  on that target (200); `productId` takes the product's id (its slug also works). An unknown target is 400.
+- `DELETE /api/pins/{id}` removes one (another operator's reads as 404); `PUT /api/pins/order` `{ ids }` reorders,
+  and the list must name every one of the operator's pins exactly once (409 otherwise).
+- Operators' sessions only (`OperatorSession` policy): an integration key is authenticated, then refused with 403;
+  writes carry the action header `pin`.
+
 ### Product identity
 
 A product's name, description, homepage and per-service name and description are text in `product/product.json` in its

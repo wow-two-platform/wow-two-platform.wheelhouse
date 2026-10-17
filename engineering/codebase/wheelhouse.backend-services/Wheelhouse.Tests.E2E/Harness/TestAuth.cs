@@ -10,7 +10,7 @@ namespace Wheelhouse.Tests.E2E.Harness;
 
 /// <summary>Configures the SDK test-auth scheme as Wheelhouse's allowlisted admin and re-points the admin policies at it.</summary>
 /// <remarks>Wheelhouse's policies name the cookie scheme, so making the test scheme the default is not enough: the admin,
-/// fallback and catalog-read policies are registered again against it. Clients without <see cref="AdminHeader"/> stay
+/// fallback, catalog-read and operator-session policies are registered again against it. Clients without <see cref="AdminHeader"/> stay
 /// anonymous, so protected endpoints return 401.</remarks>
 public static class TestAuthExtensions
 {
@@ -40,7 +40,10 @@ public static class TestAuthExtensions
             .SetFallbackPolicy(adminPolicy)
             // Catalog reads keep the real integration key scheme beside the test session.
             .AddPolicy(AuthConfigurationExtensions.ProductsReadPolicy, policy => policy
-                .RequireAllowlistedSessionOrApiKeyScope(IntegrationScopeConstants.CatalogRead, TestAuthHandler.SchemeName));
+                .RequireAllowlistedSessionOrApiKeyScope(IntegrationScopeConstants.CatalogRead, TestAuthHandler.SchemeName))
+            // Pins take the operator's session only; a key is authenticated, then refused.
+            .AddPolicy(AuthConfigurationExtensions.OperatorSessionPolicy, policy => policy
+                .RequireOperatorSession(TestAuthHandler.SchemeName));
 
         return services;
     }

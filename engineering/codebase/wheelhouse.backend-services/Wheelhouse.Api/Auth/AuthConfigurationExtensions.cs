@@ -1,6 +1,7 @@
 using Wheelhouse.Domain.Integrations.Constants;
 using Wheelhouse.Infrastructure.Settings;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using WoW.Two.Sdk.Beta.Be.Foundation.Configuration;
 using WoW.Two.Sdk.Beta.Be.Identity.ApiKeys;
 using WoW.Two.Sdk.Beta.Be.Identity.Authorization;
@@ -27,6 +28,10 @@ public static class AuthConfigurationExtensions
 
     /// <summary>The policy catalog reads require: the operator's session, or an integration key granting the scope.</summary>
     public const string ProductsReadPolicy = "ProductsRead";
+
+    /// <summary>The policy an operator's own preferences require: the allowlisted session. An integration key is
+    /// authenticated so it can be told apart, then refused with 403; anonymous callers get 401.</summary>
+    public const string OperatorSessionPolicy = "OperatorSession";
 
     /// <summary>The marker every integration key secret starts with, so a leaked one is recognizable.</summary>
     public const string KeyMarker = "wh_";
@@ -85,10 +90,23 @@ public static class AuthConfigurationExtensions
         builder.Services.AddApiKeyAuthentication(keys => keys.Marker = KeyMarker);
         builder.Services.AddAuthorizationBuilder()
             .AddPolicy(ProductsReadPolicy, policy => policy
-                .RequireAllowlistedSessionOrApiKeyScope(IntegrationScopeConstants.CatalogRead, CookieScheme));
+                .RequireAllowlistedSessionOrApiKeyScope(IntegrationScopeConstants.CatalogRead, CookieScheme))
+            .AddPolicy(OperatorSessionPolicy, policy => policy.RequireOperatorSession(CookieScheme));
 
         return builder;
     }
+
+    /// <summary>Requires the allowlisted operator's session on <paramref name="sessionScheme"/>. The integration key scheme
+    /// authenticates too, so a key is forbidden (403) rather than challenged: a key names a program, never an operator.</summary>
+    /// <param name="policy">The policy builder.</param>
+    /// <param name="sessionScheme">The scheme the operator's session signs in with.</param>
+    /// <returns>The same builder for chaining.</returns>
+    public static AuthorizationPolicyBuilder RequireOperatorSession(this AuthorizationPolicyBuilder policy, string sessionScheme) =>
+        policy
+            .AddAuthenticationSchemes(sessionScheme, ApiKeyAuthenticationDefaults.Scheme)
+            .RequireAuthenticatedUser()
+            .RequireAssertion(context => context.User.GetApiKeyName() is null)
+            .AddRequirements(new AllowlistRequirement());
 
     /// <summary>Adds authentication and authorization middleware; the SDK pipeline places it after routing and before
     /// idempotency.</summary>

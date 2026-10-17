@@ -4,6 +4,7 @@ using Wheelhouse.Domain.Deployments.Entities;
 using Wheelhouse.Domain.Domains.Entities;
 using Wheelhouse.Domain.Integrations.Entities;
 using Wheelhouse.Domain.Operations.Entities;
+using Wheelhouse.Domain.Pins.Entities;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Secrets.Entities;
 using Wheelhouse.Domain.Servers.Entities;
@@ -28,6 +29,9 @@ public sealed class WheelhouseDbContext(DbContextOptions<WheelhouseDbContext> op
 
     /// <summary>Gets the workspaces products are grouped into.</summary>
     public DbSet<WorkspaceEntity> Workspaces => Set<WorkspaceEntity>();
+
+    /// <summary>Gets the workspaces, products and services operators keep one click away.</summary>
+    public DbSet<PinEntity> Pins => Set<PinEntity>();
 
     /// <summary>Gets the portfolio's products.</summary>
     public DbSet<ProductEntity> Products => Set<ProductEntity>();
