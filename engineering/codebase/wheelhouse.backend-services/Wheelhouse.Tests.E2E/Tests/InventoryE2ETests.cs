@@ -43,7 +43,8 @@ public sealed class InventoryE2ETests(WheelhouseAppFixture fixture) : Wheelhouse
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.Location!.ToString().Should().EndWith("/api/products/pilot");
         var created = await response.ReadEnvelopeAsync<ProductResponse>();
-        (created.Slug, created.Lifecycle, created.Environments.Count).Should().Be(("pilot", "building", 0));
+        (created.Slug, created.Status, created.Environments.Count).Should().Be(("pilot", "active", 0));
+        created.InactiveServices.Should().BeEmpty();
         (await AdminClient.GetAsync("api/products/pilot")).StatusCode.Should().Be(HttpStatusCode.OK);
 
         var pilot = Snapshot().GetProperty("products").EnumerateArray().Single(item => item.GetProperty("slug").GetString() == "pilot");

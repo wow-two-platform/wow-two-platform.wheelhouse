@@ -32,8 +32,8 @@ public sealed record ProductEntity : IKeyedEntity<Guid>, IHasTableName, IAuditab
     /// <summary>Gets or sets the workspace the product belongs to.</summary>
     public Guid WorkspaceId { get; set; }
 
-    /// <summary>Gets or sets where the product stands in the portfolio.</summary>
-    public ProductLifecycle Lifecycle { get; set; } = ProductLifecycle.Building;
+    /// <summary>Gets or sets whether the product is in use; inactive only hides it from the console's lists.</summary>
+    public ProductStatus Status { get; set; } = ProductStatus.Active;
 
     /// <summary>Gets or sets where published releases and commit builds come from, or <c>null</c> when only
     /// hand-imported bundles deploy.</summary>

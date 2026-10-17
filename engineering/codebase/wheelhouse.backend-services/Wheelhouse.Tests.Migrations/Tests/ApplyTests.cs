@@ -23,6 +23,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
     [
         "001-baseline", "002-snake-enums", "003-audit-updated-at", "004-audit-trail", "005-vitals-samples",
         "006-product-catalog", "007-inventory", "008-product-manifests", "009-server-vitals", "010-workspaces",
+        "011-product-status",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -31,10 +32,10 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
     /// <summary>The ordinals 1 through <paramref name="ordinal"/>.</summary>
     private static int[] Through(int ordinal) => [.. Enumerable.Range(1, ordinal)];
 
-    /// <summary>The SQL that stores a bare product in the default workspace, as the schema stands after 010.</summary>
+    /// <summary>The SQL that stores a bare product in the default workspace, as the schema stands after every migration.</summary>
     private static string InsertProduct(string id, string slug) =>
-        "INSERT INTO products (id, slug, name, description, repository, default_branch, lifecycle, workspace_id, created_at_utc, updated_at_utc) " +
-        $"VALUES ('{id}', '{slug}', '{slug}', '', 'owner/{slug}', 'main', 'building', " +
+        "INSERT INTO products (id, slug, name, description, repository, default_branch, status, workspace_id, created_at_utc, updated_at_utc) " +
+        $"VALUES ('{id}', '{slug}', '{slug}', '', 'owner/{slug}', 'main', 'active', " +
         "(SELECT id FROM workspaces WHERE slug = 'own-ventures'), now(), now())";
 
     /// <summary>Builds a migrator over the shared container DB reading the real embedded wheelhouse migrations.</summary>
@@ -133,22 +134,25 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
                 "DELETE FROM products; " +
                 "INSERT INTO products (id, slug, name, repo, status, created_at_utc, updated_at_utc) VALUES " +
                 "(gen_random_uuid(), 'forever-pin', 'Forever Pin', 'Sulton-Max/10x-venture-forever-pin', 'active', now(), now()), " +
-                "(gen_random_uuid(), 'sketch', 'Sketch', 'owner/sketch', 'draft', now(), now())";
+                "(gen_random_uuid(), 'sketch', 'Sketch', 'owner/sketch', 'draft', now(), now()), " +
+                "(gen_random_uuid(), 'shelved', 'Shelved', 'owner/shelved', 'paused', now(), now())";
             await insert.ExecuteNonQueryAsync();
         }
 
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
 
         await using var read = connection.CreateCommand();
-        read.CommandText = "SELECT slug, lifecycle, repository, release IS NOT NULL FROM products ORDER BY slug";
+        // Through 007's lifecycle and 011's status: a paused registry row ends inactive, every other one active.
+        read.CommandText = "SELECT slug, status, repository, release IS NOT NULL FROM products ORDER BY slug";
         var rows = new List<(string, string, string, bool)>();
         await using (var reader = await read.ExecuteReaderAsync())
             while (await reader.ReadAsync())
                 rows.Add((reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetBoolean(3)));
         rows.Should().Equal(
-            ("foreverpin", "live", "sulton-max/10x-venture-forever-pin", true),
-            ("sketch", "building", "owner/sketch", false),
-            ("wheelhouse", "building", "wow-two-platform/wow-two-platform.wheelhouse", false));
+            ("foreverpin", "active", "sulton-max/10x-venture-forever-pin", true),
+            ("shelved", "inactive", "owner/shelved", false),
+            ("sketch", "active", "owner/sketch", false),
+            ("wheelhouse", "active", "wow-two-platform/wow-two-platform.wheelhouse", false));
     }
 
     [Fact]
@@ -321,6 +325,80 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
             Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(After(9));
             (await Scalar(connection, "SELECT count(*) FROM workspaces")).Should().Be(1L);
             (await Scalar(connection, "SELECT count(*) FROM products WHERE workspace_id IS NOT NULL")).Should().Be(products);
+        }
+    }
+
+    [Fact]
+    public async Task ProductStatus_ShouldMapPausedAndKilledToInactiveAndEveryOtherLifecycleToActive_WhenApplied()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 10, CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        await Execute(connection, "DELETE FROM products");
+        foreach (var lifecycle in new[] { "idea", "building", "live", "paused", "killed" })
+            await Execute(connection,
+                "INSERT INTO products (id, slug, name, description, repository, default_branch, lifecycle, workspace_id, created_at_utc, updated_at_utc) " +
+                $"VALUES (gen_random_uuid(), '{lifecycle}', '{lifecycle}', '', 'owner/{lifecycle}', 'main', '{lifecycle}', " +
+                "(SELECT id FROM workspaces WHERE slug = 'own-ventures'), now(), now())");
+
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(After(10));
+
+        var mapped = new List<(string, string)>();
+        await using (var read = connection.CreateCommand())
+        {
+            read.CommandText = "SELECT slug, status FROM products ORDER BY slug";
+            await using var reader = await read.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                mapped.Add((reader.GetString(0), reader.GetString(1)));
+        }
+        mapped.Should().Equal(("building", "active"), ("idea", "active"), ("killed", "inactive"), ("live", "active"), ("paused", "inactive"));
+        var columns = await ReadColumnsAsync(connection, "products");
+        columns.Should().Contain(("status", "text", false));
+        columns.Select(column => column.Name).Should().NotContain("lifecycle");
+        (await ReadColumnsAsync(connection, "service_statuses")).Should().Equal(
+            ("product_id", "uuid", false), ("service", "text", false), ("status", "text", false),
+            ("created_at_utc", "timestamp with time zone", false), ("updated_at_utc", "timestamp with time zone", false));
+
+        // One row per product and service, only for a product that exists, gone with its product.
+        const string row =
+            "INSERT INTO service_statuses (product_id, service, status, created_at_utc, updated_at_utc) " +
+            "VALUES ((SELECT id FROM products WHERE slug = '{0}'), 'api', 'inactive', now(), now())";
+        await Execute(connection, string.Format(row, "live"));
+        var duplicate = async () => await Execute(connection, string.Format(row, "live"));
+        await duplicate.Should().ThrowAsync<Npgsql.PostgresException>();
+        var orphan = async () => await Execute(connection,
+            "INSERT INTO service_statuses (product_id, service, status, created_at_utc, updated_at_utc) VALUES (gen_random_uuid(), 'api', 'inactive', now(), now())");
+        await orphan.Should().ThrowAsync<Npgsql.PostgresException>();
+        await Execute(connection, "DELETE FROM products WHERE slug = 'live'");
+        (await Scalar(connection, "SELECT count(*) FROM service_statuses")).Should().Be(0L);
+    }
+
+    [Fact]
+    public async Task ProductStatus_ShouldRollBackToALifecycleAndApplyAgain_WhenReversed()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        await Execute(connection, "UPDATE products SET status = 'inactive' WHERE slug = 'wheelhouse'");
+        await Execute(connection,
+            "INSERT INTO service_statuses (product_id, service, status, created_at_utc, updated_at_utc) " +
+            "SELECT id, 'console', 'inactive', now(), now() FROM products WHERE slug = 'wheelhouse'");
+
+        for (var cycle = 0; cycle < 2; cycle++)
+        {
+            Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 10, CancellationToken.None));
+            (await migrator.HasTableAsync("service_statuses")).Should().BeFalse();
+            (await ReadColumnsAsync(connection, "products")).Select(column => column.Name).Should().Contain("lifecycle").And.NotContain("status");
+            (await Scalar(connection, "SELECT string_agg(slug || ':' || lifecycle, ',' ORDER BY slug) FROM products"))
+                .Should().Be("foreverpin:building,wheelhouse:paused");
+
+            Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(After(10));
+            (await Scalar(connection, "SELECT string_agg(slug || ':' || status, ',' ORDER BY slug) FROM products"))
+                .Should().Be("foreverpin:active,wheelhouse:inactive");
+            (await Scalar(connection, "SELECT count(*) FROM service_statuses")).Should().Be(0L);
         }
     }
 

@@ -84,7 +84,10 @@ public sealed class McpE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBas
         using var payload = JsonDocument.Parse(text!);
         var project = payload.RootElement.EnumerateArray().Single(p => p.GetProperty("slug").GetString() == "foreverpin");
         project.GetProperty("homepage").ValueKind.Should().Be(JsonValueKind.Null);
-        project.GetProperty("lifecycle").ValueKind.Should().Be(JsonValueKind.String);
+        project.GetProperty("status").GetString().Should().Be("active");
+        project.GetProperty("inactiveServices").ValueKind.Should().Be(JsonValueKind.Array);
+        project.GetProperty("workspaceId").ValueKind.Should().Be(JsonValueKind.String);
+        project.TryGetProperty("lifecycle", out _).Should().BeFalse();
         project.TryGetProperty("Slug", out _).Should().BeFalse();
     }
 

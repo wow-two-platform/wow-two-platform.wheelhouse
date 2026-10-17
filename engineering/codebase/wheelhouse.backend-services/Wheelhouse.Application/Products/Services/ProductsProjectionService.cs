@@ -2,13 +2,19 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Products.Mappers;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Domain.Products.Entities;
+using Wheelhouse.Domain.Products.Enums;
 
 namespace Wheelhouse.Application.Products.Services;
 
 /// <summary>Provides products as integrations read them, joined with their identity, their environments, the vault
-/// namespace each environment's settings belong in, and the sites its newest rollout published.</summary>
+/// namespace each environment's settings belong in, the sites its newest rollout published and the services marked
+/// inactive.</summary>
 public sealed class ProductsProjectionService(
-    ITargetsRepository targets, IVaultsRepository vaults, ITargetSites sites, ProductIdentityService identities)
+    ITargetsRepository targets,
+    IVaultsRepository vaults,
+    ITargetSites sites,
+    IServiceStatusesRepository serviceStatuses,
+    ProductIdentityService identities)
 {
     /// <summary>Projects products for integrations, refreshing the identity of any whose branch head moved.</summary>
     /// <param name="products">The stored products, in the order to return them.</param>
@@ -31,10 +37,14 @@ public sealed class ProductsProjectionService(
             .GroupBy(vault => vault.ServerId)
             .ToDictionary(group => group.Key, group => group.Select(vault => vault.Slug).Min(StringComparer.Ordinal)!);
         var published = await sites.ReadAsync(ct);
+        var inactive = (await serviceStatuses.GetAllAsync(ct))
+            .Where(row => row.Status == ProductStatus.Inactive)
+            .ToLookup(row => row.ProductId, row => row.Service);
         return
         [
             .. products.Select(product => ProductMapper.Map(
-                product, resolved[product.Id], allTargets.Where(target => target.ProductId == product.Id), vaultByServer, published)),
+                product, resolved[product.Id], allTargets.Where(target => target.ProductId == product.Id), vaultByServer,
+                published, inactive[product.Id])),
         ];
     }
 

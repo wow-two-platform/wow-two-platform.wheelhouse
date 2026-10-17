@@ -62,7 +62,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         CancellationToken ct) =>
         IconAsync(slug, service, request, ct);
 
-    /// <summary>Adds a product to the portfolio; it starts as building.</summary>
+    /// <summary>Adds a product to the portfolio; it starts active, in the workspace the body names or the default one.</summary>
     [HttpPost]
     [RequireActionHeader("product")]
     [ProducesResponseType<ApiResponse<ProductDto>>(StatusCodes.Status201Created)]
@@ -129,15 +129,27 @@ public sealed class ProductsController(ISender sender) : ControllerBase
         this.ToActionResult(await sender.SendAsync(
             new ProductWorkspaceUpdateCommand { Product = product, WorkspaceId = request.WorkspaceId }, ct));
 
-    /// <summary>Records where a product stands in the portfolio.</summary>
-    [HttpPut("{slug}/lifecycle")]
-    [RequireActionHeader("lifecycle")]
+    /// <summary>Marks a product active or inactive; inactive only hides it from the console's lists, so it still deploys
+    /// and reads. The route names the product by its identifier or its slug.</summary>
+    [HttpPut("{product}/status")]
+    [RequireActionHeader("status")]
     [ProducesResponseType<ApiResponse<ProductDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> UpdateLifecycle(
-        [RegularExpression(Slug)] string slug, UpdateProductLifecycleApiRequest request, CancellationToken ct) =>
-        this.ToActionResult(await sender.SendAsync(new ProductLifecycleUpdateCommand { Slug = slug, Lifecycle = request.Lifecycle }, ct));
+    public async Task<IActionResult> UpdateStatus(string product, UpdateStatusApiRequest request, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new ProductStatusUpdateCommand { Product = product, Status = request.Status }, ct));
+
+    /// <summary>Marks one of a product's services active or inactive in every environment; a service never marked is
+    /// active. The route names the product by its identifier or its slug, and the service by its <c>deploy.yml</c> key.</summary>
+    [HttpPut("{product}/services/{service}/status")]
+    [RequireActionHeader("status")]
+    [ProducesResponseType<ApiResponse<ProductDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateServiceStatus(
+        string product, string service, UpdateStatusApiRequest request, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(
+            new ServiceStatusUpdateCommand { Product = product, Service = service, Status = request.Status }, ct));
 
     private async Task<IActionResult> IconAsync(string slug, string? service, ProductIconApiRequest request, CancellationToken ct) =>
         (await sender.SendAsync(new ProductIconQuery

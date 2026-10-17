@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using AwesomeAssertions;
 using Wheelhouse.Tests.E2E.Harness;
 using Wheelhouse.Tests.E2E.Support;
@@ -7,7 +9,7 @@ using WoW.Two.Sdk.Beta.Be.Testing.Web;
 namespace Wheelhouse.Tests.E2E.Tests;
 
 /// <summary>
-/// E2E for the product catalog — identity from the code-owned catalog (the runner stub answers it), lifecycle from the
+/// E2E for the product catalog — identity from the code-owned catalog (the runner stub answers it), status from the
 /// operator's records, and a projection with no targets, releases or deployment state.
 /// </summary>
 [Collection(WheelhouseCollection.Name)]
@@ -30,7 +32,8 @@ public sealed class ProductsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE
         products.Select(product => product.Slug).Should().Equal("foreverpin", "wheelhouse");
 
         var foreverPin = products[0];
-        foreverPin.Lifecycle.Should().Be("building");
+        foreverPin.Status.Should().Be("active");
+        foreverPin.InactiveServices.Should().BeEmpty();
         foreverPin.Repository.Should().Be(new ProductRepositoryResponse(
             "sulton-max/10x-venture-forever-pin", "https://github.com/sulton-max/10x-venture-forever-pin", "main"));
         foreverPin.IconUrl.Should().Be("/api/products/foreverpin/icon");
@@ -80,39 +83,127 @@ public sealed class ProductsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE
     }
 
     [Fact]
-    public async Task UpdateLifecycle_ShouldReturn200AndPersist_WhenTheOperatorRecordsIt()
+    public async Task UpdateStatus_ShouldReturn200AndPersist_WhenTheOperatorMarksAProductInactive()
     {
-        var response = await ActionClient("lifecycle").PutJsonAsync("api/products/foreverpin/lifecycle", new { lifecycle = "live" });
+        var response = await ActionClient("status").PutJsonAsync("api/products/foreverpin/status", new { status = "inactive" });
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await response.ReadEnvelopeAsync<ProductResponse>()).Lifecycle.Should().Be("live");
+        (await response.ReadEnvelopeAsync<ProductResponse>()).Status.Should().Be("inactive");
         var reread = await (await AdminClient.GetAsync("api/products")).ReadEnvelopeAsync<IReadOnlyList<ProductResponse>>();
-        reread.Select(product => (product.Slug, product.Lifecycle)).Should().Equal(("foreverpin", "live"), ("wheelhouse", "building"));
+        reread.Select(product => (product.Slug, product.Status)).Should().Equal(("foreverpin", "inactive"), ("wheelhouse", "active"));
+
+        (await ActionClient("status").PutJsonAsync("api/products/foreverpin/status", new { status = "active" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ProductAsync("foreverpin")).Status.Should().Be("active");
     }
 
     [Fact]
-    public async Task UpdateLifecycle_ShouldReturn400_WhenTheActionHeaderIsMissing()
+    public async Task UpdateStatus_ShouldAcceptTheProductsId_WhenTheRouteNamesItThatWay()
     {
-        var response = await AdminClient.PutJsonAsync("api/products/foreverpin/lifecycle", new { lifecycle = "live" });
+        var id = (await ProductAsync("wheelhouse")).Id;
+
+        var response = await ActionClient("status").PutJsonAsync($"api/products/{id}/status", new { status = "inactive" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ProductAsync("wheelhouse")).Status.Should().Be("inactive");
+    }
+
+    [Fact]
+    public async Task UpdateStatus_ShouldReturn400_WhenTheActionHeaderIsMissing()
+    {
+        var response = await AdminClient.PutJsonAsync("api/products/foreverpin/status", new { status = "inactive" });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]
-    public async Task UpdateLifecycle_ShouldReturn404_WhenTheCatalogLacksTheProduct()
+    public async Task UpdateStatus_ShouldReturn404_WhenTheCatalogLacksTheProduct()
     {
-        var response = await ActionClient("lifecycle").PutJsonAsync("api/products/ghost/lifecycle", new { lifecycle = "live" });
+        var response = await ActionClient("status").PutJsonAsync("api/products/ghost/status", new { status = "inactive" });
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Theory]
-    [InlineData("retired")]
+    [InlineData("live")]
+    [InlineData("paused")]
     [InlineData("2")]
-    public async Task UpdateLifecycle_ShouldReturn400_WhenTheLifecycleIsOutsideTheSet(string lifecycle)
+    public async Task UpdateStatus_ShouldReturn400_WhenTheStatusIsOutsideTheSet(string status)
     {
-        var response = await ActionClient("lifecycle").PutJsonAsync("api/products/foreverpin/lifecycle", new { lifecycle });
+        var response = await ActionClient("status").PutJsonAsync("api/products/foreverpin/status", new { status });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    [Fact]
+    public async Task UpdateServiceStatus_ShouldListTheServiceAsInactive_UntilItIsActiveAgain()
+    {
+        var client = ActionClient("status");
+
+        var off = await client.PutJsonAsync("api/products/foreverpin/services/redirect/status", new { status = "inactive" });
+        (await client.PutJsonAsync("api/products/foreverpin/services/management/status", new { status = "inactive" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        off.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ProductAsync("foreverpin")).InactiveServices.Should().Equal("management", "redirect");
+        (await ProductAsync("foreverpin")).Status.Should().Be("active", "a service's status leaves its product's alone");
+        (await ProductAsync("wheelhouse")).InactiveServices.Should().BeEmpty();
+
+        var on = await client.PutJsonAsync("api/products/foreverpin/services/management/status", new { status = "active" });
+        (await on.ReadEnvelopeAsync<ProductResponse>()).InactiveServices.Should().Equal("redirect");
+    }
+
+    [Fact]
+    public async Task UpdateServiceStatus_ShouldReturn404Or400_WhenTheProductOrServiceIsUnknownOrMalformed()
+    {
+        var client = ActionClient("status");
+
+        (await client.PutJsonAsync("api/products/ghost/services/api/status", new { status = "inactive" }))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await client.PutJsonAsync("api/products/foreverpin/services/Not_A_Key/status", new { status = "inactive" }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await AdminClient.PutJsonAsync("api/products/foreverpin/services/api/status", new { status = "inactive" }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task InactiveProduct_ShouldStillReadAndDeploy_SinceInactiveOnlyHidesIt()
+    {
+        var client = ActionClient("status");
+        (await client.PutJsonAsync("api/products/foreverpin/status", new { status = "inactive" })).EnsureSuccessStatusCode();
+        (await client.PutJsonAsync("api/products/foreverpin/services/management/status", new { status = "inactive" })).EnsureSuccessStatusCode();
+
+        (await AdminClient.GetAsync("api/products/foreverpin")).StatusCode.Should().Be(HttpStatusCode.OK);
+        var deploy = AdminClient;
+        deploy.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "deploy");
+        (await deploy.PostJsonAsync("api/deployments", new { target = "foreverpin-dev", release = "v1" }))
+            .StatusCode.Should().Be(HttpStatusCode.Accepted);
+    }
+
+    [Fact]
+    public async Task StatusWrites_ShouldLandInTheAuditTrail()
+    {
+        var client = ActionClient("status");
+        (await client.PutJsonAsync("api/products/foreverpin/status", new { status = "inactive" })).EnsureSuccessStatusCode();
+        (await client.PutJsonAsync("api/products/foreverpin/services/redirect/status", new { status = "inactive" })).EnsureSuccessStatusCode();
+
+        var entries = (await AdminClient.GetFromJsonAsync<JsonElement>("api/audit")).GetProperty("data").EnumerateArray()
+            .Select(entry => (entry.GetProperty("action").GetString(), entry.GetProperty("subject").GetString(), entry.GetProperty("detail").GetString()))
+            .Reverse();
+        entries.Should().Equal(("product.status", "foreverpin", "Inactive"), ("service.status", "foreverpin/redirect", "Inactive"));
+    }
+
+    [Fact]
+    public async Task DeleteProduct_ShouldTakeItsServiceStatusesWithIt()
+    {
+        var client = ActionClient("status");
+        (await client.PutJsonAsync("api/products/wheelhouse/services/console/status", new { status = "inactive" })).EnsureSuccessStatusCode();
+
+        (await ActionClient("product").DeleteAsync("api/products/wheelhouse")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        (await AdminClient.GetAsync("api/products/wheelhouse")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    private async Task<ProductResponse> ProductAsync(string slug) =>
+        await (await AdminClient.GetAsync("api/products/" + slug)).ReadEnvelopeAsync<ProductResponse>();
 }

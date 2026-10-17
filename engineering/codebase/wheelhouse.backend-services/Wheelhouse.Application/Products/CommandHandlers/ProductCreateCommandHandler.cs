@@ -10,7 +10,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Products.CommandHandlers;
 
-/// <summary>Handles <see cref="ProductCreateCommand"/>; a new product starts as building, in the workspace the request
+/// <summary>Handles <see cref="ProductCreateCommand"/>; a new product starts active, in the workspace the request
 /// names or else the default one.</summary>
 public sealed class ProductCreateCommandHandler(
     IProductsRepository products,

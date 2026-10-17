@@ -42,9 +42,9 @@ public sealed class ValidationProblemDetailsE2ETests(WheelhouseAppFixture fixtur
     }
 
     [Fact]
-    public async Task UpdateLifecycle_ShouldReturn400ProblemDetails_WhenTheBodyIsMissingTheLifecycle()
+    public async Task UpdateStatus_ShouldReturn400ProblemDetails_WhenTheBodyIsMissingTheStatus()
     {
-        var response = await ActionClient("lifecycle").PutJsonAsync("api/products/foreverpin/lifecycle", new { });
+        var response = await ActionClient("status").PutJsonAsync("api/products/foreverpin/status", new { });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await response.ReadProblemAsync()).Status.Should().Be(400);

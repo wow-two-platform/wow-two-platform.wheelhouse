@@ -3,6 +3,7 @@ using Dapper;
 using Microsoft.EntityFrameworkCore;
 using Wheelhouse.Domain.Deployments.Entities;
 using Wheelhouse.Domain.Deployments.Enums;
+using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Products.Enums;
 using Wheelhouse.Domain.Servers.Enums;
 using Wheelhouse.Domain.Targets.Enums;
@@ -36,22 +37,25 @@ public sealed class EnumRoundTripTests(WheelhouseTestDb db) : IAsyncLifetime
     [InlineData(VpsProvider.Ovhcloud, "ovhcloud")]
     public async Task InventoryEnums_ShouldBeStoredAsSnakeCaseTextAndReadBack_WhenRecorded(VpsProvider provider, string storedProvider)
     {
-        var product = InventoryRows.Product("pilot") with { Lifecycle = ProductLifecycle.Live };
+        var product = InventoryRows.Product("pilot") with { Status = ProductStatus.Inactive };
         var server = InventoryRows.Server("hel1") with { Provider = provider };
         await using (var ctx = db.NewContext())
         {
             ctx.Products.Add(product);
             ctx.Servers.Add(server);
             ctx.Targets.Add(InventoryRows.Target("pilot-prod", product, server));
+            ctx.ServiceStatuses.Add(new ServiceStatusEntity { ProductId = product.Id, Service = "api", Status = ProductStatus.Inactive });
             await ctx.SaveChangesAsync();
         }
 
-        (await ReadAsync("select lifecycle from products where slug = 'pilot'")).Should().Be("live");
+        (await ReadAsync("select status from products where slug = 'pilot'")).Should().Be("inactive");
+        (await ReadAsync("select status from service_statuses where service = 'api'")).Should().Be("inactive");
         (await ReadAsync("select provider from servers where slug = 'hel1'")).Should().Be(storedProvider);
         (await ReadAsync("select environment from targets where slug = 'pilot-prod'")).Should().Be("prod");
 
         await using var read = db.NewContext();
-        (await read.Products.SingleAsync()).Lifecycle.Should().Be(ProductLifecycle.Live);
+        (await read.Products.SingleAsync()).Status.Should().Be(ProductStatus.Inactive);
+        (await read.ServiceStatuses.SingleAsync()).Status.Should().Be(ProductStatus.Inactive);
         (await read.Servers.SingleAsync()).Provider.Should().Be(provider);
         (await read.Targets.SingleAsync()).Environment.Should().Be(DeploymentEnvironment.Prod);
     }

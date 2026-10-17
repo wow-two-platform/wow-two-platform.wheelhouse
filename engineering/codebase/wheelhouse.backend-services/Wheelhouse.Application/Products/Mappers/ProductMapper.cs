@@ -15,13 +15,15 @@ internal static class ProductMapper
     /// <param name="targets">The product's targets.</param>
     /// <param name="vaults">Each server's vault slug, by server identifier.</param>
     /// <param name="sites">Each target's published sites, by target slug.</param>
+    /// <param name="inactiveServices">The keys of the product's services marked inactive.</param>
     /// <returns>The product integrations read.</returns>
     public static ProductDto Map(
         ProductEntity product,
         ProductIdentity identity,
         IEnumerable<TargetEntity> targets,
         IReadOnlyDictionary<Guid, string> vaults,
-        IReadOnlyDictionary<string, IReadOnlyList<ProductSiteModel>> sites) => new()
+        IReadOnlyDictionary<string, IReadOnlyList<ProductSiteModel>> sites,
+        IEnumerable<string> inactiveServices) => new()
     {
         Id = product.Id,
         Slug = product.Slug,
@@ -42,7 +44,8 @@ internal static class ProductMapper
             ],
         },
         WorkspaceId = product.WorkspaceId,
-        Lifecycle = product.Lifecycle,
+        Status = product.Status,
+        InactiveServices = [.. inactiveServices.Order(StringComparer.Ordinal)],
         Repository = new ProductRepositoryDto
         {
             Name = product.Repository,

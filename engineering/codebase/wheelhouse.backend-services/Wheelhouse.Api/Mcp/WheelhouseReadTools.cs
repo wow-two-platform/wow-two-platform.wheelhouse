@@ -28,7 +28,7 @@ public sealed partial class WheelhouseReadTools(ISender sender, WheelhouseDbCont
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The product catalog.</returns>
     [McpServerTool(Name = "list_projects", ReadOnly = true, Destructive = false, OpenWorld = false)]
-    [Description("List Wheelhouse projects (products): identity, repository, release source, lifecycle, environment sites and the vault namespace each environment's settings belong in. Never returns secret values.")]
+    [Description("List Wheelhouse projects (products): identity, workspace, status and inactive services, repository, release source, environment sites and the vault namespace each environment's settings belong in. Never returns secret values.")]
     [Authorize(Policy = WheelhouseMcpConfiguration.CatalogPolicy)]
     public async Task<IReadOnlyList<ProductDto>> ListProjects(CancellationToken ct) =>
         Read(await sender.SendAsync(new ProductGetAllQuery(), ct));

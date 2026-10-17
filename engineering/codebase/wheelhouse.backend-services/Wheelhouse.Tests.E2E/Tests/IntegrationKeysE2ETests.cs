@@ -73,11 +73,11 @@ public sealed class IntegrationKeysE2ETests(WheelhouseAppFixture fixture) : Whee
     {
         var created = await CreateAsync();
         var client = KeyClient(created.Secret);
-        client.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "lifecycle");
+        client.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "status");
 
         (await client.GetAsync("api/deployments/targets")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         (await client.GetAsync("api/integration-keys")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        (await client.PutJsonAsync("api/products/foreverpin/lifecycle", new { lifecycle = "live" }))
+        (await client.PutJsonAsync("api/products/foreverpin/status", new { status = "inactive" }))
             .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 

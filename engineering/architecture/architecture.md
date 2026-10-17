@@ -32,7 +32,7 @@ flowchart LR
 | Layer | Responsibility |
 |---|---|
 | Domain | Product, server, target, vault, deployment, domain and secret models |
-| Application | Inventory, lifecycle, integration key, audit, vault and deployment use cases |
+| Application | Inventory, workspace, status, integration key, audit, vault and deployment use cases |
 | Infrastructure | SDK integration clients, the inventory snapshot exporter and the bounded runner-process adapter |
 | Persistence | PostgreSQL EF mapping, repositories and bespoke migration files |
 | API | Host wiring, authorization, request validation, controllers and SPA serving |
@@ -116,7 +116,7 @@ and an explicit cutover; a second host definition does not make a service redund
 ## Product catalog
 
 A product is one inventory row: slug, name, description, repository, default branch, an optional release source, its
-workspace and the operator's lifecycle (idea, building, live, paused, killed). The slug never changes once created; the runner
+workspace and its status. The slug never changes once created; the runner
 refuses a target or release source for a product the snapshot lacks. While the repository carries a valid manifest,
 its name, description and homepage replace the row's ([product identity](#product-identity)).
 
@@ -142,6 +142,21 @@ order if it was removed.
 - `PUT /api/products/{product}/workspace` `{ workspaceId }` moves a product; `{product}` is the product's id or slug.
 - Every write carries the action header `workspace` and is audited (`workspace.create`, `workspace.update`,
   `workspace.delete`, `workspace.reorder`, `product.workspace`). Workspaces are not part of the runner's snapshot.
+
+### Status
+
+A product and each of its services are `active` or `inactive`. Inactive is a display filter only: the console hides
+inactive products and services until the operator asks to see them, while deploys, reads and integrations keep
+working. `products.status` replaced the five-value lifecycle in `011-product-status` (paused and killed became
+inactive, idea, building and live active). A service's status is a `service_statuses` row keyed by (`product_id`,
+service key in `deploy.yml`); a service without a row is active, one status covers every environment, and the rows go
+with the product. The key is taken as given, since the repository declares a product's services.
+
+- `PUT /api/products/{product}/status` `{ status }` and `PUT /api/products/{product}/services/{service}/status`
+  `{ status }`; `{product}` is the id or the slug. Both carry the action header `status` and are audited
+  (`product.status`, `service.status` with subject `{product}/{service}`). A new product starts active.
+- `ProductDto` carries `id`, `workspaceId`, `status` and `inactiveServices` (sorted keys); `/api/products` and the MCP
+  `list_projects` tool share it.
 
 ### Product identity
 

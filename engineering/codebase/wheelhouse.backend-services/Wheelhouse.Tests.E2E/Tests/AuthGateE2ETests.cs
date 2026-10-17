@@ -29,9 +29,9 @@ public sealed class AuthGateE2ETests(WheelhouseAppFixture fixture) : WheelhouseE
     }
 
     [Fact]
-    public async Task UpdateLifecycle_ShouldReturn401_WhenTheCallerIsAnonymous()
+    public async Task UpdateStatus_ShouldReturn401_WhenTheCallerIsAnonymous()
     {
-        var response = await AnonymousClient.PutJsonAsync("api/products/foreverpin/lifecycle", new { lifecycle = "live" });
+        var response = await AnonymousClient.PutJsonAsync("api/products/foreverpin/status", new { status = "inactive" });
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -57,8 +57,8 @@ public sealed class AuthGateE2ETests(WheelhouseAppFixture fixture) : WheelhouseE
     {
         // The same calls that 401 anonymously must pass for the operator — proves the gate, not a blanket block.
         var client = AdminClient;
-        client.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "lifecycle");
-        (await client.PutJsonAsync("api/products/foreverpin/lifecycle", new { lifecycle = "paused" }))
+        client.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "status");
+        (await client.PutJsonAsync("api/products/foreverpin/status", new { status = "inactive" }))
             .StatusCode.Should().Be(HttpStatusCode.OK);
 
         var servers = AdminClient;

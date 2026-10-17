@@ -85,15 +85,15 @@ public sealed class AuditE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EB
     }
 
     [Fact]
-    public async Task LifecycleChange_IsRecordedAgainstTheProduct()
+    public async Task StatusChange_IsRecordedAgainstTheProduct()
     {
         var client = AdminClient;
-        client.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "lifecycle");
+        client.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "status");
         Assert.Equal(HttpStatusCode.OK,
-            (await client.PutAsJsonAsync("/api/products/foreverpin/lifecycle", new { lifecycle = "live" })).StatusCode);
+            (await client.PutAsJsonAsync("/api/products/foreverpin/status", new { status = "inactive" })).StatusCode);
 
         var entry = Assert.Single(await Entries());
-        Assert.Equal(("product.lifecycle", "foreverpin", "succeeded", "Live"),
+        Assert.Equal(("product.status", "foreverpin", "succeeded", "Inactive"),
             (entry.GetProperty("action").GetString(), entry.GetProperty("subject").GetString(),
                 entry.GetProperty("outcome").GetString(), entry.GetProperty("detail").GetString()));
     }

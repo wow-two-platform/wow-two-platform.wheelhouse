@@ -2,7 +2,7 @@ using Wheelhouse.Domain.Products.Enums;
 
 namespace Wheelhouse.Application.Products.Models;
 
-/// <summary>Represents a product as integrations read it: identity, lifecycle, release source and where each
+/// <summary>Represents a product as integrations read it: identity, workspace, status, release source and where each
 /// environment is reached — no targets, servers or deployment state. The identity is the cached manifest of the
 /// product's repository when it has a valid one. It is the one <c>catalog:read</c> projection: <c>/api/products</c> and
 /// the MCP <c>list_projects</c> tool both return it.</summary>
@@ -30,8 +30,12 @@ public sealed record ProductDto
     /// <summary>Gets the workspace the product belongs to.</summary>
     public required Guid WorkspaceId { get; init; }
 
-    /// <summary>Gets where the product stands in the portfolio.</summary>
-    public required ProductLifecycle Lifecycle { get; init; }
+    /// <summary>Gets whether the product is in use; inactive only hides it from the console's lists.</summary>
+    public required ProductStatus Status { get; init; }
+
+    /// <summary>Gets the keys of the product's services the operator marked inactive, in key order; every other
+    /// service is active.</summary>
+    public required IReadOnlyList<string> InactiveServices { get; init; }
 
     /// <summary>Gets the product's source repository.</summary>
     public required ProductRepositoryDto Repository { get; init; }

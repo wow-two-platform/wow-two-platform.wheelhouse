@@ -37,7 +37,7 @@ public sealed record VaultResponse(string Slug, string Name, string Server, stri
 /// <param name="Slug">The product's identifier.</param>
 /// <param name="Name">Display name.</param>
 /// <param name="Description">What the product does.</param>
-/// <param name="Lifecycle">Where it stands (string-serialized enum).</param>
+/// <param name="Status"><c>active</c> or <c>inactive</c> (string-serialized enum).</param>
 /// <param name="Repository">Its source repository.</param>
 /// <param name="IconUrl">The path of its icon.</param>
 /// <param name="Environments">Its environments, dev to prod.</param>
@@ -45,18 +45,20 @@ public sealed record VaultResponse(string Slug, string Name, string Server, stri
 /// <param name="Identity">Where its name, description and homepage come from.</param>
 /// <param name="Id">The product's identifier.</param>
 /// <param name="WorkspaceId">The workspace it belongs to.</param>
+/// <param name="InactiveServices">The keys of its services marked inactive.</param>
 public sealed record ProductResponse(
     string Slug,
     string Name,
     string Description,
-    string Lifecycle,
+    string Status,
     ProductRepositoryResponse Repository,
     string IconUrl,
     IReadOnlyList<ProductEnvironmentResponse> Environments,
     string? Homepage = null,
     ProductIdentityResponse? Identity = null,
     Guid Id = default,
-    Guid WorkspaceId = default);
+    Guid WorkspaceId = default,
+    IReadOnlyList<string>? InactiveServices = null);
 
 /// <summary>Response shape for a workspace (mirrors the host's <c>WorkspaceDto</c>).</summary>
 /// <param name="Id">The workspace's identifier.</param>

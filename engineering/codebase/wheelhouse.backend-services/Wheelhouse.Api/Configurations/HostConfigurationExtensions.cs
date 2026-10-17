@@ -98,6 +98,7 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<IWorkspacesRepository, WorkspacesRepository>();
         builder.Services.AddScoped<IProductsRepository, ProductsRepository>();
         builder.Services.AddScoped<IProductManifestsRepository, EfProductManifests>();
+        builder.Services.AddScoped<IServiceStatusesRepository, ServiceStatusesRepository>();
         builder.Services.AddScoped<IServersRepository, ServersRepository>();
         builder.Services.AddScoped<ITargetsRepository, TargetsRepository>();
         builder.Services.AddScoped<IVaultsRepository, VaultsRepository>();
