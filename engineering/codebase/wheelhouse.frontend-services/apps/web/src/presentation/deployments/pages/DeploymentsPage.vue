@@ -1,68 +1,69 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { Rocket } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
-import { DataRegion, SkeletonStateGroup } from "@wow-two-beta/fe/presentation/feedback";
 import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
 
-import { useRefresh } from "@/bootstrap/query";
-import { useDeploymentHistory } from "@/application/deployments";
-import type { DeploymentJob } from "@/domain/deployments";
-import { Panel, RefreshButton } from "@/presentation/common/components";
+import { useDeploymentPromotions, useRunningDeployments } from "@/application/deployments";
+import { usePortfolio } from "@/application/portfolio";
+import { ProductStatus } from "@/domain/products";
+import type { DeploymentPromotion } from "@/domain/deployments";
 
 import DeployModal from "../components/DeployModal.vue";
-import DeploymentStatsPanel from "../components/DeploymentStatsPanel.vue";
-import HistoryTable from "../components/HistoryTable.vue";
-import TargetsPanel from "../components/TargetsPanel.vue";
+import DeploymentsPanel from "../components/history/DeploymentsPanel.vue";
+import RangeStatsTiles from "../components/history/RangeStatsTiles.vue";
+import ReadyToPromotePanel from "../components/history/ReadyToPromotePanel.vue";
+import RunningNowPanel from "../components/history/RunningNowPanel.vue";
 import { useDeployModal } from "../hooks/useDeployModal";
+import { useDeploymentViewRoute } from "../hooks/useDeploymentViewRoute";
 
-/** Renders portfolio deployment history, complete statistics and target operations. */
+/**
+ * The portfolio's deployments, top to bottom: what runs now, the measures under the shared filter, the releases ready
+ * for prod, and the deployments themselves by day or newest first.
+ */
 defineOptions({ name: "DeploymentsPage" });
-const history = useDeploymentHistory();
-const historyRefresh = useRefresh(history.refetch);
+const route = useDeploymentViewRoute();
+const portfolio = usePortfolio();
+const running = useRunningDeployments();
+const promotions = useDeploymentPromotions();
 const deploy = useDeployModal();
+const productNames = computed(
+  () => new Map(portfolio.products.products.value.map((product) => [product.slug, product.name] as const)),
+);
+/** Inactive products stay out of the offers until the operator shows inactive ones, as everywhere else. */
+const offers = computed(() => {
+  const items = promotions.data.value;
+  if (!items || portfolio.showInactive.value) return items;
+  const inactive = new Set(
+    portfolio.products.products.value.filter((product) => product.status === ProductStatus.Inactive).map((product) => product.slug),
+  );
+  return items.filter((item) => !inactive.has(item.product));
+});
 
-/** Preselects the exact successful submission's target and bundle for a new confirmation. */
-function redeploy(job: DeploymentJob): void {
-  if (job.targetId && job.bundleId)
-    deploy.openDeploy({ target: job.targetId, release: job.bundleId });
+function promote(item: DeploymentPromotion): void {
+  deploy.openDeploy({ target: item.prodTargetId, release: item.bundleId });
 }
 </script>
 
 <template>
-  <div class="flex flex-col gap-6">
+  <div class="flex min-w-0 flex-col gap-6">
     <PageHeaderActions>
       <Button variant="solid" tone="primary" @click="deploy.openDeploy()">
         <template #leading><Rocket :size="16" /></template>Deploy
       </Button>
     </PageHeaderActions>
-    <TargetsPanel />
-    <Panel
-      title="Recent deployments"
-      description="The latest 50 submissions across all products and environments."
-    >
-      <template #actions>
-        <RefreshButton
-          variant="ghost"
-          :refreshing="historyRefresh.refreshing.value"
-          @refresh="historyRefresh.refresh()"
-        />
-      </template>
-      <DataRegion
-        :is-first-load="history.isFirstLoad.value"
-        :is-refreshing="history.isRefreshing.value"
-        :error="history.error.value"
-        :has-data="Boolean(history.data.value)"
-        :is-empty="Boolean(history.data.value) && !history.data.value?.length"
-        empty-title="No deployments yet"
-        loading-label="Loading deployments"
-      >
-        <SkeletonStateGroup class="contents" :is-loading="historyRefresh.refreshing.value">
-          <HistoryTable :jobs="history.data.value" :on-redeploy="redeploy" />
-        </SkeletonStateGroup>
-      </DataRegion>
-    </Panel>
-    <DeploymentStatsPanel show-targets />
+    <RunningNowPanel v-if="running.data.value?.length" :items="running.data.value" :product-names="productNames" />
+    <RangeStatsTiles :filter="route.filter.value" />
+    <ReadyToPromotePanel
+      :items="offers"
+      :product-names="productNames"
+      :is-first-load="promotions.isFirstLoad.value"
+      :error="promotions.error.value"
+      @promote="promote"
+      @retry="promotions.refetch()"
+    />
+    <DeploymentsPanel />
     <DeployModal
       :key="deploy.session.value"
       :open="deploy.open.value"

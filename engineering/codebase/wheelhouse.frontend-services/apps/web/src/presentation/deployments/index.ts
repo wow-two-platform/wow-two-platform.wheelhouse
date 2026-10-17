@@ -1,9 +1,3 @@
-export { default as DeploymentStatsPanel } from "./components/DeploymentStatsPanel.vue";
-export {
-  default as HistoryTable,
-  type HistoryTableProps,
-} from "./components/HistoryTable.vue";
-export { default as TargetsPanel } from "./components/TargetsPanel.vue";
 export { default as ConditionBadge } from "./components/ConditionBadge.vue";
 export { default as JobStatusBadge } from "./components/JobStatusBadge.vue";
 export { default as JobStatusIndicator } from "./components/JobStatusIndicator.vue";
@@ -30,3 +24,7 @@ export {
   type TargetSitesProps,
 } from "./components/TargetSites.vue";
 export { useDeployModal } from "./hooks/useDeployModal";
+export {
+  default as DeploymentsPanel,
+  type DeploymentsPanelProps,
+} from "./components/history/DeploymentsPanel.vue";
