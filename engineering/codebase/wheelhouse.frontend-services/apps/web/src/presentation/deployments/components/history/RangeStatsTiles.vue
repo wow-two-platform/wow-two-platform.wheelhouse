@@ -93,13 +93,16 @@ function difference(
       loading-label="Loading deployment measures"
       @retry="stats.refetch()"
     >
+      <!-- The SDK trend row is one inline-flex line whose readout and caption each wrap inside themselves, so a narrow
+           phone tile split "−19 pts" and "vs prior 6 months" into two columns. Here each keeps its words together and
+           the caption wraps whole under the readout; an fe sdk candidate. -->
       <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard
           v-for="(metric, index) in tiles"
           :key="metric?.label ?? `placeholder-${index}`"
           v-bind="metric ?? { label: '', value: '' }"
           size="sm"
-          class="wh-glass min-w-0 rounded-2xl border border-(--wh-glass-edge) bg-(--wh-glass-fill) p-3 sm:p-4"
+          class="wh-glass min-w-0 rounded-2xl border border-(--wh-glass-edge) bg-(--wh-glass-fill) p-3 sm:p-4 [&>div>span.inline-flex]:flex-wrap [&>div>span.inline-flex]:gap-x-1 [&>div>span.inline-flex]:whitespace-nowrap"
         />
       </div>
     </DataRegion>
