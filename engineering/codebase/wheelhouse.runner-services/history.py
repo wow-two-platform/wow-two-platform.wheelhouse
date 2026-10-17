@@ -1,0 +1,83 @@
+"""The deployment history projection the API filters and aggregates: every local submission with its last observation,
+its bundle's services and the step a live rollout is on. Local files only; nothing here contacts a target."""
+import uuid
+from runner import SLUG, read_json, require
+
+PENDING = {"submitting", "queued", "running"}
+# One observation's fields the detail page shows; SSH details and remote paths never leave the control host.
+OBSERVED = ("status", "reason", "failure", "startedAt", "completedAt", "mutationStarted", "steps", "sites",
+            "warnings", "versions", "reconciledBy")
+
+
+def bundle_facts(root, bundle_id):
+    """What a cached bundle declares: product, kind, branch, rollback compatibility and each service's image and
+    version, plus when its source published it. None when the bundle is not cached or not readable."""
+    if not isinstance(bundle_id, str) or not SLUG.fullmatch(bundle_id):
+        return None
+    bundle = root / "bundles" / bundle_id
+    try:
+        manifest = read_json(bundle / "release.json")
+        source = read_json(bundle / "source.json") if (bundle / "source.json").is_file() else {}
+    except (ValueError, OSError):
+        return None
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("images"), dict):
+        return None
+    versions = manifest.get("versions") if isinstance(manifest.get("versions"), dict) else {}
+    services = {}
+    for name, image in sorted(manifest["images"].items()):
+        entry = versions.get(name) if isinstance(versions.get(name), dict) else {}
+        services[name] = {"image": image if isinstance(image, str) else None,
+                          "version": entry.get("version") if isinstance(entry.get("version"), str) else None}
+    published = source.get("publishedAt") if isinstance(source, dict) else None
+    return {"product": manifest.get("product") if isinstance(manifest.get("product"), str) else None,
+            "kind": manifest.get("kind", "release"), "branch": manifest.get("branch"),
+            "rollbackCompatible": manifest.get("rollbackCompatible") is True, "services": services,
+            "publishedAt": published if isinstance(published, str) else None}
+
+
+def current_step(root, job_id):
+    """The step a live rollout is on: the running one, else the last one recorded; None before the worker starts."""
+    try:
+        observed = read_json(root / "observed" / (job_id + ".json"))
+    except (ValueError, OSError):
+        return None
+    steps = [step for step in (observed.get("steps") if isinstance(observed, dict) else None) or []
+             if isinstance(step, dict) and isinstance(step.get("name"), str)]
+    if not steps:
+        return None
+    step = next((item for item in reversed(steps) if item.get("status") == "running"), steps[-1])
+    return {"name": step["name"], "status": step.get("status"), "startedAt": step.get("startedAt"),
+            "index": steps.index(step) + 1}
+
+
+def records(root, submissions):
+    """`submissions` is the transport's merged job list; each record gains its bundle's facts and, while it is live,
+    its current step. A bundle missing from the cache leaves product and services unknown (null)."""
+    facts = {}
+    result = []
+    for job in submissions:
+        bundle_id = job.get("bundleId")
+        if bundle_id not in facts:
+            facts[bundle_id] = bundle_facts(root, bundle_id)
+        bundle = facts[bundle_id] or {}
+        item = {**job, "product": bundle.get("product"), "kind": bundle.get("kind"), "branch": bundle.get("branch"),
+                "rollbackCompatible": bundle.get("rollbackCompatible"), "services": bundle.get("services"),
+                "publishedAt": bundle.get("publishedAt")}
+        if job.get("status") in PENDING:
+            item["currentStep"] = current_step(root, job["id"])
+        result.append(item)
+    return result
+
+
+def observation(root, job_id, observe):
+    """One submission's last observation, read from local files: its steps, sites, warnings and versions.
+    `observe` is the transport's merge of the observed outcome and a reconciliation receipt."""
+    require(isinstance(job_id, str) and str(uuid.UUID(job_id)) == job_id, "Invalid deployment id")
+    path = root / "jobs" / (job_id + ".json")
+    require(path.is_file(), "Unknown deployment")
+    record = read_json(path)
+    require(isinstance(record, dict) and record.get("id") == job_id, "Unknown deployment")
+    observed = observe(root, record)
+    result = {"id": job_id, "targetId": record.get("targetId"), "status": record.get("status", "unknown")}
+    result.update({key: observed[key] for key in OBSERVED if key in observed})
+    return result

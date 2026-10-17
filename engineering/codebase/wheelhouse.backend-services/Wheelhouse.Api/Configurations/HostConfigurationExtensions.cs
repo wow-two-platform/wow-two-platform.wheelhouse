@@ -122,6 +122,9 @@ public static class HostConfigurationExtensions
         builder.AddDeploymentSettings();
         builder.Services.AddSingleton<Wheelhouse.Infrastructure.Deployments.Parsers.RunnerFailureParser>();
         builder.Services.AddScoped<IDeploymentGateway, Wheelhouse.Infrastructure.Deployments.DeploymentGateway>();
+        // The history projection: one runner read serves a page's concurrent reads for Deployment:HistorySeconds.
+        builder.Services.AddSingleton<Wheelhouse.Infrastructure.Deployments.DeploymentRecordsMemo>();
+        builder.Services.AddScoped<IDeploymentRecords, Wheelhouse.Infrastructure.Deployments.RunnerDeploymentRecords>();
         builder.Services.AddScoped<Wheelhouse.Application.Operations.VitalsSampling>();
         builder.Services.AddHostedService<Wheelhouse.Infrastructure.Operations.VitalsSampler>();
 
@@ -181,6 +184,7 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Application.Products.Services.ProductIdentityService>();
         builder.Services.AddScoped<Wheelhouse.Application.Products.Services.ProductsProjectionService>();
         builder.Services.AddScoped<Wheelhouse.Application.Targets.Services.TargetsProjectionService>();
+        builder.Services.AddScoped<Wheelhouse.Application.Deployments.History.Services.DeploymentHistoryService>();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<IOperatorContext, Wheelhouse.Api.Auth.HttpOperatorContext>();
         builder.Services.AddFluentValidatorsFromAssemblies(typeof(IApplicationMarker).Assembly);

@@ -26,6 +26,10 @@ public sealed record DeploymentSettings
     /// <summary>Gets or sets the rig's state folder as the Docker host sees it; needed only when the API runs inside the rig.</summary>
     public string RehearsalState { get; set; } = "";
 
+    /// <summary>Gets or sets how many seconds one read of the runner's deployment history serves the console's reads;
+    /// zero reads it every time.</summary>
+    public int HistorySeconds { get; set; } = 3;
+
     /// <summary>Gets whether the local rehearsal rig is exposed.</summary>
     public bool IsLocalRig => Rehearsal is RigHost or RigNetwork;
 }
