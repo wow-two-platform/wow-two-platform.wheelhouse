@@ -42,12 +42,26 @@ internal sealed class EfAuditTrail(
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<AuditEntry>> ListAsync(int limit, long? before, CancellationToken ct = default) =>
-        await db.AuditEntries.AsNoTracking()
-            .Where(e => before == null || e.Sequence < before)
-            .OrderByDescending(e => e.Sequence)
-            .Take(limit)
-            .ToListAsync(ct);
+    public async Task<IReadOnlyList<AuditEntry>> ListAsync(
+        int limit, long? before, AuditProductScope? product = null, CancellationToken ct = default)
+    {
+        var entries = db.AuditEntries.AsNoTracking().Where(e => before == null || e.Sequence < before);
+        if (product is not null)
+        {
+            // Each action family matches only its own subjects, so a server or vault sharing the product's slug stays out.
+            var slug = product.Product;
+            var targets = product.Targets.ToArray();
+            var namespaces = product.Namespaces.ToArray();
+            var services = product.ServicePrefix;
+            entries = entries.Where(e =>
+                ((e.Action.StartsWith("product.") || e.Action.StartsWith("build.")) && e.Subject == slug)
+                || ((e.Action.StartsWith("deployment.") || e.Action.StartsWith("target.")) && targets.Contains(e.Subject))
+                || (e.Action.StartsWith("vault.") && namespaces.Contains(e.Subject))
+                || (e.Action.StartsWith("service.") && e.Subject.StartsWith(services)));
+        }
+
+        return await entries.OrderByDescending(e => e.Sequence).Take(limit).ToListAsync(ct);
+    }
 
     /// <inheritdoc />
     public async Task<AuditVerification> VerifyAsync(CancellationToken ct = default)

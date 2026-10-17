@@ -135,6 +135,30 @@ public sealed class AuditE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EB
     }
 
     [Fact]
+    public async Task List_KeepsOnlyTheEntriesAboutOneProduct()
+    {
+        await Deploy("foreverpin-dev", "v1");
+        await Deploy("pilot", "v2");
+        await Act("status", client => client.PutAsJsonAsync("/api/products/foreverpin/services/management/status", new { status = "inactive" }));
+        await Act("vault", client => client.PutAsJsonAsync("/api/vaults/pilot-vault/secrets/foreverpin-dev/Billing%3ASecretKey",
+            new { value = "sk_test_value", description = "Stripe" }));
+        await Act("vault", client => client.PutAsJsonAsync("/api/vaults/pilot-vault/secrets/billing/Billing%3ASecretKey",
+            new { value = "sk_test_value", description = "Stripe" }));
+        await Act("status", client => client.PutAsJsonAsync("/api/products/wheelhouse/status", new { status = "inactive" }));
+        await Act("status", client => client.PutAsJsonAsync("/api/products/foreverpin/status", new { status = "inactive" }));
+
+        var subjects = (await Entries("?product=foreverpin")).Select(e => (e.GetProperty("action").GetString(), e.GetProperty("subject").GetString()));
+        Assert.Equal(
+            [("product.status", "foreverpin"), ("vault.secret.set", "pilot-vault/foreverpin-dev"),
+                ("service.status", "foreverpin/management"), ("deployment.start", "foreverpin-dev")],
+            subjects);
+        Assert.Equal([4L], (await Entries("?product=foreverpin&limit=1&before=7")).Select(e => e.GetProperty("sequence").GetInt64()));
+        Assert.Equal(["wheelhouse"], (await Entries("?product=wheelhouse")).Select(e => e.GetProperty("subject").GetString()));
+        Assert.Empty(await Entries("?product=no-such-product"));
+        Assert.Equal(7, (await Entries()).Length);
+    }
+
+    [Fact]
     public async Task Verification_PassesAnIntactChainAndNamesTheFirstEditedEntry()
     {
         await Deploy("pilot", "v1");
@@ -203,6 +227,13 @@ public sealed class AuditE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EB
         var client = AdminClient;
         client.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "deploy");
         return client.PostAsJsonAsync("/api/deployments", new { target, release });
+    }
+
+    private async Task Act(string action, Func<HttpClient, Task<HttpResponseMessage>> send)
+    {
+        var client = AdminClient;
+        client.DefaultRequestHeaders.Add("X-Wheelhouse-Action", action);
+        Assert.Equal(HttpStatusCode.OK, (await send(client)).StatusCode);
     }
 
     private async Task<JsonElement[]> Entries(string query = "")
