@@ -24,6 +24,7 @@
 | Deployment topology, environments, sites, builds | `engineering/research/deployment-topology.md` |
 | Parked UI directions (Claude boards) | `engineering/research/design-directions/design-directions.md` |
 | MCP security and reliability review, MCP vs REST | `engineering/research/mcp-review.md` |
+| v0.5 platform decisions: console shell, hierarchy, pins, one manifest, who owns which fact | `engineering/research/platform-ideation.md` |
 | Brand, app logo and icon-set export scripts | `engineering/scripts/export-brand-logos.py` · `export-app-icons.py` · `export-icon-set.py` |
 
 ## Source projects (`engineering/codebase/`)
