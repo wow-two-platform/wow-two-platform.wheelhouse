@@ -3,7 +3,6 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
-using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using Wheelhouse.Application.Deployments;
 using Wheelhouse.Application.Inventory.Constants;
@@ -13,6 +12,7 @@ using Wheelhouse.Application.Servers.Queries;
 using Wheelhouse.Application.Targets.Queries;
 using Wheelhouse.Infrastructure.Settings;
 using Wheelhouse.Persistence;
+using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
@@ -117,14 +117,15 @@ public sealed partial class WheelhouseReadTools(ISender sender, WheelhouseDbCont
         LocalRig = deployment.IsLocalRig
     };
 
+    // A failure leaves as its own error; McpToolErrorFilter turns it into the tool error the agent reads.
     private static T Read<T>(AppResult<T> result) where T : notnull => result.Match(
         ok => ok.Data,
-        _ => throw new McpException("Wheelhouse could not complete this read. Inspect the operator console for details."));
+        fail => throw fail.Error.ToException());
 
     private static void ValidateTarget(string target)
     {
         if (target is null || !TargetSlug().IsMatch(target))
-            throw new McpException("Target must be an existing lowercase target slug, at most 48 characters.");
+            AppErrorFactory.Validation("Target must be an existing lowercase target slug, at most 48 characters.").Throw();
     }
 
     [GeneratedRegex(InventoryPatternConstants.Slug + "\\z")]

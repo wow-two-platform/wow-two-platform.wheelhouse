@@ -5,6 +5,7 @@ using System.Text.Json;
 using AwesomeAssertions;
 using Wheelhouse.Tests.E2E.Harness;
 using Wheelhouse.Tests.E2E.Support;
+using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Testing.Web;
 
 namespace Wheelhouse.Tests.E2E.Tests;
@@ -119,6 +120,53 @@ public sealed class McpE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBas
     }
 
     [Fact]
+    public async Task ToolFailures_CarryTheOperatorSafeErrorAndARetryHint()
+    {
+        var key = await CreateKeyAsync("deployments:read");
+        using var client = KeyClient(key.Secret);
+
+        const string timeout = "Deployment response timed out. Reconcile target state before retrying.";
+        Fixture.Deployments.ReadFailure = AppErrorFactory.OperationTimeout(timeout);
+        (await ToolErrorAsync(client, "list_deployments")).Should().Be(("OperationTimeout", timeout, true));
+
+        const string unreachable = "Deployment step failed: SSH connection refused (exit 255); inspect the target privately";
+        Fixture.Deployments.ReadFailure = AppErrorFactory.ExternalUnavailable(unreachable);
+        (await ToolErrorAsync(client, "get_vitals")).Should().Be(("ExternalUnavailable", unreachable, true));
+
+        const string refused = "Deployment rejected: Unknown target";
+        Fixture.Deployments.ReadFailure = AppErrorFactory.Conflict(refused);
+        (await ToolErrorAsync(client, "get_deployment_state", new { target = "pilot" }))
+            .Should().Be(("Conflict", refused, false));
+    }
+
+    [Fact]
+    public async Task InvalidTargetName_IsANonRetryableValidationError()
+    {
+        var key = await CreateKeyAsync("deployments:read");
+        using var client = KeyClient(key.Secret);
+        var previousTarget = Fixture.Deployments.LastTarget;
+
+        (await ToolErrorAsync(client, "check_target", new { target = "../../etc" })).Should().Be(
+            ("Validation", "Target must be an existing lowercase target slug, at most 48 characters.", false));
+        Fixture.Deployments.LastTarget.Should().Be(previousTarget);
+    }
+
+    [Fact]
+    public async Task UnexpectedToolException_ReachesTheAgentAsAGenericError()
+    {
+        var key = await CreateKeyAsync("deployments:read");
+        using var client = KeyClient(key.Secret);
+        Fixture.Deployments.ReadException = new InvalidOperationException(
+            "ssh deploy@10.0.0.5 -i /srv/wheelhouse/ssh/pilot-host/id_ed25519 failed\n   at Runner.Run()");
+
+        using var call = await CallAsync(client, "list_deployments");
+
+        var text = ErrorText(call);
+        text.Should().NotContain("10.0.0.5").And.NotContain("/srv/").And.NotContain("Runner.Run");
+        Parse(text).Should().Be(("Unexpected", "An unexpected error occurred.", false));
+    }
+
+    [Fact]
     public async Task Revocation_StopsMcpAccessOnTheFollowingRequest()
     {
         var key = await CreateKeyAsync("catalog:read", "deployments:read");
@@ -154,6 +202,27 @@ public sealed class McpE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBas
 
     private static IEnumerable<string?> Names(JsonDocument list) => list.RootElement.GetProperty("result")
         .GetProperty("tools").EnumerateArray().Select(tool => tool.GetProperty("name").GetString());
+
+    private static async Task<(string? Code, string? Message, bool Retryable)> ToolErrorAsync(
+        HttpClient client, string name, object? arguments = null)
+    {
+        using var call = await CallAsync(client, name, arguments);
+        return Parse(ErrorText(call));
+    }
+
+    private static string ErrorText(JsonDocument call)
+    {
+        var result = call.RootElement.GetProperty("result");
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        return result.GetProperty("content")[0].GetProperty("text").GetString()!;
+    }
+
+    private static (string? Code, string? Message, bool Retryable) Parse(string text)
+    {
+        using var error = JsonDocument.Parse(text);
+        var root = error.RootElement;
+        return (root.GetProperty("code").GetString(), root.GetProperty("message").GetString(), root.GetProperty("retryable").GetBoolean());
+    }
 
     private static async Task<JsonDocument> CallAsync(HttpClient client, string name, object? arguments = null) =>
         await ReadAsync(await SendAsync(client, "tools/call", new { name, arguments = arguments ?? new { } }));

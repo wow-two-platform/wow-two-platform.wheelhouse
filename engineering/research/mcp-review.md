@@ -1,6 +1,6 @@
 # MCP review — network, authentication, reliability
 
-*Last updated: 2026-10-16*
+*Last updated: 2026-10-17*
 
 A read-only review of the `/mcp` endpoint against the code, the VPS setup and the MCP specification (2025-11-25 and
 2026-07-28). Code and configuration were read; nothing ran against the host, so the live tailnet policy, the Serve
@@ -37,7 +37,7 @@ write tool or secret.
 
 | Finding | Severity | Evidence | Recommendation |
 |---|---|---|---|
-| Every tool failure becomes one generic message, so an agent cannot tell a timeout from a down runner | medium | `WheelhouseReadTools.cs` vs `DeploymentGateway.cs` | Pass the operator-safe error and a retryable hint |
+| Every tool failure becomes one generic message, so an agent cannot tell a timeout from a down runner | medium | `WheelhouseReadTools.cs` vs `DeploymentGateway.cs` | Done 2026-10-17: `{ code, message, retryable }` tool errors |
 | No rate or concurrency limit; each runner tool spawns Python and SSH for up to 110 s | medium | Rate limiting is off | A concurrency cap of 2–4 and a per-key rate limit on `/mcp` |
 | Cloud connectors (claude.ai, ChatGPT) cannot reach a tailnet-only host | ok, by design | Provider docs | Use Claude Code or Codex on tailnet devices; never Funnel |
 | With the database down, authentication fails first, so `get_health` never reports it | low | API key handler writes last use | Best-effort last-use write; `/health` for liveness |

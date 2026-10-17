@@ -113,11 +113,12 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
                 // The process may exit between the state check and cancellation.
             }
             ct.ThrowIfCancellationRequested();
-            return AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("Deployment response timed out. Reconcile target state before retrying."));
+            // Timeouts and an unreachable runner are transient kinds, so callers (the MCP tools) can mark them retryable.
+            return AppResult<JsonElement>.Fail(AppErrorFactory.OperationTimeout("Deployment response timed out. Reconcile target state before retrying."));
         }
         catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or JsonException or IOException)
         {
-            return AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("Deployment runner is unavailable."));
+            return AppResult<JsonElement>.Fail(AppErrorFactory.ExternalUnavailable("Deployment runner is unavailable."));
         }
     }
 }

@@ -1,6 +1,6 @@
 # Wheelhouse architecture
 
-*Last updated: 2026-10-15*
+*Last updated: 2026-10-17*
 
 ## Runtime
 
@@ -178,6 +178,12 @@ with a Bearer integration key; browser cookies are excluded. Tool discovery and 
 state, readiness, vitals and control-plane health. Tools call existing mediator queries. Their response projections
 omit credential paths, settings paths and secret namespaces. The [MCP runbook](../deployment/mcp.md) owns connection
 details. No initial tool writes, builds, deploys, reconciles, reads logs or reveals secrets.
+
+A failed tool call is an MCP tool error (`isError`) whose text is `{ code, message, retryable }`: `code` is the SDK
+error kind REST puts in a problem's `code`, `message` the operator-safe text REST returns as `detail`, and `retryable`
+is true only for transient kinds, a runner timeout (`OperationTimeout`) or an unreachable runner or SSH host
+(`ExternalUnavailable`). Any other exception is logged and answers its kind's generic message, so exception text never
+reaches an agent. A refused scope stays a JSON-RPC error.
 
 Future mutation tools require explicit scopes and the same handler/runner gates as the console: prod takes only a
 release that passed test, and bypassing that gate requires its typed target ID. They remain backlog work.

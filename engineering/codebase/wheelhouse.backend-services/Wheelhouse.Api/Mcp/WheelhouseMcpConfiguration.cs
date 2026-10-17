@@ -37,7 +37,9 @@ public static class WheelhouseMcpConfiguration
             DefaultIgnoreCondition = JsonIgnoreCondition.Never,
             DictionaryKeyPolicy = null,
         };
-        builder.Services.AddStatelessMcpServer().WithTools<WheelhouseReadTools>(json);
+        builder.Services.AddStatelessMcpServer()
+            .WithTools<WheelhouseReadTools>(json)
+            .WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.Apply));
         return builder;
     }
 

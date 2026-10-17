@@ -31,6 +31,15 @@ an authenticated external client connection remains manual acceptance.
 - Revoking a key takes effect on its next request; no MCP authentication session is retained.
 - No tools build, deploy, reconcile, read logs, expose secrets or modify inventory.
 
+## Errors
+
+- A failed call returns `isError: true` with one text block: `{"code": "…", "message": "…", "retryable": …}`.
+- `code` is the error kind REST names in a problem's `code`; `message` is the operator-safe text the console shows.
+- Retryable: `OperationTimeout` (the runner timed out) and `ExternalUnavailable` (runner unreachable, SSH or step failure).
+- Not retryable: `Validation`, `NotFound`, `Conflict` (the runner refused), `Unexpected`.
+- An unexpected exception answers its kind's generic message; exception text never reaches the client.
+- A key lacking the tool's scope gets a JSON-RPC error instead of a tool error.
+
 ## Delivery status
 
 The implementation uses the SDK `Ai/Mcp` host helpers. Every be sdk family reference now uses

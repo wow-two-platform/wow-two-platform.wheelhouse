@@ -133,6 +133,8 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     private void ResetStubs()
     {
         Deployments.StartRefusal = null;
+        Deployments.ReadFailure = null;
+        Deployments.ReadException = null;
         ProductIcons.Clear();
         ProductManifests.Clear();
     }

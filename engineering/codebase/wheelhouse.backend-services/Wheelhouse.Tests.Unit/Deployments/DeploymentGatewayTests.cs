@@ -3,6 +3,7 @@ using AwesomeAssertions;
 using Wheelhouse.Infrastructure.Deployments;
 using Wheelhouse.Infrastructure.Deployments.Parsers;
 using Wheelhouse.Infrastructure.Settings;
+using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Tests.Unit.Deployments;
@@ -45,6 +46,18 @@ public sealed class DeploymentGatewayTests : IDisposable
 
         result.Should().BeOfType<AppResult<JsonElement>.Success>().Subject.Data.GetProperty("action").GetString()
             .Should().Be("sites");
+    }
+
+    [Fact]
+    public async Task ReadAsync_ShouldFailAsTransientlyUnavailable_WhenTheRunnerCannotStart()
+    {
+        var settings = new DeploymentSettings { Python = Path.Combine(_root, "missing-python") };
+        var gateway = new DeploymentGateway(settings with { TransportPath = _transport, Root = _root }, new RunnerFailureParser());
+
+        var result = await gateway.ReadAsync("targets", null, CancellationToken.None);
+
+        var error = result.Should().BeOfType<AppResult<JsonElement>.Failure>().Subject.Error;
+        (error.Type, error.Message).Should().Be((AppErrorType.ExternalUnavailable, "Deployment runner is unavailable."));
     }
 
     [Fact]

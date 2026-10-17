@@ -23,9 +23,19 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
     /// <summary>When set, the next starts fail with this runner refusal, as a gate would refuse them.</summary>
     public string? StartRefusal { get; set; }
 
+    /// <summary>When set, reads fail with this error, as a timed-out, unreachable or refusing runner would.</summary>
+    public AppError? ReadFailure { get; set; }
+
+    /// <summary>When set, reads throw this exception, as a defect would.</summary>
+    public Exception? ReadException { get; set; }
+
     public Task<AppResult<JsonElement>> ReadAsync(string resource, string? id, CancellationToken ct)
     {
         LastRead = (resource, id);
+        if (ReadException is not null)
+            throw ReadException;
+        if (ReadFailure is not null)
+            return Task.FromResult(AppResult<JsonElement>.Fail(ReadFailure));
         return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement<object>(resource switch
         {
             "servers" => new object[] { new { id = "pilot-host", name = "Pilot", provider = "Hetzner", host = "vps.example.net", region = "hel1", sshUser = "deploy" } },
