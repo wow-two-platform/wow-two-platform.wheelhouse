@@ -7,13 +7,16 @@ import { PageHeaderActions } from '@wow-two-beta/fe/presentation/layout';
 import { ConsolePaths } from '@/application/navigation';
 import { usePortfolio, useProductReadings, type PortfolioGroup } from '@/application/portfolio';
 import { useRefresh } from '@/bootstrap/query';
+import { PinKind } from '@/domain/pins';
 import { RefreshButton } from '@/presentation/common/components';
+import { PinToggle } from '@/presentation/pins';
 import AttentionSummary from '../components/AttentionSummary.vue';
+import PinnedStrip from '../components/PinnedStrip.vue';
 import WorkspaceSection from '../components/WorkspaceSection.vue';
 
 /**
- * The portfolio home: what needs attention, then every workspace in the operator's order with its products' dev,
- * test and prod health and last deploy. Inactive products stay hidden until "Show inactive" is on.
+ * The portfolio home: what needs attention, the pins, then every workspace in the operator's order with its products'
+ * dev, test and prod health and last deploy. Inactive products stay hidden until "Show inactive" is on.
  */
 defineOptions({ name: 'HomePage' });
 const portfolio = usePortfolio();
@@ -31,6 +34,8 @@ const groups = computed(() => (portfolio.isFirstLoad.value ? placeholders : port
       <RefreshButton size="md" icon-only :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
     </PageHeaderActions>
     <AttentionSummary />
+    <!-- Phones lead with the pins: the sidebar that also lists them is absent there. -->
+    <PinnedStrip class="max-md:-order-1" />
     <DataRegion
       :is-first-load="portfolio.isFirstLoad.value"
       :error="portfolio.error.value"
@@ -51,7 +56,11 @@ const groups = computed(() => (portfolio.isFirstLoad.value ? placeholders : port
         :group="group"
         :readings="readings"
         :is-loading="portfolio.isFirstLoad.value"
-      />
+      >
+        <template v-if="group.workspace" #actions>
+          <PinToggle :subject="{ kind: PinKind.Workspace, workspaceId: group.workspace.id }" :label="group.workspace.name" />
+        </template>
+      </WorkspaceSection>
     </DataRegion>
   </div>
 </template>

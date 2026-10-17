@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { Product } from "@/domain/products";
 
-/** The per-service controls on a service card and in the service inspector. */
+/** The per-service controls on a service card and in the service inspector: its pin and its status menu. */
 export interface ServiceActionsProps {
   /** The product the service belongs to; without a catalog product nothing can be recorded. */
   readonly product: Product | null;
@@ -15,11 +15,13 @@ import { Eye, EyeOff, Ellipsis } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, MenuItem } from "@wow-two-beta/fe/presentation/nav";
 import { useProducts } from "@/application/products";
+import { PinKind } from "@/domain/pins";
 import { ProductStatus, ProductStatusRules } from "@/domain/products";
+import { PinToggle } from "@/presentation/pins";
 
 /**
- * A service's status menu: mark it inactive, which hides it until "Show inactive" is on, or active again. The change
- * shows at once and rolls back if the host refuses it.
+ * A service's pin, which keeps it one click away in every environment, and its status menu: mark it inactive, which
+ * hides it until "Show inactive" is on, or active again. Both changes show at once and roll back if the host refuses.
  */
 defineOptions({ name: "ServiceActions" });
 const props = defineProps<ServiceActionsProps>();
@@ -35,6 +37,10 @@ function setActive(value: boolean): void {
 </script>
 <template>
   <span v-if="props.product" class="inline-flex items-center gap-0.5">
+    <PinToggle
+      :subject="{ kind: PinKind.Service, product: props.product, service: props.service }"
+      :label="props.service"
+    />
     <DropdownMenu placement="bottom-end">
       <DropdownMenuTrigger as-child>
         <Button

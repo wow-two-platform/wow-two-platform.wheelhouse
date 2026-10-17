@@ -20,11 +20,13 @@ import { ConsolePaths } from '@/application/navigation';
 import { usePortfolio } from '@/application/portfolio';
 import { ProductStatusRules } from '@/domain/products';
 import { ProductIcon } from '@/presentation/products';
+import PinnedNav from './PinnedNav.vue';
 import ShowInactiveSwitch from './ShowInactiveSwitch.vue';
 
 /**
- * Lists every destination: Home, the workspaces with their products, the portfolio operations and settings. In the
- * rail a workspace is one icon that opens its page; its products show once the sidebar expands.
+ * Lists every destination: Home, the pins in custom order, the workspaces with their products, the portfolio
+ * operations and settings. In the rail a workspace is one icon that opens its page; its products show once the sidebar
+ * expands.
  */
 defineOptions({ name: 'ConsoleNav' });
 const props = withDefaults(defineProps<ConsoleNavProps>(), { collapsed: false });
@@ -78,6 +80,8 @@ const labelClass = computed(() => (props.collapsed ? 'sr-only' : 'min-w-0 flex-1
           ><span :class="labelClass">Home</span></RouterLink
         >
       </SidebarMenuItem>
+
+      <PinnedNav :collapsed="props.collapsed" @navigate="emit('navigate')" />
 
       <SidebarMenuSection label="Workspaces">
         <li>

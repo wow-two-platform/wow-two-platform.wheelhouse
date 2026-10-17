@@ -74,6 +74,8 @@ import {
 import { RefreshButton } from "@/presentation/common/components";
 import { ResourceMeter } from "@/presentation/servers";
 import EnvironmentCompare from "./EnvironmentCompare.vue";
+import { PinKind } from "@/domain/pins";
+import { PinToggle } from "@/presentation/pins";
 import ServiceActions from "./ServiceActions.vue";
 import ServiceMap from "./ServiceMap.vue";
 import { ProductIcon, RepositoryActions } from "@/presentation/products";
@@ -463,6 +465,11 @@ function openDeploy(job?: DeploymentJob): void {
                   </div>
                 </div>
                 <div v-if="record" class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                  <PinToggle
+                    :subject="{ kind: PinKind.Product, product: record }"
+                    :label="record.name"
+                    show-text
+                  />
                   <SwitchField
                     :model-value="ProductStatusRules.isActive(record)"
                     size="sm"

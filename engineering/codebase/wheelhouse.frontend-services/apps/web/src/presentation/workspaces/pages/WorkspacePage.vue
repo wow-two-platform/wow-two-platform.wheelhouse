@@ -7,7 +7,9 @@ import { PageHeaderActions } from '@wow-two-beta/fe/presentation/layout';
 import { ConsolePaths } from '@/application/navigation';
 import { usePortfolio, useProductReadings, type PortfolioGroup } from '@/application/portfolio';
 import { useRefresh } from '@/bootstrap/query';
+import { PinKind } from '@/domain/pins';
 import { RefreshButton } from '@/presentation/common/components';
+import { PinToggle } from '@/presentation/pins';
 import WorkspaceSection from '@/presentation/home/components/WorkspaceSection.vue';
 
 /** One workspace's products, each with its environments' health and last deploy. */
@@ -49,7 +51,11 @@ const firstLoad = computed(() => portfolio.isFirstLoad.value);
         :group="group ?? placeholder"
         :readings="readings"
         :is-loading="firstLoad"
-      />
+      >
+        <template v-if="group?.workspace" #actions>
+          <PinToggle :subject="{ kind: PinKind.Workspace, workspaceId: group.workspace.id }" :label="group.workspace.name" show-text />
+        </template>
+      </WorkspaceSection>
     </DataRegion>
   </div>
 </template>
