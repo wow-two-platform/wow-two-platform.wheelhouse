@@ -603,12 +603,15 @@ def stats(root, days=30, moment=None):
     records = sorted((job for job in jobs(root, limit=None) if instant(job["submittedAt"])),
                      key=lambda job: instant(job["submittedAt"]))
     current, per_target = measure([job for job in records if submitted_on(job) >= first], daily)
+    listed = {binding.id: index for index, binding in enumerate(fleet.active_targets())}
     earlier = [job for job in records if before <= submitted_on(job) < first]
     return {"windowDays": days, "since": first.isoformat(), **current,
             # The window before, measured the same way, so each figure can show its trend; null without records.
             "previous": {"since": before.isoformat(), **measure(earlier)[0]} if earlier else None,
             "daily": [{"date": date, **values} for date, values in daily.items()],
-            "targets": sorted(per_target.values(), key=lambda item: item["targetId"])}
+            # Inventory targets in their listing order; a removed target's history follows by ID.
+            "targets": sorted(per_target.values(), key=lambda item: (listed.get(item["targetId"], len(listed)),
+                                                                    item["targetId"]))}
 
 
 def summary_of(record):

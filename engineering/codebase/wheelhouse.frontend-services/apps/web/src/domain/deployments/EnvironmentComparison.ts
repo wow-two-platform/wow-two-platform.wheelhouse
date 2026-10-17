@@ -2,9 +2,7 @@ import type { DeploymentTarget } from './models/DeploymentTarget';
 import type { ReleaseArtifact } from './models/ReleaseArtifact';
 import type { ServiceVersion } from './models/ServiceVersion';
 import type { TargetState } from './models/TargetState';
-
-/** The promotion path every product follows; an unknown environment sorts after it. */
-export const EnvironmentOrder = ['dev', 'test', 'prod'] as const;
+import { environmentRank } from '@/domain/targets';
 
 /** Taking one environment's release to the next environment along the path. */
 export interface Promotion {
@@ -40,11 +38,6 @@ export interface EnvironmentComparison {
   rows: ServiceComparison[];
 }
 
-function rank(environment: string): number {
-  const index = (EnvironmentOrder as readonly string[]).indexOf(environment);
-  return index < 0 ? EnvironmentOrder.length : index;
-}
-
 /** Lines up a product's environments along the promotion path and finds what each could hand to the next.
  * `states` aligns with `targets`; an entry is undefined while it is unread. */
 export function compareEnvironments(
@@ -54,7 +47,7 @@ export function compareEnvironments(
 ): EnvironmentComparison {
   const ordered = targets
     .map((target, index) => ({ target, state: states[index] }))
-    .sort((left, right) => rank(left.target.environment) - rank(right.target.environment)
+    .sort((left, right) => environmentRank(left.target.environment) - environmentRank(right.target.environment)
       || left.target.id.localeCompare(right.target.id));
   const columns: EnvironmentColumn[] = ordered.map(({ target, state }) => ({
     targetId: target.id,

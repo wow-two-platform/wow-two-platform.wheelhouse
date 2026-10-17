@@ -6,6 +6,15 @@ export const DeploymentEnvironment = {
 } as const;
 export type DeploymentEnvironment = (typeof DeploymentEnvironment)[keyof typeof DeploymentEnvironment];
 
+/** The promotion path every product follows — dev, test, prod — in the order `DeploymentEnvironment` declares. */
+export const EnvironmentOrder: readonly DeploymentEnvironment[] = Object.values(DeploymentEnvironment);
+
+/** An environment's place on the promotion path; an unknown environment sorts after it. */
+export function environmentRank(environment: string): number {
+  const index = (EnvironmentOrder as readonly string[]).indexOf(environment);
+  return index < 0 ? EnvironmentOrder.length : index;
+}
+
 /** Where one service's settings file lives on the host. */
 export interface TargetSetting {
   service: string;

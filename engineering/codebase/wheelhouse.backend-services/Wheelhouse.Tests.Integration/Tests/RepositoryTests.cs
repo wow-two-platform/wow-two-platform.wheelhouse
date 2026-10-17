@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Dapper;
 using Microsoft.EntityFrameworkCore;
+using Wheelhouse.Domain.Targets.Enums;
 using Wheelhouse.Persistence.Repositories;
 using Wheelhouse.Tests.Integration.Harness;
 using Wheelhouse.Tests.Integration.Support;
@@ -38,6 +39,38 @@ public sealed class RepositoryTests(WheelhouseTestDb db) : IAsyncLifetime
         found!.Repository.Should().Be("owner/mid");
         read.Entry(found).State.Should().Be(EntityState.Unchanged);
         (await repository.GetBySlugAsync("missing")).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Targets_ShouldListByProductThenAlongThePromotionPath_WhenStored()
+    {
+        var zeta = InventoryRows.Product("zeta");
+        var alpha = InventoryRows.Product("alpha");
+        var server = InventoryRows.Server("hel1");
+        await using (var ctx = db.NewContext())
+        {
+            var products = new ProductsRepository(ctx);
+            await products.CreateAsync(zeta);
+            await products.CreateAsync(alpha);
+            await new ServersRepository(ctx).CreateAsync(server);
+            var targets = new TargetsRepository(ctx);
+            // Stored out of order, and with slugs whose alphabet disagrees with the promotion path.
+            foreach (var (slug, product, environment) in new[]
+            {
+                ("zeta-prod", zeta, DeploymentEnvironment.Prod), ("alpha-test", alpha, DeploymentEnvironment.Test),
+                ("zeta-dev", zeta, DeploymentEnvironment.Dev), ("alpha-prod", alpha, DeploymentEnvironment.Prod),
+                ("zeta-test", zeta, DeploymentEnvironment.Test), ("alpha-dev", alpha, DeploymentEnvironment.Dev),
+            })
+            {
+                var target = InventoryRows.Target(slug, product, server);
+                target.Environment = environment;
+                await targets.CreateAsync(target);
+            }
+        }
+
+        await using var read = db.NewContext();
+        (await new TargetsRepository(read).GetAllAsync()).Select(target => target.Slug).Should()
+            .Equal("alpha-dev", "alpha-test", "alpha-prod", "zeta-dev", "zeta-test", "zeta-prod");
     }
 
     [Fact]

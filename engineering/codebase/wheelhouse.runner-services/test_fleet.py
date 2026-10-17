@@ -45,6 +45,20 @@ class FleetTests(unittest.TestCase):
             self.assertEqual('platform', config['target']['variables']['PLATFORM_NETWORK'])
             self.assertEqual((False, False), (config['acceptsCandidates'], config['needsConfirmation']))
 
+    def test_targets_list_by_product_then_along_the_promotion_path(self):
+        def target(identifier, product, environment):
+            return fleet.Target(identifier, 'pilot', product, environment, (), 'platform')
+        stored = (target('zeta-prod', 'zeta', fleet.DeploymentEnvironment.PROD),
+                  target('alpha-test', 'alpha', fleet.DeploymentEnvironment.TEST),
+                  target('zeta-dev', 'zeta', fleet.DeploymentEnvironment.DEV),
+                  target('alpha-prod', 'alpha', fleet.DeploymentEnvironment.PROD),
+                  target('alpha-dev', 'alpha', fleet.DeploymentEnvironment.DEV))
+        with patch.object(fleet, 'TARGETS', stored), patch.dict('os.environ', {}, clear=False):
+            import os
+            os.environ.pop('WHEELHOUSE_REHEARSAL', None)
+            self.assertEqual(['alpha-dev', 'alpha-test', 'alpha-prod', 'zeta-dev', 'zeta-prod'],
+                             [item.id for item in fleet.active_targets()])
+
     def test_local_targets_exist_only_behind_the_switch(self):
         with patch.dict('os.environ', {}, clear=False):
             import os

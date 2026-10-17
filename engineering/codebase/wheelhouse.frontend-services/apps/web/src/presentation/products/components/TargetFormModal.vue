@@ -45,7 +45,7 @@ import {
   targetFormSchema,
   targetRequestOf,
 } from "@/application/targets/TargetForms";
-import { DeploymentEnvironment } from "@/domain/targets";
+import { EnvironmentOrder } from "@/domain/targets";
 import { failureReason } from "@/integration/common";
 import { DeleteConfirm, RowsField } from "@/presentation/common/components";
 
@@ -56,7 +56,7 @@ const props = defineProps<TargetFormModalProps>();
 const emit = defineEmits<{ "update:open": [open: boolean] }>();
 defineSlots<{}>();
 
-const environments = Object.values(DeploymentEnvironment);
+const environments = EnvironmentOrder;
 const removeError = ref("");
 const form = useAppForm({
   defaultValues: targetFormOf(null, props.product, null),

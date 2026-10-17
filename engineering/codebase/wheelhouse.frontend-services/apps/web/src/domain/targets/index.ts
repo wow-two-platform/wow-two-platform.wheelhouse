@@ -1,5 +1,7 @@
 export {
   DeploymentEnvironment,
+  EnvironmentOrder,
+  environmentRank,
   type InventoryTarget,
   type SaveTargetRequest,
   type SiteHost,

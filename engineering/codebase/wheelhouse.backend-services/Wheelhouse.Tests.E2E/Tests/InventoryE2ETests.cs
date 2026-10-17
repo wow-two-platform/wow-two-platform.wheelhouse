@@ -142,11 +142,14 @@ public sealed class InventoryE2ETests(WheelhouseAppFixture fixture) : Wheelhouse
         });
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
+        // Every listing follows the promotion path, never the alphabet that puts prod before test.
         var targets = await (await AdminClient.GetAsync("api/targets?product=foreverpin")).ReadEnvelopeAsync<IReadOnlyList<TargetResponse>>();
         targets.Select(target => (target.Slug, target.Environment)).Should()
-            .Equal(("foreverpin-dev", "dev"), ("foreverpin-prod", "prod"), ("foreverpin-test", "test"));
+            .Equal(("foreverpin-dev", "dev"), ("foreverpin-test", "test"), ("foreverpin-prod", "prod"));
         var product = await (await AdminClient.GetAsync("api/products/foreverpin")).ReadEnvelopeAsync<ProductResponse>();
         product.Environments.Select(environment => environment.Name).Should().Equal("dev", "test", "prod");
+        Snapshot().GetProperty("targets").EnumerateArray().Select(item => item.GetProperty("id").GetString()).Should()
+            .Equal("foreverpin-dev", "foreverpin-test", "foreverpin-prod");
 
         var exported = Snapshot().GetProperty("targets").EnumerateArray().Single(item => item.GetProperty("id").GetString() == "foreverpin-test");
         (exported.GetProperty("environment").GetString(), exported.GetProperty("serverId").GetString(),

@@ -9,8 +9,25 @@ namespace Wheelhouse.Persistence.Repositories;
 internal sealed class TargetsRepository(WheelhouseDbContext db) : EfRepository<TargetEntity, Guid>(db), ITargetsRepository
 {
     /// <inheritdoc />
-    public override async Task<IReadOnlyList<TargetEntity>> GetAllAsync(CancellationToken cancellationToken = default) =>
-        await Set.AsNoTracking().OrderBy(entity => entity.Slug).ToListAsync(cancellationToken);
+    /// <remarks>
+    /// By product slug, then along the promotion path in <see cref="Domain.Targets.Enums.DeploymentEnvironment"/>'s
+    /// declared order (dev, test, prod), then slug. The environment is stored as text, which the database would sort
+    /// alphabetically, so the order is applied in memory.
+    /// </remarks>
+    public override async Task<IReadOnlyList<TargetEntity>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        var rows = await Set.AsNoTracking()
+            .Join(db.Products, target => target.ProductId, product => product.Id, (target, product) => new { Target = target, Product = product.Slug })
+            .ToListAsync(cancellationToken);
+        return
+        [
+            .. rows
+                .OrderBy(row => row.Product, StringComparer.Ordinal)
+                .ThenBy(row => row.Target.Environment)
+                .ThenBy(row => row.Target.Slug, StringComparer.Ordinal)
+                .Select(row => row.Target),
+        ];
+    }
 
     /// <inheritdoc />
     public Task<TargetEntity?> GetBySlugAsync(string slug, CancellationToken ct = default) =>

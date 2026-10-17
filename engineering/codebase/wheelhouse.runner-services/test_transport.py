@@ -224,6 +224,19 @@ class TransportTests(unittest.TestCase):
                                                         pilot["lastStatus"], pilot["failingSince"]))
         self.assertNotIn("old", [item["targetId"] for item in result["targets"]])
 
+    def test_stats_list_targets_along_the_promotion_path_then_removed_ones_by_id(self):
+        for number, target in enumerate(("pilot-prod", "pilot-test", "gone", "pilot-dev"), start=1):
+            self.job(str(number), "2026-09-2" + str(number) + "T09:00:00+00:00", "rejected", target=target)
+        bindings = tuple(transport.fleet.Target(name, "pilot", "pilot", environment, (), "platform") for name, environment in
+                         (("pilot-prod", transport.fleet.DeploymentEnvironment.PROD),
+                          ("pilot-dev", transport.fleet.DeploymentEnvironment.DEV),
+                          ("pilot-test", transport.fleet.DeploymentEnvironment.TEST)))
+        moment = transport.datetime.datetime(2026, 9, 26, 12, tzinfo=transport.datetime.timezone.utc)
+        with patch.object(transport.fleet, "TARGETS", bindings), patch.dict("os.environ", {}, clear=False):
+            transport.os.environ.pop("WHEELHOUSE_REHEARSAL", None)
+            result = transport.stats(self.root, 7, moment)
+        self.assertEqual(["pilot-dev", "pilot-test", "pilot-prod", "gone"], [item["targetId"] for item in result["targets"]])
+
     def test_stats_measure_the_window_before_for_trends(self):
         self.job("1", "2026-09-10T09:00:00+00:00", "succeeded", "2026-09-10T09:00:00+00:00", "2026-09-10T09:04:00+00:00")
         self.job("2", "2026-09-12T09:00:00+00:00", "failed", "2026-09-12T09:00:00+00:00", "2026-09-12T09:01:00+00:00")

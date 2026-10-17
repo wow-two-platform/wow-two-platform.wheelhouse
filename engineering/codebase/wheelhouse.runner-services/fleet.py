@@ -125,8 +125,18 @@ def active_servers():
     return with_fixtures(SERVERS, LOCAL_SERVERS)
 
 
+def promotion_order(targets):
+    """Targets by product, then along the promotion path in DeploymentEnvironment's declared order (dev, test, prod),
+    then ID: the order every listing shows, never the alphabet that puts prod before test."""
+    path = list(DeploymentEnvironment)
+
+    def rank(environment):
+        return path.index(environment) if environment in path else len(path)
+    return tuple(sorted(targets, key=lambda target: (target.product, rank(target.environment), target.id)))
+
+
 def active_targets():
-    return with_fixtures(TARGETS, LOCAL_TARGETS)
+    return promotion_order(with_fixtures(TARGETS, LOCAL_TARGETS))
 
 
 def active_vaults():
