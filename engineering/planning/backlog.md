@@ -32,70 +32,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 ---
 
-## Verification
-
-| Item | Type | Notes |
-|---|---|---|
-| Push a new name to a product's `product/product.json` → Products shows it after Refresh or within five minutes, read-only | check | carried from v0.3 |
-| Connect an MCP client → only its scoped read tools are available | check | carried from v0.3 |
-| Revoke its key → the following MCP request is refused | check | carried from v0.3 |
-| Register an OVHcloud server → its provider survives a reload | check | carried from v0.3 |
-| Close the browser mid-deploy → history records the final outcome | check | carried from v0.3 |
-| Restart Wheelhouse mid-deploy → outcome tracking resumes | check | carried from v0.3 |
-| Deploy a release to the local target → history shows the outcome after a reload | check | carried from v0.3 |
-| Blank a required setting → the check names the key; a deploy changes nothing | check | carried from v0.3 |
-| Interrupt a rollout → reconciling from the dashboard unlocks the target | check | carried from v0.3 |
-| Set a secret in the console → a product token reads the new version | check | carried from v0.3 |
-| Run `rehearse.py run` → the dev site opens at `http://app-foreverpin.dev.localhost:18080` | check | carried from v0.3 |
-| Deploy a release to test beside dev → both sites answer at once, each on its own host | check | carried from v0.3 |
-| Deploy to local prod without typing its ID → refused; typed → deployed | check | carried from v0.3 |
-| Choose a commit build for test → refused before anything reaches the target | check | carried from v0.3 |
-| Deploy an untested release to prod → refused; skipping with the typed ID → deployed | check | carried from v0.3 |
-| Build a commit without a build → its workflow starts; a built commit offers Use build | check | carried from v0.3 |
-| Stop a container on the local target → the fleet page shows it stopped and the overview flags it | check | carried from v0.3 |
-| Deploy a broken release → the overview's failure count and success rate change | check | carried from v0.3 |
-| Open the secrets page → each secret and token shows its age; overdue ones are flagged | check | carried from v0.3 |
-| Run `rehearse.py console`, sign in with GitHub and open every page → each page loads without errors | check | carried from v0.3 |
-| Deploy to dev → the dialog lists each step as it runs; the workspace inspector shows them after a reload | check | carried from v0.3 |
-| Stop the local ingress and deploy → the deploy succeeds with a warning, and the site link flags it | check | carried from v0.3 |
-| Check a target with the ingress stopped → the check names the ingress | check | carried from v0.3 |
-| Open a service in the workspace → Read logs shows its latest lines; Refresh reads them again | check | carried from v0.3 |
-| Deploy, then change a secret → Activity lists both with the operator, and the chain shows intact | check | carried from v0.3 |
-| Push to GitHub → `ci` runs all three jobs; `publish-docker-image` uploads `bundle-<sha>` | check | carried from v0.3 |
-| Push to `main` → the shared workflow releases `v0.3.Z`, and the top bar shows that version | check | carried from v0.3 |
-| Open dev's service map → each site links out with its answer state, and `postgres` shows as a platform service | check | carried from v0.3 |
-| Deploy a release to test only → Environments highlights what prod lacks and offers the promotion to prod | check | carried from v0.3 |
-| Open Deployments → Releases lists releases and commit builds; its Deploy button opens the dialog with it chosen | check | carried from v0.3 |
-| Leave Wheelhouse running for an hour → the Fleet page draws load, memory and disk lines for each server | check | carried from v0.3 |
-| Run `rehearse.py self` → Wheelhouse's console answers at `http://console-wheelhouse.dev.localhost:18080` | check | carried from v0.3 |
-| Open the workspace → the product rail selects a product; the inspector follows the selected service | check | carried from v0.3 |
-| Open a service map → the controls, Ctrl + scroll and a pinch zoom it; a drag pans; a click still selects | check | carried from v0.3 |
-| Open the profile menu → it shows the console version and the API version with its commit | check | carried from v0.3 |
-| Sign out → the sign-in screen shows only the name, one line and the GitHub button | check | carried from v0.3 |
-| Show scroll bars always (macOS setting) → the top bar still reaches the window's right edge | check | carried from v0.3 |
-| Open Secrets → its frame, tabs and table headers show at once; only values load | check | carried from v0.3 |
-| Refresh Secrets → statuses, counts and versions flash; vault, namespace and key names stay | check | carried from v0.3 |
-| Open an old `/fleet` link → it lands on Servers with the same product selected | check | carried from v0.3 |
-| Open Deploy a commit on a short window → the dialog fits and its commit list scrolls | check | carried from v0.3 |
-| Click a commit's short SHA → GitHub opens that exact commit | check | carried from v0.3 |
-| Build a commit of a product without a build workflow → no Build button; the note says why | check | carried from v0.3 |
-| Choose a branch in a product's repository menu → the link and the clone command follow it | check | carried from v0.3 |
-| Open Products → each product shows its repository icon, or a tinted letter when it has none | check | carried from v0.3 |
-| Open the console on a slow session read → the wordmark and bar show at once and fill, then the page appears | check | carried from v0.3 |
-| Switch to dark → the top bar and sign-in show the white wordmark; the tab shows the white boat | check | carried from v0.3 |
-| Run `pnpm install && pnpm dev` in the frontend workspace → the console serves at `https://localhost:5174` | check | carried from v0.3 |
-| Open Products → each product shows its environments, their sites and vault namespaces | check | carried from v0.3 |
-| Set a product's lifecycle → Products and the workspace show it after a reload; Activity records it | check | carried from v0.3 |
-| Create an integration key → it shows once; `curl` with it reads `/api/products` but gets 401 from `/api/deployments/targets` | check | carried from v0.3 |
-| Revoke the key → the same read gets 401; the key list shows it revoked, with its last use | check | carried from v0.3 |
-| Add a product with a dev environment on the local server → the runner lists its target after the save | check | carried from v0.3 |
-| Delete a product an environment still uses → refused with the reason; remove the environment → deleted | check | carried from v0.3 |
-| Add a server without its `ssh/<slug>/` files → saved; a check on its target names the missing identity | check | carried from v0.3 |
-| Restart `rehearse.py console` → the local server, its targets and vault return; operator products stay | check | carried from v0.3 |
-| Save an environment with a settings path `etc/x.json` → the error shows under that row's path | check | carried from v0.3 |
-
----
-
 ## Hosting
 
 | Item | Type | Notes |
@@ -211,6 +147,8 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 ## Experience
 
 User 2026-10-15: layout, motion and notifications must work flawlessly and look their best; pull this group first.
+User 2026-10-17: v0.5 is a full platform ideation, check and layout redesign; v0.4's manual checks and the
+carried v0.3 checks were dropped for it (the list stays in git before this commit).
 
 | Item | Type | Notes |
 |---|---|---|
