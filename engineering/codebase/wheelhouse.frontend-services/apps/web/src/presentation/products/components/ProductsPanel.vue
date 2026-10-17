@@ -14,7 +14,7 @@ import { Badge, Text } from "@wow-two-beta/fe/presentation/display";
 import { Alert, DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
 import { SearchInput } from "@wow-two-beta/fe/presentation/forms";
 import { ListDetailLayout } from "@wow-two-beta/fe/presentation/layout";
-import { useProducts } from "@/application/products";
+import { IconAvailability, useProducts } from "@/application/products";
 import { workspaceOf } from "@/application/portfolio";
 import { useWorkspaces } from "@/application/workspaces";
 import { failureReason } from "@/integration/common";
@@ -101,6 +101,8 @@ async function refreshIdentity(): Promise<void> {
   try {
     const result = await productOperations.refreshIdentity(product.slug);
     if (!result.ok) refreshError.value = failureReason(result.failure);
+    // The repository was read again, so an icon it gained shows: its marks ask for it once more.
+    else IconAvailability.forget(product.slug);
   } finally {
     refreshing.value = false;
   }

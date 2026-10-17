@@ -9,6 +9,7 @@ const bundle = await build({
     contents: `
       export * from './src/domain/products/ProductIcon';
       export { useProductIcon } from './src/application/products/useProductIcon';
+      export { IconAvailability } from './src/application/products/IconAvailability';
       export { ref } from 'vue';
     `,
     resolveDir: process.cwd(),
@@ -104,4 +105,22 @@ test("a product outside the catalog shows its monogram without asking for an ico
 
   assert.equal(icon.src.value, null);
   assert.equal(icon.monogram.value, "U");
+});
+
+test("a refused address is shared: every mark of it falls back, and none asks again until it is forgotten", () => {
+  const first = icons.useProductIcon({ slug: () => "pose-coach", name: () => "Pose Coach", theme: () => "light" });
+  const second = icons.useProductIcon({ slug: () => "pose-coach", name: () => "Pose Coach", theme: () => "light" });
+  const url = "/api/products/pose-coach/icon?theme=light&form=short&color=colored";
+  assert.equal(second.src.value, url);
+
+  first.failed();
+  assert.equal(first.src.value, null);
+  assert.equal(second.src.value, null, "another mark of the same address no longer asks");
+  const later = icons.useProductIcon({ slug: () => "pose-coach", name: () => "Pose Coach", theme: () => "light" });
+  assert.equal(later.src.value, null, "a mark mounted later does not ask either");
+
+  icons.IconAvailability.forget("other-product");
+  assert.equal(later.src.value, null);
+  icons.IconAvailability.forget("pose-coach");
+  assert.equal(later.src.value, url, "a product read again from its repository asks once more");
 });

@@ -5,6 +5,7 @@ import { productsApi } from "@/integration/products";
 import { DeploymentKeys } from "@/application/deployments/DeploymentKeys";
 
 export { useProductIcon, type ProductIconSource } from "./useProductIcon";
+export { IconAvailability } from "./IconAvailability";
 
 /** Query keys for products; inventory writes invalidate through these. */
 export const ProductKeys = { list: ["products"] as const };
