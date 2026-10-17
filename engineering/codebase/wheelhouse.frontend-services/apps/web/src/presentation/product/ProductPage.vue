@@ -179,6 +179,13 @@ const mapContainers = computed(() =>
     ? (targetVitals.value.containers ?? null)
     : null,
 );
+/** The verified release's service versions without the hidden services. */
+const visibleVersions = computed(() => {
+  const versions = state.data.value?.current?.versions;
+  return versions && hiddenServices.value.length
+    ? Object.fromEntries(Object.entries(versions).filter(([service]) => !hiddenServices.value.includes(service)))
+    : versions;
+});
 /** The map's declaration and readings without the hidden services. */
 const visibleTopology = computed(() =>
   topology.data.value ? withoutServices(topology.data.value, hiddenServices.value) : null,
@@ -548,7 +555,7 @@ function openDeploy(job?: DeploymentJob): void {
             </DataRegion>
             <TargetSites
               :sites="state.data.value?.current?.sites"
-              :versions="state.data.value?.current?.versions"
+              :versions="visibleVersions"
             />
             <EnvironmentCompare
               v-if="product"
