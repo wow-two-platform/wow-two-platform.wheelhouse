@@ -37,7 +37,8 @@ const ProfileSheet = defineAsyncComponent(() => import('./ProfileSheet.vue'));
 /**
  * The avatar in the top bar opens everything the primary navigation leaves out: the portfolio-wide Activity and
  * Secrets, settings, "Show inactive", appearance and sign-out — a menu from tablets up, a bottom sheet on phones. The
- * trigger is the SDK's neutral outline button at the top bar's size, so it matches the buttons beside it.
+ * trigger is the SDK's neutral outline button at the top bar's size, so it matches the buttons beside it; on phones it
+ * holds the avatar alone and is square, like the icon-only buttons there.
  */
 defineOptions({ name: 'ProfileMenu' });
 const props = defineProps<ProfileMenuProps>();
@@ -77,7 +78,7 @@ function openSheet(): void {
     variant="outline"
     tone="neutral"
     size="md"
-    class="px-1"
+    shape="square"
     aria-haspopup="dialog"
     :aria-expanded="sheetOpen"
     :aria-label="`Account menu for ${displayName}`"
