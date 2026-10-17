@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-10-15*
+*Last updated: 2026-10-17*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -201,10 +201,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Audit every MCP tool call | feature | [MCP review](../research/mcp-review.md): key, tool, target, outcome and duration; required before any write tool |
 | Limit MCP concurrency and rate per key | feature | Each runner tool spawns Python and SSH for up to 110 s; cap 2–4 concurrent calls |
 | Ability to expire integration keys and see them near expiry | feature | Keys live until revoked today; default 90 days |
-| Fix MCP tool failures collapsing into one generic message | fix | Pass the operator-safe error and a retryable hint |
-| Harden `/mcp` with an Origin check, a small body limit and a `/.well-known` 404 | fix | The spec requires the Origin 403; the SPA answers `/.well-known/*` with HTML today |
 | Connect Claude Code to prod MCP with the key in the Keychain | check | The pending authenticated acceptance; a headers helper keeps the key out of the plain-text client config |
-| Fix `catalog:read` returning vault namespaces over REST but not MCP | fix | One projection per scope |
 | Cover the 2026-07-28 MCP protocol in E2E | engineering | Tests use 2025-11-25 only |
 | Build, deploy and log tools for agents | feature | `builds:write`, `deployments:write`, `logs:read` on short-lived keys; server-side approval (plan, approve in the console, execute); prod keeps the typed target ID |
 
@@ -229,15 +226,6 @@ User 2026-10-15: layout, motion and notifications must work flawlessly and look 
 | Item | Type | Notes |
 |---|---|---|
 | Ability to see services grouped under their product and environment | feature | User 2026-10-15: products run several services. Servers nests server → target → containers, and the Deployments targets panel is a flat target list. Group both by product, then environment, then service. |
-
-## Console UI
-
-| Item | Type | Notes |
-|---|---|---|
-| Fix the Servers page leaving old content after a dialog closes | fix | The SDK `Tooltip` inside `RelativeTime` throws reading `refs`, and the next page change keeps the old page; root cause in the UI SDK (also on 0.0.13) |
-| Fix environments listing as dev, prod, test | fix | Order them dev, test, prod everywhere |
-| Fix a new server reading "Host vitals are unavailable" until a target exists | fix | Read host vitals from the server itself |
-| Fix a finished job's inspector refetching vitals, history and stats | fix | `useDeploymentOutcome` refetches them when it opens a job that already finished |
 
 ## SDK adoption
 
