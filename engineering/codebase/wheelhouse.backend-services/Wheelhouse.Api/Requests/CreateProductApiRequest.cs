@@ -22,4 +22,7 @@ public sealed record CreateProductApiRequest
 
     /// <summary>Gets where published releases and commit builds come from, or <c>null</c> for none.</summary>
     public ProductReleaseValueObject? Release { get; init; }
+
+    /// <summary>Gets the workspace the product joins, or <c>null</c> for the default workspace, <c>own-ventures</c>.</summary>
+    public Guid? WorkspaceId { get; init; }
 }

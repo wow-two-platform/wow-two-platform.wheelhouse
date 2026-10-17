@@ -15,4 +15,14 @@ internal sealed class ProductsRepository(WheelhouseDbContext db) : EfRepository<
     /// <inheritdoc />
     public Task<ProductEntity?> GetBySlugAsync(string slug, CancellationToken ct = default) =>
         Set.FirstOrDefaultAsync(entity => entity.Slug == slug, ct);
+
+    /// <inheritdoc />
+    public Task<ProductEntity?> FindAsync(string key, CancellationToken ct = default) =>
+        Guid.TryParse(key, out var id)
+            ? Set.FirstOrDefaultAsync(entity => entity.Id == id, ct)
+            : GetBySlugAsync(key, ct);
+
+    /// <inheritdoc />
+    public Task<bool> AnyInWorkspaceAsync(Guid workspaceId, CancellationToken ct = default) =>
+        Set.AnyAsync(entity => entity.WorkspaceId == workspaceId, ct);
 }

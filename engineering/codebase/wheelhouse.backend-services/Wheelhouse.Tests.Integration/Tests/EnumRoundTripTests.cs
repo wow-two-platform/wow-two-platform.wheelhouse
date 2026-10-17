@@ -21,7 +21,11 @@ namespace Wheelhouse.Tests.Integration.Tests;
 public sealed class EnumRoundTripTests(WheelhouseTestDb db) : IAsyncLifetime
 {
     /// <inheritdoc />
-    public async Task InitializeAsync() => await db.ResetAsync();
+    public async Task InitializeAsync()
+    {
+        await db.ResetAsync();
+        await InventoryRows.SeedWorkspaceAsync(db);
+    }
 
     /// <inheritdoc />
     public Task DisposeAsync() => Task.CompletedTask;

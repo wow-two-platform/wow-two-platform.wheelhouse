@@ -28,6 +28,9 @@ public sealed record ProductCreateCommand : ICommand<AppResult<ProductDto>>, IAu
     /// <summary>Gets where published releases and commit builds come from, or <c>null</c> for none.</summary>
     public ProductReleaseValueObject? Release { get; init; }
 
+    /// <summary>Gets the workspace the product joins, or <c>null</c> for the default workspace.</summary>
+    public Guid? WorkspaceId { get; init; }
+
     /// <inheritdoc />
     public string AuditAction => "product.create";
 

@@ -8,7 +8,10 @@ namespace Wheelhouse.Application.Products.Models;
 /// the MCP <c>list_projects</c> tool both return it.</summary>
 public sealed record ProductDto
 {
-    /// <summary>Gets the product's identifier.</summary>
+    /// <summary>Gets the product's identifier; pins and catalog entries refer to it.</summary>
+    public required Guid Id { get; init; }
+
+    /// <summary>Gets the name targets, bundles, vault namespaces and URLs know the product by.</summary>
     public required string Slug { get; init; }
 
     /// <summary>Gets the display name, from the product's manifest when it has a valid one, else from its own row.</summary>
@@ -23,6 +26,9 @@ public sealed record ProductDto
     /// <summary>Gets where the name, description and homepage come from, and what the repository says about the
     /// product's services.</summary>
     public required ProductIdentityDto Identity { get; init; }
+
+    /// <summary>Gets the workspace the product belongs to.</summary>
+    public required Guid WorkspaceId { get; init; }
 
     /// <summary>Gets where the product stands in the portfolio.</summary>
     public required ProductLifecycle Lifecycle { get; init; }

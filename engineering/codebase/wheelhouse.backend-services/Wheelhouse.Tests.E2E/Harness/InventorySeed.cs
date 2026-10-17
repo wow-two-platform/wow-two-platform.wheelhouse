@@ -9,11 +9,14 @@ using Wheelhouse.Domain.Targets.Entities;
 using Wheelhouse.Domain.Targets.Enums;
 using Wheelhouse.Domain.Targets.Models;
 using Wheelhouse.Domain.Vaults.Entities;
+using Wheelhouse.Domain.Workspaces.Constants;
+using Wheelhouse.Domain.Workspaces.Entities;
 
 namespace Wheelhouse.Tests.E2E.Harness;
 
 /// <summary>Writes the standard inventory every E2E test starts from, straight through the repositories so it leaves
-/// no audit entries: ForeverPin on a dev and a prod server, Wheelhouse with no environment, and a vault beside dev.</summary>
+/// no audit entries: the default workspace holding ForeverPin on a dev and a prod server and Wheelhouse with no
+/// environment, and a vault beside dev.</summary>
 public static class InventorySeed
 {
     /// <summary>Writes the standard inventory into the freshly reset database.</summary>
@@ -24,11 +27,15 @@ public static class InventorySeed
         var services = scope.ServiceProvider;
         var products = services.GetRequiredService<IProductsRepository>();
         var servers = services.GetRequiredService<IServersRepository>();
+        var workspace = await services.GetRequiredService<IWorkspacesRepository>().CreateAsync(new WorkspaceEntity
+        {
+            Id = Guid.NewGuid(), Slug = WorkspaceConstants.DefaultSlug, Name = WorkspaceConstants.DefaultName, Order = 0,
+        });
 
         var foreverPin = await products.CreateAsync(new ProductEntity
         {
             Id = Guid.NewGuid(), Slug = "foreverpin", Name = "ForeverPin", Description = "Styled QR codes and short links.",
-            Repository = "sulton-max/10x-venture-forever-pin", DefaultBranch = "main",
+            Repository = "sulton-max/10x-venture-forever-pin", DefaultBranch = "main", WorkspaceId = workspace.Id,
             Release = new ProductReleaseValueObject
             {
                 Asset = "foreverpin-release.tar.gz", Workflow = "publish-docker-image.yml",
@@ -38,7 +45,7 @@ public static class InventorySeed
         await products.CreateAsync(new ProductEntity
         {
             Id = Guid.NewGuid(), Slug = "wheelhouse", Name = "Wheelhouse", Description = "The portfolio's control plane.",
-            Repository = "wow-two-platform/wow-two-platform.wheelhouse", DefaultBranch = "main",
+            Repository = "wow-two-platform/wow-two-platform.wheelhouse", DefaultBranch = "main", WorkspaceId = workspace.Id,
         });
 
         var pilot = await servers.CreateAsync(Server("pilot-host", "Pilot", "vps.example.net", "hel1"));

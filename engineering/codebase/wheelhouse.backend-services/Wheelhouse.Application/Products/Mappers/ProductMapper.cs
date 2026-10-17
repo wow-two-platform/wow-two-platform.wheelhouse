@@ -23,6 +23,7 @@ internal static class ProductMapper
         IReadOnlyDictionary<Guid, string> vaults,
         IReadOnlyDictionary<string, IReadOnlyList<ProductSiteModel>> sites) => new()
     {
+        Id = product.Id,
         Slug = product.Slug,
         Name = identity.Name,
         Description = identity.Description,
@@ -40,6 +41,7 @@ internal static class ProductMapper
                 }),
             ],
         },
+        WorkspaceId = product.WorkspaceId,
         Lifecycle = product.Lifecycle,
         Repository = new ProductRepositoryDto
         {

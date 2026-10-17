@@ -8,13 +8,36 @@ using Wheelhouse.Domain.Targets.Entities;
 using Wheelhouse.Domain.Targets.Enums;
 using Wheelhouse.Domain.Targets.Models;
 using Wheelhouse.Domain.Vaults.Entities;
+using Wheelhouse.Domain.Workspaces.Entities;
+using Wheelhouse.Tests.Integration.Harness;
 
 namespace Wheelhouse.Tests.Integration.Support;
 
 /// <summary>Builds inventory rows for the integration tier, each valid as the API would store it.</summary>
 public static class InventoryRows
 {
-    /// <summary>A product with a release source of two services.</summary>
+    /// <summary>The identifier of the workspace <see cref="Product"/> rows belong to; <see cref="SeedWorkspaceAsync"/>
+    /// stores it.</summary>
+    public static readonly Guid WorkspaceId = Guid.Parse("0199e5a4-0000-7000-8000-00000000000a");
+
+    /// <summary>A workspace at a place in the order.</summary>
+    public static WorkspaceEntity Workspace(string slug, int order, Guid? id = null) => new()
+    {
+        Id = id ?? Guid.NewGuid(),
+        Slug = slug,
+        Name = slug,
+        Order = order,
+    };
+
+    /// <summary>Stores the workspace every <see cref="Product"/> row belongs to; call it after each reset.</summary>
+    public static async Task SeedWorkspaceAsync(WheelhouseTestDb db)
+    {
+        await using var ctx = db.NewContext();
+        ctx.Workspaces.Add(Workspace("own-ventures", 0, WorkspaceId));
+        await ctx.SaveChangesAsync();
+    }
+
+    /// <summary>A product with a release source of two services, in the seeded workspace.</summary>
     public static ProductEntity Product(string slug) => new()
     {
         Id = Guid.NewGuid(),
@@ -23,6 +46,7 @@ public static class InventoryRows
         Description = "A test product.",
         Repository = "owner/" + slug,
         DefaultBranch = "main",
+        WorkspaceId = WorkspaceId,
         Release = new ProductReleaseValueObject
         {
             Asset = slug + "-release.tar.gz",

@@ -9,6 +9,7 @@ using Wheelhouse.Domain.Secrets.Entities;
 using Wheelhouse.Domain.Servers.Entities;
 using Wheelhouse.Domain.Targets.Entities;
 using Wheelhouse.Domain.Vaults.Entities;
+using Wheelhouse.Domain.Workspaces.Entities;
 using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore;
 using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore.Naming;
 using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore.Sqlite;
@@ -24,6 +25,9 @@ public sealed class WheelhouseDbContext(DbContextOptions<WheelhouseDbContext> op
     /// <summary>The EF Core SQLite provider name — gates the SQLite-only <c>DateTimeOffset</c> binary conversion (test
     /// hosts only; Npgsql maps <c>DateTimeOffset</c> natively).</summary>
     private const string SqliteProviderName = "Microsoft.EntityFrameworkCore.Sqlite";
+
+    /// <summary>Gets the workspaces products are grouped into.</summary>
+    public DbSet<WorkspaceEntity> Workspaces => Set<WorkspaceEntity>();
 
     /// <summary>Gets the portfolio's products.</summary>
     public DbSet<ProductEntity> Products => Set<ProductEntity>();

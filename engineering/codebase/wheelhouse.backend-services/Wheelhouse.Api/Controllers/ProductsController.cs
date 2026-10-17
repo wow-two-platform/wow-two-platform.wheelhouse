@@ -77,6 +77,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
             Repository = request.Repository,
             DefaultBranch = request.DefaultBranch,
             Release = request.Release,
+            WorkspaceId = request.WorkspaceId,
         }, ct), envelope => CreatedAtAction(nameof(GetBySlug), new { slug = envelope.Data.Slug }, envelope));
 
     /// <summary>Changes a product's definition; its slug stays.</summary>
@@ -116,6 +117,17 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete([RegularExpression(Slug)] string slug, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new ProductDeleteCommand { Slug = slug }, ct), _ => NoContent());
+
+    /// <summary>Moves a product into another workspace. The route names the product by its identifier or its slug.</summary>
+    [HttpPut("{product}/workspace")]
+    [RequireActionHeader("workspace")]
+    [ProducesResponseType<ApiResponse<ProductDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateWorkspace(
+        string product, UpdateProductWorkspaceApiRequest request, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(
+            new ProductWorkspaceUpdateCommand { Product = product, WorkspaceId = request.WorkspaceId }, ct));
 
     /// <summary>Records where a product stands in the portfolio.</summary>
     [HttpPut("{slug}/lifecycle")]

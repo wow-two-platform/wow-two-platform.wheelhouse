@@ -15,6 +15,16 @@ public static class InventoryRuleExtensions
             .Matches(InventoryPatternConstants.Slug)
             .WithMessage("'{PropertyName}' must start with a lowercase letter and hold only lowercase letters, digits and dashes (48 at most).");
 
+    /// <summary>Requires the name a route gives a product: its identifier or its slug.</summary>
+    /// <param name="rule">The rule builder.</param>
+    /// <typeparam name="T">The validated type.</typeparam>
+    /// <returns>The rule builder for chaining.</returns>
+    public static IRuleBuilderOptions<T, string> MustBeProductKey<T>(this IRuleBuilder<T, string> rule) =>
+        rule
+            .Must(key => key is not null
+                && (Guid.TryParse(key, out _) || System.Text.RegularExpressions.Regex.IsMatch(key, InventoryPatternConstants.Slug)))
+            .WithMessage("'{PropertyName}' must be a product's identifier or its slug.");
+
     /// <summary>Requires a display name of 1–80 characters.</summary>
     /// <param name="rule">The rule builder.</param>
     /// <typeparam name="T">The validated type.</typeparam>
@@ -23,6 +33,15 @@ public static class InventoryRuleExtensions
         rule
             .Must(name => name is not null && name.Trim().Length is > 0 and <= 80)
             .WithMessage("'{PropertyName}' must hold 1–80 characters.");
+
+    /// <summary>Requires an order: a list of identifiers, none empty or repeated, 500 at most.</summary>
+    /// <param name="rule">The rule builder.</param>
+    /// <typeparam name="T">The validated type.</typeparam>
+    /// <returns>The rule builder for chaining.</returns>
+    public static IRuleBuilderOptions<T, IReadOnlyList<Guid>> MustListEachOnce<T>(this IRuleBuilder<T, IReadOnlyList<Guid>> rule) =>
+        rule
+            .Must(ids => ids is not null && ids.Count <= 500 && !ids.Contains(Guid.Empty) && ids.Distinct().Count() == ids.Count)
+            .WithMessage("'{PropertyName}' must list each identifier once (500 at most).");
 
     /// <summary>Requires text that matches one of the inventory patterns.</summary>
     /// <param name="rule">The rule builder.</param>

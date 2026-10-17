@@ -21,7 +21,11 @@ public sealed class ProductManifestRepositoryTests(WheelhouseTestDb db) : IAsync
     private static readonly string Second = new('b', 40);
 
     /// <inheritdoc />
-    public async Task InitializeAsync() => await db.ResetAsync();
+    public async Task InitializeAsync()
+    {
+        await db.ResetAsync();
+        await InventoryRows.SeedWorkspaceAsync(db);
+    }
 
     /// <inheritdoc />
     public Task DisposeAsync() => Task.CompletedTask;

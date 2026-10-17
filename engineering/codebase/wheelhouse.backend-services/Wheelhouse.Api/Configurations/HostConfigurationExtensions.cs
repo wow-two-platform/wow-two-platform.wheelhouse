@@ -95,6 +95,7 @@ public static class HostConfigurationExtensions
         builder.Services.Configure<HealthCheckOptions>(o =>
             o.Predicate = check => !check.Tags.Contains(WheelhouseDatabase.ReadinessTag));
 
+        builder.Services.AddScoped<IWorkspacesRepository, WorkspacesRepository>();
         builder.Services.AddScoped<IProductsRepository, ProductsRepository>();
         builder.Services.AddScoped<IProductManifestsRepository, EfProductManifests>();
         builder.Services.AddScoped<IServersRepository, ServersRepository>();
@@ -163,6 +164,7 @@ public static class HostConfigurationExtensions
         builder.Services.AddMediatorInterceptor(typeof(Wheelhouse.Application.Audit.Interceptors.AuditRecordingInterceptor<,>));
         builder.Services.AddMediatorInterceptor(typeof(Wheelhouse.Application.Inventory.Interceptors.InventoryExportingInterceptor<,>));
         builder.Services.AddMediatorValidatingInterceptor();
+        builder.Services.AddScoped<Wheelhouse.Application.Workspaces.Services.DefaultWorkspaceService>();
         builder.Services.AddScoped<Wheelhouse.Application.Products.Services.ProductIdentityService>();
         builder.Services.AddScoped<Wheelhouse.Application.Products.Services.ProductsProjectionService>();
         builder.Services.AddScoped<Wheelhouse.Application.Targets.Services.TargetsProjectionService>();

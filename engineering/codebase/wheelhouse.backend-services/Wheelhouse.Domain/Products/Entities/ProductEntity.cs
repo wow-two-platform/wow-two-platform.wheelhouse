@@ -29,6 +29,9 @@ public sealed record ProductEntity : IKeyedEntity<Guid>, IHasTableName, IAuditab
     /// <summary>Gets or sets the branch releases come from.</summary>
     public required string DefaultBranch { get; set; }
 
+    /// <summary>Gets or sets the workspace the product belongs to.</summary>
+    public Guid WorkspaceId { get; set; }
+
     /// <summary>Gets or sets where the product stands in the portfolio.</summary>
     public ProductLifecycle Lifecycle { get; set; } = ProductLifecycle.Building;
 

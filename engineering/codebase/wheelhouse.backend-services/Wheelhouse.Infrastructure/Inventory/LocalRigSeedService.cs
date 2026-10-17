@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Workspaces.Services;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Servers.Entities;
 using Wheelhouse.Domain.Targets.Entities;
@@ -13,7 +14,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Infrastructure.Inventory;
 
 /// <summary>Provides the local server's fixtures to the database on the local rig: its products where the database
-/// lacks them, and its server, targets and vault as the runner defines them for this run.</summary>
+/// lacks them, in the default workspace, and its server, targets and vault as the runner defines them for this run.</summary>
 /// <remarks>The rig's hosts, ports and settings paths depend on where Wheelhouse runs, so its server, targets and vault
 /// are written again on every start; the operator's own products are never touched.</remarks>
 public sealed partial class LocalRigSeedService(
@@ -22,6 +23,7 @@ public sealed partial class LocalRigSeedService(
     IServersRepository servers,
     ITargetsRepository targets,
     IVaultsRepository vaults,
+    DefaultWorkspaceService defaultWorkspace,
     ILogger<LocalRigSeedService> logger)
 {
     /// <summary>Writes the local server's fixtures into the database.</summary>
@@ -47,6 +49,7 @@ public sealed partial class LocalRigSeedService(
                     Description = fixture.Description,
                     Repository = fixture.Repository,
                     DefaultBranch = fixture.DefaultBranch,
+                    WorkspaceId = (await defaultWorkspace.GetAsync(ct)).Id,
                     Release = InventorySnapshotMapper.Map(fixture.Release),
                 }, ct);
         }

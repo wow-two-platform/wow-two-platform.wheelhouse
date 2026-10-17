@@ -43,6 +43,8 @@ public sealed record VaultResponse(string Slug, string Name, string Server, stri
 /// <param name="Environments">Its environments, dev to prod.</param>
 /// <param name="Homepage">Its public address, when its manifest gives one.</param>
 /// <param name="Identity">Where its name, description and homepage come from.</param>
+/// <param name="Id">The product's identifier.</param>
+/// <param name="WorkspaceId">The workspace it belongs to.</param>
 public sealed record ProductResponse(
     string Slug,
     string Name,
@@ -52,7 +54,17 @@ public sealed record ProductResponse(
     string IconUrl,
     IReadOnlyList<ProductEnvironmentResponse> Environments,
     string? Homepage = null,
-    ProductIdentityResponse? Identity = null);
+    ProductIdentityResponse? Identity = null,
+    Guid Id = default,
+    Guid WorkspaceId = default);
+
+/// <summary>Response shape for a workspace (mirrors the host's <c>WorkspaceDto</c>).</summary>
+/// <param name="Id">The workspace's identifier.</param>
+/// <param name="Slug">Its slug.</param>
+/// <param name="Name">Its display name.</param>
+/// <param name="Description">What it holds.</param>
+/// <param name="Order">Its place in the operator's order.</param>
+public sealed record WorkspaceResponse(Guid Id, string Slug, string Name, string? Description, int Order);
 
 /// <summary>Response shape for where a catalog product's identity text comes from.</summary>
 /// <param name="Source"><c>manifest</c> or <c>record</c> (string-serialized enum).</param>

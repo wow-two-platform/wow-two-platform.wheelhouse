@@ -115,8 +115,8 @@ and an explicit cutover; a second host definition does not make a service redund
 
 ## Product catalog
 
-A product is one inventory row: slug, name, description, repository, default branch, an optional release source and
-the operator's lifecycle (idea, building, live, paused, killed). The slug never changes once created; the runner
+A product is one inventory row: slug, name, description, repository, default branch, an optional release source, its
+workspace and the operator's lifecycle (idea, building, live, paused, killed). The slug never changes once created; the runner
 refuses a target or release source for a product the snapshot lacks. While the repository carries a valid manifest,
 its name, description and homepage replace the row's ([product identity](#product-identity)).
 
@@ -124,6 +124,24 @@ its name, description and homepage replace the row's ([product identity](#produc
 the newest rollout this control plane saw succeed (no target is contacted), and its vault namespace is
 `{product}-{environment}` on its server's first vault. The response carries no targets, releases or deployment state,
 so an integration reads products without deployment concepts. The runner read is cached for 30 seconds.
+
+### Workspaces
+
+A workspace groups products, such as the platform apps or one's own ventures (`workspaces`: id, unique slug, name,
+optional description, `sort_order`, audit timestamps). Every product belongs to exactly one: `products.workspace_id`
+is required and restricts deletes, so a workspace holding a product cannot be removed (409). Migration
+`010-workspaces` created the default workspace `own-ventures` ("Own ventures") first in the order and moved every
+existing product into it. A product created without a workspace joins `own-ventures`, which comes back last in the
+order if it was removed.
+
+- `GET /api/workspaces` lists `{ id, slug, name, description, order }` in the operator's order; the operator's
+  session or a `catalog:read` key reads it, since every product names its `workspaceId`.
+- `POST /api/workspaces` `{ slug, name, description? }` adds one last; `PUT /api/workspaces/{id}` `{ name,
+  description? }` renames it (the slug stays); `DELETE /api/workspaces/{id}` removes an empty one;
+  `PUT /api/workspaces/order` `{ ids }` reorders, and the list must name every workspace exactly once (409 otherwise).
+- `PUT /api/products/{product}/workspace` `{ workspaceId }` moves a product; `{product}` is the product's id or slug.
+- Every write carries the action header `workspace` and is audited (`workspace.create`, `workspace.update`,
+  `workspace.delete`, `workspace.reorder`, `product.workspace`). Workspaces are not part of the runner's snapshot.
 
 ### Product identity
 
