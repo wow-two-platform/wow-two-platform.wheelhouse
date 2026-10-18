@@ -26,8 +26,8 @@ public sealed class PinsController(ISender sender) : ControllerBase
     public async Task<IActionResult> Get(CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new PinGetAllQuery(), ct));
 
-    /// <summary>Pins a workspace, product or service; it comes last. Pinning a target again answers its existing pin
-    /// with 200 instead of 201.</summary>
+    /// <summary>Pins a product; it comes last. Pinning it again answers its existing pin with 200 instead of 201.
+    /// Workspace and service pins answer 400.</summary>
     [HttpPost]
     [RequireActionHeader("pin")]
     [ProducesResponseType<ApiResponse<PinDto>>(StatusCodes.Status201Created)]

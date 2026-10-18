@@ -10,31 +10,20 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Pins.CommandHandlers;
 
-/// <summary>Handles <see cref="PinCreateCommand"/>: a new pin comes last in the owner's order; a target already pinned
-/// answers its existing pin. A service key is taken as given, since the repository declares a product's services.</summary>
-public sealed class PinCreateCommandHandler(
-    IPinsRepository pins, IWorkspacesRepository workspaces, IProductsRepository products, IActorContext actorContext)
+/// <summary>Handles <see cref="PinCreateCommand"/>: a new product pin comes last in the owner's order; a product already
+/// pinned answers its existing pin. The validator has refused every other kind.</summary>
+public sealed class PinCreateCommandHandler(IPinsRepository pins, IProductsRepository products, IActorContext actorContext)
     : ICommandHandler<PinCreateCommand, AppResult<PinCreated>>
 {
     /// <inheritdoc />
     public async ValueTask<AppResult<PinCreated>> HandleAsync(PinCreateCommand request, CancellationToken cancellationToken)
     {
-        Guid? productId = null;
-        if (request.Kind == PinKind.Workspace)
-        {
-            if (!await workspaces.ExistsAsync(request.WorkspaceId!.Value, cancellationToken))
-                return AppResult<PinCreated>.Fail(AppErrorFactory.Validation($"Workspace '{request.WorkspaceId}' was not found."));
-        }
-        else
-        {
-            var product = await products.FindAsync(request.Product!, cancellationToken);
-            if (product is null)
-                return AppResult<PinCreated>.Fail(AppErrorFactory.Validation($"Product '{request.Product}' was not found."));
-            productId = product.Id;
-        }
+        var product = await products.FindAsync(request.Product!, cancellationToken);
+        if (product is null)
+            return AppResult<PinCreated>.Fail(AppErrorFactory.Validation($"Product '{request.Product}' was not found."));
 
         var owner = actorContext.Actor;
-        var existing = await pins.FindAsync(owner, request.Kind, request.WorkspaceId, productId, request.Service, cancellationToken);
+        var existing = await pins.FindAsync(owner, PinKind.Product, null, product.Id, null, cancellationToken);
         if (existing is not null)
             return AppResult<PinCreated>.Ok(new PinCreated(PinMapper.Map(existing), Created: false));
 
@@ -42,10 +31,8 @@ public sealed class PinCreateCommandHandler(
         {
             Id = Guid.CreateVersion7(),
             Owner = owner,
-            Kind = request.Kind,
-            WorkspaceId = request.WorkspaceId,
-            ProductId = productId,
-            Service = request.Service,
+            Kind = PinKind.Product,
+            ProductId = product.Id,
             Order = await pins.NextOrderAsync(owner, cancellationToken),
         }, cancellationToken);
         return AppResult<PinCreated>.Ok(new PinCreated(PinMapper.Map(pin), Created: true));

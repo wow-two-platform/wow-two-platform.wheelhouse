@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Domain.Pins.Entities;
 using Wheelhouse.Domain.Pins.Enums;
+using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Tests.E2E.Harness;
 using Wheelhouse.Tests.E2E.Support;
 using WoW.Two.Sdk.Beta.Be.Testing.Web;
@@ -14,9 +15,9 @@ using WoW.Two.Sdk.Beta.Be.Testing.Web;
 namespace Wheelhouse.Tests.E2E.Tests;
 
 /// <summary>
-/// E2E for pins — the signed-in owner keeps workspaces, products and services one click away in a custom order.
-/// Pinning a target twice answers the first pin, a pin goes with what it points at, the owner sees only their own
-/// pins, integration keys are refused, and nothing reaches the audit trail.
+/// E2E for pins — the signed-in owner keeps products one click away in a custom order; workspace and service pins are
+/// refused (products only since 2026-10-18). Pinning a product twice answers the first pin, a pin goes with its product,
+/// the owner sees only their own pins, integration keys are refused, and nothing reaches the audit trail.
 /// </summary>
 [Collection(WheelhouseCollection.Name)]
 public sealed class PinsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBase(fixture)
@@ -41,6 +42,18 @@ public sealed class PinsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBa
     private async Task<Guid> WorkspaceIdAsync() =>
         (await (await AdminClient.GetAsync("api/workspaces")).ReadEnvelopeAsync<IReadOnlyList<WorkspaceResponse>>())[0].Id;
 
+    /// <summary>Adds a third product, so an order has room to change.</summary>
+    private async Task<Guid> AddProductAsync(string slug)
+    {
+        await using var scope = Fixture.Host.Services.CreateAsyncScope();
+        var workspace = await WorkspaceIdAsync();
+        return (await scope.ServiceProvider.GetRequiredService<IProductsRepository>().CreateAsync(new ProductEntity
+        {
+            Id = Guid.NewGuid(), Slug = slug, Name = slug, Description = "", Repository = "owner/" + slug,
+            DefaultBranch = "main", WorkspaceId = workspace,
+        })).Id;
+    }
+
     private async Task<Guid> ProductIdAsync(string slug) =>
         (await (await AdminClient.GetAsync("api/products/" + slug)).ReadEnvelopeAsync<ProductResponse>()).Id;
 
@@ -54,45 +67,49 @@ public sealed class PinsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBa
     }
 
     [Fact]
-    public async Task Create_ShouldPinEachKindLastInTheOrder()
+    public async Task Create_ShouldPinEachProductLastInTheOrder()
     {
-        var workspaceId = await WorkspaceIdAsync();
         var foreverPin = await ProductIdAsync("foreverpin");
+        var wheelhouse = await ProductIdAsync("wheelhouse");
 
-        var workspace = await PinAsync(new { kind = "workspace", workspaceId });
-        var product = await PinAsync(new { kind = "product", productId = foreverPin });
-        var service = await PinAsync(new { kind = "service", productId = foreverPin, service = "redirect" });
+        var first = await PinAsync(new { kind = "product", productId = foreverPin });
+        var second = await PinAsync(new { kind = "product", productId = "wheelhouse" });
 
-        workspace.Should().BeEquivalentTo(new PinResponse(workspace.Id, "workspace", workspaceId, null, null, 0));
-        product.Should().BeEquivalentTo(new PinResponse(product.Id, "product", null, foreverPin, null, 1));
-        service.Should().BeEquivalentTo(new PinResponse(service.Id, "service", null, foreverPin, "redirect", 2));
-        (await ListAsync()).Select(pin => pin.Id).Should().Equal(workspace.Id, product.Id, service.Id);
+        first.Should().BeEquivalentTo(new PinResponse(first.Id, "product", null, foreverPin, null, 0));
+        second.Should().BeEquivalentTo(new PinResponse(second.Id, "product", null, wheelhouse, null, 1));
+        (await ListAsync()).Select(pin => pin.Id).Should().Equal(first.Id, second.Id);
     }
 
     [Fact]
-    public async Task Create_ShouldAnswerTheExistingPin_WhenTheTargetIsPinnedAgain()
+    public async Task Create_ShouldAnswerTheExistingPin_WhenTheProductIsPinnedAgain()
     {
         var foreverPin = await ProductIdAsync("foreverpin");
-        var first = await PinAsync(new { kind = "service", productId = foreverPin, service = "management" });
+        var first = await PinAsync(new { kind = "product", productId = foreverPin });
 
-        // The slug names the same product, so the same target.
-        var again = await PinAsync(new { kind = "service", productId = "foreverpin", service = "management" }, HttpStatusCode.OK);
+        // The slug names the same product, so the same pin.
+        var again = await PinAsync(new { kind = "product", productId = "foreverpin" }, HttpStatusCode.OK);
 
         again.Should().Be(first);
         (await ListAsync()).Should().ContainSingle();
     }
 
     [Fact]
-    public async Task Create_ShouldKeepAProductPinAndItsServicePinsApart()
+    public async Task Create_ShouldRefuseWorkspaceAndServicePins_SincePinsAreProductsOnly()
     {
-        var wheelhouse = await ProductIdAsync("wheelhouse");
+        var client = ActionClient("pin");
 
-        await PinAsync(new { kind = "product", productId = wheelhouse });
-        await PinAsync(new { kind = "service", productId = wheelhouse, service = "console" });
-        await PinAsync(new { kind = "service", productId = wheelhouse, service = "runner" });
+        foreach (var body in new object[]
+        {
+            new { kind = "workspace", workspaceId = await WorkspaceIdAsync() },
+            new { kind = "service", productId = "foreverpin", service = "redirect" },
+        })
+        {
+            var response = await client.PostJsonAsync("api/pins", body);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body.ToString());
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Only products are pinned");
+        }
 
-        (await ListAsync()).Select(pin => (pin.Kind, pin.Service)).Should()
-            .Equal(("product", null), ("service", "console"), ("service", "runner"));
+        (await ListAsync()).Should().BeEmpty();
     }
 
     [Fact]
@@ -103,12 +120,10 @@ public sealed class PinsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBa
 
         foreach (var body in new object[]
         {
-            new { kind = "workspace" },
-            new { kind = "workspace", workspaceId, productId = "foreverpin" },
+            new { kind = "product" },
+            new { kind = "product", productId = "Not A Slug" },
             new { kind = "product", workspaceId },
             new { kind = "product", productId = "foreverpin", service = "api" },
-            new { kind = "service", productId = "foreverpin" },
-            new { kind = "service", productId = "foreverpin", service = "Not_A_Key" },
             new { kind = "environment", productId = "foreverpin" },
         })
             (await client.PostJsonAsync("api/pins", body)).StatusCode.Should().Be(HttpStatusCode.BadRequest, body.ToString());
@@ -117,15 +132,13 @@ public sealed class PinsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBa
     }
 
     [Fact]
-    public async Task Create_ShouldReturn400_WhenTheTargetDoesNotExist()
+    public async Task Create_ShouldReturn400_WhenTheProductDoesNotExist()
     {
         var client = ActionClient("pin");
 
-        (await client.PostJsonAsync("api/pins", new { kind = "workspace", workspaceId = Guid.NewGuid() }))
-            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await client.PostJsonAsync("api/pins", new { kind = "product", productId = Guid.NewGuid() }))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await client.PostJsonAsync("api/pins", new { kind = "service", productId = "ghost", service = "api" }))
+        (await client.PostJsonAsync("api/pins", new { kind = "product", productId = "ghost" }))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
@@ -166,7 +179,7 @@ public sealed class PinsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBa
     {
         var a = await PinAsync(new { kind = "product", productId = "wheelhouse" });
         var b = await PinAsync(new { kind = "product", productId = "foreverpin" });
-        var c = await PinAsync(new { kind = "workspace", workspaceId = await WorkspaceIdAsync() });
+        var c = await PinAsync(new { kind = "product", productId = await AddProductAsync("pilot") });
 
         var response = await ActionClient("pin").PutJsonAsync("api/pins/order", new { ids = new[] { c.Id, a.Id, b.Id } });
 
@@ -191,17 +204,12 @@ public sealed class PinsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBa
     }
 
     [Fact]
-    public async Task Pins_ShouldGoWithTheProductOrWorkspaceTheyPointAt()
+    public async Task Pins_ShouldGoWithTheProductTheyPointAt()
     {
-        var created = await ActionClient("workspace").PostJsonAsync("api/workspaces", new { slug = "personal", name = "Personal" });
-        var personal = await created.ReadEnvelopeAsync<WorkspaceResponse>();
-        await PinAsync(new { kind = "workspace", workspaceId = personal.Id });
         await PinAsync(new { kind = "product", productId = "wheelhouse" });
-        await PinAsync(new { kind = "service", productId = "wheelhouse", service = "console" });
         var kept = await PinAsync(new { kind = "product", productId = "foreverpin" });
 
         (await ActionClient("product").DeleteAsync("api/products/wheelhouse")).StatusCode.Should().Be(HttpStatusCode.NoContent);
-        (await ActionClient("workspace").DeleteAsync("api/workspaces/" + personal.Id)).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         (await ListAsync()).Select(pin => pin.Id).Should().Equal(kept.Id);
     }

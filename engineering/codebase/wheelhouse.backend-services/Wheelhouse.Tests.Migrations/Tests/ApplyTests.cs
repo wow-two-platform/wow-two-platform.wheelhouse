@@ -23,7 +23,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
     [
         "001-baseline", "002-snake-enums", "003-audit-updated-at", "004-audit-trail", "005-vitals-samples",
         "006-product-catalog", "007-inventory", "008-product-manifests", "009-server-vitals", "010-workspaces",
-        "011-product-status", "012-pins", "013-drop-test-environment",
+        "011-product-status", "012-pins", "013-drop-test-environment", "015-product-pins-only",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -31,6 +31,9 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
 
     /// <summary>The ordinals 1 through <paramref name="ordinal"/>.</summary>
     private static int[] Through(int ordinal) => [.. Enumerable.Range(1, ordinal)];
+
+    /// <summary>Every embedded migration's ordinal, in the order it applies; numbers may skip, since lanes claim them.</summary>
+    private static int[] Ordinals => [.. Migrations.Select(label => int.Parse(label[..3], System.Globalization.CultureInfo.InvariantCulture))];
 
     /// <summary>The SQL that stores a bare product in the default workspace, as the schema stands after every migration.</summary>
     private static string InsertProduct(string id, string slug) =>
@@ -72,14 +75,14 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         // The migrator's own bookkeeping table exists, with one row per migration stamped by the host label.
         (await migrator.HasTableAsync("migration_history")).Should().BeTrue();
         var history = await migrator.ReadHistoryAsync();
-        history.Select(r => r.Ordinal).Should().Equal(Through(Migrations.Length));
+        history.Select(r => r.Ordinal).Should().Equal(Ordinals);
         history.Select(r => r.Name).Should().Equal(Migrations.Select(label => label[4..]));
         history.Should().OnlyContain(r => r.AppliedBy == "startup");
         history.Should().OnlyContain(r => r.Checksum.Length == 64); // SHA-256 hex digest recorded at apply time.
 
         // GetStatus: all applied, nothing pending / drifted / orphaned.
         var status = Unwrap(await migrator.Runner.GetStatusAsync(CancellationToken.None));
-        status.Applied.Select(a => a.Ordinal).Should().Equal(Through(Migrations.Length));
+        status.Applied.Select(a => a.Ordinal).Should().Equal(Ordinals);
         status.Pending.Should().BeEmpty();
         status.Drifted.Should().BeEmpty();
         status.Orphaned.Should().BeEmpty();
@@ -114,7 +117,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         (await migrator.HasTableAsync("workspaces")).Should().BeFalse();
         var status = Unwrap(await migrator.Runner.GetStatusAsync(CancellationToken.None));
         status.Applied.Select(a => a.Ordinal).Should().Equal(1, 2, 3, 4, 5, 6);
-        status.Pending.Select(p => p.Ordinal).Should().Equal(Through(Migrations.Length)[6..]);
+        status.Pending.Select(p => p.Ordinal).Should().Equal(Ordinals[6..]);
     }
 
     [Fact]
@@ -218,7 +221,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         // A second reversal in the same database is as clean as the first.
         Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 7, CancellationToken.None));
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
-        (await migrator.ReadHistoryAsync()).Select(h => h.Ordinal).Should().Equal(Through(Migrations.Length));
+        (await migrator.ReadHistoryAsync()).Select(h => h.Ordinal).Should().Equal(Ordinals);
     }
 
     [Fact]
@@ -516,6 +519,48 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
             Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 12, CancellationToken.None));
             (await Scalar(connection, "SELECT count(*) FROM targets WHERE environment = 'test'")).Should().Be(0L);
             (await Scalar(connection, "SELECT count(*) FROM targets")).Should().Be(2L);
+        }
+    }
+
+    [Fact]
+    public async Task ProductPinsOnly_ShouldDropWorkspacePinsAndTurnServicePinsIntoTheirProducts_WhenApplied()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 14, CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+
+        // max: a workspace, then pilot's api and web, then shop, then shop's api; other: pilot's web alone.
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000001", "pilot"));
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000002", "shop"));
+        const string pin =
+            "INSERT INTO pins (id, owner, kind, workspace_id, product_id, service, sort_order, created_at_utc) " +
+            "VALUES (gen_random_uuid(), '{0}', '{1}', {2}, {3}, {4}, {5}, now() + interval '{5} seconds')";
+        const string workspace = "(SELECT id FROM workspaces WHERE slug = 'own-ventures')";
+        const string pilot = "'00000000-0000-0000-0000-000000000001'";
+        const string shop = "'00000000-0000-0000-0000-000000000002'";
+        await Execute(connection, string.Format(pin, "max", "workspace", workspace, "NULL", "NULL", 0));
+        await Execute(connection, string.Format(pin, "max", "service", "NULL", pilot, "'api'", 1));
+        await Execute(connection, string.Format(pin, "max", "service", "NULL", pilot, "'web'", 2));
+        await Execute(connection, string.Format(pin, "max", "product", "NULL", shop, "NULL", 3));
+        await Execute(connection, string.Format(pin, "max", "service", "NULL", shop, "'api'", 4));
+        await Execute(connection, string.Format(pin, "other", "service", "NULL", pilot, "'web'", 0));
+
+        const string pins =
+            "SELECT string_agg(owner || ':' || kind || ':' || p.slug || ':' || sort_order, ',' ORDER BY owner, sort_order) " +
+            "FROM pins JOIN products p ON p.id = pins.product_id";
+        for (var run = 0; run < 2; run++)
+        {
+            Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Contain("015-product-pins-only");
+
+            // pilot takes its first service pin's place; shop keeps its own pin; the order closes up.
+            (await Scalar(connection, pins)).Should().Be("max:product:pilot:0,max:product:shop:1,other:product:pilot:0");
+            (await Scalar(connection, "SELECT count(*) FROM pins WHERE kind <> 'product'")).Should().Be(0L);
+
+            // Forward-only: the rollback brings nothing back, and applying again changes nothing.
+            Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 14, CancellationToken.None));
+            (await Scalar(connection, pins)).Should().Be("max:product:pilot:0,max:product:shop:1,other:product:pilot:0");
         }
     }
 
