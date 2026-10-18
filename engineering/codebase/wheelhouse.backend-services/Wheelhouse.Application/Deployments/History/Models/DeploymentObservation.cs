@@ -14,4 +14,7 @@ public sealed record DeploymentObservation
 
     /// <summary>Gets who reconciled an interrupted rollout.</summary>
     public string? ReconciledBy { get; init; }
+
+    /// <summary>Gets the restore point a prod rollout took before it changed anything.</summary>
+    public DeploymentSnapshotDto? Snapshot { get; init; }
 }

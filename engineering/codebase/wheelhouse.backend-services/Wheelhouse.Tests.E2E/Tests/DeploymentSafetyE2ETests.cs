@@ -56,6 +56,37 @@ public sealed class DeploymentSafetyE2ETests(WheelhouseAppFixture fixture) : Whe
     public async Task Changelog_ShouldRefuseAnythingButReleaseTags(string path) =>
         (await AdminClient.GetAsync(path)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
+    [Fact]
+    public async Task Detail_ShouldCarryTheSnapshotAProdRolloutTook_AndTheDeployReason()
+    {
+        const string id = "00000000-0000-4000-8000-000000000003";
+        Fixture.Deployments.History.Add(new
+        {
+            id, targetId = "foreverpin-prod", bundleId = "foreverpin-gh-2", release = "v1.1.0", actor = "max", status = "succeeded",
+            deployReason = "billing fix", submittedAt = "2026-10-03T10:00:00+00:00", completedAt = "2026-10-03T10:03:00+00:00",
+        });
+        Fixture.Deployments.Observations[id] = new
+        {
+            id, status = "succeeded",
+            steps = new[] { new { name = "Snapshot data", status = "succeeded", detail = "1 database and 1 volume in /srv/wheelhouse/foreverpin-prod/snapshots/x" } },
+            snapshot = new
+            {
+                path = "/srv/wheelhouse/foreverpin-prod/snapshots/x", createdAt = "2026-10-03T10:00:05+00:00",
+                databases = new[] { new { service = "management", host = "postgres", port = 5432, database = "foreverpin_prod", file = "postgres-foreverpin_prod.dump", bytes = 2048 } },
+                volumes = new[] { new { volume = "foreverpin-prod_keys", file = "foreverpin-prod_keys.tar.gz", bytes = 512 } },
+                restore = new[] { "docker stop $(docker ps --quiet --filter label=com.docker.compose.project=foreverpin-prod)" },
+            },
+        };
+
+        var detail = await DataAsync("/api/deployments/" + id + "/detail");
+        detail.GetProperty("deployment").GetProperty("deployReason").GetString().Should().Be("billing fix");
+        var snapshot = detail.GetProperty("snapshot");
+        snapshot.GetProperty("path").GetString().Should().Be("/srv/wheelhouse/foreverpin-prod/snapshots/x");
+        snapshot.GetProperty("databases")[0].GetProperty("database").GetString().Should().Be("foreverpin_prod");
+        snapshot.GetProperty("volumes")[0].GetProperty("bytes").GetInt64().Should().Be(512);
+        snapshot.GetProperty("restore").GetArrayLength().Should().Be(1);
+    }
+
     private static object Record(string id, string target, string release, string bundle, string submitted, bool rollbackCompatible,
         bool? migrations) => new
     {

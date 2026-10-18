@@ -267,6 +267,36 @@ function rollBack(): void {
               {{ isLive ? "Sites are published and probed once the services are healthy." : "No sites were published by this rollout." }}
             </p>
           </Panel>
+          <Panel
+            v-if="detail.data.value?.snapshot"
+            title="Snapshot"
+            description="Taken on the target before this rollout changed anything. Restoring is never automatic."
+          >
+            <div class="flex flex-col gap-3 text-sm">
+              <p class="break-all font-mono text-xs">{{ detail.data.value.snapshot.path }}</p>
+              <ul class="flex flex-col gap-1 text-xs">
+                <li v-for="item in detail.data.value.snapshot.databases" :key="item.file" class="flex justify-between gap-2">
+                  <span class="min-w-0 truncate">{{ item.database }} <span class="text-muted-foreground">on {{ item.host }}</span></span>
+                  <span class="shrink-0 tabular-nums text-muted-foreground">{{ item.bytes !== null ? Measures.bytes(item.bytes) : "—" }}</span>
+                </li>
+                <li v-for="item in detail.data.value.snapshot.volumes" :key="item.file" class="flex justify-between gap-2">
+                  <span class="min-w-0 truncate">{{ item.volume }} <span class="text-muted-foreground">volume</span></span>
+                  <span class="shrink-0 tabular-nums text-muted-foreground">{{ item.bytes !== null ? Measures.bytes(item.bytes) : "—" }}</span>
+                </li>
+              </ul>
+              <details v-if="detail.data.value.snapshot.restore.length">
+                <summary class="cursor-pointer text-xs font-medium">Restore commands</summary>
+                <p class="mt-2 text-xs text-muted-foreground">
+                  On the target, in order; export PGPASSWORD first for a database. Restore only after inspecting what failed.
+                </p>
+                <pre
+                  v-for="command in detail.data.value.snapshot.restore"
+                  :key="command"
+                  class="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2 font-mono text-xs"
+                >{{ command }}</pre>
+              </details>
+            </div>
+          </Panel>
           <Panel title="Links">
             <ul class="flex flex-col gap-2 text-sm">
               <li v-if="deployment?.product">

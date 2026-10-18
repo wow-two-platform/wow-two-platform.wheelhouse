@@ -28,6 +28,17 @@ export interface DeploymentSite {
   probe: SiteProbe | null;
 }
 
+/** The restore point a prod rollout took before it changed anything, and the commands that restore it. */
+export interface DeploymentSnapshot {
+  /** The snapshot's folder on the target. */
+  path: string;
+  createdAt: string | null;
+  databases: Array<{ service: string | null; host: string; port: number; database: string; file: string; bytes: number | null }>;
+  volumes: Array<{ volume: string; file: string; bytes: number | null }>;
+  /** Run on the target, in order; a database restore reads its password from PGPASSWORD. */
+  restore: string[];
+}
+
 /** One deployment in full. */
 export interface DeploymentDetail {
   deployment: DeploymentItem;
@@ -42,4 +53,6 @@ export interface DeploymentDetail {
   reconciledBy: string | null;
   /** Whether the target's report could be read; false leaves steps and sites empty. */
   observed: boolean;
+  /** The restore point a prod rollout took; null when it took none. */
+  snapshot: DeploymentSnapshot | null;
 }

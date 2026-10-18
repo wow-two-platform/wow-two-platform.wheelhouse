@@ -9,7 +9,7 @@ export type { DeploymentRangeStats, RangeMeasures } from './models/DeploymentRan
 export type { DeploymentPromotion } from './models/DeploymentPromotion';
 export { DeploymentIssueKind, type DeploymentIssue } from './models/DeploymentIssue';
 export { DeploymentIssues } from './DeploymentIssues';
-export type { DeploymentDetail, DeploymentReference, DeploymentSite, ServiceChange } from './models/DeploymentDetail';
+export type { DeploymentDetail, DeploymentReference, DeploymentSite, DeploymentSnapshot, ServiceChange } from './models/DeploymentDetail';
 export {
   DefaultFilter,
   DefaultPreset,

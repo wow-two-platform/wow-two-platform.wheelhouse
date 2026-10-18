@@ -130,4 +130,25 @@ export const DeploymentDetailSchema = z.object({
     .default([]),
   reconciledBy: nullableText.default(null),
   observed: z.boolean().default(false),
+  snapshot: z
+    .object({
+      path: z.string(),
+      createdAt: nullableText.default(null),
+      databases: z
+        .array(
+          z.object({
+            service: nullableText.default(null),
+            host: z.string(),
+            port: z.number().int(),
+            database: z.string(),
+            file: z.string(),
+            bytes: z.number().nullable().default(null),
+          }),
+        )
+        .default([]),
+      volumes: z.array(z.object({ volume: z.string(), file: z.string(), bytes: z.number().nullable().default(null) })).default([]),
+      restore: z.array(z.string()).default([]),
+    })
+    .nullable()
+    .default(null),
 });

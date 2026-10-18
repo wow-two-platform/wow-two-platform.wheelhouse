@@ -65,7 +65,8 @@ The API accepts target and release IDs only. It cannot upload arbitrary Compose,
 1. Validate the manifest, digests, Compose hash and environment identity; refuse a commit build on prod.
 2. Take the target lock that the console and the runner CLI share; refuse an unresolved interrupted rollout.
 3. Check Docker, Compose, required settings, free disk and release platform.
-4. Pull every image before replacing any running container.
+4. On prod, snapshot the product's databases and named volumes on the target; a failed snapshot fails the rollout.
+   Pull every image before replacing any running container.
 5. Save durable intent and the previous successful bundle on the target.
 6. Apply Compose, wait for every declared health check, then request each site through the ingress.
 7. Record the outcome with release, source commit, actor and previous release.
@@ -373,7 +374,8 @@ request acts as `automation`, so every automatic submission goes through the ord
   one bundle's `{ rollbackCompatible, migrations, sourceCommit, kind }` into the cache without contacting a target; the
   prod confirm step reads it.
 - **Changelog at promote:** every `main` release's GitHub body lists its commits since the previous release above
-  GitHub's generated notes (the shared publish workflow, `release.py notes`). `GET /api/deployments/products/{product}/changelog?from=&to=`
+  GitHub's generated notes (the shared publish workflow from pipelines `v0.4.0`, `release.py notes`); a product pinned
+  to an older tag keeps GitHub's one-line note, and the compare commit list covers it. `GET /api/deployments/products/{product}/changelog?from=&to=`
   (runner `changelog`) returns the bodies of the releases published after `from` (what the target runs; omitted when it
   runs nothing, which shows the last ten) up to `to`, newest first, plain text cut at 20,000 characters, and the
   compare commit list (`compareUrl`, `commits`, `totalCommits`; null with a `reason` when GitHub cannot compare) with

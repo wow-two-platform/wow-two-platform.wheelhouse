@@ -11,6 +11,7 @@ namespace Wheelhouse.Application.Deployments.History.Models;
 /// <param name="Sites">The sites it published, with each probe's outcome.</param>
 /// <param name="ReconciledBy">Who reconciled it, when it was interrupted.</param>
 /// <param name="Observed">Whether the target's report could be read; false leaves steps and sites empty.</param>
+/// <param name="Snapshot">The restore point a prod rollout took before it changed anything.</param>
 public sealed record DeploymentDetailDto(
     DeploymentItemDto Deployment,
     IReadOnlyList<ServiceChangeDto>? Services,
@@ -19,4 +20,5 @@ public sealed record DeploymentDetailDto(
     IReadOnlyList<DeploymentStepDto> Steps,
     IReadOnlyList<DeploymentSiteDto> Sites,
     string? ReconciledBy,
-    bool Observed);
+    bool Observed,
+    DeploymentSnapshotDto? Snapshot = null);

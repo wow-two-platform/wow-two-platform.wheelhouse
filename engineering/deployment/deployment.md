@@ -340,6 +340,7 @@ Each rollout records its steps in its job record as they start and end, so the d
 | Step | Covers |
 |---|---|
 | Check target | Lock, settings files, routes, disk, Docker and the release snapshot |
+| Snapshot data | Prod only: dumps each database and archives each named volume before anything changes; a failure fails the rollout |
 | Pull images | Every image, before any container changes |
 | Start containers | `compose up --wait` within the target's health timeout |
 | Verify services | Exact image references, health, and the target's smoke checks |
@@ -460,6 +461,7 @@ drops the console's database, the vault's data and the target's state.
   jobs/<job-id>.json
   releases/<job-id>/{release,compose}.json
   releases/<job-id>/images-removed    marks an older release whose images were removed
+  snapshots/<job-id>/           prod only: <host>-<database>.dump, <volume>.tar.gz, snapshot.json (newest 5 kept)
 /srv/wheelhouse/ingress/<product>-<environment>.yml   Traefik routes for the verified release's sites
 ```
 
@@ -467,7 +469,26 @@ Pulls finish before replacement. Success requires healthy containers with the ex
 Failed image pulls preserve the running release. A failed rollout restores prior images only if the incoming bundle explicitly
 declares `rollbackCompatible: true`. The default release generator leaves this false.
 
-Database restore is never automatic. Image rollback cannot undo a destructive migration or data written after a backup.
+Before a prod rollout pulls anything, the runner takes a restore point in `snapshots/<job-id>/`: `pg_dump --format
+custom` of each PostgreSQL database a service that `needs: [postgres]` connects to (every Npgsql `ConnectionStrings`
+value in its settings file, once per host and database), and a `tar.gz` of each named volume the release's Compose
+declares that already exists. Both run in `postgres:16-alpine` (the platform's own image; a target's `snapshot` entry
+may name another `image` and `keep`, 1-50): pg_dump on the platform network as the runner's user, with the password
+in `PGPASSWORD` only, and tar as root, handing the archive to the runner's user. The target keeps the newest five.
+A failed snapshot removes what it wrote and fails the rollout before any image is pulled, so the target needs no
+reconcile. The job's `snapshot` names the folder, each file and the restore commands, and the deployment page shows
+them:
+
+```sh
+docker stop $(docker ps --quiet --filter label=com.docker.compose.project=<product>-prod)   # volumes only
+export PGPASSWORD=...   # the database user's password, from the service's settings file
+docker run --rm --network <platform> -e PGPASSWORD -v <snapshot>:/snapshot:ro postgres:16-alpine \
+  pg_restore --clean --if-exists --no-owner --host <host> --port 5432 --username <user> --dbname <db> /snapshot/<file>.dump
+docker run --rm -v <volume>:/volume -v <snapshot>:/snapshot:ro postgres:16-alpine \
+  sh -c 'find /volume -mindepth 1 -delete && tar -xzf /snapshot/<volume>.tar.gz -C /volume'
+```
+
+A snapshot is a restore point, not a backup: it lives on the same disk. Database restore is never automatic. Image rollback cannot undo a destructive migration or data written after a backup.
 An interrupted or unrecovered mutation blocks another deployment until the operator inspects containers/schema and acknowledges it:
 
 ```sh

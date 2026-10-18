@@ -70,6 +70,7 @@ public sealed partial class RunnerDeploymentRecords(
             Sites = Each(document, "sites", ParseSite),
             Warnings = Each(document, "warnings", item => item.ValueKind == JsonValueKind.String ? item.GetString() : null),
             ReconciledBy = Text(document, "reconciledBy"),
+            Snapshot = ParseSnapshot(document),
         };
         return AppResult<DeploymentObservation>.Ok(observation);
     }
@@ -124,6 +125,25 @@ public sealed partial class RunnerDeploymentRecords(
                 reading.TryGetProperty("status", out var status) && status.TryGetInt32(out var code) ? code : null,
                 Text(reading, "detail"));
         return new DeploymentSiteDto(name, Text(site, "service"), Text(site, "exposure"), url, probe);
+    }
+
+    /// <summary>Reads the snapshot a prod rollout took; null without one or when it is malformed. @internal</summary>
+    private static DeploymentSnapshotDto? ParseSnapshot(JsonElement document)
+    {
+        if (document.ValueKind != JsonValueKind.Object || !document.TryGetProperty("snapshot", out var snapshot)
+            || snapshot.ValueKind != JsonValueKind.Object || Text(snapshot, "path") is not { } path)
+            return null;
+        try
+        {
+            return new DeploymentSnapshotDto(path, Instant(snapshot, "createdAt"),
+                Each(snapshot, "databases", item => item.Deserialize<SnapshotDatabaseDto>(JsonSerializerOptions.Web)) ?? [],
+                Each(snapshot, "volumes", item => item.Deserialize<SnapshotVolumeDto>(JsonSerializerOptions.Web)) ?? [],
+                Each(snapshot, "restore", item => item.ValueKind == JsonValueKind.String ? item.GetString() : null) ?? []);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>A string property, or null. @internal</summary>

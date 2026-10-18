@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import socket
 import ssl
@@ -43,6 +44,13 @@ PLATFORM_SERVICES = ("postgres", "valkey", "broker")
 EXPOSURES = ("public", "private")
 TERMINAL = {"succeeded", "failed", "rolled_back", "rollback_failed", "interrupted", "rejected"}
 PROXIES = "Deployment:TrustedProxies"
+# Pre-deploy snapshots on prod: the image that runs pg_dump and tar (the platform's own PostgreSQL image, so nothing new
+# is pulled), and how many a target keeps. A target's `snapshot` entry may name others.
+SNAPSHOT_IMAGE = "postgres:16-alpine"
+SNAPSHOT_KEEP = 5
+SNAPSHOT_IMAGE_PATTERN = re.compile(r"[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?(@sha256:[a-f0-9]{64})?")
+# A connection value pg_dump receives as one argument: never an option, never a space.
+CONNECTION_VALUE = re.compile(r"[A-Za-z0-9_.$][A-Za-z0-9_.$-]{0,62}")
 # What a target remembers about its verified release: identity, service versions and published sites.
 CURRENT = ("id", "release", "kind", "branch", "sourceCommit", "versions", "sites")
 
@@ -410,6 +418,143 @@ def prune_images(base, record, docker, keep):
     return removed
 
 
+def connection_of(text):
+    """The host, port, database, user and password of an Npgsql connection string, or None when it names no host and
+    database (a Redis or broker string)."""
+    if not isinstance(text, str):
+        return None
+    parts = {}
+    for segment in text.split(";"):
+        key, _, value = segment.partition("=")
+        parts[key.strip().lower().replace(" ", "")] = value.strip()
+    host = parts.get("host") or parts.get("server")
+    database = parts.get("database") or parts.get("initialcatalog")
+    if not host or not database:
+        return None
+    user = parts.get("username") or parts.get("userid") or parts.get("uid") or parts.get("user")
+    port = parts.get("port") or "5432"
+    require(all(CONNECTION_VALUE.fullmatch(value or "") for value in (host, database, user)) and port.isdigit()
+            and 1 <= int(port) <= 65535, "A snapshot cannot read a database connection it could dump safely")
+    return {"host": host, "port": int(port), "database": database, "username": user,
+            "password": parts.get("password") or parts.get("pwd") or ""}
+
+
+def snapshot_settings(target):
+    """The image and retention a target's snapshots use; the defaults unless its `snapshot` entry names others."""
+    settings = target.get("snapshot") or {}
+    require(isinstance(settings, dict), "Invalid snapshot settings")
+    image, keep = settings.get("image", SNAPSHOT_IMAGE), settings.get("keep", SNAPSHOT_KEEP)
+    require(isinstance(image, str) and SNAPSHOT_IMAGE_PATTERN.fullmatch(image), "Invalid snapshot image")
+    require(type(keep) is int and 1 <= keep <= 50, "Snapshot retention must keep 1-50")
+    return image, keep
+
+
+def snapshot_sources(target, manifest, compose, project):
+    """What a pre-deploy snapshot covers: each PostgreSQL database a service that needs PostgreSQL connects to (from its
+    settings file's ConnectionStrings), once, and every named volume the release's Compose declares."""
+    needs = manifest.get("needs", {}) if isinstance(manifest.get("needs"), dict) else {}
+    databases, seen = [], set()
+    for service in sorted(manifest.get("images", {})):
+        wanted = needs.get(service, [])
+        if not isinstance(wanted, list) or "postgres" not in wanted or service not in target.get("settings", {}):
+            continue
+        settings = read_json(target["settings"][service])
+        strings = settings.get("ConnectionStrings") if isinstance(settings, dict) else None
+        for value in (strings.values() if isinstance(strings, dict) else ()):
+            connection = connection_of(value)
+            if connection is None:
+                continue
+            key = (connection["host"], connection["port"], connection["database"])
+            if key not in seen:
+                seen.add(key)
+                databases.append({**connection, "service": service})
+    volumes = []
+    declared = compose.get("volumes") or {}
+    for name, value in sorted(declared.items() if isinstance(declared, dict) else ()):
+        value = value or {}
+        if not isinstance(value, dict) or value.get("external"):
+            continue
+        full = value.get("name") or project + "_" + name
+        require(isinstance(full, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", full), "Invalid volume name")
+        volumes.append(full)
+    return databases, volumes
+
+
+def take_snapshot(base, job_id, target, manifest, compose, project, docker):
+    """Dumps each database and tars each existing named volume into <base>/snapshots/<job>/ before anything changes,
+    beside a snapshot.json naming them and how to restore them; keeps the newest snapshots. Returns the snapshot, or
+    None when there is nothing to snapshot. Any failure removes the partial snapshot and fails the rollout."""
+    image, keep = snapshot_settings(target)
+    databases, volumes = snapshot_sources(target, manifest, compose, project)
+    present = []
+    for volume in volumes:
+        try:
+            docker.execute(["docker", "volume", "inspect", "--format", "{{.Name}}", volume], "docker volume inspect", timeout=30)
+            present.append(volume)
+        except CommandFailed:
+            pass  # not created yet: nothing to keep
+    if not databases and not present:
+        return None
+    folder = base / "snapshots" / job_id
+    folder.mkdir(parents=True, mode=0o700)
+    owner = str(os.getuid()) + ":" + str(os.getgid())
+    network = target.get("variables", {}).get("PLATFORM_NETWORK")
+    on_network = ["--network", network] if network else []
+    taken = {"path": str(folder), "createdAt": now(), "image": image, "project": project, "network": network,
+             "databases": [], "volumes": [], "restore": []}
+    try:
+        for database in databases:
+            file = re.sub(r"[^A-Za-z0-9_.-]", "_", database["host"] + "-" + database["database"]) + ".dump"
+            docker.run(["docker", "run", "--rm", "--user", owner, *on_network, "-e", "PGPASSWORD",
+                        "-v", str(folder) + ":/snapshot", image, "pg_dump", "--host", database["host"],
+                        "--port", str(database["port"]), *(["--username", database["username"]] if database["username"] else []),
+                        "--dbname", database["database"], "--format", "custom", "--no-password", "--file", "/snapshot/" + file],
+                       "pg_dump " + database["database"], {"PGPASSWORD": database["password"]})
+            taken["databases"].append({"service": database["service"], "host": database["host"], "port": database["port"],
+                                       "database": database["database"], "file": file,
+                                       "bytes": (folder / file).stat().st_size if (folder / file).exists() else None})
+            taken["restore"].append(shlex.join([
+                "docker", "run", "--rm", *on_network, "-e", "PGPASSWORD", "-v", str(folder) + ":/snapshot:ro", image,
+                "pg_restore", "--clean", "--if-exists", "--no-owner", "--host", database["host"], "--port", str(database["port"]),
+                *(["--username", database["username"]] if database["username"] else []), "--dbname", database["database"],
+                "/snapshot/" + file]))
+        for volume in present:
+            file = volume + ".tar.gz"
+            # As root, since a volume's files belong to the service's user; the archive then passes to the runner's.
+            docker.run(["docker", "run", "--rm", "-v", volume + ":/volume:ro", "-v", str(folder) + ":/snapshot", image,
+                        "sh", "-c", "tar -czf /snapshot/" + file + " -C /volume . && chown " + owner + " /snapshot/" + file],
+                       "tar " + volume)
+            taken["volumes"].append({"volume": volume, "file": file,
+                                     "bytes": (folder / file).stat().st_size if (folder / file).exists() else None})
+            taken["restore"].append(shlex.join([
+                "docker", "run", "--rm", "-v", volume + ":/volume", "-v", str(folder) + ":/snapshot:ro", image, "sh", "-c",
+                "find /volume -mindepth 1 -delete && tar -xzf /snapshot/" + file + " -C /volume"]))
+        if present:
+            # Volumes restore into stopped containers.
+            taken["restore"].insert(0, "docker stop $(docker ps --quiet --filter label=com.docker.compose.project=" + project + ")")
+        write_json(folder / "snapshot.json", taken)
+    except BaseException:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
+    prune_snapshots(base / "snapshots", keep, job_id)
+    return taken
+
+
+def prune_snapshots(folder, keep, current):
+    """Keeps the newest `keep` complete snapshots and the current one; removes the rest and any partial one."""
+    def taken_at(path):
+        try:
+            return (path / "snapshot.json").stat().st_mtime
+        except OSError:
+            return 0.0
+    entries = sorted((path for path in folder.iterdir() if path.is_dir() and not path.is_symlink()),
+                     key=taken_at, reverse=True)
+    kept = {path.name for path in entries[:keep]} | {current}
+    for path in entries:
+        if path.name not in kept:
+            shutil.rmtree(path, ignore_errors=True)
+
+
 def configuration_value(value, field):
     for key in field.split(":"):
         value = value.get(key) if isinstance(value, dict) else None
@@ -491,6 +636,16 @@ class Docker:
         if result.returncode:
             raise CommandFailed(step + " failed (exit " + str(result.returncode) + "); inspect target containers privately")
         return result.stdout
+
+    def run(self, arguments, step, secrets=None, timeout=1800):
+        """A long command whose environment also carries `secrets` (never its arguments); output is discarded."""
+        try:
+            result = subprocess.run(arguments, env={**self.environment, **(secrets or {})}, capture_output=True,
+                                    text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise CommandFailed(step + " timed out after " + str(timeout) + "s") from None
+        if result.returncode:
+            raise CommandFailed(step + " failed (exit " + str(result.returncode) + "); inspect the target privately")
 
     def output(self, arguments, step, timeout=60):
         """A command's interleaved stdout and stderr, for the operator who asked; the runner never stores it."""
@@ -596,6 +751,23 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
         steps = Steps(record, save)
         steps.add("Check target", "succeeded", started, "Settings, disk, Docker and platform verified")
         mutation_started = False
+        if target["environment"] == "prod":
+            # A restore point at the exact cutover; a failed snapshot fails the rollout before anything changes.
+            try:
+                with steps.run("Snapshot data") as step:
+                    taken = take_snapshot(root, job_id, target, manifest, read_json(destination / "compose.json"),
+                                          project, docker)
+                    if taken is None:
+                        step.update(status="skipped", detail="No database or volume to snapshot")
+                    else:
+                        record["snapshot"] = taken
+                        step["detail"] = (plural(len(taken["databases"]), "database") + " and "
+                                          + plural(len(taken["volumes"]), "volume") + " in " + taken["path"])
+            except (Exception, KeyboardInterrupt) as error:
+                record.update(status="failed", failure=type(error).__name__, completedAt=now())
+                record["reason"] = "Snapshot failed: " + (reason(error) or "the snapshot could not be taken")
+                save()
+                return record
         try:
             with steps.run("Pull images") as step:
                 docker.pull(destination)
@@ -725,7 +897,7 @@ def lock_held(base):
 
 def summary(record):
     fields = ("id", "release", "sourceCommit", "kind", "branch", "versions", "sites", "status", "actor", "startedAt",
-              "completedAt", "failure", "reason", "mutationStarted", "previous", "steps", "warnings")
+              "completedAt", "failure", "reason", "mutationStarted", "previous", "steps", "warnings", "snapshot")
     return None if record is None else {key: record[key] for key in fields if key in record}
 
 
