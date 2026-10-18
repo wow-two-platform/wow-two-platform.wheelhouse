@@ -11,6 +11,7 @@ export const AutomationKeys = {
   facts: (release: string) => ['deployments', 'facts', release] as const,
   changelog: (product: string, from: string, to: string) => ['deployments', 'changelog', product, from, to] as const,
   builds: ['deployments', 'builds'] as const,
+  usage: (product: string) => ['deployments', 'usage', product] as const,
 };
 
 /** How often the automation choices and the queue are read while a view shows them. */
@@ -108,6 +109,16 @@ export function useBuildFailures() {
     key: () => AutomationKeys.builds,
     queryFn: ({ signal }) => deploymentAutomationApi.listBuildFailures([], signal),
     refetchInterval: 60_000,
+    meta: { suppressGlobalError: true },
+  });
+}
+
+/** What a product's builds cost over the last 30 days: Actions minutes and GHCR package versions. */
+export function useBuildUsage(product: MaybeRefOrGetter<string | null>) {
+  return useAppQuery({
+    key: () => AutomationKeys.usage(toValue(product) ?? ''),
+    queryFn: ({ signal }) => deploymentAutomationApi.getUsage(toValue(product) ?? '', signal),
+    enabled: () => Boolean(toValue(product)),
     meta: { suppressGlobalError: true },
   });
 }

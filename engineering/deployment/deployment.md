@@ -297,6 +297,7 @@ every settings file and the target's lock state; each failure names the rule or 
 | `GET /api/deployments/automation` | Each product's auto-deploy and auto-promote choices, and the queued automatic deploys |
 | `PUT /api/deployments/automation/{product}` | `{"autoDeployDev":false}` with `X-Wheelhouse-Action: automation` |
 | `GET /api/deployments/freezes` | The holds on deploys: everywhere, per product, per product environment |
+| `GET /api/deployments/products/{product}/usage` | Actions runs and minutes over 30 days, and GHCR package versions (a `read:packages` token); hourly |
 | `GET /api/deployments/issues/builds` | Products whose newest finished main build failed, linked to the run (read every two minutes at most) |
 | `GET /api/deployments/releases/{release}/facts` | Whether a release can roll back automatically and declares migrations; reads only the bundle |
 | `GET /api/deployments/products/{product}/changelog?from=&to=` | Release notes and compare commits between what a target runs and a release |

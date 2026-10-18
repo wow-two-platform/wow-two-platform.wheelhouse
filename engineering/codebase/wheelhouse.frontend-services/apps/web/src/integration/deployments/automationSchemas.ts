@@ -65,6 +65,20 @@ export const BuildFailureSchema = z.object({
   url: githubUrl,
 });
 
+export const BuildUsageSchema = z.object({
+  product: z.string(),
+  since: z.string(),
+  days: z.number().int(),
+  actions: z.object({
+    runs: z.number().int(),
+    minutes: z.number(),
+    workflows: z.array(z.object({ name: z.string(), minutes: z.number() })).default([]),
+    complete: z.boolean().default(true),
+  }),
+  packages: z.array(z.object({ service: z.string(), package: z.string(), versions: z.number().int().nullable() })).default([]),
+  storageBytes: z.number().nullable().default(null),
+});
+
 export const ReleaseFactsSchema = z.object({
   id: z.string(),
   product: z.string(),

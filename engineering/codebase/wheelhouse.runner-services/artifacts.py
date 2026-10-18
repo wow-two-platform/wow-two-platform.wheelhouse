@@ -292,6 +292,84 @@ def builds(root, clock=None):
     return result
 
 
+USAGE_SECONDS = 60 * 60
+USAGE_DAYS = 30
+USAGE_PAGES = 3
+
+
+def usage(root, product, clock=None):
+    """What a product's builds cost over the last 30 days: its GitHub Actions runs and their wall-clock minutes (a
+    public repository's minutes are free; GitHub reports billable minutes only per run), and how many versions each
+    service's GHCR package holds when the token may read packages. GitHub's API reports no container package size, so
+    storage is versions, never bytes. Read at most once an hour; kept in <root>/github/usage-<product>.json."""
+    now = (clock or time.time)()
+    require(isinstance(product, str) and SLUG.fullmatch(product), "Invalid product")
+    cache = Path(root) / "github" / ("usage-" + product + ".json")
+    try:
+        kept = json.loads(cache.read_text())
+        if isinstance(kept, dict) and now - float(kept.get("fetchedAt", 0)) < USAGE_SECONDS:
+            return kept["usage"]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    repository = catalog.product(product).repository
+    since = datetime.fromtimestamp(now - USAGE_DAYS * 24 * 60 * 60, timezone.utc).date().isoformat()
+    runs, seconds, workflows = 0, 0.0, {}
+    for page in range(1, USAGE_PAGES + 1):
+        listing = json.loads(fetch(API + repository + "/actions/runs?per_page=100&page=" + str(page)
+                                   + "&created=%3E%3D" + since))
+        items = listing.get("workflow_runs") if isinstance(listing, dict) else None
+        for run in items or []:
+            if not isinstance(run, dict):
+                continue
+            runs += 1
+            started, ended = parse_time(run.get("run_started_at")), parse_time(run.get("updated_at"))
+            if run.get("status") == "completed" and started and ended and ended >= started:
+                seconds += (ended - started).total_seconds()
+                name = str(run.get("name") or "workflow")[:100]
+                workflows[name] = workflows.get(name, 0.0) + (ended - started).total_seconds()
+        if not items or len(items) < 100:
+            break
+    result = {"product": product, "repository": repository, "since": since, "days": USAGE_DAYS,
+              "actions": {"runs": runs, "minutes": round(seconds / 60, 1),
+                          "workflows": [{"name": name, "minutes": round(value / 60, 1)}
+                                        for name, value in sorted(workflows.items(), key=lambda item: -item[1])],
+                          "complete": runs < USAGE_PAGES * 100},
+              "packages": packages(product), "storageBytes": None,
+              "storageNote": "GitHub's API does not report container package sizes"}
+    write_json(cache, {"fetchedAt": now, "usage": result})
+    return result
+
+
+def parse_time(value):
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def packages(product):
+    """Each service image's GHCR package and how many versions it holds; null where the token may not read packages."""
+    source = next((item for item in sources() if item.product == product), None)
+    result = []
+    for service, image in (source.images if source else ()):
+        parts = image.split("/")
+        if len(parts) < 3 or parts[0] != "ghcr.io":
+            continue
+        owner, name = parts[1], "/".join(parts[2:])
+        versions = None
+        for kind in ("orgs", "users"):
+            try:
+                listing = json.loads(fetch("https://api.github.com/" + kind + "/" + quote(owner, safe="")
+                                           + "/packages/container/" + quote(name, safe="") + "/versions?per_page=100"))
+                versions = len(listing) if isinstance(listing, list) else None
+                break
+            except CommandFailed:
+                continue
+        result.append({"service": service, "package": name, "versions": versions})
+    return result
+
+
 def available(root=None):
     result = []
     for source in sources():

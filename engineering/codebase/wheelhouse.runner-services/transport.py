@@ -860,7 +860,7 @@ def main():
     parser.add_argument("action", choices=["import", "sites", "fixtures", "servers", "targets", "vaults", "releases", "template", "submit",
                                            "status", "jobs", "follow", "state", "check", "reconcile", "vitals", "stats", "topology",
                                            "branches", "commits", "build", "logs", "history", "observation",
-                                           "latest", "facts", "changelog", "watch", "builds", "retention"])
+                                           "latest", "facts", "changelog", "watch", "builds", "retention", "usage"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
@@ -908,6 +908,8 @@ def main():
             result = artifacts.builds(root)
         elif args.action == "retention":
             result = retention(root)
+        elif args.action == "usage":
+            result = artifacts.usage(root, args.product)
         elif args.action == "changelog":
             result = artifacts.changelog(args.product, args.start, args.end)
         elif args.action == "template":

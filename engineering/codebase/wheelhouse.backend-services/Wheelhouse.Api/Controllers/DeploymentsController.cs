@@ -187,6 +187,13 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
         [RegularExpression(Slug)] string product, [FromQuery, Required, RegularExpression(Branch)] string branch, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentCommitsQuery(product, branch), ct));
 
+    /// <summary>Reads what a product's builds cost over the last 30 days: GitHub Actions runs and their wall-clock
+    /// minutes per workflow, and each service's GHCR package versions when the token may read packages (GitHub reports
+    /// no package size). Read from GitHub at most once an hour.</summary>
+    [HttpGet("products/{product}/usage")]
+    public async Task<IActionResult> Usage([RegularExpression(Slug)] string product, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentReadQuery("usage", product), ct));
+
     /// <summary>Reads what changed between what a target runs (<c>from</c>, omitted when it runs nothing) and the release
     /// to promote (<c>to</c>): the release bodies GitHub holds, newest first, and the compare commit list with the changed
     /// files that look like schema migrations.</summary>

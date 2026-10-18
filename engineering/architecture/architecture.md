@@ -335,6 +335,11 @@ aggregates; nothing is stored.
   title, at, url }`, newest first; a later success clears one. The runner (`builds`) reads GitHub Actions at most every
   two minutes and keeps the read in `<runner root>/github/builds.json`; a product GitHub cannot serve, one without a
   build workflow and one the inventory lacks are left out. The console lists them in Issues, linked to the run.
+- `GET /api/deployments/products/{product}/usage` (runner `usage`, read at most hourly into
+  `<runner root>/github/usage-<product>.json`) answers what a product's builds cost over 30 days: GitHub Actions runs
+  and their wall-clock minutes per workflow (300 runs at most; `complete` false beyond), and each service's GHCR package
+  with its version count when the token may read packages. GitHub's API reports no container package size, so
+  `storageBytes` stays null. The console has the client (`useBuildUsage`); the product page does not show it yet.
 - `GET /api/deployments/{id}/detail` answers one deployment: each service from and to, the previous success, the
   observation's steps, sites and warnings (`observed` false when unreadable), and `rollback`, the previous release,
   only when this rollout is what its target runs and its release declares the previous images compatible.

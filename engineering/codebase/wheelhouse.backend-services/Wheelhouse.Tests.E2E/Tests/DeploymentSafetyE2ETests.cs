@@ -108,6 +108,15 @@ public sealed class DeploymentSafetyE2ETests(WheelhouseAppFixture fixture) : Whe
         (await DataAsync("/api/deployments/issues/builds?workspace=ocharo")).GetArrayLength().Should().Be(0);
     }
 
+    [Fact]
+    public async Task Usage_ShouldReadOneProductsBuildCost_ForTheOwnerOnly()
+    {
+        (await AnonymousClient.GetAsync("/api/deployments/products/foreverpin/usage")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await AdminClient.GetAsync("/api/deployments/products/foreverpin/usage")).StatusCode.Should().Be(HttpStatusCode.OK);
+        Fixture.Deployments.LastRead.Should().Be(("usage", "foreverpin"));
+        (await AdminClient.GetAsync("/api/deployments/products/Foreverpin/usage")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private static object Record(string id, string target, string release, string bundle, string submitted, bool rollbackCompatible,
         bool? migrations) => new
     {

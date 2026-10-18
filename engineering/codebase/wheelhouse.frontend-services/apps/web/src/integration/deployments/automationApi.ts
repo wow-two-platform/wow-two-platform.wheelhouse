@@ -1,5 +1,6 @@
 import type {
   BuildFailure,
+  BuildUsage,
   DeployFreeze,
   DeploymentAutomation,
   ProductAutomation,
@@ -9,6 +10,7 @@ import type {
 import { requestData, requestEmpty } from '@/integration/common';
 import {
   BuildFailureSchema,
+  BuildUsageSchema,
   DeployFreezeSchema,
   DeploymentAutomationSchema,
   ProductAutomationSchema,
@@ -52,6 +54,10 @@ export const deploymentAutomationApi = {
       signal,
     });
   },
+
+  /** What a product's builds cost over the last 30 days; read from GitHub at most once an hour. */
+  getUsage: (product: string, signal?: AbortSignal) =>
+    requestData<BuildUsage>(`/api/deployments/products/${encodeURIComponent(product)}/usage`, BuildUsageSchema, { signal }),
 
   /** Every hold on deploys. */
   listFreezes: (signal?: AbortSignal) =>

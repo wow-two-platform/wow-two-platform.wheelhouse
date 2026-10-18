@@ -177,6 +177,35 @@ class ArtifactTests(unittest.TestCase):
         self.source = replace(FOREVERPIN, workflow=None)
         self.assertEqual([], artifacts.builds(self.root, clock=lambda: 500.0))
 
+    def test_usage_sums_thirty_days_of_actions_minutes_and_counts_package_versions_hourly(self):
+        runs = {'workflow_runs': [
+            {'status': 'completed', 'name': 'publish', 'run_started_at': '2026-10-18T08:00:00Z', 'updated_at': '2026-10-18T08:06:00Z'},
+            {'status': 'completed', 'name': 'ci', 'run_started_at': '2026-10-17T08:00:00Z', 'updated_at': '2026-10-17T08:03:00Z'},
+            {'status': 'in_progress', 'name': 'publish', 'run_started_at': '2026-10-18T09:00:00Z', 'updated_at': '2026-10-18T09:01:00Z'}]}
+
+        def fetch(url, limit=artifacts.MAX_ARCHIVE):
+            if '/actions/runs?' in url:
+                self.assertIn('created=%3E%3D2026-09-18', url)
+                return json.dumps(runs).encode()
+            if '/orgs/' in url:
+                raise runner.CommandFailed('GitHub request failed (HTTP 404)')
+            if '/users/sulton-max/packages/container/' in url:
+                return json.dumps([{}, {}, {}]).encode()
+            raise AssertionError(url)
+        now = 1_792_310_400.0  # 2026-10-18T00:00:00Z
+        with patch.object(artifacts, 'fetch', side_effect=fetch) as fetched:
+            result = artifacts.usage(self.root, 'foreverpin', clock=lambda: now)
+            calls = fetched.call_count
+            self.assertEqual(result, artifacts.usage(self.root, 'foreverpin', clock=lambda: now + 600))
+            self.assertEqual(calls, fetched.call_count, 'a read is kept an hour')
+        self.assertEqual((3, 9.0, True), (result['actions']['runs'], result['actions']['minutes'], result['actions']['complete']))
+        self.assertEqual([{'name': 'publish', 'minutes': 6.0}, {'name': 'ci', 'minutes': 3.0}], result['actions']['workflows'])
+        self.assertEqual([{'service': 'management', 'package': '10x-venture-forever-pin/management', 'versions': 3},
+                          {'service': 'redirect', 'package': '10x-venture-forever-pin/redirect', 'versions': 3}], result['packages'])
+        self.assertIsNone(result['storageBytes'])
+        with self.assertRaises(ValueError):
+            artifacts.usage(self.root, '../x')
+
     def test_selected_bundle_is_checked_and_cached(self):
         with patch.object(artifacts, 'fetch', side_effect=self.fetch):
             bundle = artifacts.prepare(self.root, 'foreverpin-gh-123', transport.import_bundle)
