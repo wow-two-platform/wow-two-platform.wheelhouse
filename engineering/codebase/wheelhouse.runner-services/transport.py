@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -335,10 +336,7 @@ def refresh_status(root, job_id, force=False):
             ssh_config = record.get("ssh")
             if ssh_config is None:
                 ssh_config = fleet.resolve_target(root, record["targetId"])["ssh"]
-            remote = record["remote"]
-            command = shlex.join(["python3", remote + "/runner.py", "status", "--target", remote + "/target.json",
-                                  "--job", record["remoteJobId"]])
-            result = json.loads(Ssh(ssh_config).run(command))
+            result = remote_status(root, record, ssh_config)
             require(isinstance(result, dict) and result.get("id") == record["remoteJobId"],
                     "Unexpected deployment status identity")
             require(isinstance(result.get("status"), str) and result["status"] in TERMINAL | {"queued", "running", "unknown"},
@@ -354,6 +352,22 @@ def refresh_status(root, job_id, force=False):
             result = latest
         write_json(root / "observed" / (job_id + ".json"), result)
         return result
+
+
+def remote_status(root, record, ssh_config):
+    """One job's journal entry on its target. Streams this runner with the inventory's target, so the upload under
+    incoming/<request>/ may have gone with the retention; a target the inventory no longer names is read through the
+    runner it was submitted with."""
+    try:
+        target = fleet.resolve_target(root, record["targetId"])["target"]
+    except (Rejected, KeyError):
+        target = None
+    if target is not None:
+        return run_remote(Ssh(ssh_config), "status", target, "--job", record["remoteJobId"])
+    remote = record["remote"]
+    command = shlex.join(["python3", remote + "/runner.py", "status", "--target", remote + "/target.json",
+                          "--job", record["remoteJobId"]])
+    return json.loads(Ssh(ssh_config).run(command))
 
 
 def status(root, job_id):
@@ -520,6 +534,73 @@ def watch(root, minutes=WATCH_MINUTES, clock=time.time):
                 record.update(status="degraded", findings=found[:10], degradedAt=record["lastCheckedAt"])
                 result["degraded"] += 1
             write_json(path, record)
+    return result
+
+
+RETENTION_SECONDS = 24 * 60 * 60
+RETENTION_BATCH = 2  # each target's prune is one SSH read bounded at 60 seconds
+KEEP_BUNDLE_JOBS = 20
+BUNDLE_GRACE_SECONDS = 7 * 24 * 60 * 60
+
+
+def prune_bundles(root, now):
+    """Removes downloaded bundles (bundles/<id>/ with a source.json) that none of each target's newest 20 submissions,
+    no unfinished one and no target's latest two successes use, once a week old; GitHub serves them again. An imported
+    bundle, the local server's own, stays. Returns how many went."""
+    referenced, per_target, successes = set(), {}, {}
+    for job in jobs(root, limit=None):
+        target = job.get("targetId")
+        per_target[target] = per_target.get(target, 0) + 1
+        succeeded = job.get("status") == "succeeded"
+        if succeeded:
+            successes[target] = successes.get(target, 0) + 1
+        if per_target[target] <= KEEP_BUNDLE_JOBS or not finalized(job) or (succeeded and successes[target] <= 2):
+            referenced.add(job.get("bundleId"))
+    removed = 0
+    bundles = root / "bundles"
+    for path in bundles.iterdir() if bundles.is_dir() else ():
+        receipt = path / "source.json"
+        if (path.is_symlink() or not path.is_dir() or path.name in referenced or not receipt.is_file()
+                or now - receipt.stat().st_mtime < BUNDLE_GRACE_SECONDS):
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+        removed += 1
+    return removed
+
+
+def retention(root, clock=time.time):
+    """The bounded retention pass the control plane runs often: prunes this host's bundles once a day and after each
+    finished rollout, and runs each target's prune once a day, two targets a pass. Progress survives restarts in
+    <root>/retention.json; a target that cannot be reached waits for the next day."""
+    result = {"bundles": 0, "targets": [], "busy": 0}
+    with observation_lock(root / "following" / "retention.lock") as acquired:
+        if not acquired:
+            return {**result, "busy": 1}
+        now = clock()
+        try:
+            state = read_json(root / "retention.json")
+            state = state if isinstance(state, dict) else {}
+        except (ValueError, OSError):
+            state = {}
+        finished = max((instant(job.get("completedAt")).timestamp() for job in jobs(root, limit=None)
+                        if instant(job.get("completedAt"))), default=0)
+        last = float(state.get("bundlesAt") or 0)
+        if now - last >= RETENTION_SECONDS or finished > last:
+            result["bundles"] = prune_bundles(root, now)
+            state["bundlesAt"] = now
+        pending = [item for item in state.get("pending") or [] if isinstance(item, str)]
+        if not pending and now - float(state.get("cycleAt") or 0) >= RETENTION_SECONDS:
+            pending, state["cycleAt"] = [binding.id for binding in fleet.active_targets()], now
+        for target_id in pending[:RETENTION_BATCH]:
+            try:
+                config = fleet.resolve_target(root, target_id)
+                outcome = run_remote(Ssh(config["ssh"]), "prune", config["target"], timeout=60)
+                result["targets"].append({"targetId": target_id, **{key: outcome.get(key) for key in ("releases", "incoming", "busy")
+                                                                    if key in outcome}})
+            except (Rejected, CommandFailed, ValueError, OSError, KeyError) as error:
+                result["targets"].append({"targetId": target_id, "reason": reason(error) or "unreachable"})
+        state["pending"] = pending[RETENTION_BATCH:]
+        write_json(root / "retention.json", state)
     return result
 
 
@@ -779,7 +860,7 @@ def main():
     parser.add_argument("action", choices=["import", "sites", "fixtures", "servers", "targets", "vaults", "releases", "template", "submit",
                                            "status", "jobs", "follow", "state", "check", "reconcile", "vitals", "stats", "topology",
                                            "branches", "commits", "build", "logs", "history", "observation",
-                                           "latest", "facts", "changelog", "watch", "builds"])
+                                           "latest", "facts", "changelog", "watch", "builds", "retention"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
@@ -825,6 +906,8 @@ def main():
             result = watch(root, args.minutes)
         elif args.action == "builds":
             result = artifacts.builds(root)
+        elif args.action == "retention":
+            result = retention(root)
         elif args.action == "changelog":
             result = artifacts.changelog(args.product, args.start, args.end)
         elif args.action == "template":

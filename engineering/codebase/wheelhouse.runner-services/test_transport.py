@@ -90,6 +90,23 @@ class TransportTests(unittest.TestCase):
             self.assertEqual("succeeded", result["status"])
             ssh.assert_called_once_with(self.config)
 
+    def test_status_streams_the_runner_so_a_pruned_upload_still_reads(self):
+        job = "00000000-0000-0000-0000-000000000003"
+        remote_job = "00000000-0000-0000-0000-000000000004"
+        transport.write_json(self.root / "jobs" / (job + ".json"),
+                             {"id": job, "targetId": "pilot-dev", "remoteJobId": remote_job,
+                              "remote": "/srv/wheelhouse/incoming/gone", "ssh": self.config})
+        target = {"product": "pilot", "environment": "dev", "root": "/srv/wheelhouse"}
+
+        def remote(ssh, action, sent, *arguments, release=None, timeout=30):
+            self.assertEqual(("status", target, ("--job", remote_job)), (action, sent, arguments))
+            return {"id": remote_job, "status": "succeeded"}
+        with patch.object(transport.fleet, "resolve_target", return_value={"target": target}), \
+                patch.object(transport, "Ssh") as ssh, patch.object(transport, "run_remote", side_effect=remote):
+            self.assertEqual("succeeded", transport.status(self.root, job)["status"])
+            ssh.assert_called_once_with(self.config)
+            ssh.return_value.run.assert_not_called()
+
     def failed(self, stderr, code=255):
         return subprocess.CompletedProcess([], code, stdout="", stderr=stderr)
 

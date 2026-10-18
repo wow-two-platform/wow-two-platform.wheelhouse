@@ -17,7 +17,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Deployments.Automation.Services;
 
 /// <summary>Deploys on the owner's behalf. One pass looks at the targets inside their watch window after a successful
-/// rollout, watches each auto-deploying product's newest published release and queues a release newer than the
+/// rollout, runs the bounded retention, watches each auto-deploying product's newest published release and queues a release newer than the
 /// product's watermark for its dev targets, queues for prod a release that passed its dev watch of a product that
 /// auto-promotes (each release once per prod target), then submits each queued deploy whose target runs no rollout
 /// (one slot per target, latest wins). Every submission goes through the ordinary deploy command, so the gates, freezes
@@ -81,6 +81,9 @@ public sealed partial class DeploymentAutomationService(
         if (watchMinutes > 0
             && await gateway.ReadAsync("watch", watchMinutes.ToString(CultureInfo.InvariantCulture), ct) is AppResult<JsonElement>.Failure)
             LogWatchWindowFailed(logger);
+        // Retention: the runner prunes this host's bundles daily and after each rollout, and each target daily, two a pass.
+        if (await gateway.ReadAsync("retention", null, ct) is AppResult<JsonElement>.Failure)
+            LogRetentionFailed(logger);
         var productRows = await products.GetAllAsync(ct);
         var settings = (await store.GetSettingsAsync(ct)).ToDictionary(row => row.ProductId);
         var targetRows = await targets.GetAllAsync(ct);
@@ -292,6 +295,9 @@ public sealed partial class DeploymentAutomationService(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The release watcher could not read the products' releases; the next pass retries.")]
     private static partial void LogWatchFailed(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The retention pass could not run; the next pass retries.")]
+    private static partial void LogRetentionFailed(ILogger logger);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The watch looks could not run; the next pass retries.")]
     private static partial void LogWatchWindowFailed(ILogger logger);

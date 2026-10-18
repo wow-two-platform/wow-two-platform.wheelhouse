@@ -169,6 +169,43 @@ public sealed class DeploymentAutomationE2ETests(WheelhouseAppFixture fixture) :
         Fixture.Deployments.Starts.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task Pass_ShouldRunTheWatchLooksAndTheRetention_EvenWithNothingToDeploy()
+    {
+        var reads = new List<(string, string?)>();
+        var recorder = new RecordingGateway(Fixture.Deployments, reads);
+        await using var scope = Fixture.Host.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var automation = ActivatorUtilities.CreateInstance<DeploymentAutomationService>(services,
+            (Wheelhouse.Application.Abstractions.IDeploymentGateway)recorder);
+        await automation.RunOnceAsync(CancellationToken.None, watchMinutes: 15);
+        reads.Should().Contain(("watch", "15")).And.Contain(("retention", (string?)null));
+
+        reads.Clear();
+        await automation.RunOnceAsync(CancellationToken.None, watchMinutes: 0);
+        reads.Should().NotContain(read => read.Item1 == "watch", "a zero window turns the looks off");
+    }
+
+    /// <summary>Records every read, then answers as the shared stub does.</summary>
+    private sealed class RecordingGateway(StubDeploymentGateway inner, List<(string, string?)> reads)
+        : Wheelhouse.Application.Abstractions.IDeploymentGateway
+    {
+        public Task<WoW.Two.Sdk.Beta.Be.Mediator.Result.AppResult<JsonElement>> ReadAsync(string resource, string? id, CancellationToken ct)
+        {
+            reads.Add((resource, id));
+            return inner.ReadAsync(resource, id, ct);
+        }
+
+        public Task<WoW.Two.Sdk.Beta.Be.Mediator.Result.AppResult<JsonElement>> CheckAsync(string target, string? release, CancellationToken ct) => inner.CheckAsync(target, release, ct);
+        public Task<WoW.Two.Sdk.Beta.Be.Mediator.Result.AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, CancellationToken ct) =>
+            inner.StartAsync(target, release, actor, confirm, skipDevPass, reason, ct);
+        public Task<WoW.Two.Sdk.Beta.Be.Mediator.Result.AppResult<JsonElement>> ReconcileAsync(string target, string job, string actor, CancellationToken ct) => inner.ReconcileAsync(target, job, actor, ct);
+        public Task<WoW.Two.Sdk.Beta.Be.Mediator.Result.AppResult<JsonElement>> CommitsAsync(string product, string branch, CancellationToken ct) => inner.CommitsAsync(product, branch, ct);
+        public Task<WoW.Two.Sdk.Beta.Be.Mediator.Result.AppResult<JsonElement>> ChangelogAsync(string product, string? from, string to, CancellationToken ct) => inner.ChangelogAsync(product, from, to, ct);
+        public Task<WoW.Two.Sdk.Beta.Be.Mediator.Result.AppResult<JsonElement>> RequestBuildAsync(string product, string commit, CancellationToken ct) => inner.RequestBuildAsync(product, commit, ct);
+        public Task<WoW.Two.Sdk.Beta.Be.Mediator.Result.AppResult<JsonElement>> LogsAsync(string target, string service, int tail, CancellationToken ct) => inner.LogsAsync(target, service, tail, ct);
+    }
+
     /// <summary>Makes <paramref name="release"/> ForeverPin's newest published release.</summary>
     private void Release(string bundle, string release, string published)
     {

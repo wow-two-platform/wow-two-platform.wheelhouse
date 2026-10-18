@@ -322,6 +322,15 @@ failures retain the last outcome; failed or unknown reads back off up to five mi
 restart in `<runner root>/following/`; it never submits, retries or reconciles a deployment. A terminal status is
 final only when `completedAt` is present, after rollback or cleanup. Explicit status reads can still observe a later
 target-side acknowledgement. Preserve `jobs/`, `observed/`, `reconciled/` and `following/` with the runner root.
+Status reads stream the runner with the inventory's target, so an upload the retention removed does not stop them.
+
+Retention runs inside each automation pass and stays bounded: the control host's downloaded bundles that none of each
+target's newest 20 submissions, no unfinished one and no target's latest two successes use go once a week old (once a
+day and after each finished rollout; imported bundles stay); and once a day each target, two a pass, prunes old
+release folders (beyond the newest ten, only once their images are gone; never the running, rollback or active one)
+and its project's uploads under `incoming/` (beyond the newest ten, each at least a day old) under its deployment
+lock, skipping a target mid-rollout. Every successful rollout prunes the same on its target. Progress lives in
+`<runner root>/retention.json`; `ci/uploads/` and `ci/receipts/` are left alone.
 
 A background automation worker runs every `Deployment:AutomationSeconds` (default 120; 0 turns it off): it reads each
 auto-deploying product's newest published release and queues a new one for its dev targets, one slot per target with
@@ -351,6 +360,7 @@ Each rollout records its steps in its job record as they start and end, so the d
 | Publish sites | The route file for the release's sites |
 | Probe sites | Each site through the ingress; a site that does not answer is a warning |
 | Remove unused images | Images only releases older than the newest three used; skipped when there are none |
+| Remove old files | Release folders beyond the newest ten whose images are gone, and this project's uploads beyond the newest ten once a day old |
 | Roll back to … | The previous release, only for a failed rollout that declared rollback compatibility |
 
 A step's detail is operator-safe text; a failed step shows the refused rule or failed command, never command output.

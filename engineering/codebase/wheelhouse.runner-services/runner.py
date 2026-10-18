@@ -38,6 +38,11 @@ LOG_LINE_LIMIT = 2000
 # Releases whose images a target keeps for redeploys; older images are removed once no container uses them.
 KEEP_RELEASES = 3
 PRUNED = "images-removed"
+# Release folders a target keeps beside the running and rollback releases, once their images are gone; and how many of
+# a project's uploaded submissions (incoming/<request>/) it keeps, each at least a day.
+KEEP_RELEASE_FOLDERS = 10
+KEEP_INCOMING = 10
+INCOMING_GRACE_SECONDS = 24 * 60 * 60
 KINDS = ("release", "candidate")
 # Host platform services a release may declare it needs; see the deploy descriptor convention.
 PLATFORM_SERVICES = ("postgres", "valkey", "broker")
@@ -555,6 +560,84 @@ def prune_snapshots(folder, keep, current):
             shutil.rmtree(path, ignore_errors=True)
 
 
+def modified_at(path, name=None):
+    try:
+        return (path / name if name else path).stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def prune_releases(base, keep_ids, keep=KEEP_RELEASE_FOLDERS):
+    """Removes the release folders beyond the newest `keep` whose images are already gone (marked), never one of
+    `keep_ids` (the running, rollback and active releases). Returns how many went."""
+    releases = base / "releases"
+    if not releases.is_dir():
+        return 0
+    ordered = sorted((path for path in releases.iterdir() if path.is_dir() and not path.is_symlink()),
+                     key=lambda path: modified_at(path, "release.json"), reverse=True)
+    removed = 0
+    for path in ordered[keep:]:
+        if path.name in keep_ids or not (path / PRUNED).exists():
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+        removed += 1
+    return removed
+
+
+def prune_incoming(root, project, keep=KEEP_INCOMING, clock=time.time):
+    """Removes this project's uploaded submissions (<root>/incoming/<request>/, named by their target.json) beyond the
+    newest `keep` once each is a day old; another project's are never touched. A launched worker reads its upload only
+    as it starts. Returns how many went."""
+    incoming = root / "incoming"
+    mine = []
+    for path in incoming.iterdir() if incoming.is_dir() else ():
+        if not path.is_dir() or path.is_symlink():
+            continue
+        try:
+            target = read_json(path / "target.json")
+        except (OSError, ValueError):
+            continue
+        if isinstance(target, dict) and str(target.get("product")) + "-" + str(target.get("environment")) == project:
+            mine.append(path)
+    mine.sort(key=modified_at, reverse=True)
+    removed = 0
+    for path in mine[keep:]:
+        if clock() - modified_at(path) < INCOMING_GRACE_SECONDS:
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+        removed += 1
+    return removed
+
+
+def kept_releases(base):
+    """The release folders a target must keep: the running release, its rollback release and the active rollout's."""
+    def record(name):
+        try:
+            value = read_json(base / name)
+            return value if isinstance(value, dict) else {}
+        except (OSError, ValueError):
+            return {}
+    current, active = record("current.json"), record("active.json")
+    running = record("jobs/" + str(current.get("id")) + ".json") if current.get("id") else {}
+    return {value for value in (current.get("id"), running.get("previous"), active.get("id"), active.get("previous"))
+            if isinstance(value, str)}
+
+
+def prune(target):
+    """The daily retention on one target, under its deployment lock: old release folders and old uploads. A target in
+    the middle of a rollout is left for the next run."""
+    root, project = validate_target(target)
+    base = root / project
+    if not base.is_dir():
+        return {"project": project, "releases": 0, "incoming": 0}
+    try:
+        with deployment_lock(base):
+            return {"project": project, "releases": prune_releases(base, kept_releases(base)),
+                    "incoming": prune_incoming(root, project)}
+    except Rejected:
+        return {"project": project, "busy": True}
+
+
 def configuration_value(value, field):
     for key in field.split(":"):
         value = value.get(key) if isinstance(value, dict) else None
@@ -812,6 +895,12 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                 step.update(status="succeeded" if removed else "skipped",
                             detail=plural(removed, "image") + " from older releases" if removed
                             else "No image only older releases used")
+            with contextlib.suppress(Exception), steps.run("Remove old files") as step:
+                folders = prune_releases(root, {record["id"], record.get("previous")})
+                uploads = prune_incoming(root.parent, project)
+                step.update(status="succeeded" if folders or uploads else "skipped",
+                            detail=plural(folders, "release folder") + " and " + plural(uploads, "upload")
+                            if folders or uploads else "Nothing past the retention")
         except (Exception, KeyboardInterrupt) as error:
             record["status"] = "failed"
             # Only safe diagnostic categories; exception messages may include input/credential values.
@@ -1349,7 +1438,7 @@ def decode(value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["validate", "apply", "launch", "status", "acknowledge", "state", "check",
-                                           "host", "vitals", "topology", "logs", "watch"])
+                                           "host", "vitals", "topology", "logs", "watch", "prune"])
     parser.add_argument("--bundle")
     parser.add_argument("--target")
     parser.add_argument("--target-json")
@@ -1383,6 +1472,8 @@ def main():
             result = logs(target or read_json(args.target), args.service, args.tail)
         elif args.action == "watch":
             result = watch(target or read_json(args.target))
+        elif args.action == "prune":
+            result = prune(target or read_json(args.target))
         else:
             result = apply(args.bundle, read_json(args.target), args.actor, args.job)
         print(json.dumps(result))

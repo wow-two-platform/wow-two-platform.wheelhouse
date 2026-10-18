@@ -570,7 +570,7 @@ class RunnerTests(unittest.TestCase):
         result = self.apply()
         self.assertEqual([("Check target", "succeeded"), ("Pull images", "succeeded"), ("Start containers", "succeeded"),
                           ("Verify services", "succeeded"), ("Publish sites", "succeeded"),
-                          ("Remove unused images", "skipped")],
+                          ("Remove unused images", "skipped"), ("Remove old files", "skipped")],
                          [(step["name"], step["status"]) for step in result["steps"]])
         self.assertEqual("1 service healthy; 1 smoke check passed", result["steps"][3]["detail"])
         self.assertTrue(all(step["completedAt"] >= step["startedAt"] for step in result["steps"]))
@@ -608,7 +608,7 @@ class RunnerTests(unittest.TestCase):
         # v3-v5 stay; v1's image went on the v4 rollout and v2's now; the shared edge image stays with v5.
         self.assertEqual(["docker image rm:2222"], removed)
         self.assertEqual(("Remove unused images", "succeeded", "1 image from older releases"),
-                         tuple(result["steps"][-1][key] for key in ("name", "status", "detail")))
+                         tuple(result["steps"][-2][key] for key in ("name", "status", "detail")))
 
     def test_a_site_that_does_not_answer_warns_without_failing_the_rollout(self):
         self.target["ingress"] = self.local_ingress(probe="http://ingress:80")

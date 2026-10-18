@@ -373,6 +373,9 @@ request acts as `automation`, so every automatic submission goes through the ord
   `018-auto-promotions`: each release is tried once per target) and submitted with cause `automatic: promoted after its
   dev watch`. A frozen prod target and a prod on the local server, which needs its ID typed, are left to the owner;
   the dev-pass gate holds by construction.
+- **Retention:** each pass also runs the runner's `retention`: downloaded bundles nothing recent uses go after a week,
+  and each target prunes old release folders and uploads once a day, two targets a pass, under its deployment lock
+  ([deployment operations](../deployment/deployment.md)).
 - **Freezes** (`deploy_freezes`, migration `017-deploy-freezes`) hold deploys everywhere, to one product, or to one
   product's environment; the narrowest covering freeze names the hold. While a freeze covers a target, an automatic
   deploy is refused (`…; the automatic deploy was skipped`, audited, dropped from the queue) and an owner's deploy is
