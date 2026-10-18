@@ -42,5 +42,5 @@ export {
   type CellLevel,
   type CellMark,
   type CellTone,
-  type RangeTotals,
+  type DayStat,
 } from './ActivityCalendar';

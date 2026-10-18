@@ -238,19 +238,23 @@ test("an issue says what happened and offers Redeploy, or Reconcile when the tar
   assert.equal(DeploymentIssues.canRedeploy(unknown), false);
 });
 
-test("the range totals its days, and an older answer without busiest products still decodes", () => {
-  assert.deepEqual(ActivityCalendar.totals([{ succeeded: 3, failed: 1 }, { succeeded: 0, failed: 2 }]), { succeeded: 3, failed: 3 });
-  assert.deepEqual(ActivityCalendar.totals([]), { succeeded: 0, failed: 0 });
+test("an older activity answer without busiest products still decodes", () => {
   const activity = history.DeploymentActivitySchema.parse({ from: "2026-04-18", to: "2026-10-18", timeZone: "UTC", days: [] });
   assert.deepEqual(activity.products, []);
 });
 
-test("the line under the calendar counts deployments, names running ones only while any run, and minds plurals", () => {
-  assert.equal(ActivityCalendar.summary({ succeeded: 1, failed: 0 }), "1 deployment · 1 succeeded · 0 failed");
-  assert.equal(ActivityCalendar.summary({ succeeded: 2, failed: 1 }, "all", 1), "4 deployments · 2 succeeded · 1 failed · 1 running");
-  assert.equal(ActivityCalendar.summary({ succeeded: 0, failed: 0 }), "0 deployments · 0 succeeded · 0 failed");
-  assert.equal(ActivityCalendar.summary({ succeeded: 0, failed: 1 }, "failed", 2), "1 deployment failed");
-  assert.equal(ActivityCalendar.summary({ succeeded: 5, failed: 0 }, "succeeded"), "5 deployments succeeded");
+test("a chosen day counts its deployments with running ones among them, and a filtered view its one outcome", () => {
+  const counts = (stats) => stats.map((stat) => `${stat.value} ${stat.label}`);
+  assert.deepEqual(counts(ActivityCalendar.dayStats({ succeeded: 1, failed: 0 })), ["1 Deployment", "1 Succeeded", "0 Failed"]);
+  assert.deepEqual(counts(ActivityCalendar.dayStats({ succeeded: 2, failed: 1 }, "all", 1)), [
+    "4 Deployments",
+    "2 Succeeded",
+    "1 Failed",
+    "1 Running",
+  ]);
+  assert.deepEqual(counts(ActivityCalendar.dayStats(undefined)), ["0 Deployments", "0 Succeeded", "0 Failed"]);
+  assert.deepEqual(counts(ActivityCalendar.dayStats({ succeeded: 0, failed: 1 }, "failed", 2)), ["1 Failed"]);
+  assert.deepEqual(counts(ActivityCalendar.dayStats({ succeeded: 5, failed: 0 }, "succeeded")), ["5 Succeeded"]);
 });
 
 test("the day tooltip sits above its cell, flips below at the top edge and slides inside the screen's sides", () => {

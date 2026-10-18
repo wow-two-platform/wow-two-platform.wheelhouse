@@ -11,15 +11,22 @@ export interface DeploymentFilterScopeProps {
 </script>
 
 <script setup lang="ts">
-import { ArrowDown, ListFilter } from "lucide-vue-next";
+import { ListFilter } from "lucide-vue-next";
 
 import type { DeploymentFilterState as Filter } from "@/domain/deployments";
+import { InfoPopover, type InfoStep } from "@/presentation/common/components";
 
 import DeploymentFilterBar from "./DeploymentFilterBar.vue";
 
+/** What the filter's info button explains: its reach, and what the outcome choice changes. @internal */
+const Steps: readonly InfoStep[] = [
+  { key: "reach", title: "What it filters" },
+  { key: "outcome", title: "Outcome" },
+];
+
 /**
  * The Deployments page's one filter, above everything it governs: a strip that holds under the top bar while the
- * measures and the deployments scroll beneath it, and says in words that it reaches only what lies below.
+ * measures and the deployments scroll beneath it. Its reach — only what lies below — sits behind the info button.
  */
 defineOptions({ name: "DeploymentFilterScope" });
 const props = defineProps<DeploymentFilterScopeProps>();
@@ -32,14 +39,21 @@ const emit = defineEmits<{ change: [filter: Partial<Filter>] }>();
       aria-labelledby="deployments-filter-heading"
       class="wh-glass min-w-0 rounded-2xl border border-(--wh-glass-edge) bg-(--wh-glass-fill) px-3 py-2.5 shadow-(--wh-glass-shadow) md:px-4 md:py-3"
     >
-      <div class="mb-2 flex items-baseline justify-between gap-x-4">
+      <div class="mb-2 flex items-center gap-1">
         <h2 id="deployments-filter-heading" class="flex items-center gap-1.5 text-sm font-semibold">
           <ListFilter :size="14" aria-hidden="true" />Filter
         </h2>
-        <p class="flex items-center gap-1 text-xs text-muted-foreground">
-          <ArrowDown :size="12" aria-hidden="true" /><span class="md:hidden">Applies below</span
-          ><span class="hidden md:inline">Applies to the measures and deployments below</span>
-        </p>
+        <InfoPopover title="Filter" :steps="Steps">
+          <template #reach>
+            <p>
+              The measures and the deployments below follow it. Issues, Running now and Ready to promote above always
+              cover every product.
+            </p>
+          </template>
+          <template #outcome>
+            <p>Succeeded or Failed narrows the calendar and the list to that outcome. The measures count every outcome.</p>
+          </template>
+        </InfoPopover>
       </div>
       <DeploymentFilterBar :filter="props.filter" :tree="props.tree" is-single-row @change="emit('change', $event)" />
     </section>

@@ -37,10 +37,11 @@ export interface CalendarMonth {
   readonly column: number;
 }
 
-/** A range's finished rollouts. */
-export interface RangeTotals {
-  readonly succeeded: number;
-  readonly failed: number;
+/** One of a chosen day's counts. */
+export interface DayStat {
+  readonly key: 'deployments' | 'succeeded' | 'failed' | 'running';
+  readonly label: string;
+  readonly value: number;
 }
 
 /** The calendar: week columns over weekday rows, month labels above. */
@@ -155,26 +156,24 @@ export const ActivityCalendar = {
     return { weeks, months: spaced, weekdays };
   },
 
-  /** The finished rollouts across the range's days. */
-  totals(days: ReadonlyArray<Pick<ActivityDay, 'succeeded' | 'failed'>>): RangeTotals {
-    return days.reduce((sum, day) => ({ succeeded: sum.succeeded + day.succeeded, failed: sum.failed + day.failed }), {
-      succeeded: 0,
-      failed: 0,
-    });
-  },
-
   /**
-   * The line under the calendar: `3 deployments · 2 succeeded · 1 failed`, with `· 1 running` only while any run, and
-   * the running counted among the deployments. A filtered view names its one outcome: `1 deployment failed`.
+   * A chosen day's counts: deployments, with the day's running ones among them, succeeded, failed, and running only
+   * while any run. A filtered view counts its one outcome.
    */
-  summary(totals: RangeTotals, status: StatusFilter = StatusFilter.All, running = 0): string {
-    const deployments = (count: number) => `${count} ${count === 1 ? 'deployment' : 'deployments'}`;
-    if (status === StatusFilter.Failed) return `${deployments(totals.failed)} failed`;
-    if (status === StatusFilter.Succeeded) return `${deployments(totals.succeeded)} succeeded`;
+  dayStats(day: Pick<ActivityDay, 'succeeded' | 'failed'> | undefined, status: StatusFilter = StatusFilter.All, running = 0): DayStat[] {
+    const succeeded = day?.succeeded ?? 0;
+    const failed = day?.failed ?? 0;
+    if (status === StatusFilter.Failed) return [{ key: 'failed', label: 'Failed', value: failed }];
+    if (status === StatusFilter.Succeeded) return [{ key: 'succeeded', label: 'Succeeded', value: succeeded }];
     const live = Math.max(0, running);
-    const parts = [deployments(totals.succeeded + totals.failed + live), `${totals.succeeded} succeeded`, `${totals.failed} failed`];
-    if (live > 0) parts.push(`${live} running`);
-    return parts.join(' · ');
+    const total = succeeded + failed + live;
+    const stats: DayStat[] = [
+      { key: 'deployments', label: total === 1 ? 'Deployment' : 'Deployments', value: total },
+      { key: 'succeeded', label: 'Succeeded', value: succeeded },
+      { key: 'failed', label: 'Failed', value: failed },
+    ];
+    if (live > 0) stats.push({ key: 'running', label: 'Running', value: live });
+    return stats;
   },
 
   /** The date an arrow key moves the focus to: a week (one column) for left and right, a day (one row) for up and down. */

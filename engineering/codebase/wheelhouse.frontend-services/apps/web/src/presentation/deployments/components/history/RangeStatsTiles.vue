@@ -5,6 +5,8 @@ import type { DeploymentFilterState } from "@/domain/deployments";
 export interface RangeStatsTilesProps {
   /** The shared filter; its entities and range apply, its status does not. */
   readonly filter: DeploymentFilterState;
+  /** Draws the tiles as plain wells inside a panel, rather than as glass cards on the page. */
+  readonly isInset?: boolean;
 }
 </script>
 
@@ -23,7 +25,7 @@ import { DeploymentFilters } from "@/domain/deployments";
  * range of equal length before it. Every outcome counts, whatever the status filter shows.
  */
 defineOptions({ name: "RangeStatsTiles" });
-const props = defineProps<RangeStatsTilesProps>();
+const props = withDefaults(defineProps<RangeStatsTilesProps>(), { isInset: false });
 const stats = useDeploymentRangeStats(() => props.filter);
 const period = computed(() => DeploymentFilters.label(props.filter.range).replace(/^Last /, "").toLowerCase());
 const priorLabel = computed(() => (props.filter.range.kind === "preset" ? `vs prior ${period.value}` : "vs prior period"));
@@ -102,7 +104,12 @@ function difference(
           :key="metric?.label ?? `placeholder-${index}`"
           v-bind="metric ?? { label: '', value: '' }"
           size="sm"
-          class="wh-glass min-w-0 rounded-2xl border border-(--wh-glass-edge) bg-(--wh-glass-fill) p-3 sm:p-4 [&>div>span.inline-flex]:flex-wrap [&>div>span.inline-flex]:gap-x-1 [&>div>span.inline-flex]:whitespace-nowrap"
+          :class="[
+            'min-w-0 [&>div>span.inline-flex]:flex-wrap [&>div>span.inline-flex]:gap-x-1 [&>div>span.inline-flex]:whitespace-nowrap',
+            props.isInset
+              ? 'rounded-xl border-transparent bg-muted/50 p-3 shadow-none'
+              : 'wh-glass rounded-2xl border border-(--wh-glass-edge) bg-(--wh-glass-fill) p-3 sm:p-4',
+          ]"
         />
       </div>
     </DataRegion>

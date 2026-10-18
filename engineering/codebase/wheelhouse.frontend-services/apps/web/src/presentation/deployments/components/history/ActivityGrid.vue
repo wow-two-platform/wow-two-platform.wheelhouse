@@ -11,8 +11,6 @@ export interface ActivityGridProps {
   readonly selected: string | null;
   /** A rollout runs now: today's mark pulses. */
   readonly isLive?: boolean;
-  /** The live rollouts the range holds, which the line under the calendar counts among its deployments. */
-  readonly running?: number;
 }
 </script>
 
@@ -21,6 +19,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 
 import { ActivityCalendar, DeploymentFilters, type CalendarCell } from "@/domain/deployments";
 
+import { CellFills } from "./CellFills";
 import { HintPlacement } from "./HintPlacement";
 
 /**
@@ -31,10 +30,11 @@ import { HintPlacement } from "./HintPlacement";
  * more than thickness: today wears a dashed ring in a muted tone, pulsing while a rollout runs (still under reduced
  * motion); the chosen day a solid primary ring set off from the cell; chosen today keeps the solid ring and adds a small
  * today dot. Arrow keys move between days; a day toggles its list. The shared day tooltip is drawn in the top layer and
- * kept inside the viewport, so neither the panel's edge nor the screen's clips it.
+ * kept inside the viewport, so neither the panel's edge nor the screen's clips it. The key to all of this sits behind the
+ * panel's info button (`ActivityGridInfo`), not under the calendar; the measures above carry the range's totals.
  */
 defineOptions({ name: "ActivityGrid" });
-const props = withDefaults(defineProps<ActivityGridProps>(), { isLive: false, running: 0 });
+const props = withDefaults(defineProps<ActivityGridProps>(), { isLive: false });
 const emit = defineEmits<{ select: [day: string | null] }>();
 
 const scroller = ref<HTMLElement | null>(null);
@@ -61,19 +61,8 @@ const tabStop = computed(() => {
   const wanted = active.value ?? props.selected ?? (today <= last.value && today >= first.value ? today : last.value);
   return wanted >= first.value && wanted <= last.value ? wanted : last.value;
 });
-const totals = computed(() => ActivityCalendar.totals(cells.value));
-/** The line under the calendar in its parts, each kept whole when the line wraps. */
-const summaryParts = computed(() => ActivityCalendar.summary(totals.value, props.status, props.running).split(" · "));
-
-const fills: Record<CalendarCell["tone"], readonly string[]> = {
-  empty: ["bg-muted", "bg-muted", "bg-muted", "bg-muted", "bg-muted"],
-  success: ["bg-muted", "bg-success/30", "bg-success/55", "bg-success/80", "bg-success"],
-  danger: ["bg-muted", "bg-destructive/30", "bg-destructive/55", "bg-destructive/80", "bg-destructive"],
-  warning: ["bg-muted", "bg-warning/35", "bg-warning/60", "bg-warning/85", "bg-warning"],
-};
-
 function fill(cell: CalendarCell): string {
-  return fills[cell.tone][cell.level] ?? "bg-muted";
+  return CellFills[cell.tone][cell.level] ?? "bg-muted";
 }
 
 /**
@@ -164,7 +153,7 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
 </script>
 
 <template>
-  <div ref="surface" class="relative w-max max-w-full min-w-0">
+  <div ref="surface" class="relative w-max max-w-full min-w-0" data-intro-target="calendar">
     <div ref="scroller" class="overflow-x-auto overscroll-x-contain pb-1" tabindex="-1">
       <!-- Fixed day cells: 22px with 3px gaps on a phone, for touch; 20px with 4px gaps from md. -->
       <div
@@ -241,40 +230,6 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
         {{ hint.label }}
       </div>
     </Teleport>
-    <!-- As wide as the calendar and never wider: the line wraps rather than widening a calendar that sizes to its days. -->
-    <div class="mt-3 flex w-0 min-w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs text-muted-foreground">
-      <span class="tabular-nums"
-        ><template v-for="(part, index) in summaryParts" :key="index"
-          ><template v-if="index"> · </template><span class="whitespace-nowrap">{{ part }}</span></template
-        ></span
-      >
-      <span class="flex flex-wrap items-center gap-3" aria-label="Legend">
-        <span class="flex items-center gap-1"><span class="size-3 rounded-[3px] bg-success" aria-hidden="true" />succeeded</span>
-        <span class="flex items-center gap-1">
-          <span class="flex size-3 items-center justify-center rounded-[3px] bg-destructive" aria-hidden="true"
-            ><span class="size-1 rounded-full bg-destructive-foreground/90"
-          /></span>
-          failed
-        </span>
-        <span class="flex items-center gap-1">
-          <span class="flex size-3 items-center justify-center rounded-[3px] bg-warning" aria-hidden="true"
-            ><span class="h-0.5 w-1.5 rounded-full bg-warning-foreground/90"
-          /></span>
-          mixed
-        </span>
-        <span class="flex items-center gap-1.5" aria-hidden="true">
-          <span class="relative size-3 rounded-[3px] bg-muted"><span class="wh-today-ring" /></span>today
-        </span>
-        <span class="flex items-center gap-1.5" aria-hidden="true">
-          <span class="size-3 rounded-[3px] bg-muted ring-2 ring-primary ring-offset-1 ring-offset-card" />selected
-        </span>
-        <span class="flex items-center gap-1" aria-hidden="true">
-          less
-          <span v-for="step in 4" :key="step" :class="['size-3 rounded-[3px]', fills[props.status === 'failed' ? 'danger' : 'success'][step]]" />
-          more
-        </span>
-      </span>
-    </div>
   </div>
 </template>
 
