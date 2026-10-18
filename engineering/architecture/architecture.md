@@ -1,6 +1,6 @@
 # Wheelhouse architecture
 
-*Last updated: 2026-10-17*
+*Last updated: 2026-10-18*
 
 ## Runtime
 
@@ -160,16 +160,19 @@ with the product. The key is taken as given, since the repository declares a pro
 
 ### Pins
 
-The owner pins workspaces, products and services to keep them one click away, in a custom order (`pins`: id, owner
-= the signed-in GitHub login, kind `workspace` | `product` | `service`, `workspace_id`, `product_id`, `service`,
-`sort_order`, `created_at_utc`). A pin names exactly the target its kind takes (a check constraint); a service pin is
-(`product_id`, service key) with no environment, so one pin covers every environment. An owner pins a target once
-(unique index with `NULLS NOT DISTINCT`, PostgreSQL 15+), and a pin goes with its workspace or product (cascade).
-Pins are a preference: they never reach the audit trail and are not inventory.
+The owner pins products to keep them one click away in the sidebar's Products tree, in a custom order (`pins`: id,
+owner = the signed-in GitHub login, kind, `workspace_id`, `product_id`, `service`, `sort_order`, `created_at_utc`).
+Pins are products only since 2026-10-18: the API refuses `workspace` and `service` (400), and migration
+`015-product-pins-only` deleted every workspace pin and turned each product's service pins into one pin of the product
+(at its first service pin's place, unless the product was pinned already), renumbering each owner's order; it is
+forward-only. The table keeps its shape and check constraint. An owner pins a product once (unique index with
+`NULLS NOT DISTINCT`, PostgreSQL 15+), and a pin goes with its product (cascade). Pins are a preference: they never
+reach the audit trail and are not inventory.
 
 - `GET /api/pins` lists the owner's own `{ id, kind, workspaceId, productId, service, order }` in order.
-- `POST /api/pins` `{ kind, workspaceId?, productId?, service? }` adds a pin last (201) or answers the existing pin
-  on that target (200); `productId` takes the product's id (its slug also works). An unknown target is 400.
+- `POST /api/pins` `{ kind: "product", productId }` adds a pin last (201) or answers the existing pin on that product
+  (200); `productId` takes the product's id (its slug also works). An unknown product, another kind, a `workspaceId`
+  or a `service` is 400.
 - `DELETE /api/pins/{id}` removes one (another owner's reads as 404); `PUT /api/pins/order` `{ ids }` reorders,
   and the list must name every one of the owner's pins exactly once (409 otherwise).
 - Signed-in sessions only (`OwnerSession` policy): an integration key is authenticated, then refused with 403;
@@ -377,6 +380,20 @@ request acts as `automation`, so every automatic submission goes through the ord
   the changed files under a `Migrations/` folder. Ready to promote rows and the prod confirm step show it expandable;
   the console renders bodies as text and opens only `https://github.com/` links.
 
+## Portfolio summary
+
+`GET /api/portfolio/summary?weeks=12&tz=UTC` (the owner's session, like every deployment read; `weeks` 1–52, `tz` an
+IANA zone, optional `to` the instant the current week contains) serves the Products page from the joined deployment
+history (`DeploymentHistoryService`), as of `to`. Weeks start on Monday in `tz`, oldest first, the current one last.
+Per product with a target or a recorded rollout — `{ product, workspace, succeeded, failed, environments }` — each
+environment, dev before prod, carries `lastDeploy` (the newest rollout the runner accepted: refused submissions changed
+nothing and are skipped), `running` (the newest success, so the release serving) — each `{ id, release, status,
+outcome, actor, submittedAt, completedAt, reason }` — and `weekly`, finished rollouts per week. Per workspace —
+`{ workspace, succeeded, failed, weekly: [{ succeeded, failed }] }`. Only finished rollouts count in weeks, as the
+activity calendar's days do; a rollout whose product the inventory no longer holds counts nowhere. Read-only; never
+contacts a target. `/api/system/status` also names the `environment` the console serves (`prod` as Production, else
+`dev`), so the Products page shows the console's own CI-deployed version there.
+
 ## Secrets vaults
 
 Secrets Vault stays a separate service and repository; Wheelhouse is its central management console.
@@ -387,10 +404,11 @@ cannot interrupt runtime reads. See the vault's own security analysis for the gl
 
 ## Workspace
 
-The product rail selects the object being operated; the centre shows its environment, verified release, observed
-services, resource readings and recent deployments; a contextual inspector keeps the selected target, service or
-deployment. Workspace, Deployments, Servers, Secrets, Products and Activity share the top bar, primary-action
-placement, account menu and theme choice. Frontend invariants:
+The Products page lists the workspaces, then their products as cards or rows with a pill per environment and a
+deploy trend; the sidebar's Products tree keeps the pinned products and the one last opened. A product page shows its
+environment, verified release, observed services, resource readings and recent deployments; a contextual inspector
+keeps the selected target, service or deployment. Home, Products, Deployments, Servers and the profile menu's pages
+share the top bar, primary-action placement, account menu and theme choice. Frontend invariants:
 [frontend guidelines](../development/frontend-guidelines.md#repo-specific-deltas).
 
 The service map draws the validated Compose definition of the target's last successful release. It never runs
