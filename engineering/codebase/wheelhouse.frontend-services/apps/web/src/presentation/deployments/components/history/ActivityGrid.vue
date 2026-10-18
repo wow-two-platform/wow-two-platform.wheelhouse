@@ -23,8 +23,10 @@ import { ActivityCalendar, DeploymentFilters, type CalendarCell } from "@/domain
  * A GitHub-style calendar of deployments: week columns over weekday rows, month labels above, in 20px day cells (22px
  * on a phone, which scrolls it sideways) that take only the width they need. A day is green when every rollout
  * succeeded, red when every one failed, amber when both; four steps of fill follow the count (1, 2–3, 4–6, 7+). Failed
- * and mixed days also carry an inner mark, every day names its date and counts, and today keeps a ring — beating while
- * a rollout runs, still under reduced motion. Arrow keys move between days; a day toggles its list.
+ * and mixed days also carry an inner mark, and every day names its date and counts. Today and the chosen day differ in
+ * more than thickness: today wears a dashed ring in a muted tone, pulsing while a rollout runs (still under reduced
+ * motion); the chosen day a solid primary ring set off from the cell; chosen today keeps the solid ring and adds a small
+ * today dot. Arrow keys move between days; a day toggles its list.
  */
 defineOptions({ name: "ActivityGrid" });
 const props = withDefaults(defineProps<ActivityGridProps>(), { isLive: false });
@@ -164,8 +166,7 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
               :class="[
                 'relative flex size-(--wh-cell) items-center justify-center rounded-[3px] transition-[outline-color] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary',
                 fill(cell),
-                props.selected === cell.date ? 'outline-2 outline-offset-1 outline-foreground' : '',
-                cell.date === today ? 'ring-2 ring-primary ring-offset-1 ring-offset-card' : '',
+                props.selected === cell.date ? 'ring-2 ring-primary ring-offset-1 ring-offset-card' : '',
               ]"
               :style="{ gridColumn: column + 2, gridRow: cell.row + 2 }"
               @click="choose(cell)"
@@ -177,7 +178,14 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
             >
               <span v-if="cell.mark === 'failed'" :class="['size-1.5 rounded-full', markColour(cell)]" aria-hidden="true" />
               <span v-else-if="cell.mark === 'mixed'" :class="['h-0.5 w-2 rounded-full', markColour(cell)]" aria-hidden="true" />
-              <span v-if="cell.date === today && props.isLive" class="wh-heartbeat" aria-hidden="true" />
+              <template v-if="cell.date === today">
+                <span
+                  v-if="props.selected === cell.date"
+                  :class="['wh-today-dot', props.isLive ? 'wh-live' : '']"
+                  aria-hidden="true"
+                />
+                <span v-else :class="['wh-today-ring', props.isLive ? 'wh-live' : '']" aria-hidden="true" />
+              </template>
             </button>
           </template>
         </template>
@@ -213,6 +221,12 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
           /></span>
           mixed
         </span>
+        <span class="flex items-center gap-1.5" aria-hidden="true">
+          <span class="relative size-3 rounded-[3px] bg-muted"><span class="wh-today-ring" /></span>today
+        </span>
+        <span class="flex items-center gap-1.5" aria-hidden="true">
+          <span class="size-3 rounded-[3px] bg-muted ring-2 ring-primary ring-offset-1 ring-offset-card" />selected
+        </span>
         <span class="flex items-center gap-1" aria-hidden="true">
           less
           <span v-for="step in 4" :key="step" :class="['size-3 rounded-[3px]', fills[props.status === 'failed' ? 'danger' : 'success'][step]]" />
@@ -224,43 +238,44 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
 </template>
 
 <style scoped>
-/* Today's heartbeat while a rollout runs: a ring that swells and fades. Under reduced motion it holds still and
-   doubles the ring instead, so the state still shows. An outline rather than a scaled border: an outline never widens
-   the scroller, so the newest week can sit at the panel's edge without a sideways scrollbar. */
-.wh-heartbeat {
+/* Today: a dashed ring in a muted tone, set off from the cell like the chosen day's but never solid or primary. An
+   outline rather than a border: it never widens the scroller, so the newest week can sit at the panel's edge. */
+.wh-today-ring {
   position: absolute;
   inset: 0;
   border-radius: 3px;
-  outline: 2px solid var(--color-primary);
-  outline-offset: 1px;
+  outline: 1.5px dashed var(--color-muted-foreground);
+  outline-offset: 1.5px;
   pointer-events: none;
 }
 
+/* Today when it is also the chosen day: the chosen day's solid ring, and this dot on its corner. */
+.wh-today-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--color-foreground);
+  box-shadow: 0 0 0 1.5px var(--color-card);
+  pointer-events: none;
+}
+
+/* While a rollout runs, today's mark pulses; under reduced motion it holds still. */
 @media (prefers-reduced-motion: no-preference) {
-  .wh-heartbeat {
-    animation: wh-heartbeat 1.6s ease-out infinite;
+  .wh-live {
+    animation: wh-pulse 1.6s ease-in-out infinite;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .wh-heartbeat {
-    outline-style: dashed;
-    outline-offset: 3px;
-  }
-}
-
-@keyframes wh-heartbeat {
-  0% {
-    opacity: 0.9;
-    outline-offset: 1px;
-  }
-  70% {
-    opacity: 0;
-    outline-offset: 9px;
-  }
+@keyframes wh-pulse {
+  0%,
   100% {
-    opacity: 0;
-    outline-offset: 9px;
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
   }
 }
 </style>
