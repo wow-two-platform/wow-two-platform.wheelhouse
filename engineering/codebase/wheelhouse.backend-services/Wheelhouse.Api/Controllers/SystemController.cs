@@ -10,7 +10,8 @@ namespace Wheelhouse.Api.Controllers;
 /// <summary>Reports system status.</summary>
 [ApiController]
 [Route("api/system")]
-public sealed class SystemController(HealthCheckService health, DeploymentSettings deployment) : ControllerBase
+public sealed class SystemController(HealthCheckService health, DeploymentSettings deployment, IHostEnvironment host)
+    : ControllerBase
 {
     /// <summary>Reports database readiness for deployment health gates, from the SDK database readiness check.</summary>
     [AllowAnonymous]
@@ -24,11 +25,17 @@ public sealed class SystemController(HealthCheckService health, DeploymentSettin
     /// <summary>The running build's informational version: the product version plus the commit it was built from.</summary>
     private static readonly string Version = BuildVersion.Read(typeof(SystemController).Assembly).Version;
 
-    /// <summary>Reports service liveness and version, and whether this instance drives the local rehearsal rig instead of real hosts.</summary>
+    /// <summary>Reports service liveness and version, the environment this console serves (<c>prod</c> when it runs as
+    /// Production, else <c>dev</c>) — its own CI deploys it, so the Products page shows it there — and whether this
+    /// instance drives the local rehearsal rig instead of real hosts.</summary>
     [AllowAnonymous]
     [HttpGet("status")]
     public IActionResult Status()
     {
-        return Ok(new { service = "Wheelhouse", status = "ok", version = Version, localRig = deployment.IsLocalRig });
+        return Ok(new
+        {
+            service = "Wheelhouse", status = "ok", version = Version, environment = host.IsProduction() ? "prod" : "dev",
+            localRig = deployment.IsLocalRig,
+        });
     }
 }

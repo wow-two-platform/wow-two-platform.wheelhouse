@@ -54,17 +54,19 @@ public sealed class HostWiringE2ETests(WheelhouseAppFixture fixture) : Wheelhous
     }
 
     [Fact]
-    public async Task Status_ShouldReportTheServiceVersionAndRig_InTheShapeTheConsoleReads()
+    public async Task Status_ShouldReportTheServiceVersionEnvironmentAndRig_InTheShapeTheConsoleReads()
     {
         var response = await AnonymousClient.GetAsync("/api/system/status");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        body.EnumerateObject().Select(property => property.Name).Should().Equal("service", "status", "version", "localRig");
+        body.EnumerateObject().Select(property => property.Name).Should().Equal("service", "status", "version", "environment", "localRig");
         (body.GetProperty("service").GetString(), body.GetProperty("status").GetString()).Should().Be(("Wheelhouse", "ok"));
         body.GetProperty("version").GetString().Should().Be(typeof(Program).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion);
         body.GetProperty("localRig").ValueKind.Should().BeOneOf(JsonValueKind.True, JsonValueKind.False);
+        // Tests run as Development, which a deployed dev console runs as too; Production reports prod.
+        body.GetProperty("environment").GetString().Should().Be("dev");
     }
 
     [Fact]
