@@ -1,10 +1,28 @@
 import {
   CatalogDeployer,
   CatalogEntryState,
+  type Catalog,
   type CatalogEntry,
   type CatalogImportResult,
   type CatalogSource,
 } from './Catalog';
+
+/** One catalog workspace's apps, and how many of them can be imported, are in Wheelhouse, or deploy elsewhere. */
+export interface CatalogWorkspaceGroup {
+  slug: string;
+  name: string;
+  description: string;
+  entries: CatalogEntry[];
+  /** The slugs Wheelhouse deploys and has not imported, in catalog order. */
+  importable: string[];
+  inWheelhouse: number;
+  /** Apps something other than Wheelhouse deploys, or nothing does. */
+  notDeployable: number;
+}
+
+/** How much of one workspace's importable apps the selection holds. */
+export const WorkspaceSelection = { None: 'none', Some: 'some', All: 'all' } as const;
+export type WorkspaceSelection = (typeof WorkspaceSelection)[keyof typeof WorkspaceSelection];
 
 /** Counts a word: `1 product`, `3 products`. @internal */
 function count(value: number, noun: string): string {
@@ -46,6 +64,59 @@ export const CatalogRules = {
       ? current.filter((item) => item !== slug)
       : CatalogRules.selection(entries, [...current, slug]);
   },
+
+  /**
+   * The apps by workspace, in the catalog's workspace order; a workspace an app names but the catalog does not list
+   * follows, under its slug. A workspace with no apps is left out.
+   */
+  groups: (catalog: Pick<Catalog, 'workspaces' | 'entries'>): CatalogWorkspaceGroup[] => {
+    const listed = catalog.workspaces.map((workspace) => workspace.slug);
+    const unlisted = catalog.entries.map((entry) => entry.workspace).filter((slug) => !listed.includes(slug));
+    return [...new Set([...listed, ...unlisted])]
+      .map((slug) => {
+        const workspace = catalog.workspaces.find((item) => item.slug === slug);
+        const entries = catalog.entries.filter((entry) => entry.workspace === slug);
+        const states = entries.map(CatalogRules.stateOf);
+        return {
+          slug,
+          name: workspace?.name ?? slug,
+          description: workspace?.description ?? '',
+          entries,
+          importable: CatalogRules.importable(entries),
+          inWheelhouse: states.filter((state) => state === CatalogEntryState.InWheelhouse).length,
+          notDeployable: states.filter((state) => state === CatalogEntryState.External).length,
+        };
+      })
+      .filter((group) => group.entries.length > 0);
+  },
+
+  /** `2 importable · 1 in Wheelhouse · 1 not deployable`, leaving out the counts that are zero. */
+  countsLine: (group: Pick<CatalogWorkspaceGroup, 'importable' | 'inWheelhouse' | 'notDeployable'>): string =>
+    [
+      group.importable.length ? `${group.importable.length} importable` : 'Nothing to import',
+      group.inWheelhouse ? `${group.inWheelhouse} in Wheelhouse` : null,
+      group.notDeployable ? `${group.notDeployable} not deployable` : null,
+    ]
+      .filter((part): part is string => part !== null)
+      .join(' · '),
+
+  /** How much of the workspace's importable apps the selection holds; a workspace with none to import holds none. */
+  workspaceSelection: (group: Pick<CatalogWorkspaceGroup, 'importable'>, selected: readonly string[]): WorkspaceSelection => {
+    const held = group.importable.filter((slug) => selected.includes(slug)).length;
+    return held === 0 ? WorkspaceSelection.None : held === group.importable.length ? WorkspaceSelection.All : WorkspaceSelection.Some;
+  },
+
+  /** Adds every importable app of the workspace to the selection, or takes them all out; other workspaces keep theirs. */
+  selectWorkspace: (
+    entries: readonly CatalogEntry[],
+    selected: readonly string[],
+    group: Pick<CatalogWorkspaceGroup, 'importable'>,
+    isSelected: boolean,
+  ): string[] =>
+    CatalogRules.selection(
+      entries,
+      isSelected ? [...selected, ...group.importable] : selected.filter((slug) => !group.importable.includes(slug)),
+    ),
 
   /** `owner/repository@abc1234`, the line naming where the catalog was read. */
   sourceLabel: (source: CatalogSource): string =>

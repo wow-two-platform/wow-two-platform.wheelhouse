@@ -42,6 +42,45 @@ test("the selection keeps importable slugs once, in catalog order, and drops the
   assert.deepEqual(CatalogRules.selection(afterImport, ["hijinx", "museums"]), ["museums"]);
 });
 
+test("apps group by workspace in catalog order, an unlisted workspace last, each with its counts", () => {
+  const catalog = {
+    workspaces: [
+      { slug: "platform", name: "Platform", description: "Control plane" },
+      { slug: "ventures", name: "Ventures", description: "" },
+      { slug: "empty", name: "Empty", description: "" },
+    ],
+    entries: [
+      ...entries,
+      entry("logs", { workspace: "platform" }),
+      entry("vault", { workspace: "platform", productId: "p-vault" }),
+      entry("stray", { workspace: "lost" }),
+    ],
+  };
+  const groups = CatalogRules.groups(catalog);
+  assert.deepEqual(groups.map((group) => group.slug), ["platform", "ventures", "lost"]);
+  assert.deepEqual(groups.map((group) => group.name), ["Platform", "Ventures", "lost"]);
+  const [platform, ventures] = groups;
+  assert.deepEqual(platform.importable, ["logs"]);
+  assert.deepEqual(ventures.importable, ["hijinx", "museums"]);
+  assert.deepEqual([ventures.inWheelhouse, ventures.notDeployable], [1, 1]);
+  assert.equal(CatalogRules.countsLine(ventures), "2 importable · 1 in Wheelhouse · 1 not deployable");
+  assert.equal(CatalogRules.countsLine(platform), "1 importable · 1 in Wheelhouse");
+  assert.equal(CatalogRules.countsLine({ importable: [], inWheelhouse: 2, notDeployable: 0 }), "Nothing to import · 2 in Wheelhouse");
+});
+
+test("a workspace's importable apps are selected and cleared together, leaving other workspaces' choices alone", () => {
+  const all = [...entries, entry("logs", { workspace: "platform" })];
+  const [ventures, platform] = CatalogRules.groups({ workspaces: [], entries: all });
+  assert.equal(CatalogRules.workspaceSelection(ventures, []), "none");
+  assert.equal(CatalogRules.workspaceSelection(ventures, ["museums"]), "some");
+  const chosen = CatalogRules.selectWorkspace(all, ["logs"], ventures, true);
+  assert.deepEqual(chosen, ["hijinx", "museums", "logs"]);
+  assert.equal(CatalogRules.workspaceSelection(ventures, chosen), "all");
+  assert.deepEqual(CatalogRules.selectWorkspace(all, chosen, ventures, false), ["logs"]);
+  assert.equal(CatalogRules.workspaceSelection(platform, ["logs"]), "all");
+  assert.equal(CatalogRules.workspaceSelection({ importable: [] }, ["logs"]), "none");
+});
+
 test("the import result and the source read as one line each", () => {
   assert.equal(CatalogRules.summary({ createdWorkspaces: 1, createdProducts: 2, movedProducts: 1 }),
     "Added 2 products, created 1 workspace and moved 1 product.");
