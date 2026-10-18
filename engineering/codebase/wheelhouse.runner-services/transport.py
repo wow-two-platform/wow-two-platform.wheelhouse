@@ -434,7 +434,7 @@ def follow(root, clock=time.time):
 
 WATCH_MINUTES = 10
 WATCH_INTERVAL = 60
-WATCH_BATCH_SIZE = 2  # each look is one SSH read bounded at 60 seconds, inside the API's 110-second budget
+WATCH_BATCH_SIZE = 2  # each look is one SSH read bounded at 45 seconds, inside the API's 110-second budget
 WATCH_FINAL = {"passed", "degraded", "superseded", "unverified"}
 
 
@@ -514,7 +514,7 @@ def watch(root, minutes=WATCH_MINUTES, clock=time.time):
             try:
                 job_record = read_json(root / "jobs" / (job["id"] + ".json"))
                 config = fleet.resolve_target(root, target_id)
-                reading = run_remote(Ssh(config["ssh"]), "watch", config["target"], timeout=60)
+                reading = run_remote(Ssh(config["ssh"]), "watch", config["target"], timeout=45)
             except (Rejected, CommandFailed, ValueError, OSError, KeyError):
                 record["unreadable"] = int(record.get("unreadable") or 0) + 1
                 write_json(path, record)
@@ -538,7 +538,7 @@ def watch(root, minutes=WATCH_MINUTES, clock=time.time):
 
 
 RETENTION_SECONDS = 24 * 60 * 60
-RETENTION_BATCH = 2  # each target's prune is one SSH read bounded at 60 seconds
+RETENTION_BATCH = 2  # each target's prune is one SSH read bounded at 45 seconds, inside the API's 110-second budget
 KEEP_BUNDLE_JOBS = 20
 BUNDLE_GRACE_SECONDS = 7 * 24 * 60 * 60
 
@@ -594,7 +594,7 @@ def retention(root, clock=time.time):
         for target_id in pending[:RETENTION_BATCH]:
             try:
                 config = fleet.resolve_target(root, target_id)
-                outcome = run_remote(Ssh(config["ssh"]), "prune", config["target"], timeout=60)
+                outcome = run_remote(Ssh(config["ssh"]), "prune", config["target"], timeout=45)
                 result["targets"].append({"targetId": target_id, **{key: outcome.get(key) for key in ("releases", "incoming", "busy")
                                                                     if key in outcome}})
             except (Rejected, CommandFailed, ValueError, OSError, KeyError) as error:
