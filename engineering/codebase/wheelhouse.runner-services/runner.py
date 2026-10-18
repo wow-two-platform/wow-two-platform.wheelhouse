@@ -1302,6 +1302,27 @@ def vitals(target, docker_factory=None):
     return result
 
 
+def watch(target, docker_factory=None, prober=probe_sites):
+    """One look at a target after a rollout: its containers (state, health, restarts) and every site that answered at
+    the deploy, requested again through the ingress. Read-only; the control plane judges regressions."""
+    root, project = validate_target(target)
+    reading = vitals(target, docker_factory)
+    base = root / project
+    current = read_json(base / "current.json") if (base / "current.json").is_file() else {}
+    answered = [{key: site[key] for key in ("name", "service", "exposure", "url") if key in site}
+                for site in current.get("sites") or []
+                if isinstance(site, dict) and isinstance(site.get("probe"), dict) and site["probe"].get("ok")]
+    try:
+        probed = prober(target, answered, deadline_seconds=10) if answered else []
+    except Exception:
+        probed = None
+    return {"project": project, "currentId": current.get("id"), "release": current.get("release"),
+            "condition": reading["condition"], "containers": reading["containers"], "problems": reading["problems"],
+            "sites": None if probed is None else [{"name": site["name"], "url": site.get("url"),
+                                                   "ok": site["probe"]["ok"], "detail": site["probe"].get("detail")}
+                                                  for site in probed]}
+
+
 def logs(target, service, tail=200, docker_factory=None):
     """The last lines one service's container wrote, read on request. The runner never stores container output."""
     root, project = validate_target(target)
@@ -1328,7 +1349,7 @@ def decode(value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["validate", "apply", "launch", "status", "acknowledge", "state", "check",
-                                           "host", "vitals", "topology", "logs"])
+                                           "host", "vitals", "topology", "logs", "watch"])
     parser.add_argument("--bundle")
     parser.add_argument("--target")
     parser.add_argument("--target-json")
@@ -1360,6 +1381,8 @@ def main():
             result = vitals(target or read_json(args.target))
         elif args.action == "logs":
             result = logs(target or read_json(args.target), args.service, args.tail)
+        elif args.action == "watch":
+            result = watch(target or read_json(args.target))
         else:
             result = apply(args.bundle, read_json(args.target), args.actor, args.job)
         print(json.dumps(result))

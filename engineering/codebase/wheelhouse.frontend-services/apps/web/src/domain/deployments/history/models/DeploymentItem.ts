@@ -20,6 +20,17 @@ export interface CurrentStep {
   index?: number | null;
 }
 
+/** The watch window after a successful rollout: its containers and sites looked at once a minute. */
+export interface DeploymentWatch {
+  status: 'watching' | 'passed' | 'degraded' | 'superseded' | 'unverified';
+  until: string | null;
+  checks: number | null;
+  /** What regressed: a container that stopped, turned unhealthy or restarted, or a site gone silent. */
+  findings: string[];
+  degradedAt: string | null;
+  completedAt: string | null;
+}
+
 /** One deployment as lists show it: what went where, how it went and what it changed. */
 export interface DeploymentItem {
   id: string;
@@ -48,4 +59,6 @@ export interface DeploymentItem {
   /** The services whose image changed; null when the runner no longer holds the bundle. */
   changedServices: string[] | null;
   currentStep: CurrentStep | null;
+  /** The watch after a successful rollout; null when it was not watched. */
+  watch: DeploymentWatch | null;
 }

@@ -327,7 +327,10 @@ auto-deploying product's newest published release and queues a new one for its d
 the latest release winning, and submits a queued deploy once its target runs no rollout, as actor `automation`
 ([architecture](../architecture/architecture.md#deployment-automation)). Each pass costs one GitHub API call per
 auto-deploying product; give the catalog token (`Deployment:GitHubTokenFile`) so the calls stay within the
-authenticated limit.
+authenticated limit. Each pass also looks at the targets inside their watch window (`Deployment:WatchMinutes`, default
+10; 0 turns it off): one SSH read a minute per watched target, two per pass at most, recorded under
+`<runner root>/watching/` (preserve it with the runner root). A product that auto-promotes sends a release that
+passed its dev watch to prod.
 
 A background sampler reads the vitals each `Operations:VitalsSampleMinutes` (default 5; 0 turns it off), stores each
 server's load, memory and fullest disk (a row with no target) and each target's container health in `vitals_samples`,

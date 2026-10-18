@@ -418,6 +418,111 @@ def follow(root, clock=time.time):
     return result
 
 
+WATCH_MINUTES = 10
+WATCH_INTERVAL = 60
+WATCH_BATCH_SIZE = 2  # each look is one SSH read bounded at 60 seconds, inside the API's 110-second budget
+WATCH_FINAL = {"passed", "degraded", "superseded", "unverified"}
+
+
+def watch_record(root, job_id):
+    try:
+        record = read_json(root / "watching" / (job_id + ".json"))
+        return record if isinstance(record, dict) else None
+    except (ValueError, OSError):
+        return None
+
+
+def regressions(reading, baseline):
+    """What a look found wrong against the rollout's first look: a container that stopped, turned unhealthy or
+    restarted since, or a site that answered at the deploy and no longer does."""
+    found = []
+    for container in reading.get("containers") or []:
+        service = str(container.get("service") or "a container")
+        if container.get("state") not in (None, "running"):
+            found.append(service + " is " + str(container.get("state")))
+        elif container.get("health") not in (None, "healthy", "starting"):
+            found.append(service + " is " + str(container.get("health")))
+        restarts, before = container.get("restarts"), (baseline or {}).get(service)
+        if type(restarts) is int and type(before) is int and restarts > before:
+            found.append(service + " restarted " + plural_of(restarts - before, "time") + " since the deploy")
+    for site in reading.get("sites") or []:
+        if not site.get("ok"):
+            found.append("Site " + str(site.get("name")) + " stopped answering" +
+                         (": " + str(site["detail"]) if site.get("detail") else ""))
+    return found
+
+
+def plural_of(count, noun):
+    return str(count) + " " + noun + ("" if count == 1 else "s")
+
+
+def watch(root, minutes=WATCH_MINUTES, clock=time.time):
+    """A bounded pass over the watch windows: for `minutes` after each target's latest successful rollout, looks at its
+    containers and sites once a minute (two looks per pass at most) and records `watching/<job>.json`: `passed` when
+    the window ends clean, `degraded` with what regressed, `superseded` when another rollout replaced it, `unverified`
+    when no look could read the target. Never deploys, retries or rolls back."""
+    require(type(minutes) is int and 1 <= minutes <= 120, "A watch window is 1-120 minutes")
+    result = {"checked": 0, "passed": 0, "degraded": 0, "busy": 0}
+    with observation_lock(root / "watching" / "pass.lock") as acquired:
+        if not acquired:
+            return {**result, "busy": 1}
+        now = clock()
+        latest, budget = {}, WATCH_BATCH_SIZE
+        for job in jobs(root, limit=None):
+            if job.get("status") == "succeeded" and job.get("targetId") and job["targetId"] not in latest:
+                latest[job["targetId"]] = job
+        for target_id, job in latest.items():
+            completed = instant(job.get("completedAt"))
+            if completed is None:
+                continue
+            path = root / "watching" / (job["id"] + ".json")
+            record = watch_record(root, job["id"])
+            if record is None:
+                if now - completed.timestamp() > minutes * 60:
+                    continue  # finished before its window could be watched
+                record = {"id": job["id"], "targetId": target_id, "release": job.get("release"), "status": "watching",
+                          "startedAt": completed.isoformat(),
+                          "until": datetime.datetime.fromtimestamp(completed.timestamp() + minutes * 60,
+                                                                   datetime.timezone.utc).isoformat(),
+                          "checks": 0, "unreadable": 0, "baseline": None, "findings": [], "nextCheckAt": 0}
+            if record.get("status") in WATCH_FINAL:
+                continue
+            if now >= instant(record["until"]).timestamp():
+                record["status"] = "passed" if record.get("checks") else "unverified"
+                record["completedAt"] = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).isoformat()
+                result["passed"] += record["status"] == "passed"
+                write_json(path, record)
+                continue
+            if float(record.get("nextCheckAt") or 0) > now or budget <= 0:
+                continue
+            budget -= 1
+            record["nextCheckAt"] = now + WATCH_INTERVAL
+            try:
+                job_record = read_json(root / "jobs" / (job["id"] + ".json"))
+                config = fleet.resolve_target(root, target_id)
+                reading = run_remote(Ssh(config["ssh"]), "watch", config["target"], timeout=60)
+            except (Rejected, CommandFailed, ValueError, OSError, KeyError):
+                record["unreadable"] = int(record.get("unreadable") or 0) + 1
+                write_json(path, record)
+                continue
+            result["checked"] += 1
+            if reading.get("currentId") and reading["currentId"] != job_record.get("remoteJobId"):
+                record["status"] = "superseded"
+                write_json(path, record)
+                continue
+            found = regressions(reading, record.get("baseline"))
+            if record.get("baseline") is None:
+                record["baseline"] = {str(item.get("service")): item.get("restarts")
+                                      for item in reading.get("containers") or [] if type(item.get("restarts")) is int}
+            record["checks"] = int(record.get("checks") or 0) + 1
+            record["lastCheckedAt"] = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).isoformat()
+            if found:
+                record.update(status="degraded", findings=found[:10], degradedAt=record["lastCheckedAt"])
+                result["degraded"] += 1
+            write_json(path, record)
+    return result
+
+
 def recorded_environment(record, observed, inventory):
     """The environment a job ran in: as submitted, else the target journal's project (<product>-<environment>), else
     the target's current one. A retired environment reads marked "(retired)"; an unknown one reads null."""
@@ -674,7 +779,7 @@ def main():
     parser.add_argument("action", choices=["import", "sites", "fixtures", "servers", "targets", "vaults", "releases", "template", "submit",
                                            "status", "jobs", "follow", "state", "check", "reconcile", "vitals", "stats", "topology",
                                            "branches", "commits", "build", "logs", "history", "observation",
-                                           "latest", "facts", "changelog"])
+                                           "latest", "facts", "changelog", "watch"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
@@ -684,6 +789,7 @@ def main():
     parser.add_argument("--job")
     parser.add_argument("--archive")
     parser.add_argument("--days", type=int, default=30)
+    parser.add_argument("--minutes", type=int, default=WATCH_MINUTES, help="watch: how long a rollout is watched")
     parser.add_argument("--product")
     parser.add_argument("--branch")
     parser.add_argument("--commit")
@@ -715,6 +821,8 @@ def main():
             result = artifacts.latest()
         elif args.action == "facts":
             result = facts(root, args.bundle)
+        elif args.action == "watch":
+            result = watch(root, args.minutes)
         elif args.action == "changelog":
             result = artifacts.changelog(args.product, args.start, args.end)
         elif args.action == "template":

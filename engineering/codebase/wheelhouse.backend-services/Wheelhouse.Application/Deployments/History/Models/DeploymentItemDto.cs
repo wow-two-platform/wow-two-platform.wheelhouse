@@ -70,6 +70,9 @@ public sealed record DeploymentItemDto
     /// <summary>Gets the step a live rollout is on.</summary>
     public DeploymentStepRecord? CurrentStep { get; init; }
 
+    /// <summary>Gets the watch after a successful rollout; null when it was not watched.</summary>
+    public DeploymentWatchDto? Watch { get; init; }
+
     /// <summary>Maps an entry.</summary>
     /// <param name="entry">The joined submission.</param>
     /// <returns>The list item.</returns>
@@ -103,6 +106,7 @@ public sealed record DeploymentItemDto
                 : null,
             ChangedServices = entry.Changes?.Where(change => change.Changed).Select(change => change.Service).ToArray(),
             CurrentStep = entry.Outcome == DeploymentOutcome.Pending ? record.CurrentStep : null,
+            Watch = entry.Outcome == DeploymentOutcome.Succeeded ? record.Watch : null,
         };
     }
 }

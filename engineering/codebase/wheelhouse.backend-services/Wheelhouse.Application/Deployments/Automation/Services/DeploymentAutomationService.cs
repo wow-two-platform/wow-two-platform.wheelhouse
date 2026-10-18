@@ -16,14 +16,18 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Deployments.Automation.Services;
 
-/// <summary>Deploys on the owner's behalf. One pass watches each auto-deploying product's newest published release,
-/// queues a release newer than the product's watermark for its dev targets (one slot per target, latest wins), then
-/// submits each queued deploy whose target runs no rollout. Every submission goes through the ordinary deploy command,
-/// so the gates, freezes and the audit trail apply, with the actor <see cref="AutomationConstants.Actor"/>.</summary>
+/// <summary>Deploys on the owner's behalf. One pass looks at the targets inside their watch window after a successful
+/// rollout, watches each auto-deploying product's newest published release and queues a release newer than the
+/// product's watermark for its dev targets, queues for prod a release that passed its dev watch of a product that
+/// auto-promotes (each release once per prod target), then submits each queued deploy whose target runs no rollout
+/// (one slot per target, latest wins). Every submission goes through the ordinary deploy command, so the gates, freezes
+/// and the audit trail apply, with the actor <see cref="AutomationConstants.Actor"/>.</summary>
 public sealed partial class DeploymentAutomationService(
     IProductsRepository products,
     ITargetsRepository targets,
+    IServersRepository servers,
     IDeploymentAutomationStore store,
+    Freezes.Services.DeployFreezeService freezes,
     IDeploymentGateway gateway,
     DeploymentHistoryService history,
     ISender sender,
@@ -63,17 +67,96 @@ public sealed partial class DeploymentAutomationService(
         return new ProductAutomationDto(product.Slug, !ci && (row?.AutoDeployDev ?? true), !ci && (row?.AutoPromote ?? false), ci);
     }
 
-    /// <summary>Runs one pass: watch releases, queue new ones for dev, submit what may go.</summary>
+    /// <summary>Holds how recently a release must have passed its dev watch for auto-promote to take it, so turning
+    /// auto-promote on never promotes an old release.</summary>
+    public static readonly TimeSpan PromoteWithin = TimeSpan.FromHours(1);
+
+    /// <summary>Runs one pass: look at watched rollouts, watch releases and queue new ones for dev, queue promotions,
+    /// submit what may go.</summary>
     /// <param name="ct">A cancellation token.</param>
+    /// <param name="watchMinutes">How long a successful rollout is watched; zero skips the watch looks.</param>
     /// <returns>What the pass did.</returns>
-    public async Task<DeploymentAutomationPass> RunOnceAsync(CancellationToken ct)
+    public async Task<DeploymentAutomationPass> RunOnceAsync(CancellationToken ct, int watchMinutes = 10)
     {
+        if (watchMinutes > 0
+            && await gateway.ReadAsync("watch", watchMinutes.ToString(CultureInfo.InvariantCulture), ct) is AppResult<JsonElement>.Failure)
+            LogWatchWindowFailed(logger);
         var productRows = await products.GetAllAsync(ct);
         var settings = (await store.GetSettingsAsync(ct)).ToDictionary(row => row.ProductId);
         var targetRows = await targets.GetAllAsync(ct);
         var queued = await WatchReleasesAsync(productRows, settings, targetRows, ct);
-        var (submitted, dropped) = await DrainAsync(productRows, settings, targetRows, ct);
+        var promoting = productRows.Any(product => Describe(product, settings.GetValueOrDefault(product.Id)).AutoPromote);
+        if (!promoting && (await store.GetQueueAsync(ct)).Count == 0)
+            return new DeploymentAutomationPass(queued, 0, 0);
+
+        var loaded = await history.LoadAsync(ct);
+        if (loaded is not AppResult<DeploymentHistory>.Success { Data: var deployments })
+        {
+            LogHistoryFailed(logger);
+            return new DeploymentAutomationPass(queued, 0, 0);
+        }
+
+        if (promoting)
+            queued += await QueuePromotionsAsync(productRows, settings, targetRows, deployments, ct);
+        var (submitted, dropped) = await DrainAsync(productRows, settings, targetRows, deployments, ct);
         return new DeploymentAutomationPass(queued, submitted, dropped);
+    }
+
+    /// <summary>Queues for each prod target of a product that auto-promotes the newest release that passed its dev watch
+    /// within <see cref="PromoteWithin"/> and that prod neither runs nor tried; each release is tried once per target. A
+    /// frozen target and a prod on the local server, which needs its ID typed, are left to the owner.</summary>
+    private async Task<int> QueuePromotionsAsync(
+        IReadOnlyList<ProductEntity> productRows, IReadOnlyDictionary<Guid, ProductAutomationEntity> settings,
+        IReadOnlyList<TargetEntity> targetRows, DeploymentHistory deployments, CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        var marks = (await store.GetPromotionsAsync(ct)).ToDictionary(row => row.TargetId);
+        var queue = (await store.GetQueueAsync(ct)).ToDictionary(row => row.TargetId);
+        var local = (await servers.GetAllAsync(ct))
+            .Where(server => server.Provider == Wheelhouse.Domain.Servers.Enums.VpsProvider.Local)
+            .Select(server => server.Id).ToHashSet();
+        var count = 0;
+        foreach (var product in productRows.Where(row => Describe(row, settings.GetValueOrDefault(row.Id)).AutoPromote))
+        {
+            var dev = targetRows.Where(row => row.ProductId == product.Id && row.Environment == DeploymentEnvironment.Dev)
+                .Select(row => row.Slug).ToHashSet(StringComparer.Ordinal);
+            var proven = deployments.Entries
+                .Where(entry => entry.Record.TargetId is { } slug && dev.Contains(slug) && entry.Outcome == DeploymentOutcome.Succeeded
+                    && entry.Record.Kind is "release" or null && entry.Record.Release is { } label && !label.StartsWith("sha-", StringComparison.Ordinal)
+                    && entry.Record.BundleId is not null
+                    && entry.Record.Watch is { Status: "passed", CompletedAt: { } passed } && now - passed <= PromoteWithin)
+                .OrderByDescending(entry => entry.Record.PublishedAt ?? entry.Record.CompletedAt ?? entry.Record.SubmittedAt)
+                .FirstOrDefault();
+            if (proven is null)
+                continue;
+            foreach (var prod in targetRows.Where(row => row.ProductId == product.Id && row.Environment == DeploymentEnvironment.Prod))
+            {
+                if (local.Contains(prod.ServerId) || marks.GetValueOrDefault(prod.Id)?.Release == proven.Record.Release
+                    || await freezes.CoveringAsync(product.Id, DeploymentEnvironment.Prod, ct) is not null)
+                    continue;
+                var onProd = deployments.Entries.Where(entry => entry.Record.TargetId == prod.Slug).ToList();
+                var runs = onProd.FirstOrDefault(entry => entry.Outcome == DeploymentOutcome.Succeeded);
+                if (onProd.Any(entry => entry.Record.Release == proven.Record.Release)
+                    || (runs?.Record.PublishedAt is { } running && proven.Record.PublishedAt is { } offered && running >= offered))
+                    continue;
+                if (queue.GetValueOrDefault(prod.Id) is { } waiting && waiting.PublishedAt is { } held
+                    && proven.Record.PublishedAt is { } candidate && held >= candidate)
+                    continue;
+                await store.SetQueuedAsync(new QueuedDeploymentEntity
+                {
+                    TargetId = prod.Id, BundleId = proven.Record.BundleId!, Release = proven.Record.Release!,
+                    PublishedAt = proven.Record.PublishedAt, Cause = DeploymentCause.AutoPromote, QueuedAt = now,
+                }, ct);
+                await store.SetPromotionAsync(new AutoPromotionEntity
+                {
+                    TargetId = prod.Id, Release = proven.Record.Release!, AttemptedAt = now,
+                }, ct);
+                count++;
+                LogQueued(logger, proven.Record.Release!, prod.Slug);
+            }
+        }
+
+        return count;
     }
 
     /// <summary>Reads the newest release of every product that auto-deploys to dev and queues one newer than its
@@ -147,18 +230,11 @@ public sealed partial class DeploymentAutomationService(
     /// <summary>Submits each queued deploy whose target runs no rollout, and drops one that no longer applies.</summary>
     private async Task<(int Submitted, int Dropped)> DrainAsync(
         IReadOnlyList<ProductEntity> productRows, IReadOnlyDictionary<Guid, ProductAutomationEntity> settings,
-        IReadOnlyList<TargetEntity> targetRows, CancellationToken ct)
+        IReadOnlyList<TargetEntity> targetRows, DeploymentHistory deployments, CancellationToken ct)
     {
         var queue = await store.GetQueueAsync(ct);
         if (queue.Count == 0)
             return (0, 0);
-        var loaded = await history.LoadAsync(ct);
-        if (loaded is not AppResult<DeploymentHistory>.Success { Data: var deployments })
-        {
-            LogHistoryFailed(logger);
-            return (0, 0);
-        }
-
         var byId = targetRows.ToDictionary(row => row.Id);
         var productsById = productRows.ToDictionary(row => row.Id);
         int submitted = 0, dropped = 0;
@@ -216,6 +292,9 @@ public sealed partial class DeploymentAutomationService(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The release watcher could not read the products' releases; the next pass retries.")]
     private static partial void LogWatchFailed(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The watch looks could not run; the next pass retries.")]
+    private static partial void LogWatchWindowFailed(ILogger logger);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Queued automatic deploys wait: the deployment history could not be read.")]
     private static partial void LogHistoryFailed(ILogger logger);

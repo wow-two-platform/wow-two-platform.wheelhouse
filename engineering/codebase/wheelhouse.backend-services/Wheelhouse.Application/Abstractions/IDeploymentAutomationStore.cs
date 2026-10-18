@@ -39,6 +39,16 @@ public interface IDeploymentAutomationStore
     /// <param name="ct">A cancellation token.</param>
     Task SetQueuedAsync(QueuedDeploymentEntity item, CancellationToken ct = default);
 
+    /// <summary>Gets the release auto-promote last tried on each prod target.</summary>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The marks.</returns>
+    Task<IReadOnlyList<AutoPromotionEntity>> GetPromotionsAsync(CancellationToken ct = default);
+
+    /// <summary>Records that auto-promote tried a release on a prod target.</summary>
+    /// <param name="mark">The mark.</param>
+    /// <param name="ct">A cancellation token.</param>
+    Task SetPromotionAsync(AutoPromotionEntity mark, CancellationToken ct = default);
+
     /// <summary>Empties a target's slot.</summary>
     /// <param name="targetId">The target.</param>
     /// <param name="ct">A cancellation token.</param>

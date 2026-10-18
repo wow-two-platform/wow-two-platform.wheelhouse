@@ -75,6 +75,9 @@ public sealed record DeploymentRecord
     /// <summary>Gets when the release source published the bundle.</summary>
     public DateTimeOffset? PublishedAt { get; init; }
 
+    /// <summary>Gets the watch after a successful rollout; null when it was not watched.</summary>
+    public DeploymentWatchDto? Watch { get; init; }
+
     /// <summary>Gets the step a live rollout is on; null once it finished or before its worker started.</summary>
     public DeploymentStepRecord? CurrentStep { get; init; }
 }

@@ -35,6 +35,17 @@ export const DeploymentItemSchema = z.object({
   durationSeconds: z.number().nullable().default(null),
   changedServices: z.array(z.string()).nullable().default(null),
   currentStep: CurrentStepSchema.nullable().default(null),
+  watch: z
+    .object({
+      status: z.enum(['watching', 'passed', 'degraded', 'superseded', 'unverified']).catch('unverified'),
+      until: nullableText.default(null),
+      checks: z.number().int().nullable().default(null),
+      findings: z.array(z.string()).default([]),
+      degradedAt: nullableText.default(null),
+      completedAt: nullableText.default(null),
+    })
+    .nullable()
+    .default(null),
 });
 
 export const DeploymentPageSchema = z.object({

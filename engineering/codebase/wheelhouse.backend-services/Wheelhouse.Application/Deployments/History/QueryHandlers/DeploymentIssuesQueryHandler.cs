@@ -63,6 +63,11 @@ public sealed class DeploymentIssuesQueryHandler(DeploymentHistoryService histor
                 : null;
         }
 
+        if (entry.Outcome == DeploymentOutcome.Succeeded)
+            return record.Watch is { Status: "degraded" } watch
+                ? new DeploymentIssueDto(DeploymentIssueKind.Degraded, false, watch.DegradedAt ?? record.CompletedAt ?? record.SubmittedAt,
+                    DeploymentItemDto.From(entry))
+                : null;
         if (entry.Outcome != DeploymentOutcome.Failed)
             return null;
         var kind = record.Status switch

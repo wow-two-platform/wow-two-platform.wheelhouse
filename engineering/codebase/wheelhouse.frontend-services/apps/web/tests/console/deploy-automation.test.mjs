@@ -5,7 +5,7 @@ import { bundleModule } from "./BundleModule.mjs";
 
 // The real rules of automatic deploys and freezes, and their wire decoding.
 const automation = await bundleModule(`
-  export { DefaultAutomation, DeployFreezes, rollbackRisks } from './src/domain/deployments';
+  export { DefaultAutomation, DeployFreezes, rollbackRisks, DeploymentIssues } from './src/domain/deployments';
   export { DeploymentAutomationSchema, DeployFreezeSchema, ReleaseChangelogSchema } from './src/integration/deployments/automationSchemas';
   export { DeploymentPromotionSchema, DeploymentItemSchema } from './src/integration/deployments/historySchemas';
 `);
@@ -73,4 +73,13 @@ test("a changelog keeps release bodies as text and only GitHub links", () => {
   assert.throws(() =>
     ReleaseChangelogSchema.parse({ to: "v1", releases: [{ release: "v1", name: "v1", publishedAt: "x", url: "javascript:alert(1)" }] }),
   );
+});
+
+test("a rollout that regressed while watched names its first finding", () => {
+  const deployment = automation.DeploymentItemSchema.parse({
+    id: "x", status: "succeeded", outcome: "succeeded", submittedAt: "x",
+    watch: { status: "degraded", findings: ["api restarted 2 times since the deploy", "Site app stopped answering"] },
+  });
+  assert.equal(automation.DeploymentIssues.headline({ kind: "degraded", deployment }), "Regressed after the deploy: api restarted 2 times since the deploy");
+  assert.equal(automation.DeploymentItemSchema.parse({ id: "x", status: "succeeded", outcome: "succeeded", submittedAt: "x", watch: { status: "odd" } }).watch.status, "unverified");
 });

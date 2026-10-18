@@ -2,6 +2,7 @@ export {
   DeploymentOutcome,
   type CurrentStep,
   type DeploymentItem,
+  type DeploymentWatch,
 } from './models/DeploymentItem';
 export type { DeploymentPage } from './models/DeploymentPage';
 export type { ActivityDay, ActivityProduct, DeploymentActivity } from './models/DeploymentActivity';

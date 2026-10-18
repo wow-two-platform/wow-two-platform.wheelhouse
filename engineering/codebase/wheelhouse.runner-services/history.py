@@ -53,6 +53,20 @@ def current_step(root, job_id):
             "index": steps.index(step) + 1}
 
 
+WATCH = ("status", "startedAt", "until", "checks", "findings", "degradedAt", "completedAt")
+
+
+def watch_of(root, job_id):
+    """The watch after a successful rollout, as the transport's watch passes recorded it; None when it was not watched."""
+    try:
+        record = read_json(root / "watching" / (job_id + ".json"))
+    except (ValueError, OSError):
+        return None
+    if not isinstance(record, dict) or not isinstance(record.get("status"), str):
+        return None
+    return {key: record[key] for key in WATCH if key in record}
+
+
 def records(root, submissions):
     """`submissions` is the transport's merged job list; each record gains its bundle's facts and, while it is live,
     its current step. A bundle missing from the cache leaves product and services unknown (null)."""
@@ -69,6 +83,8 @@ def records(root, submissions):
                 "publishedAt": bundle.get("publishedAt")}
         if job.get("status") in PENDING:
             item["currentStep"] = current_step(root, job["id"])
+        elif job.get("status") == "succeeded":
+            item["watch"] = watch_of(root, job["id"])
         result.append(item)
     return result
 

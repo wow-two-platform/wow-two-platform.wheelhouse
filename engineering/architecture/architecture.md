@@ -356,6 +356,18 @@ request acts as `automation`, so every automatic submission goes through the ord
 - `GET /api/deployments/automation` lists every product's `{ product, autoDeployDev, autoPromote, ciDeployed }` and the
   queue; `PUT /api/deployments/automation/{product}` `{ autoDeployDev?, autoPromote? }` (action header `automation`,
   audited `product.automation`) changes the choices it names.
+- **Watch window:** for `Deployment:WatchMinutes` (10; 0 turns the looks off) after each target's latest successful
+  rollout, every pass asks the runner's `watch` (two targets at most, one look a minute each) to read the target's
+  containers and request again every site that answered at the deploy. The first look is the baseline; a container
+  that stopped, turned unhealthy or restarted since, or a site gone silent, marks the rollout `degraded` with its
+  findings, and the Issues list raises it (`kind: degraded`). A clean window ends `passed`; a rollout replaced meanwhile
+  is `superseded`, and one no look could read `unverified`. The record lives in `<runner root>/watching/<job>.json` and
+  history items carry it as `watch`.
+- **Auto-promote** is off per product until the owner turns it on. A release whose dev rollout `passed` its watch in
+  the last hour is queued for each prod target that neither runs nor tried it (`auto_promotions`, migration
+  `018-auto-promotions`: each release is tried once per target) and submitted with cause `automatic: promoted after its
+  dev watch`. A frozen prod target and a prod on the local server, which needs its ID typed, are left to the owner;
+  the dev-pass gate holds by construction.
 - **Freezes** (`deploy_freezes`, migration `017-deploy-freezes`) hold deploys everywhere, to one product, or to one
   product's environment; the narrowest covering freeze names the hold. While a freeze covers a target, an automatic
   deploy is refused (`…; the automatic deploy was skipped`, audited, dropped from the queue) and an owner's deploy is

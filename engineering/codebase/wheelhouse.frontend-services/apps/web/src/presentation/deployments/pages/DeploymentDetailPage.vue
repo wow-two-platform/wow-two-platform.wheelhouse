@@ -173,6 +173,23 @@ function rollBack(): void {
                 :description="deployment.reason"
               />
               <Alert
+                v-if="deployment?.watch?.status === 'degraded'"
+                severity="warning"
+                title="Regressed after the deploy"
+                :description="deployment.watch.findings.join('; ')"
+              />
+              <p v-else-if="deployment?.watch" class="text-sm text-muted-foreground">
+                {{
+                  deployment.watch.status === "watching"
+                    ? "Watching its containers and sites once a minute until the window closes."
+                    : deployment.watch.status === "passed"
+                      ? `Watched after the deploy: ${deployment.watch.checks ?? 0} looks found nothing wrong.`
+                      : deployment.watch.status === "superseded"
+                        ? "Another rollout replaced it during its watch."
+                        : "Its watch could not read the target."
+                }}
+              </p>
+              <Alert
                 v-for="warning in deployment?.warnings ?? []"
                 :key="warning"
                 severity="warning"

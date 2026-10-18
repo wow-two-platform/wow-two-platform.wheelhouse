@@ -15,6 +15,9 @@ public static class DeploymentIssueKind
     /// <summary>The latest rollout stopped mid-way and was reconciled; nothing has deployed since.</summary>
     public const string Interrupted = "interrupted";
 
+    /// <summary>The latest rollout succeeded, then regressed during its watch window.</summary>
+    public const string Degraded = "degraded";
+
     /// <summary>A rollout has been live for longer than any rollout should take.</summary>
     public const string Stuck = "stuck";
 }

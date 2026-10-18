@@ -23,6 +23,7 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
             "topology" when id is not null => RunAsync(["topology", "--target", id], ct),
             "branches" when id is not null => RunAsync(["branches", "--product", id], ct),
             "facts" when id is not null => RunAsync(["facts", "--bundle", id], ct),
+            "watch" when int.TryParse(id, out var minutes) => RunAsync(["watch", "--minutes", minutes.ToString(CultureInfo.InvariantCulture)], ct),
             "vitals" => RunAsync(id is null ? ["vitals"] : ["vitals", "--target", id], ct),
             "stats" when int.TryParse(id, out var days) => RunAsync(["stats", "--days", days.ToString(CultureInfo.InvariantCulture)], ct),
             _ => Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.NotFound("Unknown deployment resource.")))

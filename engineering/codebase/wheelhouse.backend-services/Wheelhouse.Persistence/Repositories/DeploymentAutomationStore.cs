@@ -73,6 +73,25 @@ internal sealed class DeploymentAutomationStore(WheelhouseDbContext db) : IDeplo
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<AutoPromotionEntity>> GetPromotionsAsync(CancellationToken ct = default) =>
+        await db.Set<AutoPromotionEntity>().AsNoTracking().ToListAsync(ct);
+
+    /// <inheritdoc />
+    public async Task SetPromotionAsync(AutoPromotionEntity mark, CancellationToken ct = default)
+    {
+        var row = await db.Set<AutoPromotionEntity>().FirstOrDefaultAsync(entity => entity.TargetId == mark.TargetId, ct);
+        if (row is null)
+            db.Set<AutoPromotionEntity>().Add(mark);
+        else
+        {
+            row.Release = mark.Release;
+            row.AttemptedAt = mark.AttemptedAt;
+        }
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <inheritdoc />
     public async Task RemoveQueuedAsync(Guid targetId, CancellationToken ct = default) =>
         await db.Set<QueuedDeploymentEntity>().Where(entity => entity.TargetId == targetId).ExecuteDeleteAsync(ct);
 }

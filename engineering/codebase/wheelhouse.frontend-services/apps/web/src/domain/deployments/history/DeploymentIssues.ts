@@ -11,6 +11,10 @@ export const DeploymentIssues = {
         return 'Failed, and restoring the previous release failed too';
       case DeploymentIssueKind.Interrupted:
         return 'Stopped mid-way and reconciled; nothing deployed since';
+      case DeploymentIssueKind.Degraded: {
+        const finding = issue.deployment.watch?.findings[0];
+        return finding ? `Regressed after the deploy: ${finding}` : 'Regressed after the deploy';
+      }
       case DeploymentIssueKind.Stuck: {
         const step = issue.deployment.currentStep?.name;
         return step ? `Stuck on ${step}` : 'Stuck before its first step';

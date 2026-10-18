@@ -25,6 +25,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "006-product-catalog", "007-inventory", "008-product-manifests", "009-server-vitals", "010-workspaces",
         "011-product-status", "012-pins", "013-drop-test-environment", "015-product-pins-only",
         "016-deploy-automation", "017-deploy-freezes",
+        "018-auto-promotions",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -649,6 +650,36 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 16, CancellationToken.None));
         (await migrator.HasTableAsync("deploy_freezes")).Should().BeFalse();
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("017-deploy-freezes"));
+    }
+
+    [Fact]
+    public async Task AutoPromotions_ShouldHoldOneMarkPerTarget_AndGoWithIt_WhenApplied()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000001", "pilot"));
+        await Execute(connection,
+            "INSERT INTO servers (id, slug, name, provider, host, region, ssh_user, ssh_port, ingress, created_at_utc, updated_at_utc) " +
+            "VALUES ('00000000-0000-0000-0000-0000000000a1', 'hel1', 'Helsinki', 'hetzner', 'vps.example.net', 'hel1', " +
+            "'deploy', 22, '{}'::jsonb, now(), now())");
+        await Execute(connection,
+            "INSERT INTO targets (id, slug, product_id, server_id, environment, network, root, settings, smoke_checks, " +
+            "sites, created_at_utc, updated_at_utc) VALUES ('00000000-0000-0000-0000-0000000000b1', 'pilot-prod', " +
+            "'00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a1', 'prod', " +
+            "'platform', '/srv/wheelhouse', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now(), now())");
+        const string mark = "INSERT INTO auto_promotions (target_id, release, attempted_at_utc) " +
+                            "VALUES ('00000000-0000-0000-0000-0000000000b1', '{0}', now())";
+        await Execute(connection, string.Format(mark, "v1.0.0"));
+        var second = async () => await Execute(connection, string.Format(mark, "v1.1.0"));
+        await second.Should().ThrowAsync<Npgsql.PostgresException>("a prod target holds one mark");
+        await Execute(connection, "DELETE FROM targets");
+        (await Scalar(connection, "SELECT count(*) FROM auto_promotions")).Should().Be(0L);
+
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 17, CancellationToken.None));
+        (await migrator.HasTableAsync("auto_promotions")).Should().BeFalse();
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("018-auto-promotions"));
     }
 
     /// <summary>The SQL that stores one vitals reading of a target slug, or of its server's host for <c>NULL</c>.</summary>

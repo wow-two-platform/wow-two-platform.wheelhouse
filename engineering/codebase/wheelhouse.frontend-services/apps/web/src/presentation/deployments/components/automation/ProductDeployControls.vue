@@ -13,8 +13,9 @@ import {
 import { DeployFreezes } from '@/domain/deployments';
 
 /**
- * A product's deploy controls, each saved on its own as it is switched: whether each new release deploys to dev, and
- * freezes of the whole product or of one environment. A product its own CI deploys (Wheelhouse itself) shows the
+ * A product's deploy controls, each saved on its own as it is switched: whether each new release deploys to dev,
+ * whether a release that passed its dev watch is promoted to prod, and freezes of the whole product or of one
+ * environment. A product its own CI deploys (Wheelhouse itself) shows the
  * automatic choice off and locked; a portfolio-wide freeze is named, and lifted on the Deployments page.
  */
 defineOptions({ name: 'ProductDeployControls' });
@@ -47,6 +48,10 @@ function setFrozen(environment: string | null, value: boolean): void {
 function setAutoDeployDev(value: boolean): void {
   update.mutate({ product: props.product, change: { autoDeployDev: value } });
 }
+
+function setAutoPromote(value: boolean): void {
+  update.mutate({ product: props.product, change: { autoPromote: value } });
+}
 </script>
 
 <template>
@@ -59,6 +64,13 @@ function setAutoDeployDev(value: boolean): void {
       size="sm"
       :is-disabled="choices.ciDeployed || update.loading.value"
       @update:model-value="setAutoDeployDev"
+    />
+    <SwitchField
+      :model-value="choices.autoPromote"
+      label="Promote to prod once a release passes its dev watch"
+      size="sm"
+      :is-disabled="choices.ciDeployed || update.loading.value"
+      @update:model-value="setAutoPromote"
     />
     <SwitchField
       v-for="scope in scopes"

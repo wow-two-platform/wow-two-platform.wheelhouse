@@ -6,8 +6,8 @@ using Wheelhouse.Application.Deployments.Automation.Services;
 
 namespace Wheelhouse.Infrastructure.Deployments;
 
-/// <summary>Runs the automation passes on an interval: the release watcher, the automatic deploy queue and, as later
-/// passes add them, watch windows and retention. The interval comes from <c>Deployment:AutomationSeconds</c>
+/// <summary>Runs the automation passes on an interval: the watch windows, the release watcher, auto-promote and the
+/// automatic deploy queue, and the daily retention. The interval comes from <c>Deployment:AutomationSeconds</c>
 /// (default 120); zero or less turns automation off.</summary>
 public sealed class DeploymentAutomationWorker(
     IServiceScopeFactory scopes,
@@ -18,6 +18,10 @@ public sealed class DeploymentAutomationWorker(
     /// <summary>The configuration key holding the delay between passes, in seconds.</summary>
     public const string IntervalKey = "Deployment:AutomationSeconds";
 
+    /// <summary>The configuration key holding how many minutes a successful rollout is watched (default 10; 0 turns the
+    /// looks off).</summary>
+    public const string WatchKey = "Deployment:WatchMinutes";
+
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -26,6 +30,7 @@ public sealed class DeploymentAutomationWorker(
         if (seconds <= 0)
             return;
         var delay = TimeSpan.FromSeconds(Math.Clamp(seconds, 10, 3600));
+        var watchMinutes = Math.Clamp(configuration.GetValue(WatchKey, 10), 0, 120);
         try
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -34,7 +39,8 @@ public sealed class DeploymentAutomationWorker(
                 {
                     // A fresh scope per pass: no HTTP request, so every audited command records the automation actor.
                     await using var scope = scopes.CreateAsyncScope();
-                    await scope.ServiceProvider.GetRequiredService<DeploymentAutomationService>().RunOnceAsync(stoppingToken);
+                    await scope.ServiceProvider.GetRequiredService<DeploymentAutomationService>()
+                        .RunOnceAsync(stoppingToken, watchMinutes);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {

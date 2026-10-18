@@ -1,12 +1,13 @@
 import type { DeploymentItem } from './DeploymentItem';
 
 /** What went wrong on a target: its latest rollout failed, rolled back, failed to roll back or was interrupted with no
- *  success since, or a rollout has been live too long. */
+ *  success since, it succeeded and then regressed while watched, or a rollout has been live too long. */
 export const DeploymentIssueKind = {
   Failed: 'failed',
   RolledBack: 'rolled_back',
   RollbackFailed: 'rollback_failed',
   Interrupted: 'interrupted',
+  Degraded: 'degraded',
   Stuck: 'stuck',
 } as const;
 export type DeploymentIssueKind = (typeof DeploymentIssueKind)[keyof typeof DeploymentIssueKind];
