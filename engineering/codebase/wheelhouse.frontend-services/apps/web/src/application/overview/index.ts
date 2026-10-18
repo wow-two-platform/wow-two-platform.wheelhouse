@@ -4,7 +4,7 @@ import { useVaults, useVaultsHygiene } from "@/application/secrets";
 import { useServerVitals } from "@/application/servers";
 import { AttentionRules } from "@/domain/overview";
 
-/** What needs the operator across every product: unreachable hosts, failing containers, rotation debt. */
+/** What needs the owner across every product: unreachable hosts, failing containers, rotation debt. */
 export function usePortfolioAttention() {
   const vitals = useServerVitals();
   const stats = useDeploymentStats();

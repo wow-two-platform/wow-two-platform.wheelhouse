@@ -161,7 +161,7 @@ function versionOf(name: string) {
   const service = props.topology.services.find((item) => item.name === name);
   return service ? describeServiceVersion(service, props.topology.release) : null;
 }
-/** Formats the limited Compose startup conditions as operator-facing labels. @internal */
+/** Formats the limited Compose startup conditions as owner-facing labels. @internal */
 function condition(value: string | null): string {
   return value?.replaceAll("_", " ") ?? "startup order";
 }

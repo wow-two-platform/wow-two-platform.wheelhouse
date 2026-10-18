@@ -6,7 +6,7 @@ using WoW.Two.Sdk.Beta.Be.Identity.ApiKeys;
 
 namespace Wheelhouse.Persistence.Repositories;
 
-/// <summary>Accesses integration keys, for the operator's list and for the API key scheme's lookups.</summary>
+/// <summary>Accesses integration keys, for the owner's list and for the API key scheme's lookups.</summary>
 internal sealed class IntegrationKeysRepository(WheelhouseDbContext db)
     : EfRepository<IntegrationKeyEntity, Guid>(db), IIntegrationKeysRepository, IApiKeyRepository
 {

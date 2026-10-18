@@ -15,6 +15,6 @@ public sealed record WorkspaceDto
     /// <summary>Gets one line on what the workspace holds, or <c>null</c> for none.</summary>
     public string? Description { get; init; }
 
-    /// <summary>Gets the workspace's place in the operator's order; lower comes first.</summary>
+    /// <summary>Gets the workspace's place in the owner's order; lower comes first.</summary>
     public required int Order { get; init; }
 }

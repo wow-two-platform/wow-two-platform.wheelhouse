@@ -14,8 +14,8 @@ using WoW.Two.Sdk.Beta.Be.Testing.Web;
 namespace Wheelhouse.Tests.E2E.Tests;
 
 /// <summary>
-/// E2E for pins — the signed-in operator keeps workspaces, products and services one click away in a custom order.
-/// Pinning a target twice answers the first pin, a pin goes with what it points at, an operator sees only their own
+/// E2E for pins — the signed-in owner keeps workspaces, products and services one click away in a custom order.
+/// Pinning a target twice answers the first pin, a pin goes with what it points at, the owner sees only their own
 /// pins, integration keys are refused, and nothing reaches the audit trail.
 /// </summary>
 [Collection(WheelhouseCollection.Name)]
@@ -45,7 +45,7 @@ public sealed class PinsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBa
         (await (await AdminClient.GetAsync("api/products/" + slug)).ReadEnvelopeAsync<ProductResponse>()).Id;
 
     [Fact]
-    public async Task GetAll_ShouldBeEmpty_WhenTheOperatorPinnedNothing()
+    public async Task GetAll_ShouldBeEmpty_WhenTheOwnerPinnedNothing()
     {
         var response = await AdminClient.GetAsync("api/pins");
 
@@ -157,7 +157,7 @@ public sealed class PinsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBa
         (await ActionClient("pin").DeleteAsync("api/pins/" + theirs)).StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await ActionClient("pin").PutJsonAsync("api/pins/order", new { ids = new[] { theirs, mine.Id } }))
             .StatusCode.Should().Be(HttpStatusCode.Conflict);
-        // The other operator's pin does not take this operator's next place.
+        // The other owner's pin does not take this owner's next place.
         (await PinAsync(new { kind = "product", productId = "foreverpin" })).Order.Should().Be(1);
     }
 

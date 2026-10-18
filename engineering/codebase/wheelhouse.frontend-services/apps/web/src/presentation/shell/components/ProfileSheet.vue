@@ -35,7 +35,7 @@ const route = useRoute();
 const colorMode = useColorMode();
 const consoleVersion = __APP_VERSION__;
 const displayName = computed(() => props.user.name || props.user.login);
-/** The appearance the operator chose: `system` while the mode follows the operating system. */
+/** The appearance the owner chose: `system` while the mode follows the operating system. */
 const appearance = computed(() => (colorMode.followsSystem ? 'system' : colorMode.mode));
 
 /** Whether a place is the current page, including the pages below it. @internal */

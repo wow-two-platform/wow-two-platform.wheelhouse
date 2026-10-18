@@ -13,7 +13,7 @@ function servicesOf(product: Product, showInactive: boolean): string[] {
 
 /**
  * The entity picker's tree from the portfolio groups: each workspace with the products it shows and their services.
- * Inactive services stay out until the operator shows inactive ones, as everywhere else.
+ * Inactive services stay out until the owner shows inactive ones, as everywhere else.
  */
 export function buildEntityTree(groups: readonly PortfolioGroup[], showInactive: boolean): EntityTree {
   return groups

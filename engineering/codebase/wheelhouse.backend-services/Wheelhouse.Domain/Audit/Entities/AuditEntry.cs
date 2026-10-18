@@ -4,8 +4,8 @@ using Wheelhouse.Domain.Audit.Enums;
 
 namespace Wheelhouse.Domain.Audit.Entities;
 
-/// <summary>One operator action in the append-only audit trail. Each entry is hash-chained to the one before it, so
-/// an edited or removed entry breaks verification. Every field is operator-safe text: never a secret value or token.</summary>
+/// <summary>One action in the append-only audit trail. Each entry is hash-chained to the one before it, so
+/// an edited or removed entry breaks verification. Every field is display-safe text: never a secret value or token.</summary>
 public sealed class AuditEntry : IKeyedEntity<Guid>, IHasTableName, IHashChainedEntry
 {
     /// <summary>Gets the storage table name — the single source of truth shared by EF mapping and hand-written SQL.</summary>
@@ -26,7 +26,8 @@ public sealed class AuditEntry : IKeyedEntity<Guid>, IHasTableName, IHashChained
     /// <summary>Gets or sets the UTC instant the action ended.</summary>
     public DateTimeOffset OccurredAtUtc { get; set; }
 
-    /// <summary>Gets or sets the signed-in operator's login.</summary>
+    /// <summary>Gets or sets the actor: the signed-in user's login, or <c>key:{name}</c> for an integration key. Stored
+    /// and hashed as <c>actor</c>.</summary>
     public required string Actor { get; set; }
 
     /// <summary>Gets or sets the action's stable name, such as <c>deployment.start</c>.</summary>
@@ -38,9 +39,9 @@ public sealed class AuditEntry : IKeyedEntity<Guid>, IHasTableName, IHashChained
     /// <summary>Gets or sets how the action ended.</summary>
     public AuditOutcome Outcome { get; set; }
 
-    /// <summary>Gets or sets operator-safe context, such as the release a deployment took.</summary>
+    /// <summary>Gets or sets display-safe context, such as the release a deployment took.</summary>
     public string? Detail { get; set; }
 
-    /// <summary>Gets or sets why a failed action failed, as the operator saw it.</summary>
+    /// <summary>Gets or sets why a failed action failed, as the owner saw it.</summary>
     public string? Reason { get; set; }
 }

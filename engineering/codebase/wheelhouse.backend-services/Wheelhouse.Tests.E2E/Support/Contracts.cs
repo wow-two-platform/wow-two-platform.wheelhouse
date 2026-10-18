@@ -65,7 +65,7 @@ public sealed record ProductResponse(
 /// <param name="Slug">Its slug.</param>
 /// <param name="Name">Its display name.</param>
 /// <param name="Description">What it holds.</param>
-/// <param name="Order">Its place in the operator's order.</param>
+/// <param name="Order">Its place in the owner's order.</param>
 public sealed record WorkspaceResponse(Guid Id, string Slug, string Name, string? Description, int Order);
 
 /// <summary>Response shape for where a catalog product's identity text comes from.</summary>
@@ -141,5 +141,5 @@ public sealed record IntegrationKeyWithSecretResponse(IntegrationKeyResponse Key
 /// <param name="WorkspaceId">The pinned workspace.</param>
 /// <param name="ProductId">The pinned product, or the pinned service's product.</param>
 /// <param name="Service">The pinned service's key.</param>
-/// <param name="Order">Its place in the operator's order.</param>
+/// <param name="Order">Its place in the owner's order.</param>
 public sealed record PinResponse(Guid Id, string Kind, Guid? WorkspaceId, Guid? ProductId, string? Service, int Order);

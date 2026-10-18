@@ -16,7 +16,7 @@ namespace Wheelhouse.Infrastructure.Inventory;
 /// <summary>Provides the local server's fixtures to the database on the local rig: its products where the database
 /// lacks them, in the default workspace, and its server, targets and vault as the runner defines them for this run.</summary>
 /// <remarks>The rig's hosts, ports and settings paths depend on where Wheelhouse runs, so its server, targets and vault
-/// are written again on every start; the operator's own products are never touched.</remarks>
+/// are written again on every start; the owner's own products are never touched.</remarks>
 public sealed partial class LocalRigSeedService(
     IDeploymentGateway gateway,
     IProductsRepository products,

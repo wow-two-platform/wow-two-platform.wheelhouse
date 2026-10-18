@@ -79,7 +79,7 @@ useFormDialogSession(form, {
   onOpen: () => (removeError.value = ""),
 });
 
-/** Keeps a new target's slug following its environment until the operator types another. */
+/** Keeps a new target's slug following its environment until the owner types another. */
 watch(
   () => form.state.values.environment,
   (environment, previous) => {

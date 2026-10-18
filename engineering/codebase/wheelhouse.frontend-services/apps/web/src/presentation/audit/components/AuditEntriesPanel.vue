@@ -1,5 +1,5 @@
 <script lang="ts">
-/** The audit trail's operator actions, across the portfolio or about one product. */
+/** The audit trail's actions, across the portfolio or about one product. */
 export interface AuditEntriesPanelProps {
   /** Keeps the entries about one product, by slug; every entry without it. */
   readonly product?: string | null;
@@ -32,7 +32,7 @@ import { AuditArea, AuditExtensions, AuditOutcome } from "@/domain/audit";
 import { Panel } from "@/presentation/common/components";
 
 /**
- * Lists operator actions newest first, a hundred at a time, with an area filter and paging back. The Activity page
+ * Lists actions newest first, a hundred at a time, with an area filter and paging back. The Activity page
  * shows every entry; a product's Activity tab passes its product and the host keeps the entries about it.
  */
 defineOptions({ name: "AuditEntriesPanel" });
@@ -63,7 +63,7 @@ const rows = useSkeletonItems(() => (entries.data.value ? visible.value : undefi
 const oldest = computed(() => entries.data.value?.at(-1)?.sequence ?? null);
 const hasOlder = computed(() => (entries.data.value?.length ?? 0) === WindowSize && (oldest.value ?? 0) > 1);
 
-/** Every operator action changes the trail, so a visit always reads it fresh. */
+/** Every action changes the trail, so a visit always reads it fresh. */
 onMounted(() => void entries.refetch());
 /* Another product starts from its newest entries. */
 watch(
@@ -80,7 +80,7 @@ function newer(): void {
 </script>
 
 <template>
-  <Panel title="Operator actions" :description="props.description">
+  <Panel title="Actions" :description="props.description">
     <template #actions>
       <SelectPicker v-model="area" :get-option-label="(value) => AreaLabels[value as AuditArea]"
         ><SelectPickerTrigger aria-label="Area" width="14rem"><SelectPickerValue /></SelectPickerTrigger
@@ -107,7 +107,7 @@ function newer(): void {
             ? 'Deploys, builds, secret changes and edits to this product appear here.'
             : 'Deploys, builds, reconciles and secret or product changes appear here.'
       "
-      loading-label="Loading operator actions"
+      loading-label="Loading actions"
     >
       <Table
         density="compact"
@@ -119,7 +119,7 @@ function newer(): void {
       >
         <TableHead>
           <TableRow>
-            <TableHeaderCell>When</TableHeaderCell><TableHeaderCell>Operator</TableHeaderCell
+            <TableHeaderCell>When</TableHeaderCell><TableHeaderCell>Actor</TableHeaderCell
             ><TableHeaderCell>Action</TableHeaderCell><TableHeaderCell>Subject</TableHeaderCell
             ><TableHeaderCell>Outcome</TableHeaderCell>
           </TableRow>

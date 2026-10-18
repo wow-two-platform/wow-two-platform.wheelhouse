@@ -20,6 +20,6 @@ public sealed record PinDto
     /// <summary>Gets the pinned service's key; set for a service pin only.</summary>
     public string? Service { get; init; }
 
-    /// <summary>Gets the pin's place in the operator's order; lower comes first.</summary>
+    /// <summary>Gets the pin's place in the owner's order; lower comes first.</summary>
     public required int Order { get; init; }
 }

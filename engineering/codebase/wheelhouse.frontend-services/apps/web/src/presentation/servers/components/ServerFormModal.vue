@@ -48,7 +48,7 @@ import { failureReason } from "@/integration/common";
 import { DeleteConfirm } from "@/presentation/common/components";
 
 /** Edits how Wheelhouse reaches a server and how its ingress publishes sites. The SSH identity and pinned host key
- * stay files on the control host, so a new server reaches nothing until the operator places them. */
+ * stay files on the control host, so a new server reaches nothing until the owner places them. */
 defineOptions({ name: "ServerFormModal" });
 const props = defineProps<ServerFormModalProps>();
 const emit = defineEmits<{ "update:open": [open: boolean] }>();

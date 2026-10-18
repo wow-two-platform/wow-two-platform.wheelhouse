@@ -41,7 +41,7 @@ export const ServiceTopologySchema = z
               path: z.string().regex(/^\/[A-Za-z0-9._~/-]*$/),
               port: z.number().int().min(1).max(65535),
               exposure: z.enum(["public", "private"]),
-              // Opened in the operator's browser, so only http(s) survives decoding.
+              // Opened in the owner's browser, so only http(s) survives decoding.
               url: z
                 .string()
                 .regex(/^https?:\/\//)

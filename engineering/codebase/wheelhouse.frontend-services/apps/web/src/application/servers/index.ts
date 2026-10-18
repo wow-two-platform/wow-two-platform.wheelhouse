@@ -28,7 +28,7 @@ export function useVitalsHistory(hours: MaybeRefOrGetter<number>) {
   });
 }
 
-/** The operator's confirmed server edits. */
+/** The owner's confirmed server edits. */
 export function useServerChanges() {
   // A server's host and ingress shape every deployment view of its targets.
   const invalidates = () => [ServerKeys.servers, DeploymentKeys.targets];

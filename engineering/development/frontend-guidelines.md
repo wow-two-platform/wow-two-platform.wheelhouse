@@ -31,7 +31,7 @@ Controls that sit together share one height; the row's place sets it.
 
 ## Repo-specific deltas
 
-- Control-plane workspace only — single operator, never public. Secret writes and token minting bypass the mutation cache. Plaintext stays inside the active dialog; abort/generation guards prevent dismissed requests restoring it. Failed writes preserve editable input; successful writes and context changes clear values and form baselines.
+- Control-plane workspace only — single owner, never public. Secret writes and token minting bypass the mutation cache. Plaintext stays inside the active dialog; abort/generation guards prevent dismissed requests restoring it. Failed writes preserve editable input; successful writes and context changes clear values and form baselines.
 - The console's first load: `index.html` paints a static splash (`public/boot-splash.css`) that mounting replaces with `BootSplash`, the SDK `SplashScreen` overlay on the ambient surface; its bar reports scripts, session and first route (35, 70, 100). Keep the two in step.
 - Each panel loads inside an fe sdk `DataRegion`: a first load renders the real layout over `useSkeletonItems` placeholders and every SDK component inside draws its own skeleton; explicit refresh uses the local `useRefresh` timing helper. A failed refresh keeps the last good content, and query failures reach the toast host.
 - A page's primary action goes in the shared header through the SDK `PageHeaderActions`; the page owns the dialog.

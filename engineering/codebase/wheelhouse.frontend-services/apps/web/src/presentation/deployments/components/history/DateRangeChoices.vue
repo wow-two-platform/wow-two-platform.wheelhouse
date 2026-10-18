@@ -18,7 +18,7 @@ import { Field, TextInput } from "@wow-two-beta/fe/presentation/forms";
 import { DeploymentFilters, RangePresets, type RangePreset } from "@/domain/deployments";
 
 /**
- * One click for 24 hours to 12 months ending now, or a custom from and to with time in the operator's local time; a
+ * One click for 24 hours to 12 months ending now, or a custom from and to with time in the owner's local time; a
  * custom range applies once both bounds are set and from comes first. Shared by the popover and the phone sheet.
  */
 defineOptions({ name: "DateRangeChoices" });

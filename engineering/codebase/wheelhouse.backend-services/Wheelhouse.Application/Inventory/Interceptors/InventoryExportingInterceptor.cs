@@ -6,7 +6,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator;
 namespace Wheelhouse.Application.Inventory.Interceptors;
 
 /// <summary>Exports the runner's inventory snapshot after every <see cref="IInventoryCommand"/> that succeeds, so the
-/// runner and the operator CLI act on what the database now holds.</summary>
+/// runner and the runner CLI act on what the database now holds.</summary>
 public sealed class InventoryExportingInterceptor<TRequest, TResponse>(IServiceProvider services)
     : IRequestInterceptor<TRequest, TResponse> where TRequest : notnull
 {

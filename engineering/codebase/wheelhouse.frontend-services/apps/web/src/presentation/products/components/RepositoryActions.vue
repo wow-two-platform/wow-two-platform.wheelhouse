@@ -1,5 +1,5 @@
 <script lang="ts">
-/** A product's source repository and the three things an operator does with it. */
+/** A product's source repository and the three things the owner does with it. */
 export interface RepositoryActionsProps {
   /** The GitHub repository, `owner/name`. */
   readonly repository: string;
@@ -7,7 +7,7 @@ export interface RepositoryActionsProps {
   readonly runnerProduct: string | null;
 }
 
-/** @internal The clone command shapes an operator can copy. */
+/** @internal The clone command shapes the owner can copy. */
 const CloneFormats = {
   https: "HTTPS",
   ssh: "SSH",
@@ -39,7 +39,7 @@ import {
 
 /**
  * Opens the repository (or the chosen branch or commit) on GitHub, copies a clone command for it, and lets the
- * operator pick the branch or commit both actions point at.
+ * owner pick the branch or commit both actions point at.
  */
 defineOptions({ name: "RepositoryActions" });
 const props = defineProps<RepositoryActionsProps>();

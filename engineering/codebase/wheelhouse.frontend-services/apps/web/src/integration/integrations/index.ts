@@ -17,7 +17,7 @@ const IntegrationKeySchema = z.object({
   revokedAt: z.string().nullable(),
 });
 
-/** Integration keys: created and revoked by the operator, each secret returned once. */
+/** Integration keys: created and revoked by the owner, each secret returned once. */
 export const integrationKeysApi = {
   listKeys: (signal?: AbortSignal) =>
     requestData<IntegrationKey[]>("/api/integration-keys", IntegrationKeySchema.array(), { signal }),

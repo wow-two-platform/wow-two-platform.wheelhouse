@@ -19,7 +19,7 @@ flowchart LR
   Dock --> Snapshot[Inventory snapshot file]
   Snapshot --> SSH
   Dock --> SSH[Pinned OpenSSH adapter]
-  Operator[Operator CLI] --> SSH
+  CLI[Runner CLI] --> SSH
   SSH --> Runner[Target-owned Python runner]
   Runner --> Compose[Docker Compose services]
   Images --> Compose
@@ -57,13 +57,13 @@ environment-specific domains or database values; a target supplies its settings,
 image bytes. The shared publish workflow builds bundles from each product's `deploy.yml`
 ([descriptor convention](../../../../../conventions/deployment/descriptor/deploy-descriptor.md)).
 
-Bundles are privileged operator inputs: hashes bind files together, not publishers to identities.
+Bundles are privileged owner inputs: hashes bind files together, not publishers to identities.
 The API accepts target and release IDs only. It cannot upload arbitrary Compose, run shell commands or disclose SSH keys.
 
 ## Execution model
 
 1. Validate the manifest, digests, Compose hash and environment identity; refuse a commit build on prod.
-2. Take the target lock that dashboard and operator share; refuse an unresolved interrupted rollout.
+2. Take the target lock that the console and the runner CLI share; refuse an unresolved interrupted rollout.
 3. Check Docker, Compose, required settings, free disk and release platform.
 4. Pull every image before replacing any running container.
 5. Save durable intent and the previous successful bundle on the target.
@@ -98,11 +98,11 @@ and is stripped from cross-origin redirects. Release rules for every product:
 PostgreSQL is the source of truth for products, servers, targets (one product environment on one server) and vaults.
 The console edits them; every change is an audited command. The API exports the four tables to
 `<runner root>/inventory.json` at startup and after each change — atomically, owner-only, one write at a time — and
-the runner reads only that snapshot, refusing a malformed one whole. The operator CLI keeps working from the last
+the runner reads only that snapshot, refusing a malformed one whole. The runner CLI keeps working from the last
 snapshot while the API is down.
 
 Credentials never enter the database. A server's SSH identity and pinned host key (`ssh/<server>/identity`,
-`known_hosts`) and a vault's administrator password (`vaults/<vault>/password`) are files the operator places on
+`known_hosts`) and a vault's administrator password (`vaults/<vault>/password`) are files the owner places on
 the control host: a new row reaches nothing until its files exist, and a changed host address fails its pinned key.
 Provider and environment values stay enums; a new provider needs an enum member and its integration. A product or
 server that a target or vault still uses cannot be deleted. Product images never change with the host.
@@ -134,7 +134,7 @@ is required and restricts deletes, so a workspace holding a product cannot be re
 existing product into it. A product created without a workspace joins `own-ventures`, which comes back last in the
 order if it was removed.
 
-- `GET /api/workspaces` lists `{ id, slug, name, description, order }` in the operator's order; the operator's
+- `GET /api/workspaces` lists `{ id, slug, name, description, order }` in the owner's order; the owner's
   session or a `catalog:read` key reads it, since every product names its `workspaceId`.
 - `POST /api/workspaces` `{ slug, name, description? }` adds one last; `PUT /api/workspaces/{id}` `{ name,
   description? }` renames it (the slug stays); `DELETE /api/workspaces/{id}` removes an empty one;
@@ -146,7 +146,7 @@ order if it was removed.
 ### Status
 
 A product and each of its services are `active` or `inactive`. Inactive is a display filter only: the console hides
-inactive products and services until the operator asks to see them, while deploys, reads and integrations keep
+inactive products and services until the owner asks to see them, while deploys, reads and integrations keep
 working. `products.status` replaced the five-value lifecycle in `011-product-status` (paused and killed became
 inactive, idea, building and live active). A service's status is a `service_statuses` row keyed by (`product_id`,
 service key in `deploy.yml`); a service without a row is active, one status covers every environment, and the rows go
@@ -160,25 +160,25 @@ with the product. The key is taken as given, since the repository declares a pro
 
 ### Pins
 
-An operator pins workspaces, products and services to keep them one click away, in a custom order (`pins`: id, owner
+The owner pins workspaces, products and services to keep them one click away, in a custom order (`pins`: id, owner
 = the signed-in GitHub login, kind `workspace` | `product` | `service`, `workspace_id`, `product_id`, `service`,
 `sort_order`, `created_at_utc`). A pin names exactly the target its kind takes (a check constraint); a service pin is
 (`product_id`, service key) with no environment, so one pin covers every environment. An owner pins a target once
 (unique index with `NULLS NOT DISTINCT`, PostgreSQL 15+), and a pin goes with its workspace or product (cascade).
 Pins are a preference: they never reach the audit trail and are not inventory.
 
-- `GET /api/pins` lists the operator's own `{ id, kind, workspaceId, productId, service, order }` in order.
+- `GET /api/pins` lists the owner's own `{ id, kind, workspaceId, productId, service, order }` in order.
 - `POST /api/pins` `{ kind, workspaceId?, productId?, service? }` adds a pin last (201) or answers the existing pin
   on that target (200); `productId` takes the product's id (its slug also works). An unknown target is 400.
-- `DELETE /api/pins/{id}` removes one (another operator's reads as 404); `PUT /api/pins/order` `{ ids }` reorders,
-  and the list must name every one of the operator's pins exactly once (409 otherwise).
-- Operators' sessions only (`OperatorSession` policy): an integration key is authenticated, then refused with 403;
+- `DELETE /api/pins/{id}` removes one (another owner's reads as 404); `PUT /api/pins/order` `{ ids }` reorders,
+  and the list must name every one of the owner's pins exactly once (409 otherwise).
+- Signed-in sessions only (`OwnerSession` policy): an integration key is authenticated, then refused with 403;
   writes carry the action header `pin`.
 
 ### wow2 catalog
 
 Wheelhouse reads one YAML catalog of every wow2 app from GitHub: `Catalog:Repository` (default `wow-two/wow-two-ws`),
-`Catalog:Path` (`catalog.yml`) and `Catalog:Ref` (`main`), validated options, read with the signed-in operator's token
+`Catalog:Path` (`catalog.yml`) and `Catalog:Ref` (`main`), validated options, read with the signed-in owner's token
 through `GitHubRepositoryReader` (`IRepositoryFileSource`). Each read checks the ref's head again, so a pushed catalog
 shows at once; a commit's file stays cached. The format (`catalog: 1`, `workspaces`, `entries`) is owned by
 wow-two-ws ([catalog convention](../../../../../conventions/development/repo/catalog/catalog.md)); Wheelhouse reads
@@ -189,7 +189,7 @@ problem.
 - `GET /api/catalog` returns `{ source: { repository, path, ref, commit }, workspaces: [{ slug, name, description }],
   entries: [{ slug, name, workspace, kind, deploy, purpose, repositories, productId }] }`; `productId` is the product
   with the entry's slug, else `null`. 503 when GitHub cannot serve the repository, 404 when the file is missing, 422
-  (`catalog.yml line N: field …`) when it is malformed. Operator's session only.
+  (`catalog.yml line N: field …`) when it is malformed. Signed-in session only.
 - `POST /api/catalog/import` `{ slugs }` (action header `catalog`, audited as `catalog.import`) walks the chosen
   entries in catalog order: an existing product with the slug moves into the entry's workspace; an entry with
   `deploy: wheelhouse` and a repository becomes a product; anything else is skipped with a warning (an entry with
@@ -220,7 +220,7 @@ the manifest; the repository is where identity is edited.
 - A newer commit with no manifest drops the row; the product reads as its own row again. A row also goes when the
   product's repository or branch changes, and with the product.
 - An invalid, oversized or unparsable manifest is ignored whole: the previous row stays and `identity.problem` carries
-  one operator-safe reason, never file content beyond a shortened key name. An unreadable repository changes nothing.
+  one display-safe reason, never file content beyond a shortened key name. An unreadable repository changes nothing.
 - `/api/products` and the `list_projects` tool return the effective name, description and homepage plus
   `identity { source, commit, problem, services }`; `source` is `manifest` or `record`.
 - While a manifest governs, a save leaves the row's own name and description as they are, and the console shows name,
@@ -248,7 +248,11 @@ Another program — an app, a script, Claude or Codex — reads Wheelhouse with 
 scheme with the `wh_` marker. Only the secret's SHA-256 and a display prefix are stored; the secret is shown once;
 a key can be revoked and shows its last use. A key grants scopes, `catalog:read` or `deployments:read`, and reaches only endpoints
 whose policy names the key scheme; every other endpoint stays cookie-only through the default-deny fallback, and
-key management is the operator's alone. A key's actions audit as `key:{name}`.
+key management is the owner's alone. A key's actions audit as `key:{name}`.
+
+Whoever performs an action is its **actor**: a signed-in user's login, or `key:{name}` for an integration key (later,
+automation). `IActorContext` names it once per request for commands, the runner and the audit trail alike. The trail
+stores and hashes it as `actor`, as it always has; the API's DTOs, the MCP tools' output and the console all say actor.
 
 The private `/mcp` endpoint uses the SDK's stateless Streamable HTTP host (`Ai/Mcp`). Every request authenticates
 with a Bearer integration key; browser cookies are excluded. Before authentication, a request whose `Origin` is
@@ -263,7 +267,7 @@ included, and never a secret value; the fleet tools' projections omit credential
 logs or reveals secrets.
 
 A failed tool call is an MCP tool error (`isError`) whose text is `{ code, message, retryable }`: `code` is the SDK
-error kind REST puts in a problem's `code`, `message` the operator-safe text REST returns as `detail`, and `retryable`
+error kind REST puts in a problem's `code`, `message` the display-safe text REST returns as `detail`, and `retryable`
 is true only for transient kinds, a runner timeout (`OperationTimeout`) or an unreachable runner or SSH host
 (`ExternalUnavailable`). Any other exception is logged and answers its kind's generic message, so exception text never
 reaches an agent. A refused scope stays a JSON-RPC error.
@@ -283,7 +287,7 @@ from sharing a temporary pathname. Explicit reconciliation receipts take precede
 A terminal status without `completedAt` is still being finalized: the worker may be rolling back or cleaning up.
 The follower stops observing only completed outcomes. Explicit status reads can refresh a completed failure after
 direct target-side acknowledgement. Transport failures and unknown receipts do not become rollout failures or
-automatic retries. Missing receipts still require operator recovery. This projection does not introduce deployment
+automatic retries. Missing receipts still require manual recovery. This projection does not introduce deployment
 database ownership or mutation MCP tools.
 
 ### Deployment history

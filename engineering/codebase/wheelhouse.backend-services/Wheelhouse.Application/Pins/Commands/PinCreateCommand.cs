@@ -5,7 +5,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Pins.Commands;
 
-/// <summary>Represents a command to pin a workspace, product or service for the signed-in operator; pinning a target
+/// <summary>Represents a command to pin a workspace, product or service for the signed-in owner; pinning a target
 /// again answers the existing pin. A preference, so it is not audited.</summary>
 public sealed record PinCreateCommand : ICommand<AppResult<PinCreated>>
 {

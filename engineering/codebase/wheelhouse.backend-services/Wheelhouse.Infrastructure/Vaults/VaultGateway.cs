@@ -13,7 +13,7 @@ namespace Wheelhouse.Infrastructure.Vaults;
 
 /// <summary>Administers the inventory's vaults over their management API with Wheelhouse's administrator credential.</summary>
 /// <remarks>
-/// Endpoints come only from the inventory the operator edits, so a request can never choose where Wheelhouse connects.
+/// Endpoints come only from the inventory the owner edits, so a request can never choose where Wheelhouse connects.
 /// Secret values travel one way — to the vault — and responses carry metadata, except a freshly minted token.
 /// </remarks>
 public sealed class VaultGateway(

@@ -12,7 +12,7 @@ import { RefreshButton } from "@/presentation/common/components";
 import AuditEntriesPanel from "../components/AuditEntriesPanel.vue";
 
 /**
- * Every operator action from the hash-chained audit trail, newest first, with the chain's verification — the
+ * Every action from the hash-chained audit trail, newest first, with the chain's verification — the
  * portfolio-wide view the profile menu opens. Each product's own entries are its page's Activity tab.
  */
 defineOptions({ name: "ActivityPage" });
@@ -21,7 +21,7 @@ const verification = useAuditVerification();
 const invalidate = useInvalidate();
 const refresh = useRefresh(() => invalidate(AuditKeys.all));
 
-/** Every operator action changes the trail, so a visit always reads it fresh. */
+/** Every action changes the trail, so a visit always reads it fresh. */
 onMounted(() => void verification.refetch());
 </script>
 

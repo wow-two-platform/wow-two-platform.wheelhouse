@@ -3,7 +3,7 @@ using Wheelhouse.Domain.Products.Enums;
 
 namespace Wheelhouse.Application.Abstractions;
 
-/// <summary>Defines the store of the statuses the operator gave products' services; a service without one is active.</summary>
+/// <summary>Defines the store of the statuses the owner gave products' services; a service without one is active.</summary>
 public interface IServiceStatusesRepository
 {
     /// <summary>Gets every recorded service status, by product then service.</summary>

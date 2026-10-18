@@ -43,7 +43,7 @@ public sealed record DeploymentItemDto
     /// <c>unknown</c>.</summary>
     public required string Outcome { get; init; }
 
-    /// <summary>Gets the operator-safe reason a rollout failed or was refused.</summary>
+    /// <summary>Gets the display-safe reason a rollout failed or was refused.</summary>
     public string? Reason { get; init; }
 
     /// <summary>Gets what needs a look although the rollout succeeded.</summary>

@@ -10,8 +10,8 @@ using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 
-/// <summary>Exposes the wow2 catalog — one YAML file in a GitHub repository, read with the operator's token — and imports
-/// its entries as workspaces and products. The operator's session only.</summary>
+/// <summary>Exposes the wow2 catalog — one YAML file in a GitHub repository, read with the owner's token — and imports
+/// its entries as workspaces and products. The owner's session only.</summary>
 [ApiController]
 [Route("api/catalog")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]

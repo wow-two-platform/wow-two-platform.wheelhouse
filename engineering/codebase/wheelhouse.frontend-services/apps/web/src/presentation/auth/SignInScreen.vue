@@ -12,7 +12,7 @@ import { Card } from "@wow-two-beta/fe/presentation/display";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 import { BrandWordmark } from "@/presentation/shell";
 
-/** Renders the private operator sign-in gate. */
+/** Renders the private owner sign-in gate. */
 defineOptions({ name: "SignInScreen" });
 const props = defineProps<SignInScreenProps>();
 const emit = defineEmits<{ "sign-in": [] }>();

@@ -1,6 +1,6 @@
 namespace Wheelhouse.Application.Vaults.Models;
 
-/// <summary>Represents a secrets vault's definition, as the operator edits it; never its credential.</summary>
+/// <summary>Represents a secrets vault's definition, as the owner edits it; never its credential.</summary>
 public sealed record VaultDto
 {
     /// <summary>Gets the name routes and the credential folder know the vault by.</summary>

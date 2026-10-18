@@ -47,7 +47,7 @@ export function useStartDeployment() {
   });
 }
 
-/** Records the operator's reconciliation of a locked target. */
+/** Records the owner's reconciliation of a locked target. */
 export function useReconcileTarget() {
   return useAppMutation({
     mutationFn: (

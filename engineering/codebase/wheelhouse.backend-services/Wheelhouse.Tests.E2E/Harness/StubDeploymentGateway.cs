@@ -84,6 +84,7 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
     {
         LastTarget = target;
         LastRelease = release;
+        LastActor = actor;
         LastConfirm = confirm;
         LastSkipDevPass = skipDevPass;
         if (Runner is not null)

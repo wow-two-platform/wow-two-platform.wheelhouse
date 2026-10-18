@@ -6,7 +6,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Vaults;
 
-/// <summary>Applies one administrative change to a vault on behalf of an operator.</summary>
+/// <summary>Applies one administrative change to a vault on behalf of the owner.</summary>
 public sealed record VaultChangeCommand(string Vault, VaultChange Change, string Actor)
     : ICommand<AppResult<JsonElement>>, IAuditedCommand
 {

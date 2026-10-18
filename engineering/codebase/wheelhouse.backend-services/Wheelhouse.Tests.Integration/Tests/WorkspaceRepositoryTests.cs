@@ -7,7 +7,7 @@ using Wheelhouse.Tests.Integration.Support;
 namespace Wheelhouse.Tests.Integration.Tests;
 
 /// <summary>
-/// The workspaces store over a real relational database: the operator's order, the next place, a reorder in one save,
+/// The workspaces store over a real relational database: the owner's order, the next place, a reorder in one save,
 /// the product lookups by identifier or slug and per workspace, and the constraints that keep every product in exactly
 /// one existing workspace.
 /// </summary>

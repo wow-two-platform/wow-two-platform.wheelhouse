@@ -11,7 +11,7 @@ export const TargetKeys = {
   list: (product: string | null) => ["targets", product ?? "*"] as const,
 };
 
-/** One product's targets, or every target, with the operator's confirmed edits. */
+/** One product's targets, or every target, with the owner's confirmed edits. */
 export function useTargets(product: MaybeRefOrGetter<string | null>) {
   const list = useAppQuery({
     key: () => TargetKeys.list(toValue(product)),

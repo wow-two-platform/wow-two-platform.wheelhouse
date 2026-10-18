@@ -18,7 +18,7 @@ export {
   useTargetCheck,
 } from "./hooks/useDeploymentActions";
 export {
-  operatorTimeZone,
+  ownerTimeZone,
   useDeploymentActivity,
   useDeploymentDetail,
   useDeploymentIssues,

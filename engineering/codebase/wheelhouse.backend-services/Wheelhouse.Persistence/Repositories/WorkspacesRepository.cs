@@ -5,7 +5,7 @@ using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore.Repositories;
 
 namespace Wheelhouse.Persistence.Repositories;
 
-/// <summary>Accesses the workspaces products are grouped into, in the operator's order.</summary>
+/// <summary>Accesses the workspaces products are grouped into, in the owner's order.</summary>
 internal sealed class WorkspacesRepository(WheelhouseDbContext db) : EfRepository<WorkspaceEntity, Guid>(db), IWorkspacesRepository
 {
     /// <inheritdoc />

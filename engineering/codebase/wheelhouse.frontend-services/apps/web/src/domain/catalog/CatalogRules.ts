@@ -30,7 +30,7 @@ export const CatalogRules = {
     entries.filter(CatalogRules.isImportable).map((entry) => entry.slug),
 
   /**
-   * The selection the operator can import: only importable slugs, each once, in catalog order. A slug the catalog no
+   * The selection the owner can import: only importable slugs, each once, in catalog order. A slug the catalog no
    * longer lists, or one imported since, drops out.
    */
   selection: (entries: readonly CatalogEntry[], selected: readonly unknown[]): string[] => {

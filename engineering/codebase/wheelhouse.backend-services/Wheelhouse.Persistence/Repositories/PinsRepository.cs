@@ -6,7 +6,7 @@ using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore.Repositories;
 
 namespace Wheelhouse.Persistence.Repositories;
 
-/// <summary>Accesses the operators' pins, one owner at a time.</summary>
+/// <summary>Accesses the owners' pins, one owner at a time.</summary>
 internal sealed class PinsRepository(WheelhouseDbContext db) : EfRepository<PinEntity, Guid>(db), IPinsRepository
 {
     /// <inheritdoc />

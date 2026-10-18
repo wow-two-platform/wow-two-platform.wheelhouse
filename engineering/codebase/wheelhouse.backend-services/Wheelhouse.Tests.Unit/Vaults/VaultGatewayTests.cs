@@ -20,7 +20,7 @@ namespace Wheelhouse.Tests.Unit.Vaults;
 
 /// <summary>
 /// Tests for <see cref="VaultGateway"/> over a scripted vault: one administrator session is reused, a rejected
-/// session gets exactly one fresh sign-in, and vault failures map to operator-safe errors.
+/// session gets exactly one fresh sign-in, and vault failures map to display-safe errors.
 /// </summary>
 public sealed class VaultGatewayTests : IDisposable
 {

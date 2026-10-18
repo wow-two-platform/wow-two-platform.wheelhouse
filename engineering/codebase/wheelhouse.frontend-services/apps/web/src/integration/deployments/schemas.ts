@@ -2,7 +2,7 @@ import { z } from "zod";
 import { JobStatus, StepStatus, TargetCondition } from "@/domain/deployments";
 
 const jobStatus = z.enum(JobStatus);
-// Site links open in the operator's browser, so only http(s) URLs survive decoding.
+// Site links open in the owner's browser, so only http(s) URLs survive decoding.
 const siteUrl = z
   .string()
   .url()

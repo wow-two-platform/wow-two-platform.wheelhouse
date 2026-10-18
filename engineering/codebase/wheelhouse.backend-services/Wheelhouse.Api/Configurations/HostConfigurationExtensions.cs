@@ -32,7 +32,7 @@ public static class HostConfigurationExtensions
     /// <summary>Holds the name that isolates Wheelhouse's Data Protection keys; sign-in cookies depend on it.</summary>
     private const string DataProtectionApplicationName = "Wheelhouse";
 
-    /// <summary>Holds the header every operator write carries its action name in; the console sends it.</summary>
+    /// <summary>Holds the header every owner write carries its action name in; the console sends it.</summary>
     public const string ActionHeaderName = "X-Wheelhouse-Action";
 
     /// <summary>Loads optional local settings overrides (gitignored) and keeps the cookie key ring on disk.</summary>
@@ -186,14 +186,14 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Application.Targets.Services.TargetsProjectionService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.History.Services.DeploymentHistoryService>();
         builder.Services.AddHttpContextAccessor();
-        builder.Services.AddScoped<IOperatorContext, Wheelhouse.Api.Auth.HttpOperatorContext>();
+        builder.Services.AddScoped<IActorContext, Wheelhouse.Api.Auth.HttpActorContext>();
         builder.Services.AddFluentValidatorsFromAssemblies(typeof(IApplicationMarker).Assembly);
 
         return builder;
     }
 
     /// <summary>Registers API services — controllers + enum-as-string JSON via the SDK helper (OpenAPI is wired by <c>AddApiDefaults</c>),
-    /// and the header every operator write names itself in, which the SDK action-header guard reads.</summary>
+    /// and the header every owner write names itself in, which the SDK action-header guard reads.</summary>
     public static WebApplicationBuilder AddApiServices(this WebApplicationBuilder builder)
     {
         builder.Services
@@ -204,7 +204,7 @@ public static class HostConfigurationExtensions
         return builder;
     }
 
-    /// <summary>Binds the operator-owned runner paths from <c>Deployment</c> when first resolved, checks the rig switch at
+    /// <summary>Binds the owner-configured runner paths from <c>Deployment</c> when first resolved, checks the rig switch at
     /// boot, and resolves relative paths against the content root, so a local run points at the repository checkout.</summary>
     private static WebApplicationBuilder AddDeploymentSettings(this WebApplicationBuilder builder)
     {

@@ -11,7 +11,7 @@ import { EntityKeys, type DeploymentFilterState } from "@/domain/deployments";
 
 /**
  * A deployments view held in the address: entities, status, range, Grid or List and the expanded day, so a link
- * reproduces what the operator sees. With `lockedProduct`, the entities are that product alone and the address keeps
+ * reproduces what the owner sees. With `lockedProduct`, the entities are that product alone and the address keeps
  * none of its own.
  */
 export function useDeploymentViewRoute(lockedProduct: MaybeRefOrGetter<string | null> = null) {

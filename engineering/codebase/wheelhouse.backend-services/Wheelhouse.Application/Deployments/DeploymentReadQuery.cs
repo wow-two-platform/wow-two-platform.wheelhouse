@@ -4,5 +4,5 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Deployments;
 
-/// <summary>Reads a deployment resource from the operator runner.</summary>
+/// <summary>Reads a deployment resource from the runner.</summary>
 public sealed record DeploymentReadQuery(string Resource, string? Id = null) : IQuery<AppResult<JsonElement>>;

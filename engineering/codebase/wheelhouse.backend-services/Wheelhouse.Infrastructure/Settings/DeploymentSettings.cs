@@ -1,6 +1,6 @@
 namespace Wheelhouse.Infrastructure.Settings;
 
-/// <summary>Holds operator-owned runner paths; HTTP clients cannot choose them.</summary>
+/// <summary>Holds owner-configured runner paths; HTTP clients cannot choose them.</summary>
 /// <remarks>Relative paths resolve against the API's content root, so a local run can point at the repository.</remarks>
 public sealed record DeploymentSettings
 {

@@ -6,7 +6,7 @@ using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 
-/// <summary>Reads the append-only record of operator actions; nothing here changes it.</summary>
+/// <summary>Reads the append-only record of actions; nothing here changes it.</summary>
 [ApiController]
 [Route("api/audit")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]

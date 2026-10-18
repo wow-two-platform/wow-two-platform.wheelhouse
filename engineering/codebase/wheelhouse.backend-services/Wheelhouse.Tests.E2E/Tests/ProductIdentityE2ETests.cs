@@ -234,7 +234,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
     }
 
     [Fact]
-    public async Task RefreshIdentity_ShouldAskForAFreshHeadAndReturnTheProduct_WhenTheOperatorRefreshes()
+    public async Task RefreshIdentity_ShouldAskForAFreshHeadAndReturnTheProduct_WhenTheOwnerRefreshes()
     {
         Fixture.ProductManifests.Push(ForeverPin, Manifest("Forever Pin"));
         await GetAsync("foreverpin");
@@ -278,7 +278,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
     }
 
     [Fact]
-    public async Task RefreshIdentity_ShouldBeAudited_WhenTheOperatorRefreshes()
+    public async Task RefreshIdentity_ShouldBeAudited_WhenTheOwnerRefreshes()
     {
         Fixture.ProductManifests.Push(ForeverPin, Manifest("Forever Pin"));
 

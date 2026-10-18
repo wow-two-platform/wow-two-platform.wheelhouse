@@ -7,6 +7,6 @@ public enum ProductStatus
     /// <summary>In use, and shown.</summary>
     Active,
 
-    /// <summary>Not in use for now, and hidden until the operator asks to see inactive ones.</summary>
+    /// <summary>Not in use for now, and hidden until the owner asks to see inactive ones.</summary>
     Inactive,
 }

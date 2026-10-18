@@ -1,4 +1,4 @@
-/** A group of products, such as Platform or Ventures, in the operator's order. */
+/** A group of products, such as Platform or Ventures, in the owner's order. */
 export interface Workspace {
   id: string;
   /** The workspace's address: `/w/{slug}`. Fixed once the workspace exists. */

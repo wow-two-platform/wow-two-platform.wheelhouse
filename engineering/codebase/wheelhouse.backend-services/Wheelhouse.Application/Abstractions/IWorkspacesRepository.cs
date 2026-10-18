@@ -4,7 +4,7 @@ using WoW.Two.Sdk.Beta.Be.Data.Abstractions;
 namespace Wheelhouse.Application.Abstractions;
 
 /// <summary>Defines the store of the workspaces products are grouped into. <see cref="IRepository{TEntity,TId}.GetAllAsync"/>
-/// lists them in the operator's order.</summary>
+/// lists them in the owner's order.</summary>
 public interface IWorkspacesRepository : IRepository<WorkspaceEntity, Guid>
 {
     /// <summary>Finds the workspace a slug names, tracked for changes.</summary>

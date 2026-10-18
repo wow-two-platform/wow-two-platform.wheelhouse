@@ -3,14 +3,14 @@ using Wheelhouse.Domain.Targets.Entities;
 
 namespace Wheelhouse.Application.Targets.Mappers;
 
-/// <summary>Maps a stored target to the target the operator edits.</summary>
+/// <summary>Maps a stored target to the target the owner edits.</summary>
 internal static class TargetMapper
 {
     /// <summary>Maps a stored target to its projection, naming its product and server by slug.</summary>
     /// <param name="target">The stored target.</param>
     /// <param name="product">The slug of the target's product.</param>
     /// <param name="server">The slug of the target's server.</param>
-    /// <returns>The target the operator edits.</returns>
+    /// <returns>The target the owner edits.</returns>
     public static TargetDto Map(TargetEntity target, string product, string server) => new()
     {
         Slug = target.Slug,

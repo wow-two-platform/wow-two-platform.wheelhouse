@@ -4,7 +4,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Pins.Commands;
 
-/// <summary>Represents a command to remove one of the signed-in operator's pins.</summary>
+/// <summary>Represents a command to remove one of the signed-in owner's pins.</summary>
 public sealed record PinDeleteCommand : ICommand<AppResult<Unit>>
 {
     /// <summary>Gets the pin's identifier.</summary>

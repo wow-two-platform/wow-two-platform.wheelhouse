@@ -1,6 +1,6 @@
 namespace Wheelhouse.Application.Deployments.History.Models;
 
-/// <summary>Represents one step of a rollout; its detail is operator-safe text.</summary>
+/// <summary>Represents one step of a rollout; its detail is display-safe text.</summary>
 /// <param name="Name">The step's name.</param>
 /// <param name="Status"><c>running</c>, <c>succeeded</c>, <c>failed</c>, <c>warning</c> or <c>skipped</c>.</param>
 /// <param name="StartedAt">When the step started.</param>

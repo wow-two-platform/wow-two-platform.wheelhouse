@@ -88,7 +88,7 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
                 ["Deployment:FollowSeconds"] = "0",
                 // Every history read asks the stub, so a test sees the records it just wrote.
                 ["Deployment:HistorySeconds"] = "0",
-                // A browser client the operator allowed, beside the console's own origin.
+                // A browser client the owner allowed, beside the console's own origin.
                 ["Mcp:AllowedOrigins:0"] = McpAllowedOrigin,
             }),
             ConfigureServicesHook = services =>

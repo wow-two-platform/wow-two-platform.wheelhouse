@@ -112,7 +112,7 @@ export const EntitySelection = {
       : 'unchecked';
   },
 
-  /** The selection after the operator clicks a node's checkbox. */
+  /** The selection after the owner clicks a node's checkbox. */
   toggle(tree: EntityTree, selection: readonly string[], node: EntityNode): string[] {
     const own = EntityKeys.of(node);
     const workspaceKey = EntityKeys.workspace(node.workspace);

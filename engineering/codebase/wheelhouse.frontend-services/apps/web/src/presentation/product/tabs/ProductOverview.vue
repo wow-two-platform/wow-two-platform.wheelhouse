@@ -250,7 +250,7 @@ function setServiceView(value: unknown): void {
   if (value === "map" || value === "list") serviceView.value = value;
 }
 
-/** Clears declaration selection when the operator changes environments. */
+/** Clears declaration selection when the owner changes environments. */
 watch(
   () => target.value?.id,
   () => {
@@ -709,7 +709,7 @@ function openDeploy(job?: DeploymentJob): void {
                     }}</Text
                     ><Text as="span" class="text-xs text-muted-foreground" skeleton-width="10rem"
                       ><template v-if="job"
-                        >{{ job.actor ?? "Operator" }} ·
+                        >{{ job.actor ?? "Unknown actor" }} ·
                         <RelativeTime v-if="job.submittedAt" :value="job.submittedAt" /><template v-else
                           >—</template
                         ></template
@@ -834,7 +834,7 @@ function openDeploy(job?: DeploymentJob): void {
                   density="lg"
                   class="[&_dt]:text-xs"
                   :items="[
-                    { label: 'Operator', value: inspectedJob.actor ?? 'Unknown' },
+                    { label: 'Actor', value: inspectedJob.actor ?? 'Unknown' },
                     {
                       label: 'Submitted',
                       value: Measures.moment(inspectedJob.submittedAt),

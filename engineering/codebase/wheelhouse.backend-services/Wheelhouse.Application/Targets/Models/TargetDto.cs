@@ -2,7 +2,7 @@ using Wheelhouse.Domain.Targets.Enums;
 
 namespace Wheelhouse.Application.Targets.Models;
 
-/// <summary>Represents one environment of a product on one server, as the operator edits it.</summary>
+/// <summary>Represents one environment of a product on one server, as the owner edits it.</summary>
 public sealed record TargetDto
 {
     /// <summary>Gets the name deployments and the runner know the target by.</summary>

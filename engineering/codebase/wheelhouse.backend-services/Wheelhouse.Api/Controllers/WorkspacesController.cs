@@ -18,7 +18,7 @@ namespace Wheelhouse.Api.Controllers;
 [Route("api/workspaces")]
 public sealed class WorkspacesController(ISender sender) : ControllerBase
 {
-    /// <summary>Gets every workspace, in the operator's order. A key granting <c>catalog:read</c> may read them, since
+    /// <summary>Gets every workspace, in the owner's order. A key granting <c>catalog:read</c> may read them, since
     /// every product names its workspace.</summary>
     [HttpGet]
     [Authorize(Policy = AuthConfigurationExtensions.ProductsReadPolicy)]

@@ -53,7 +53,7 @@ const sheetOpen = ref(false);
 const sheetWanted = ref(false);
 /** Below `md`: the profile opens as a bottom sheet. */
 const isPhone = computed(() => !['md', 'lg', 'xl', '2xl'].includes(breakpoint.value ?? ''));
-/** The appearance the operator chose: `system` while the mode follows the operating system. */
+/** The appearance the owner chose: `system` while the mode follows the operating system. */
 const appearance = computed(() => (colorMode.followsSystem ? 'system' : colorMode.mode));
 const consoleVersion = __APP_VERSION__;
 const displayName = computed(() => props.user.name || props.user.login);

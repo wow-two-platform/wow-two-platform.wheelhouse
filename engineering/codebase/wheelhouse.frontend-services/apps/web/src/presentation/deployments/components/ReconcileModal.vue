@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { RolloutRecord } from "@/domain/deployments";
 
-/** Defines the exact locked target and remote rollout the operator will acknowledge. */
+/** Defines the exact locked target and remote rollout the owner will acknowledge. */
 export interface ReconcileModalProps {
   /** The literal runner target identifier. */
   readonly target: string;

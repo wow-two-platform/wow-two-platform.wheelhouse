@@ -9,7 +9,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Servers.CommandHandlers;
 
 /// <summary>Handles <see cref="ServerUpdateCommand"/>; a host that changes keeps failing its pinned host key until
-/// the operator replaces the pin.</summary>
+/// the owner replaces the pin.</summary>
 public sealed class ServerUpdateCommandHandler(IServersRepository servers)
     : ICommandHandler<ServerUpdateCommand, AppResult<ServerDto>>
 {

@@ -15,7 +15,7 @@ import { PageHeader } from '@wow-two-beta/fe/presentation/layout';
 import { ProductIcon } from '@/presentation/products';
 
 /**
- * Names where the operator stands — Home › Workspace › Product › Service — and holds the actions a page contributes
+ * Names where the owner stands — Home › Workspace › Product › Service — and holds the actions a page contributes
  * through `PageHeaderActions`. The page's heading is the current crumb, kept for assistive technology; the trail
  * shows it on screen. On phones the trail drops Home and keeps its last two steps.
  */

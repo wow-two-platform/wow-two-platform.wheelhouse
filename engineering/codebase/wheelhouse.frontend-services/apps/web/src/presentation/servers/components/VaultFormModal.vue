@@ -37,7 +37,7 @@ import { failureReason } from "@/integration/common";
 import { DeleteConfirm } from "@/presentation/common/components";
 
 /** Edits where Wheelhouse reaches a vault. Its administrator password stays a file on the control host, so a new
- * vault opens nothing until the operator places it. */
+ * vault opens nothing until the owner places it. */
 defineOptions({ name: "VaultFormModal" });
 const props = defineProps<VaultFormModalProps>();
 const emit = defineEmits<{ "update:open": [open: boolean] }>();

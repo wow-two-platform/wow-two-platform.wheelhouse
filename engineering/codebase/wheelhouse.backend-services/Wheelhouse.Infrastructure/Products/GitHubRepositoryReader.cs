@@ -3,7 +3,7 @@ using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 
 namespace Wheelhouse.Infrastructure.Products;
 
-/// <summary>Reads a product's repository through the SDK GitHub client with the signed-in operator's token, cached per
+/// <summary>Reads a product's repository through the SDK GitHub client with the signed-in owner's token, cached per
 /// commit: the branch's newest commit, a commit's file list, and one file at a commit.</summary>
 /// <remarks>
 /// Every consumer of a product's repository goes through here — icons, the manifest — so they share one cache and one
@@ -23,7 +23,7 @@ public sealed class GitHubRepositoryReader(IGitHubClient github, ICacheRepositor
     private static readonly CacheEntryOptions CommitEntry = new() { Expiration = CommitFor, LocalCacheExpiration = CommitFor };
 
     /// <summary>Applies the client settings the reads run with: Wheelhouse's user agent, the pinned REST API version, a
-    /// ten-second timeout, and an anonymous call when no operator token is at hand, which sees public repositories only.</summary>
+    /// ten-second timeout, and an anonymous call when no owner's token is at hand, which sees public repositories only.</summary>
     /// <param name="options">The SDK GitHub client options to set.</param>
     public static void ConfigureClient(GitHubIntegrationOptions options)
     {

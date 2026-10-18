@@ -7,7 +7,7 @@ using Wheelhouse.Domain.Products.Models;
 
 namespace Wheelhouse.Application.Catalog.Services;
 
-/// <summary>Derives the release source of a product created from the catalog, so the operator types none: the asset
+/// <summary>Derives the release source of a product created from the catalog, so the owner types none: the asset
 /// <c>{slug}-release.tar.gz</c>, the workflow <c>publish-docker-image.yml</c>, and one image per service key in the
 /// primary repository's <c>engineering/deployment/deploy.yml</c> at the release branch's head — the service's own
 /// <c>image</c>, else <c>ghcr.io/{owner/repo, lowercase}/{service}</c>, the shared publish workflow's convention. When

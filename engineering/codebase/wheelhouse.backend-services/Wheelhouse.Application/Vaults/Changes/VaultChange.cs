@@ -6,6 +6,6 @@ public abstract record VaultChange
     /// <summary>Gets the namespace the change targets.</summary>
     public required string Namespace { get; init; }
 
-    /// <summary>Gets the operator-safe audit description; never includes values or tokens.</summary>
+    /// <summary>Gets the display-safe audit description; never includes values or tokens.</summary>
     public abstract string Describe();
 }

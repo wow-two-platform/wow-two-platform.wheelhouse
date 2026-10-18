@@ -15,7 +15,7 @@ const BootProgress = { Scripts: 35, Session: 70, Ready: 100 } as const;
 /** Holds the full bar long enough for its width transition to finish before the splash fades. */
 const SettleMs = 250;
 
-/** Gates every private workspace route on the operator's GitHub session, behind the first-load splash. */
+/** Gates every private workspace route on the owner's GitHub session, behind the first-load splash. */
 defineOptions({ name: 'App' });
 const auth = useAuth();
 const routed = ref(false);

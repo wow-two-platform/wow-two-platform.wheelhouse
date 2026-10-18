@@ -247,7 +247,7 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     }
 
     [Fact]
-    public async Task Endpoints_ShouldTakeTheOperatorsSessionOnly()
+    public async Task Endpoints_ShouldTakeTheOwnersSessionOnly()
     {
         PushCatalog();
         var created = await AdminClient.SendAsync(new HttpRequestMessage(HttpMethod.Post, "api/integration-keys")
@@ -342,7 +342,7 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     }
 
     [Fact]
-    public async Task Import_ShouldCreateAnEntrysWorkspaceAfterTheOperatorsOwn()
+    public async Task Import_ShouldCreateAnEntrysWorkspaceAfterTheOwnersOwn()
     {
         PushCatalog();
         var created = await AdminClient.SendAsync(new HttpRequestMessage(HttpMethod.Post, "api/workspaces")

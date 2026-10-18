@@ -9,7 +9,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Infrastructure.Deployments;
 
-/// <summary>Runs the same bounded SSH adapter used by operator recovery.</summary>
+/// <summary>Runs the same bounded SSH adapter used by manual recovery.</summary>
 public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailureParser failures) : IDeploymentGateway
 {
     /// <inheritdoc />

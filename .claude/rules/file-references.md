@@ -56,6 +56,6 @@
 | `catalog.py` | Product shape and validation; the local rig's fixture products |
 | `fleet.py` | Server, target and vault shapes; the local rig's fixtures |
 | `artifacts.py` | Approved release sources and catalog |
-| `transport.py` | Operator CLI + SSH adapter used by the API |
+| `transport.py` | Runner CLI + SSH adapter used by the API |
 | `history.py` | Deployment history projection the API filters: bundle facts, live steps, one observation |
 | `runner.py` | Target-side executor: locks, health gates, recovery |

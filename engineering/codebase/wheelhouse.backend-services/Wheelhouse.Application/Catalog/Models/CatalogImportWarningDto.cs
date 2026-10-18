@@ -6,6 +6,6 @@ public sealed record CatalogImportWarningDto
     /// <summary>Gets the entry's slug.</summary>
     public required string Slug { get; init; }
 
-    /// <summary>Gets what happened, in operator-safe words.</summary>
+    /// <summary>Gets what happened, in display-safe words.</summary>
     public required string Message { get; init; }
 }

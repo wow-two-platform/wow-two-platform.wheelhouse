@@ -9,7 +9,7 @@ using WoW.Two.Sdk.Beta.Be.Testing.Web;
 namespace Wheelhouse.Tests.E2E.Tests;
 
 /// <summary>
-/// E2E for integration keys — the operator creates and revokes them; a program presents one to read the catalog and
+/// E2E for integration keys — the owner creates and revokes them; a program presents one to read the catalog and
 /// reaches nothing else. The secret leaves the host once, in the creation response.
 /// </summary>
 [Collection(WheelhouseCollection.Name)]
@@ -37,7 +37,7 @@ public sealed class IntegrationKeysE2ETests(WheelhouseAppFixture fixture) : Whee
     }
 
     [Fact]
-    public async Task Create_ShouldReturn201WithTheSecretOnce_WhenTheOperatorCreatesAKey()
+    public async Task Create_ShouldReturn201WithTheSecretOnce_WhenTheOwnerCreatesAKey()
     {
         var response = await ActionClient("key-create").PostJsonAsync("api/integration-keys", new { name = "Claude", scopes = new[] { "catalog:read" } });
 
@@ -102,7 +102,7 @@ public sealed class IntegrationKeysE2ETests(WheelhouseAppFixture fixture) : Whee
     }
 
     [Fact]
-    public async Task Revoke_ShouldReturn200AndStopTheKey_WhenTheOperatorRevokesIt()
+    public async Task Revoke_ShouldReturn200AndStopTheKey_WhenTheOwnerRevokesIt()
     {
         var created = await CreateAsync();
 

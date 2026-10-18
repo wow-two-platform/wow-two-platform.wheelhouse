@@ -1,6 +1,6 @@
 import type { TargetState } from './TargetState';
 
-/** One read-only readiness probe; `detail` is operator-safe text. */
+/** One read-only readiness probe; `detail` is display-safe text. */
 export interface TargetCheckItem {
   name: string;
   ok: boolean;

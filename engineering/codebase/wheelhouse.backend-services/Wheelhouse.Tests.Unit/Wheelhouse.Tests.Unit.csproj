@@ -19,7 +19,7 @@
     <ItemGroup>
         <PackageReference Include="WoW2.Sdk.Beta.Be.Testing"/>
         <PackageReference Include="WoW2.Sdk.Beta.Be.Testing.Data"/>
-        <!-- The operator-token stand-in for the SDK GitHub client; pulls the core mono-lib transitively. -->
+        <!-- The owner-token stand-in for the SDK GitHub client; pulls the core mono-lib transitively. -->
         <PackageReference Include="WoW2.Sdk.Beta.Be.Testing.Integrations"/>
         <PackageReference Include="Microsoft.NET.Test.Sdk"/>
         <PackageReference Include="xunit"/>

@@ -5,7 +5,7 @@ using Wheelhouse.Domain.Products.Enums;
 
 namespace Wheelhouse.Persistence.Repositories;
 
-/// <summary>Accesses the statuses the operator gave products' services.</summary>
+/// <summary>Accesses the statuses the owner gave products' services.</summary>
 internal sealed class ServiceStatusesRepository(WheelhouseDbContext db) : IServiceStatusesRepository
 {
     /// <inheritdoc />

@@ -26,12 +26,12 @@ public static class AuthConfigurationExtensions
     /// <summary>The authorization policy protected endpoints require.</summary>
     public const string AdminPolicy = "WheelhouseAdmin";
 
-    /// <summary>The policy catalog reads require: the operator's session, or an integration key granting the scope.</summary>
+    /// <summary>The policy catalog reads require: the owner's session, or an integration key granting the scope.</summary>
     public const string ProductsReadPolicy = "ProductsRead";
 
-    /// <summary>The policy an operator's own preferences require: the allowlisted session. An integration key is
+    /// <summary>The policy the owner's own preferences require: the allowlisted session. An integration key is
     /// authenticated so it can be told apart, then refused with 403; anonymous callers get 401.</summary>
-    public const string OperatorSessionPolicy = "OperatorSession";
+    public const string OwnerSessionPolicy = "OwnerSession";
 
     /// <summary>The marker every integration key secret starts with, so a leaked one is recognizable.</summary>
     public const string KeyMarker = "wh_";
@@ -91,17 +91,17 @@ public static class AuthConfigurationExtensions
         builder.Services.AddAuthorizationBuilder()
             .AddPolicy(ProductsReadPolicy, policy => policy
                 .RequireAllowlistedSessionOrApiKeyScope(IntegrationScopeConstants.CatalogRead, CookieScheme))
-            .AddPolicy(OperatorSessionPolicy, policy => policy.RequireOperatorSession(CookieScheme));
+            .AddPolicy(OwnerSessionPolicy, policy => policy.RequireOwnerSession(CookieScheme));
 
         return builder;
     }
 
-    /// <summary>Requires the allowlisted operator's session on <paramref name="sessionScheme"/>. The integration key scheme
-    /// authenticates too, so a key is forbidden (403) rather than challenged: a key names a program, never an operator.</summary>
+    /// <summary>Requires an allowlisted owner's session on <paramref name="sessionScheme"/>. The integration key scheme
+    /// authenticates too, so a key is forbidden (403) rather than challenged: a key names a program, never the owner.</summary>
     /// <param name="policy">The policy builder.</param>
-    /// <param name="sessionScheme">The scheme the operator's session signs in with.</param>
+    /// <param name="sessionScheme">The scheme the owner's session signs in with.</param>
     /// <returns>The same builder for chaining.</returns>
-    public static AuthorizationPolicyBuilder RequireOperatorSession(this AuthorizationPolicyBuilder policy, string sessionScheme) =>
+    public static AuthorizationPolicyBuilder RequireOwnerSession(this AuthorizationPolicyBuilder policy, string sessionScheme) =>
         policy
             .AddAuthenticationSchemes(sessionScheme, ApiKeyAuthenticationDefaults.Scheme)
             .RequireAuthenticatedUser()

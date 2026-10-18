@@ -5,13 +5,13 @@ using Wheelhouse.Domain.Targets.Entities;
 
 namespace Wheelhouse.Application.Targets.Services;
 
-/// <summary>Provides targets as the operator edits them, naming each one's product and server by slug.</summary>
+/// <summary>Provides targets as the owner edits them, naming each one's product and server by slug.</summary>
 public sealed class TargetsProjectionService(IProductsRepository products, IServersRepository servers)
 {
-    /// <summary>Projects targets for the operator.</summary>
+    /// <summary>Projects targets for the owner.</summary>
     /// <param name="targets">The stored targets, in the order to return them.</param>
     /// <param name="ct">A cancellation token.</param>
-    /// <returns>The targets the operator edits.</returns>
+    /// <returns>The targets the owner edits.</returns>
     public async Task<IReadOnlyList<TargetDto>> ProjectAsync(IReadOnlyList<TargetEntity> targets, CancellationToken ct)
     {
         var productSlugs = (await products.GetAllAsync(ct)).ToDictionary(product => product.Id, product => product.Slug);

@@ -1,6 +1,6 @@
 namespace Wheelhouse.Application.Catalog.Parsers;
 
-/// <summary>Represents the outcome of parsing a YAML file: the value, or one operator-safe problem that names the line
+/// <summary>Represents the outcome of parsing a YAML file: the value, or one display-safe problem that names the line
 /// and the field.</summary>
 /// <typeparam name="T">The parsed shape.</typeparam>
 /// <param name="Value">The parsed value, when the file holds one.</param>

@@ -20,7 +20,7 @@ export interface AuthSession {
 
 let sessionRequest: Promise<Result<CurrentUser, ApiFailure>> | undefined;
 
-/** Resolves one shared session read and invalidates private data when the operator leaves. */
+/** Resolves one shared session read and invalidates private data when the owner leaves. */
 export function useAuth(): AuthSession {
   const user = ref<CurrentUser | null>(null);
   const loading = ref(true);

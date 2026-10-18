@@ -646,7 +646,7 @@ function close(open: boolean): void {
           <Alert
             v-if="lockedFailure"
             severity="warning"
-            description="The target stays locked until an operator inspects and reconciles it."
+            description="The target stays locked until the owner inspects and reconciles it."
           />
           <Alert
             v-if="outcome.error.value"

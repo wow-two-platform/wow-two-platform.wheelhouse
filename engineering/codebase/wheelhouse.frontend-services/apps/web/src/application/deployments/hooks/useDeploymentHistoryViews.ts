@@ -17,8 +17,8 @@ const RunningPollMilliseconds = 3000;
 /** How often the issues are read while the page is visible. */
 const IssuesPollMilliseconds = 60_000;
 
-/** The operator's IANA time zone, which the calendar counts days in. */
-export function operatorTimeZone(): string {
+/** The owner's IANA time zone, which the calendar counts days in. */
+export function ownerTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
@@ -51,9 +51,9 @@ export function useDeploymentPages(
   });
 }
 
-/** Finished rollouts per local day over the filter's range, in the operator's time zone. */
+/** Finished rollouts per local day over the filter's range, in the owner's time zone. */
 export function useDeploymentActivity(filter: MaybeRefOrGetter<DeploymentFilterState>, enabled: MaybeRefOrGetter<boolean> = true) {
-  const tz = operatorTimeZone();
+  const tz = ownerTimeZone();
   return useAppQuery({
     key: () => DeploymentKeys.activity(DeploymentFilters.key(toValue(filter)), tz),
     queryFn: ({ signal }) => deploymentHistoryApi.getActivity(DeploymentFilters.params(toValue(filter), new Date()), tz, signal),

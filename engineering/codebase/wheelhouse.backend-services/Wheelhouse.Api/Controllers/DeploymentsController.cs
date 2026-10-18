@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using Wheelhouse.Api.Requests;
+using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments;
 using Wheelhouse.Application.Deployments.History.Queries;
 using Wheelhouse.Application.Operations;
@@ -14,7 +15,7 @@ namespace Wheelhouse.Api.Controllers;
 /// <summary>Submits reviewed releases and observes target-owned deployment outcomes.</summary>
 [ApiController]
 [Route("api/deployments")]
-public sealed class DeploymentsController(ISender sender) : ControllerBase
+public sealed class DeploymentsController(ISender sender, IActorContext actor) : ControllerBase
 {
     // Route regex constraints ignore case; a validated parameter keeps catalog ids exact.
     private const string Slug = Wheelhouse.Application.Inventory.Constants.InventoryPatternConstants.Slug;
@@ -89,13 +90,13 @@ public sealed class DeploymentsController(ISender sender) : ControllerBase
         [RegularExpression(Slug)] string target, [FromQuery, RegularExpression(Slug)] string? release, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentCheckQuery(target, release), ct));
 
-    /// <summary>Acknowledges an interrupted or failed rollout the operator has inspected.</summary>
+    /// <summary>Acknowledges an interrupted or failed rollout the owner has inspected.</summary>
     [HttpPost("targets/{target}/reconcile")]
     [RequireActionHeader("reconcile")]
     public async Task<IActionResult> Reconcile(
         [RegularExpression(Slug)] string target, DeploymentReconcileRequest request, CancellationToken ct)
     {
-        var result = await sender.SendAsync(new DeploymentReconcileCommand(target, request.Job!.Value.ToString(), Actor()), ct);
+        var result = await sender.SendAsync(new DeploymentReconcileCommand(target, request.Job!.Value.ToString(), actor.Actor), ct);
         return this.ToActionResult(result);
     }
 
@@ -138,7 +139,7 @@ public sealed class DeploymentsController(ISender sender) : ControllerBase
     public async Task<IActionResult> Build(
         [RegularExpression(Slug)] string product, DeploymentBuildRequest request, CancellationToken ct)
     {
-        var result = await sender.SendAsync(new DeploymentBuildCommand(product, request.Commit, Actor()), ct);
+        var result = await sender.SendAsync(new DeploymentBuildCommand(product, request.Commit, actor.Actor), ct);
         return this.ToActionResult(result, envelope => Accepted(envelope));
     }
 
@@ -161,10 +162,8 @@ public sealed class DeploymentsController(ISender sender) : ControllerBase
     public async Task<IActionResult> Start(DeploymentStartRequest request, CancellationToken ct)
     {
         var result = await sender.SendAsync(
-            new DeploymentStartCommand(request.Target, request.Release, Actor(), request.Confirm, request.SkipDevPass), ct);
+            new DeploymentStartCommand(request.Target, request.Release, actor.Actor, request.Confirm, request.SkipDevPass), ct);
         return this.ToActionResult(result, envelope =>
             AcceptedAtAction(nameof(Status), new { id = envelope.Data.GetProperty("id").GetString() }, envelope));
     }
-
-    private string Actor() => User.Identity?.Name ?? User.FindFirst("wt:username")?.Value ?? "authenticated-admin";
 }

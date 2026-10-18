@@ -13,7 +13,7 @@ namespace Wheelhouse.Application.Integrations.CommandHandlers;
 /// <summary>Handles <see cref="IntegrationKeyCreateCommand"/>; a live key's name stays unique, since it names the
 /// caller in the audit trail.</summary>
 public sealed class IntegrationKeyCreateCommandHandler(
-    IIntegrationKeysRepository keys, ApiKeySecretFactory secrets, IOperatorContext operatorContext)
+    IIntegrationKeysRepository keys, ApiKeySecretFactory secrets, IActorContext actorContext)
     : ICommandHandler<IntegrationKeyCreateCommand, AppResult<IntegrationKeyWithSecretDto>>
 {
     /// <inheritdoc />
@@ -33,7 +33,7 @@ public sealed class IntegrationKeyCreateCommandHandler(
             Prefix = secret.Prefix,
             Hash = secret.Hash,
             Scopes = string.Join(' ', request.Scopes.Distinct(StringComparer.Ordinal)),
-            CreatedBy = operatorContext.Actor,
+            CreatedBy = actorContext.Actor,
         };
         await keys.CreateAsync(key, cancellationToken);
 

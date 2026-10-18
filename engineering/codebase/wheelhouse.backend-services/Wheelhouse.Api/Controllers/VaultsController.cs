@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Wheelhouse.Api.Requests;
+using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Vaults.Commands;
 using Wheelhouse.Application.Vaults.Models;
 using Wheelhouse.Application.Vaults.Queries;
@@ -18,7 +19,7 @@ namespace Wheelhouse.Api.Controllers;
 [ApiController]
 [Route("api/vaults")]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class VaultsController(ISender sender) : ControllerBase
+public sealed class VaultsController(ISender sender, IActorContext actor) : ControllerBase
 {
     /// <summary>Lists the configured vaults with their sealed state.</summary>
     [HttpGet]
@@ -121,9 +122,6 @@ public sealed class VaultsController(ISender sender) : ControllerBase
     public async Task<IActionResult> Delete([RegularExpression(VaultRules.Vault)] string vault, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new VaultDeleteCommand { Slug = vault }, ct), _ => NoContent());
 
-    private async Task<IActionResult> Change(string vault, VaultChange change, CancellationToken ct)
-    {
-        var actor = User.Identity?.Name ?? User.FindFirst("wt:username")?.Value ?? "authenticated-admin";
-        return this.ToActionResult(await sender.SendAsync(new VaultChangeCommand(vault, change, actor), ct));
-    }
+    private async Task<IActionResult> Change(string vault, VaultChange change, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new VaultChangeCommand(vault, change, actor.Actor), ct));
 }

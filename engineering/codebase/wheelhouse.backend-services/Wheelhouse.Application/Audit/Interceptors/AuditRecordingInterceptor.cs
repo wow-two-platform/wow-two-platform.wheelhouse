@@ -35,7 +35,7 @@ public sealed class AuditRecordingInterceptor<TRequest, TResponse>(
             throw;
         }
 
-        // Only AppResult<T>.Failure carries an Error; its message is the operator-safe text the controller renders.
+        // Only AppResult<T>.Failure carries an Error; its message is the display-safe text the controller renders.
         var error = response?.GetType().GetProperty(nameof(AppResult<object>.Failure.Error))?.GetValue(response) as AppError;
         if (error is null)
             await RecordAsync(audited, AuditOutcome.Succeeded, null);
@@ -48,7 +48,7 @@ public sealed class AuditRecordingInterceptor<TRequest, TResponse>(
     private async Task RecordAsync(IAuditedCommand audited, AuditOutcome outcome, string? reason)
     {
         // Resolved only for audited commands, so a read never depends on the audit store.
-        var record = new AuditRecord(services.GetRequiredService<IOperatorContext>().Actor, audited.AuditAction,
+        var record = new AuditRecord(services.GetRequiredService<IActorContext>().Actor, audited.AuditAction,
             audited.AuditSubject, outcome, audited.AuditDetail, reason);
         try
         {

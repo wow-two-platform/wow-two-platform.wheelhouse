@@ -142,7 +142,7 @@ public sealed class McpE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBas
     }
 
     [Fact]
-    public async Task ToolFailures_CarryTheOperatorSafeErrorAndARetryHint()
+    public async Task ToolFailures_CarryDisplaySafeErrorAndARetryHint()
     {
         var key = await CreateKeyAsync("deployments:read");
         using var client = KeyClient(key.Secret);

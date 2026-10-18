@@ -16,7 +16,7 @@ const client = createApiClient({
   scope: sessionScope,
 });
 
-/** Options for same-origin management requests; action headers guard operator writes. */
+/** Options for same-origin management requests; action headers guard owner writes. */
 export interface RequestOptions {
   readonly method?: string;
   readonly body?: unknown;
@@ -75,7 +75,7 @@ export function requestData<T>(
 }
 
 /**
- * Sends an operator write whose answer the console does not read: any success counts, empty or with a body, and the
+ * Sends a write whose answer the console does not read: any success counts, empty or with a body, and the
  * caller reloads what changed. Failures keep their status and diagnostics.
  */
 export async function requestAccepted(
@@ -106,7 +106,7 @@ export function requestEmpty(path: string, options: RequestOptions = {}) {
 }
 
 /**
- * The reason an operator action was refused, when the management API gives one, else the generic failure text.
+ * The reason an action was refused, when the management API gives one, else the generic failure text.
  * The API passes on only the runner's static reasons and contract key names, never values or command output.
  */
 export function failureReason(

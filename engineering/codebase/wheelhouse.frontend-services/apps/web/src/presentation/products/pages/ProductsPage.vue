@@ -18,7 +18,7 @@ import ProductFormModal from "../components/ProductFormModal.vue";
 import WorkspacesModal from "../components/WorkspacesModal.vue";
 
 /**
- * The products browser: workspaces as chips — All, then each workspace in the operator's order — over the chosen
+ * The products browser: workspaces as chips — All, then each workspace in the owner's order — over the chosen
  * workspace's product cards, each opening its product page. `/products` shows All; `/w/{workspace}` the one
  * workspace. New product and workspace management are page actions; each card edits its product. Inactive products
  * stay hidden until "Show inactive" is on.

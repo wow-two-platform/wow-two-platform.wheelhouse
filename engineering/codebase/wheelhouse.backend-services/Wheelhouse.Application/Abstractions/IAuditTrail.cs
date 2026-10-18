@@ -3,7 +3,7 @@ using Wheelhouse.Domain.Audit.Entities;
 
 namespace Wheelhouse.Application.Abstractions;
 
-/// <summary>The append-only, hash-chained record of operator actions.</summary>
+/// <summary>The append-only, hash-chained record of actions.</summary>
 public interface IAuditTrail
 {
     /// <summary>Appends one finished action, chained to the entry before it.</summary>

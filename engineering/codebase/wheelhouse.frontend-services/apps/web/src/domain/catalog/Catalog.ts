@@ -40,7 +40,7 @@ export interface Catalog {
 /** A note about one entry of an import: skipped, or created without something. */
 export interface CatalogImportWarning {
   slug: string;
-  /** What happened, in operator-safe words. */
+  /** What happened, in display-safe words. */
   message: string;
 }
 

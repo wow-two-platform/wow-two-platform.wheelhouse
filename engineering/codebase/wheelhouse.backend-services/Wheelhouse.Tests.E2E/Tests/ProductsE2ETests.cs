@@ -10,7 +10,7 @@ namespace Wheelhouse.Tests.E2E.Tests;
 
 /// <summary>
 /// E2E for the product catalog — identity from the code-owned catalog (the runner stub answers it), status from the
-/// operator's records, and a projection with no targets, releases or deployment state.
+/// owner's records, and a projection with no targets, releases or deployment state.
 /// </summary>
 [Collection(WheelhouseCollection.Name)]
 public sealed class ProductsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBase(fixture)
@@ -23,7 +23,7 @@ public sealed class ProductsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE
     }
 
     [Fact]
-    public async Task GetAll_ShouldReturn200WithEachProductsEnvironments_WhenTheOperatorReads()
+    public async Task GetAll_ShouldReturn200WithEachProductsEnvironments_WhenTheOwnerReads()
     {
         var response = await AdminClient.GetAsync("api/products");
 
@@ -83,7 +83,7 @@ public sealed class ProductsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE
     }
 
     [Fact]
-    public async Task UpdateStatus_ShouldReturn200AndPersist_WhenTheOperatorMarksAProductInactive()
+    public async Task UpdateStatus_ShouldReturn200AndPersist_WhenTheOwnerMarksAProductInactive()
     {
         var response = await ActionClient("status").PutJsonAsync("api/products/foreverpin/status", new { status = "inactive" });
 

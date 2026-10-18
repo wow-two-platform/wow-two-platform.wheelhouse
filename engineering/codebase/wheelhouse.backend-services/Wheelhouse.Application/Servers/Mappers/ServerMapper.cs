@@ -4,12 +4,12 @@ using Wheelhouse.Domain.Servers.Models;
 
 namespace Wheelhouse.Application.Servers.Mappers;
 
-/// <summary>Maps a stored server to the server the operator edits.</summary>
+/// <summary>Maps a stored server to the server the owner edits.</summary>
 internal static class ServerMapper
 {
     /// <summary>Maps a stored server to its projection.</summary>
     /// <param name="server">The stored server.</param>
-    /// <returns>The server the operator edits.</returns>
+    /// <returns>The server the owner edits.</returns>
     public static ServerDto Map(ServerEntity server) => new()
     {
         Slug = server.Slug,
@@ -24,7 +24,7 @@ internal static class ServerMapper
 
     /// <summary>Maps a stored ingress to its projection.</summary>
     /// <param name="ingress">The stored ingress.</param>
-    /// <returns>The ingress the operator edits.</returns>
+    /// <returns>The ingress the owner edits.</returns>
     private static ServerIngressDto Map(ServerIngressValueObject ingress) => new()
     {
         Scheme = ingress.Scheme,

@@ -3,7 +3,7 @@ using WoW.Two.Sdk.Beta.Be.Data.Abstractions;
 
 namespace Wheelhouse.Domain.Pins.Entities;
 
-/// <summary>Represents a pin: a workspace, product or service an operator keeps one click away, in the operator's own
+/// <summary>Represents a pin: a workspace, product or service the owner keeps one click away, in the owner's own
 /// order. A preference, not inventory: it goes with what it points at and never reaches the audit trail.</summary>
 public sealed record PinEntity : IKeyedEntity<Guid>, IHasTableName, ICreationAuditable
 {
@@ -13,7 +13,7 @@ public sealed record PinEntity : IKeyedEntity<Guid>, IHasTableName, ICreationAud
     /// <summary>Gets or sets the pin's identifier.</summary>
     public Guid Id { get; set; }
 
-    /// <summary>Gets or sets the login of the operator the pin belongs to.</summary>
+    /// <summary>Gets or sets the login of the owner the pin belongs to.</summary>
     public required string Owner { get; set; }
 
     /// <summary>Gets or sets what the pin points at.</summary>

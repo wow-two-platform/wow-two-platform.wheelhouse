@@ -91,6 +91,6 @@ internal static class YamlReader
         node is YamlScalarNode { Style: ScalarStyle.Plain, Value: null or "" or "~" or "null" or "Null" or "NULL" };
 }
 
-/// <summary>Represents a refused YAML file; its message is operator-safe and names the line and the field.</summary>
+/// <summary>Represents a refused YAML file; its message is display-safe and names the line and the field.</summary>
 /// <param name="message">The refusal.</param>
 internal sealed class YamlRefusal(string message) : Exception(message);

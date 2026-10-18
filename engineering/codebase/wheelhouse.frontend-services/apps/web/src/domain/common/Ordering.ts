@@ -1,10 +1,10 @@
-/** An item the operator sorts by hand: its identifier and its place in the custom order. */
+/** An item the owner sorts by hand: its identifier and its place in the custom order. */
 export interface OrderedItem {
   readonly id: string;
   readonly order: number;
 }
 
-/** Pure rules for lists the operator orders by hand: workspaces and pins. */
+/** Pure rules for lists the owner orders by hand: workspaces and pins. */
 export const Ordering = {
   /** The items in their custom order; equal places keep the order they arrived in. */
   sort: <T extends OrderedItem>(items: readonly T[]): T[] =>
@@ -28,7 +28,7 @@ export const Ordering = {
     items.map((item, order) => (item.order === order ? item : { ...item, order })),
 
   /**
-   * Applies an order the operator saved: the listed ids first, in their sequence, then any item the list missed in
+   * Applies an order the owner saved: the listed ids first, in their sequence, then any item the list missed in
    * its previous place. Ids that name no item are ignored.
    */
   apply: <T extends OrderedItem>(items: readonly T[], ids: readonly string[]): T[] => {

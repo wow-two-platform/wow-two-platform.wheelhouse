@@ -7,7 +7,7 @@ namespace Wheelhouse.Tests.E2E.Tests;
 
 /// <summary>
 /// E2E for the auth gate across the control-plane surface — every anonymous request to a Products, Integration keys or
-/// Servers endpoint is refused, reads and mutations alike, while the same call from the operator gets through.
+/// Servers endpoint is refused, reads and mutations alike, while the same call from the owner gets through.
 /// </summary>
 [Collection(WheelhouseCollection.Name)]
 public sealed class AuthGateE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBase(fixture)
@@ -53,9 +53,9 @@ public sealed class AuthGateE2ETests(WheelhouseAppFixture fixture) : WheelhouseE
     }
 
     [Fact]
-    public async Task MutatingEndpoints_ShouldBeReachable_WhenTheOperatorCalls()
+    public async Task MutatingEndpoints_ShouldBeReachable_WhenTheOwnerCalls()
     {
-        // The same calls that 401 anonymously must pass for the operator — proves the gate, not a blanket block.
+        // The same calls that 401 anonymously must pass for the owner — proves the gate, not a blanket block.
         var client = AdminClient;
         client.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "status");
         (await client.PutJsonAsync("api/products/foreverpin/status", new { status = "inactive" }))

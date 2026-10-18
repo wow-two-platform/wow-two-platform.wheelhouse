@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { DeploymentIssueKind, DeploymentOutcome, JobStatus, StepStatus } from '@/domain/deployments';
 
 const nullableText = z.string().nullable();
-// Site links open in the operator's browser, so only http(s) addresses survive decoding.
+// Site links open in the owner's browser, so only http(s) addresses survive decoding.
 const siteUrl = z.string().url().refine((value) => /^https?:\/\//.test(value), 'Site links must be http(s)');
 
 const CurrentStepSchema = z.object({

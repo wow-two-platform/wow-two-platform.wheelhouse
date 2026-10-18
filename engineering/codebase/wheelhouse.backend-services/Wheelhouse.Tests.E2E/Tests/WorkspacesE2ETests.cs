@@ -10,7 +10,7 @@ using WoW.Two.Sdk.Beta.Be.Testing.Web;
 namespace Wheelhouse.Tests.E2E.Tests;
 
 /// <summary>
-/// E2E for workspaces — the operator groups products into them, orders them and moves products between them; every
+/// E2E for workspaces — the owner groups products into them, orders them and moves products between them; every
 /// product belongs to exactly one, a workspace holding products stays, and every write lands in the audit trail.
 /// </summary>
 [Collection(WheelhouseCollection.Name)]
@@ -55,7 +55,7 @@ public sealed class WorkspacesE2ETests(WheelhouseAppFixture fixture) : Wheelhous
     }
 
     [Fact]
-    public async Task Create_ShouldReturn201AndComeLast_WhenTheOperatorAddsWorkspaces()
+    public async Task Create_ShouldReturn201AndComeLast_WhenTheOwnerAddsWorkspaces()
     {
         var platform = await CreateAsync("wow2-platform", "wow2 platform", "  The platform apps.  ");
         var personal = await CreateAsync("personal", "Personal");

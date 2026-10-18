@@ -11,7 +11,7 @@ using Wheelhouse.Tests.E2E.Harness;
 
 namespace Wheelhouse.Tests.E2E.Tests;
 
-/// <summary>Verifies that every operator action lands in the hash-chained audit trail, reads stay out of it, and no
+/// <summary>Verifies that every action lands in the hash-chained audit trail, reads stay out of it, and no
 /// secret value ever reaches it.</summary>
 [Collection(WheelhouseCollection.Name)]
 public sealed class AuditE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBase(fixture)
@@ -38,6 +38,10 @@ public sealed class AuditE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EB
                 entry.GetProperty("action").GetString(), entry.GetProperty("subject").GetString(),
                 entry.GetProperty("outcome").GetString(), entry.GetProperty("detail").GetString()));
         Assert.False(entry.TryGetProperty("hash", out _), "Chain hashes stay server-side.");
+        // One actor for the trail and the runner, and the chain still covers the stored `actor` column it always has.
+        Assert.Equal("test-admin", Fixture.Deployments.LastActor);
+        var verification = await Verification();
+        Assert.Equal((true, 1), (verification.GetProperty("intact").GetBoolean(), verification.GetProperty("entries").GetInt32()));
     }
 
     [Fact]

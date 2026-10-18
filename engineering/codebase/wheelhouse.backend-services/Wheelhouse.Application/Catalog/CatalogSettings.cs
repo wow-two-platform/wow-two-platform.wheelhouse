@@ -4,7 +4,7 @@ using Wheelhouse.Application.Inventory.Constants;
 namespace Wheelhouse.Application.Catalog;
 
 /// <summary>Holds where Wheelhouse reads the wow2 catalog from: one YAML file in a GitHub repository, read with the
-/// signed-in operator's token. Bound from <c>Catalog</c>.</summary>
+/// signed-in owner's token. Bound from <c>Catalog</c>.</summary>
 public sealed record CatalogSettings
 {
     /// <summary>Gets or sets the repository that holds the catalog, as <c>owner/name</c>.</summary>

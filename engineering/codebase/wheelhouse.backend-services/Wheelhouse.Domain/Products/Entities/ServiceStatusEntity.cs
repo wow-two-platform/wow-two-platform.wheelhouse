@@ -3,7 +3,7 @@ using WoW.Two.Sdk.Beta.Be.Data.Abstractions;
 
 namespace Wheelhouse.Domain.Products.Entities;
 
-/// <summary>Represents the status the operator gave one of a product's services, keyed by the product and the service's
+/// <summary>Represents the status the owner gave one of a product's services, keyed by the product and the service's
 /// key in its <c>deploy.yml</c>. A service without a row is active. One status covers every environment.</summary>
 public sealed class ServiceStatusEntity : IHasTableName, IAuditable
 {

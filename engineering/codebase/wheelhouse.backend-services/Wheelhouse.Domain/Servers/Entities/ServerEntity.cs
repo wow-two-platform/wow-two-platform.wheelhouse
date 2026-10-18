@@ -5,7 +5,7 @@ using WoW.Two.Sdk.Beta.Be.Data.Abstractions;
 namespace Wheelhouse.Domain.Servers.Entities;
 
 /// <summary>Represents a host Wheelhouse deploys to over SSH. Its credentials never live here: the SSH identity and
-/// the pinned host key are files the operator places on the control host.</summary>
+/// the pinned host key are files the owner places on the control host.</summary>
 public sealed record ServerEntity : IKeyedEntity<Guid>, IHasTableName, IAuditable
 {
     /// <summary>Gets the storage table name, shared by the EF mapping and the SQL migrations.</summary>

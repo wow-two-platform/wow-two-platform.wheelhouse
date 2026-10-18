@@ -9,7 +9,7 @@ using WoW.Two.Sdk.Beta.Be.Testing.Web;
 namespace Wheelhouse.Tests.E2E.Tests;
 
 /// <summary>
-/// E2E for the inventory the database owns — products, servers, targets and vaults: the operator creates, changes and
+/// E2E for the inventory the database owns — products, servers, targets and vaults: the owner creates, changes and
 /// removes them; a delete never strands a target or a vault; every change reaches the runner's snapshot.
 /// </summary>
 [Collection(WheelhouseCollection.Name)]
@@ -36,7 +36,7 @@ public sealed class InventoryE2ETests(WheelhouseAppFixture fixture) : Wheelhouse
         JsonDocument.Parse(File.ReadAllText(Path.Combine(Fixture.InventoryRoot, "inventory.json"))).RootElement;
 
     [Fact]
-    public async Task CreateProduct_ShouldReturn201AndReachTheSnapshot_WhenTheOperatorAddsOne()
+    public async Task CreateProduct_ShouldReturn201AndReachTheSnapshot_WhenTheOwnerAddsOne()
     {
         var response = await ActionClient("product").PostJsonAsync("api/products", PilotProduct);
 
@@ -74,7 +74,7 @@ public sealed class InventoryE2ETests(WheelhouseAppFixture fixture) : Wheelhouse
     }
 
     [Fact]
-    public async Task UpdateProduct_ShouldReturn200AndKeepTheSlug_WhenTheOperatorChangesIt()
+    public async Task UpdateProduct_ShouldReturn200AndKeepTheSlug_WhenTheOwnerChangesIt()
     {
         var response = await ActionClient("product").PutJsonAsync("api/products/wheelhouse",
             new { name = "Wheelhouse console", description = "Control plane.", repository = "wow-two-platform/wow-two-platform.wheelhouse" });
@@ -99,7 +99,7 @@ public sealed class InventoryE2ETests(WheelhouseAppFixture fixture) : Wheelhouse
     [InlineData("hetzner")]
     [InlineData("local")]
     [InlineData("ovhcloud")]
-    public async Task CreateServer_ShouldReturn201AndReachTheSnapshot_WhenTheOperatorAddsOne(string provider)
+    public async Task CreateServer_ShouldReturn201AndReachTheSnapshot_WhenTheOwnerAddsOne(string provider)
     {
         var response = await ActionClient("server").PostJsonAsync("api/servers", new
         {
@@ -202,7 +202,7 @@ public sealed class InventoryE2ETests(WheelhouseAppFixture fixture) : Wheelhouse
     }
 
     [Fact]
-    public async Task Vaults_ShouldBeCreatedListedWithTheirEndpointAndChanged_WhenTheOperatorEditsThem()
+    public async Task Vaults_ShouldBeCreatedListedWithTheirEndpointAndChanged_WhenTheOwnerEditsThem()
     {
         var created = await ActionClient("vault").PostJsonAsync("api/vaults",
             new { slug = "prod-vault", name = "Prod vault", server = "prod-host", url = "http://vault:8080" });

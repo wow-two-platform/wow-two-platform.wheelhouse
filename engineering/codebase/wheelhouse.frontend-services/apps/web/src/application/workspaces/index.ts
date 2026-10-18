@@ -8,7 +8,7 @@ import { ProductKeys } from "@/application/products";
 /** Query keys for workspaces. */
 export const WorkspaceKeys = { list: ["workspaces"] as const };
 
-/** The workspaces in the operator's order, with their edits and an optimistic reorder. */
+/** The workspaces in the owner's order, with their edits and an optimistic reorder. */
 export function useWorkspaces() {
   const list = useAppQuery({
     key: WorkspaceKeys.list,

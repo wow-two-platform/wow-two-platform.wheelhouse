@@ -1,6 +1,6 @@
 namespace Wheelhouse.Application.Catalog.Models;
 
-/// <summary>Represents what an import changed, by slug, and anything worth the operator's attention.</summary>
+/// <summary>Represents what an import changed, by slug, and anything worth the owner's attention.</summary>
 public sealed record CatalogImportResultDto
 {
     /// <summary>Gets the slugs of the workspaces the import created.</summary>

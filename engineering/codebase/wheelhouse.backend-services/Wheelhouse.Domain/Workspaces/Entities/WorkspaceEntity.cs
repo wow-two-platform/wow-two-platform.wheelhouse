@@ -21,7 +21,7 @@ public sealed record WorkspaceEntity : IKeyedEntity<Guid>, IHasTableName, IAudit
     /// <summary>Gets or sets one line on what the workspace holds, or <c>null</c> for none.</summary>
     public string? Description { get; set; }
 
-    /// <summary>Gets or sets the workspace's place in the operator's order; lower comes first.</summary>
+    /// <summary>Gets or sets the workspace's place in the owner's order; lower comes first.</summary>
     public int Order { get; set; }
 
     /// <summary>Gets or sets when the row was created; stamped by the SDK audit interceptor.</summary>

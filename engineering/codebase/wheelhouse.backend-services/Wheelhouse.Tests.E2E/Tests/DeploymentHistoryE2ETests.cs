@@ -16,7 +16,7 @@ namespace Wheelhouse.Tests.E2E.Tests;
 /// <summary>
 /// E2E for the deployment history the Deployments page reads: the runner's records joined with the inventory, then
 /// filtered by entity (workspace, product, <c>product/service</c>, as a union), status and range; cursor paging; per-day
-/// activity in the operator's time zone; measures beside the prior range; live rollouts; releases ready for prod; the
+/// activity in the owner's time zone; measures beside the prior range; live rollouts; releases ready for prod; the
 /// targets that need attention; and one deployment in full.
 /// </summary>
 /// <remarks>
@@ -57,7 +57,7 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
     [InlineData("/api/deployments/promotions")]
     [InlineData("/api/deployments/issues")]
     [InlineData("/api/deployments/" + FirstDev + "/detail")]
-    public async Task Reads_RequireTheOperator(string path)
+    public async Task Reads_RequireTheOwner(string path)
     {
         await SeedAsync();
         Assert.Equal(HttpStatusCode.Unauthorized, (await AnonymousClient.GetAsync(path)).StatusCode);

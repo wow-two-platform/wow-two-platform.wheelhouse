@@ -46,7 +46,7 @@ public sealed class GitHubProductManifestSourceTests : IDisposable
     }
 
     [Fact]
-    public async Task ReadAsync_ShouldSendTheOperatorsToken_WhenItReadsTheFile()
+    public async Task ReadAsync_ShouldSendTheOwnersToken_WhenItReadsTheFile()
     {
         GitHub.Raw[Manifest(First)] = "{ }"u8.ToArray();
 
@@ -68,7 +68,7 @@ public sealed class GitHubProductManifestSourceTests : IDisposable
     }
 
     [Fact]
-    public async Task HeadAsync_ShouldReadThePublicRepositoryAnonymously_WhenNoOperatorIsSignedIn()
+    public async Task HeadAsync_ShouldReadThePublicRepositoryAnonymously_WhenNoOwnerIsSignedIn()
     {
         using var anonymous = new ScriptedGitHubReader(token: null);
         anonymous.GitHub.Raw[Head] = Encoding.ASCII.GetBytes(First);

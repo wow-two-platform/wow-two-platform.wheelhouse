@@ -6,7 +6,7 @@ import { VaultStatus, type VaultHygiene, type VaultSummary } from '@/domain/secr
 /** How urgent an attention item is. */
 export type AttentionTone = 'danger' | 'warning';
 
-/** One thing an operator should look at, with the page that resolves it. */
+/** One thing the owner should look at, with the page that resolves it. */
 export interface AttentionItem {
   id: string;
   tone: AttentionTone;

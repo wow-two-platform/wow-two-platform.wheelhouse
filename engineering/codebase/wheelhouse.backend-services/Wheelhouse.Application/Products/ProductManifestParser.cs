@@ -11,7 +11,7 @@ namespace Wheelhouse.Application.Products;
 /// <remarks>
 /// The file lives at <see cref="Path"/> in the product's repository. It holds the identity text the console shows: name,
 /// description, homepage and each service's name and description. A file that breaks the schema is ignored whole with
-/// one operator-safe reason; the reason never quotes the file beyond a key name, which is shortened and stripped of
+/// one display-safe reason; the reason never quotes the file beyond a key name, which is shortened and stripped of
 /// control characters. The rules here and in the schema must stay the same.
 /// </remarks>
 public static partial class ProductManifestParser

@@ -4,7 +4,7 @@ using WoW.Two.Sdk.Beta.Be.Foundation.Validation;
 
 namespace Wheelhouse.Api.Mcp;
 
-/// <summary>Represents a failed tool call as an agent reads it: the error kind, the operator-safe message and whether
+/// <summary>Represents a failed tool call as an agent reads it: the error kind, the display-safe message and whether
 /// the same call may succeed later.</summary>
 public sealed record McpToolError
 {
@@ -12,7 +12,7 @@ public sealed record McpToolError
     /// <c>OperationTimeout</c>.</summary>
     public required string Code { get; init; }
 
-    /// <summary>Gets the operator-safe message: the application's own text, the one REST returns as <c>detail</c>;
+    /// <summary>Gets the display-safe message: the application's own text, the one REST returns as <c>detail</c>;
     /// never exception text, paths, hosts or values.</summary>
     public required string Message { get; init; }
 
@@ -33,7 +33,7 @@ public sealed record McpToolError
         Retryable = natures.Map(error.Type) == ErrorNature.Transient,
     };
 
-    /// <summary>Describes an error kind with its generic message, for a failure whose own text is not operator-safe.</summary>
+    /// <summary>Describes an error kind with its generic message, for a failure whose own text is not display-safe.</summary>
     /// <param name="type">The kind the failure maps to.</param>
     /// <param name="natures">Decides which error kinds are transient.</param>
     /// <returns>The error the agent reads.</returns>

@@ -5,7 +5,7 @@ import { secretsApi } from "@/integration/secrets";
 import { ProductKeys } from "@/application/products";
 import { SecretKeys } from "./SecretKeys";
 
-/** The vault definitions the inventory editor holds, with the operator's confirmed edits. */
+/** The vault definitions the inventory editor holds, with the owner's confirmed edits. */
 export function useVaultDefinitions() {
   const list = useAppQuery({
     key: SecretKeys.definitions,

@@ -2,7 +2,7 @@ using Wheelhouse.Domain.Servers.Enums;
 
 namespace Wheelhouse.Application.Servers.Models;
 
-/// <summary>Represents a host Wheelhouse deploys to, as the operator edits it; never its credentials.</summary>
+/// <summary>Represents a host Wheelhouse deploys to, as the owner edits it; never its credentials.</summary>
 public sealed record ServerDto
 {
     /// <summary>Gets the name targets, vaults and the credential folders know the server by.</summary>

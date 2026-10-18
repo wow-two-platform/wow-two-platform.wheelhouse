@@ -5,7 +5,7 @@ import type { JobStatus } from "@/domain/deployments";
 export interface JobStatusIndicatorProps {
   /** The submission's current status. */
   readonly status: JobStatus;
-  /** The operator-safe explanation of its outcome. */
+  /** The display-safe explanation of its outcome. */
   readonly reason?: string | null | undefined;
 }
 </script>

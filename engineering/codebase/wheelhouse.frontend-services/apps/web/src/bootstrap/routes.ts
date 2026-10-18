@@ -27,7 +27,7 @@ export const PrimaryPlaces = [
  * as tabs — so these are the views across every product.
  */
 export const GlobalPlaces = [
-  { path: '/activity', label: 'Activity', description: 'Every operator action, chained so an edited entry shows.' },
+  { path: '/activity', label: 'Activity', description: 'Every action, chained so an edited entry shows.' },
   { path: '/secrets', label: 'Secrets', description: 'Vault namespaces, write-only secrets, and product tokens.' },
 ] as const;
 

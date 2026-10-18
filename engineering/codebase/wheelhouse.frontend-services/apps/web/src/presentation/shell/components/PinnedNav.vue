@@ -14,7 +14,7 @@ import { usePinned, type PinnedEntry } from '@/application/pins';
 import { PinIcon } from '@/presentation/pins';
 
 /**
- * Pinned workspaces, products and services in the operator's order. Edit turns the rows into a reorder list; the rail
+ * Pinned workspaces, products and services in the owner's order. Edit turns the rows into a reorder list; the rail
  * shows the pins as icons with a pin badge, so a pinned workspace never looks like the workspace entry below it, and
  * leaves editing to the full sidebar.
  */

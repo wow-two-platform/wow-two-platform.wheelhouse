@@ -5,7 +5,7 @@ using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 namespace Wheelhouse.Tests.Unit.Deployments;
 
 /// <summary>
-/// Tests for <see cref="RunnerFailureParser"/>: only the runner's <c>reason</c> reaches the operator — a refused
+/// Tests for <see cref="RunnerFailureParser"/>: only the runner's <c>reason</c> reaches the owner — a refused
 /// precondition becomes a conflict, a failed step an unavailable error, and anything else stays opaque.
 /// </summary>
 public sealed class RunnerFailureParserTests

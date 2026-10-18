@@ -1,4 +1,4 @@
-/** Whether a product or a service is in use; inactive ones stay hidden until the operator shows them. */
+/** Whether a product or a service is in use; inactive ones stay hidden until the owner shows them. */
 export const ProductStatus = {
   Active: 'active',
   Inactive: 'inactive',
@@ -73,7 +73,7 @@ export interface ProductIdentity {
   services: ProductServiceIdentity[];
 }
 
-/** A product as the database defines it, with the workspace and status the operator records. */
+/** A product as the database defines it, with the workspace and status the owner records. */
 export interface Product {
   /** The product's row identifier, when the host sends one; pins and catalog entries may name a product by it. */
   id?: string | undefined;
@@ -88,7 +88,7 @@ export interface Product {
   /** The workspace the product belongs to; null while it belongs to none. */
   workspaceId: string | null;
   status: ProductStatus;
-  /** The services the operator marked inactive, by their key in the product's deployment. */
+  /** The services the owner marked inactive, by their key in the product's deployment. */
   inactiveServices: string[];
   repository: ProductRepository;
   /** Null when only hand-imported bundles deploy. */

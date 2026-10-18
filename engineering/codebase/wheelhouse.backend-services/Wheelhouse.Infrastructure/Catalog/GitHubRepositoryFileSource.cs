@@ -4,7 +4,7 @@ using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 
 namespace Wheelhouse.Infrastructure.Catalog;
 
-/// <summary>Reads repository files through the shared <see cref="GitHubRepositoryReader"/>, with the signed-in operator's
+/// <summary>Reads repository files through the shared <see cref="GitHubRepositoryReader"/>, with the signed-in owner's
 /// token and the reader's per-commit cache.</summary>
 public sealed class GitHubRepositoryFileSource(GitHubRepositoryReader reader) : IRepositoryFileSource
 {

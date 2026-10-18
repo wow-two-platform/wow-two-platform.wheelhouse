@@ -23,7 +23,7 @@ public sealed class McpSettingsTests
     [InlineData("ftp://wheelhouse.example")]
     [InlineData("https://wheelhouse.example/mcp")]
     [InlineData("https://wheelhouse.example?next=1")]
-    [InlineData("https://operator@wheelhouse.example")]
+    [InlineData("https://owner@wheelhouse.example")]
     public void NormalizeOrigin_ShouldRefuseAnythingButAnHttpOrigin(string? value) =>
         McpSettings.NormalizeOrigin(value).Should().BeNull();
 

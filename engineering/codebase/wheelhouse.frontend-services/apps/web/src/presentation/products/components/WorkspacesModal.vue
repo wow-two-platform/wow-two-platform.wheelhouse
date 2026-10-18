@@ -35,7 +35,7 @@ import ProductIcon from "./ProductIcon.vue";
 import WorkspaceFormModal from "./WorkspaceFormModal.vue";
 
 /**
- * The workspaces in the operator's order: add, rename, delete and reorder them. A drag handle, arrow keys on the
+ * The workspaces in the owner's order: add, rename, delete and reorder them. A drag handle, arrow keys on the
  * handle, or the up and down buttons move one; the order saves at once and rolls back if the host refuses it. Full
  * screen on phones, so the list scrolls under a pinned footer.
  */

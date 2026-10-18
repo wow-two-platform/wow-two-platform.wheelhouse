@@ -14,7 +14,7 @@ import { AlertTriangle, Check, CircleMinus, LoaderCircle, X } from "lucide-vue-n
 import { Measures } from "@/domain/common";
 import { StepStatus } from "@/domain/deployments";
 
-/** Renders each rollout step with its outcome, detail and duration, so the operator sees what the target did. */
+/** Renders each rollout step with its outcome, detail and duration, so the owner sees what the target did. */
 defineOptions({ name: "DeploymentSteps" });
 const props = defineProps<DeploymentStepsProps>();
 

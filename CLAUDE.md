@@ -22,7 +22,7 @@ engineering/              ← the execution (build · ship · run)
     ├── wheelhouse.backend-services/   ← .NET 10 Clean Architecture solution (Wheelhouse.BackendServices.slnx)
     ├── wheelhouse.frontend-services/  ← pnpm workspace; apps/web = Vue 3 + Vite + Tailwind v4 + the fe sdk @wow-two-beta/fe
     │                                     (Home · Products · Deployments · Servers; /p/:product/:tab; profile menu)
-    └── wheelhouse.runner-services/    ← Python operator runner: fleet, catalog, SSH transport, target executor
+    └── wheelhouse.runner-services/    ← Python runner: fleet, catalog, SSH transport, target executor
 ```
 
 Follows `wow-two-ws/conventions/development/repo/structure/repo-structure.md`.
@@ -38,7 +38,8 @@ in PostgreSQL and is edited in the console; the API exports it to `<runner root>
 Integrations read `/api/products` with scoped keys. Deployments use the independent runner and published artifact
 catalog, with history, live rollout steps, site probes, read-only checks, log reads and reconciliation. **Secrets** are
 administered in inventory vaults through the vault console (write-only values). Domains remain a scaffold model.
-Every audited command (`IAuditedCommand`) lands in the hash-chained `audit_entries` trail; never put a value in one.
+Every audited command (`IAuditedCommand`) lands in the hash-chained `audit_entries` trail with its actor (a signed-in
+user's login, or `key:{name}` for an integration key); never put a value in one.
 
 ## Build & run
 
@@ -113,7 +114,7 @@ Auth/multi-tenant/billing (single-user — bind to Tailscale).
 ## Fleet and artifact policy
 
 Products, servers, targets and vaults are database rows edited in the console; the runner reads the exported
-`inventory.json` snapshot. Credentials stay operator-placed files (`ssh/<server>/`, `vaults/<vault>/password`), never
+`inventory.json` snapshot. Credentials stay owner-placed files (`ssh/<server>/`, `vaults/<vault>/password`), never
 rows. Provider/environment choices use enums; no dynamic provider plugins. The local rig's fixtures stay in
 `catalog.py`/`fleet.py` and seed the database on the rig only. A product's release source is part of its row.
 Wheelhouse deploys published releases and per-commit builds; it starts a product's build workflow only for a commit

@@ -39,7 +39,7 @@ public sealed record DeploymentRecord
     /// <summary>Gets the last observed status, such as <c>running</c>, <c>succeeded</c> or <c>rolled_back</c>.</summary>
     public required string Status { get; init; }
 
-    /// <summary>Gets the operator-safe reason a rollout failed or was refused.</summary>
+    /// <summary>Gets the display-safe reason a rollout failed or was refused.</summary>
     public string? Reason { get; init; }
 
     /// <summary>Gets the failure category.</summary>

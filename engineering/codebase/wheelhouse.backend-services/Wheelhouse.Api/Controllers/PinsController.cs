@@ -12,15 +12,15 @@ using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 
-/// <summary>Exposes the signed-in operator's pins over HTTP. Pins are a preference: operators' sessions only (an
+/// <summary>Exposes the signed-in owner's pins over HTTP. Pins are a preference: signed-in sessions only (an
 /// integration key gets 403), writes carry the <c>pin</c> action, and nothing reaches the audit trail.</summary>
 [ApiController]
 [Route("api/pins")]
-[Authorize(Policy = AuthConfigurationExtensions.OperatorSessionPolicy)]
+[Authorize(Policy = AuthConfigurationExtensions.OwnerSessionPolicy)]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class PinsController(ISender sender) : ControllerBase
 {
-    /// <summary>Gets the operator's pins, in the operator's order.</summary>
+    /// <summary>Gets the owner's pins, in the owner's order.</summary>
     [HttpGet]
     [ProducesResponseType<ApiResponse<IReadOnlyList<PinDto>>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Get(CancellationToken ct) =>
@@ -46,7 +46,7 @@ public sealed class PinsController(ISender sender) : ControllerBase
                 : Ok(ApiResponse<PinDto>.Ok(ok.Data.Pin)),
             fail => this.ToProblem(fail.Error));
 
-    /// <summary>Puts the operator's pins in a new order; the list names every pin exactly once.</summary>
+    /// <summary>Puts the owner's pins in a new order; the list names every pin exactly once.</summary>
     [HttpPut("order")]
     [RequireActionHeader("pin")]
     [ProducesResponseType<ApiResponse<IReadOnlyList<PinDto>>>(StatusCodes.Status200OK)]
@@ -55,7 +55,7 @@ public sealed class PinsController(ISender sender) : ControllerBase
     public async Task<IActionResult> Reorder(ReorderApiRequest request, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new PinReorderCommand { Ids = request.Ids }, ct));
 
-    /// <summary>Removes one of the operator's pins.</summary>
+    /// <summary>Removes one of the owner's pins.</summary>
     [HttpDelete("{id:guid}")]
     [RequireActionHeader("pin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]

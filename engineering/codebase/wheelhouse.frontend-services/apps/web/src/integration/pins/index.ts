@@ -11,7 +11,7 @@ const PinSchema = z.object({
   order: z.number().int(),
 });
 
-/** The operator's pins; writes carry the `pin` action. */
+/** The owner's pins; writes carry the `pin` action. */
 export const pinsApi = {
   listPins: (signal?: AbortSignal) => requestData<Pin[]>("/api/pins", PinSchema.array(), { signal }),
   /** Pins a workspace, product or service; pinning one twice answers the existing pin. */

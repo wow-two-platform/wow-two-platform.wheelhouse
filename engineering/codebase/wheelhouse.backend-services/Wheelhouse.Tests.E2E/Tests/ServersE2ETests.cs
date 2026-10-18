@@ -7,7 +7,7 @@ using WoW.Two.Sdk.Beta.Be.Testing.Web;
 
 namespace Wheelhouse.Tests.E2E.Tests;
 
-/// <summary>Verifies the server inventory boundary: the operator reads and edits servers; nobody else does.</summary>
+/// <summary>Verifies the server inventory boundary: the owner reads and edits servers; nobody else does.</summary>
 [Collection(WheelhouseCollection.Name)]
 public sealed class ServersE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBase(fixture)
 {
@@ -20,7 +20,7 @@ public sealed class ServersE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     }
 
     [Fact]
-    public async Task Get_ShouldReturn200WithEveryServerBySlug_WhenTheOperatorReads()
+    public async Task Get_ShouldReturn200WithEveryServerBySlug_WhenTheOwnerReads()
     {
         var response = await AdminClient.GetAsync("api/servers");
 

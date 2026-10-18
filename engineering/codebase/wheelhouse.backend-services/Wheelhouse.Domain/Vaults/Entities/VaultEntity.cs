@@ -3,7 +3,7 @@ using WoW.Two.Sdk.Beta.Be.Data.Abstractions;
 namespace Wheelhouse.Domain.Vaults.Entities;
 
 /// <summary>Represents a secrets vault Wheelhouse administers. Its administrator password never lives here: it is a
-/// file the operator places on the control host.</summary>
+/// file the owner places on the control host.</summary>
 public sealed record VaultEntity : IKeyedEntity<Guid>, IHasTableName, IAuditable
 {
     /// <summary>Gets the storage table name, shared by the EF mapping and the SQL migrations.</summary>

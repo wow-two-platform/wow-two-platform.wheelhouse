@@ -17,7 +17,7 @@ public sealed class ScriptedGitHubReader : IDisposable
     private readonly ServiceProvider _services;
 
     /// <summary>Builds the reader over a fresh script and an empty cache.</summary>
-    /// <param name="token">The operator token every call carries; <see langword="null"/> stands for no signed-in operator.</param>
+    /// <param name="token">The owner's token every call carries; <see langword="null"/> stands for no signed-in owner.</param>
     public ScriptedGitHubReader(string? token = "token")
     {
         var services = new ServiceCollection();

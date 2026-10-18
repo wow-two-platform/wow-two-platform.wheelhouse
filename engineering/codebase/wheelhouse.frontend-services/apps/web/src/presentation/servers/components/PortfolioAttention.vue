@@ -6,7 +6,7 @@ import { Text } from "@wow-two-beta/fe/presentation/display";
 import { DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
 import { usePortfolioAttention } from "@/application/overview";
 
-/** Lists what needs the operator across every product: unreachable hosts, failing containers, rotation debt. */
+/** Lists what needs the owner across every product: unreachable hosts, failing containers, rotation debt. */
 defineOptions({ name: "PortfolioAttention" });
 defineSlots<{}>();
 

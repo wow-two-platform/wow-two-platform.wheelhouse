@@ -75,7 +75,7 @@ const namespaces = useVaultNamespaces(() =>
 );
 /**
  * The requested namespace, or the vault's first one when none is requested. A requested namespace the vault does not
- * have selects nothing rather than another namespace: writes go to the namespace the operator named.
+ * have selects nothing rather than another namespace: writes go to the namespace the owner named.
  */
 const namespace = computed(() => {
   const requested = listDetail.read("namespace");

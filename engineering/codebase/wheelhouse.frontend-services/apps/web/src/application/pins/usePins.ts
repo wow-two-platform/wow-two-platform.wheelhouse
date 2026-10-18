@@ -7,7 +7,7 @@ import { pinsApi } from "@/integration/pins";
 /** Query keys for pins. */
 export const PinKeys = { list: ["pins"] as const };
 
-/** The operator's pins in custom order; pinning, unpinning and reordering show at once and roll back on refusal. */
+/** The owner's pins in custom order; pinning, unpinning and reordering show at once and roll back on refusal. */
 export function usePins() {
   const list = useAppQuery({
     key: PinKeys.list,

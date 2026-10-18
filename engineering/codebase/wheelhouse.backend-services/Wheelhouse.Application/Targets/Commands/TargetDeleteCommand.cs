@@ -6,7 +6,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Targets.Commands;
 
-/// <summary>Represents a command to remove a target from the inventory; what runs on its host stays until the operator
+/// <summary>Represents a command to remove a target from the inventory; what runs on its host stays until the owner
 /// tears it down there.</summary>
 public sealed record TargetDeleteCommand : ICommand<AppResult<Unit>>, IAuditedCommand, IInventoryCommand
 {

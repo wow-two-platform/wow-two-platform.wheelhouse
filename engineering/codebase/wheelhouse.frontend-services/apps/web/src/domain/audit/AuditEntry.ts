@@ -1,11 +1,11 @@
-/** How an audited operator action ended. */
+/** How an audited action ended. */
 export const AuditOutcome = {
   Succeeded: 'succeeded',
   Failed: 'failed',
 } as const;
 export type AuditOutcome = (typeof AuditOutcome)[keyof typeof AuditOutcome];
 
-/** One operator action in the append-only, hash-chained audit trail; never carries a secret value. */
+/** One action in the append-only, hash-chained audit trail; never carries a secret value. */
 export interface AuditEntry {
   /** The entry's position in the chain, starting at 1. */
   sequence: number;

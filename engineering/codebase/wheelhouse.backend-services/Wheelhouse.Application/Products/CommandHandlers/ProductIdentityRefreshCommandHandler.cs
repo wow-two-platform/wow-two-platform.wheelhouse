@@ -9,7 +9,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Products.CommandHandlers;
 
 /// <summary>Handles <see cref="ProductIdentityRefreshCommand"/>. A branch GitHub cannot be read for fails the command,
-/// so the operator sees the refresh did not happen; the cached manifest stays.</summary>
+/// so the owner sees the refresh did not happen; the cached manifest stays.</summary>
 public sealed class ProductIdentityRefreshCommandHandler(
     IProductsRepository products, ProductIdentityService identities, ProductsProjectionService projection)
     : ICommandHandler<ProductIdentityRefreshCommand, AppResult<ProductDto>>

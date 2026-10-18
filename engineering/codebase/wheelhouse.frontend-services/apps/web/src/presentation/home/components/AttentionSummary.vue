@@ -8,7 +8,7 @@ import { usePortfolioAttention } from '@/application/overview';
 const Shown = 3;
 
 /**
- * What needs the operator, at the top of the home page — only while something does. Healthy portfolios stay quiet,
+ * What needs the owner, at the top of the home page — only while something does. Healthy portfolios stay quiet,
  * and a still-loading reading never flashes an empty box.
  */
 defineOptions({ name: 'AttentionSummary' });

@@ -1,6 +1,6 @@
 namespace Wheelhouse.Domain.Audit.Enums;
 
-/// <summary>How an audited operator action ended.</summary>
+/// <summary>How an audited action ended.</summary>
 public enum AuditOutcome
 {
     /// <summary>The action completed; a deployment it queued reports its own result later.</summary>

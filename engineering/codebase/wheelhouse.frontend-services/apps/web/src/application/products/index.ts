@@ -20,7 +20,7 @@ function patchProduct(
   return next as Product[];
 }
 
-/** The portfolio's products, with the operator's confirmed edits and optimistic status and workspace changes. */
+/** The portfolio's products, with the owner's confirmed edits and optimistic status and workspace changes. */
 export function useProducts() {
   const list = useAppQuery({
     key: ProductKeys.list,

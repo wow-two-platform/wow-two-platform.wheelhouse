@@ -30,13 +30,13 @@ public sealed class WheelhouseDbContext(DbContextOptions<WheelhouseDbContext> op
     /// <summary>Gets the workspaces products are grouped into.</summary>
     public DbSet<WorkspaceEntity> Workspaces => Set<WorkspaceEntity>();
 
-    /// <summary>Gets the workspaces, products and services operators keep one click away.</summary>
+    /// <summary>Gets the workspaces, products and services owners keep one click away.</summary>
     public DbSet<PinEntity> Pins => Set<PinEntity>();
 
     /// <summary>Gets the portfolio's products.</summary>
     public DbSet<ProductEntity> Products => Set<ProductEntity>();
 
-    /// <summary>Gets the statuses the operator gave products' services; a service without one is active.</summary>
+    /// <summary>Gets the statuses the owner gave products' services; a service without one is active.</summary>
     public DbSet<ServiceStatusEntity> ServiceStatuses => Set<ServiceStatusEntity>();
 
     /// <summary>Gets the cached manifests of the products' repositories — one row per product.</summary>

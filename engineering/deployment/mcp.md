@@ -9,7 +9,7 @@ an authenticated external client connection remains manual acceptance.
 - Endpoint: `https://<private-wheelhouse-host>/mcp`.
 - Local HTTPS API: `https://localhost:8210/mcp`.
 - Authenticate with `Authorization: Bearer <integration-key>` on every request.
-- Create the key in **Settings → Integration keys** using the operator's signed-in session.
+- Create the key in **Settings → Integration keys** using the owner's signed-in session.
 - Keep the key in the MCP client's secret or environment storage; never commit it.
 - Keep the endpoint on Tailscale or an SSH tunnel, matching the control plane's private-network policy.
 - Browser login cookies do not authenticate the MCP endpoint.
@@ -31,6 +31,8 @@ an authenticated external client connection remains manual acceptance.
   inactive service keys, repository, release source, environment sites and each environment's vault and namespace.
   Secret values are never returned. The five-value `lifecycle` was replaced by `status` (`active`/`inactive`) in v0.5.
 - `list_targets` omits settings and credential paths.
+- `list_deployments` names each deployment's `actor`, whoever submitted it: a signed-in user's login, or `key:{name}`
+  for an integration key — the word the console and the REST API use too.
 - Target-specific tools require an existing lowercase target ID from `list_targets`.
 - `get_health` reports control-plane database readiness, build identity and the local-rehearsal marker.
 - Fleet reads reuse the existing mediator handlers and runner; a queued result is not deployment success.
@@ -41,7 +43,7 @@ an authenticated external client connection remains manual acceptance.
 ## Errors
 
 - A failed call returns `isError: true` with one text block: `{"code": "…", "message": "…", "retryable": …}`.
-- `code` is the error kind REST names in a problem's `code`; `message` is the operator-safe text the console shows.
+- `code` is the error kind REST names in a problem's `code`; `message` is the display-safe text the console shows.
 - Retryable: `OperationTimeout` (the runner timed out) and `ExternalUnavailable` (runner unreachable, SSH or step failure).
 - Not retryable: `Validation`, `NotFound`, `Conflict` (the runner refused), `Unexpected`.
 - An unexpected exception answers its kind's generic message; exception text never reaches the client.
@@ -60,7 +62,7 @@ the publicly verified `10.0.67-beta` release. No production deployment is establ
 - Normal-source build with the production frontend passed with zero warnings or errors.
 - All 223 backend tests passed, including MCP protocol, key scopes, revocation and PostgreSQL checks.
 - The rebuilt local API returns `401` to anonymous MCP initialization POST requests.
-- Real operator OAuth and an authenticated external MCP client remain manual acceptance.
+- A real GitHub sign-in and an authenticated external MCP client remain manual acceptance.
 
 ## Local verification — 2026-10-05
 

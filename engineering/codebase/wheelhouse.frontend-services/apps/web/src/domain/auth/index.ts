@@ -1,4 +1,4 @@
-/** The signed-in operator, from the GitHub session. */
+/** The signed-in owner, from the GitHub session. */
 export interface CurrentUser {
   login: string;
   name: string;

@@ -12,7 +12,7 @@ public sealed record IntegrationKeyEntity : IKeyedEntity<Guid>, IHasTableName, I
     /// <summary>Gets or sets the key's identifier.</summary>
     public Guid Id { get; set; }
 
-    /// <summary>Gets or sets the name the operator gave the key, carried as the caller's name.</summary>
+    /// <summary>Gets or sets the name the owner gave the key, carried as the caller's name.</summary>
     public required string Name { get; set; }
 
     /// <summary>Gets or sets the secret's first characters, enough to recognize the key without revealing it.</summary>
@@ -24,7 +24,7 @@ public sealed record IntegrationKeyEntity : IKeyedEntity<Guid>, IHasTableName, I
     /// <summary>Gets or sets the granted scopes, space-separated, such as <c>catalog:read</c>.</summary>
     public required string Scopes { get; set; }
 
-    /// <summary>Gets or sets the operator who created the key.</summary>
+    /// <summary>Gets or sets the owner who created the key.</summary>
     public required string CreatedBy { get; set; }
 
     /// <summary>Gets or sets when the key last authenticated a request.</summary>

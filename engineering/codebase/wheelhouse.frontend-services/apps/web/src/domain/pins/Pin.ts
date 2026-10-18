@@ -7,7 +7,7 @@ export const PinKind = {
 } as const;
 export type PinKind = (typeof PinKind)[keyof typeof PinKind];
 
-/** A workspace, product or service the operator pinned, in the custom order. */
+/** A workspace, product or service the owner pinned, in the custom order. */
 export interface Pin {
   id: string;
   kind: PinKind;

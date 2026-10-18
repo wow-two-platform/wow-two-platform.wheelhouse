@@ -73,14 +73,14 @@ export function useSidebarCollapsed(): Ref<boolean> {
   return sidebarCollapsed;
 }
 
-/** The environment the operator last chose on a product page; a pinned service opens in it. */
+/** The environment the owner last chose on a product page; a pinned service opens in it. */
 export function useLastEnvironment(): Ref<DeploymentEnvironment | null> {
   return environment;
 }
 
 /**
  * Which sidebar workspaces are collapsed, by workspace id. A workspace starts expanded, so one created or imported later
- * shows its products until the operator folds it.
+ * shows its products until the owner folds it.
  */
 export function useWorkspaceExpansion() {
   return {

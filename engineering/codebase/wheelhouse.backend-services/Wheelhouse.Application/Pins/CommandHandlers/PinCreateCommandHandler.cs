@@ -10,10 +10,10 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Pins.CommandHandlers;
 
-/// <summary>Handles <see cref="PinCreateCommand"/>: a new pin comes last in the operator's order; a target already pinned
+/// <summary>Handles <see cref="PinCreateCommand"/>: a new pin comes last in the owner's order; a target already pinned
 /// answers its existing pin. A service key is taken as given, since the repository declares a product's services.</summary>
 public sealed class PinCreateCommandHandler(
-    IPinsRepository pins, IWorkspacesRepository workspaces, IProductsRepository products, IOperatorContext operatorContext)
+    IPinsRepository pins, IWorkspacesRepository workspaces, IProductsRepository products, IActorContext actorContext)
     : ICommandHandler<PinCreateCommand, AppResult<PinCreated>>
 {
     /// <inheritdoc />
@@ -33,7 +33,7 @@ public sealed class PinCreateCommandHandler(
             productId = product.Id;
         }
 
-        var owner = operatorContext.Actor;
+        var owner = actorContext.Actor;
         var existing = await pins.FindAsync(owner, request.Kind, request.WorkspaceId, productId, request.Service, cancellationToken);
         if (existing is not null)
             return AppResult<PinCreated>.Ok(new PinCreated(PinMapper.Map(existing), Created: false));
