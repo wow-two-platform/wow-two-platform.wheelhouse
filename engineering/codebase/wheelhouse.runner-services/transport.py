@@ -650,7 +650,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["import", "sites", "fixtures", "servers", "targets", "vaults", "releases", "template", "submit",
                                            "status", "jobs", "follow", "state", "check", "reconcile", "vitals", "stats", "topology",
-                                           "branches", "commits", "build", "logs", "history", "observation"])
+                                           "branches", "commits", "build", "logs", "history", "observation",
+                                           "latest"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
@@ -684,6 +685,8 @@ def main():
             result = fleet.vaults()
         elif args.action == "releases":
             result = releases(root)
+        elif args.action == "latest":
+            result = artifacts.latest()
         elif args.action == "template":
             print(json.dumps(template(root, args.bundle, args.service), indent=2))
             return 0

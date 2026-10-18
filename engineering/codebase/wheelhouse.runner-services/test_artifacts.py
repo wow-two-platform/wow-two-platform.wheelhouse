@@ -83,6 +83,25 @@ class ArtifactTests(unittest.TestCase):
             self.assertEqual(1, fetch.call_count)
             self.assertNotIn('actions', fetch.call_args.args[0])
 
+    def test_the_watcher_reads_each_sources_newest_published_release_only(self):
+        newer = {**self.release, 'tag_name': 'v0.10.0', 'published_at': '2026-09-20T00:00:00Z',
+                 'assets': [{**self.release['assets'][0], 'id': 124}]}
+        pre = {**self.release, 'tag_name': 'v0.11.0-rc.1', 'published_at': '2026-09-21T00:00:00Z', 'prerelease': True,
+               'assets': [{**self.release['assets'][0], 'id': 125}]}
+        with patch.object(artifacts, 'fetch', return_value=json.dumps([pre, self.release, newer]).encode()) as fetch:
+            result = artifacts.latest()
+        self.assertEqual([{'product': 'foreverpin', 'ok': True,
+                           'release': {'id': 'foreverpin-gh-124', 'release': 'v0.10.0',
+                                       'publishedAt': '2026-09-20T00:00:00Z'}}], result)
+        self.assertIn('per_page=10', fetch.call_args.args[0])
+
+    def test_the_watcher_names_a_source_github_cannot_serve(self):
+        with patch.object(artifacts, 'fetch', side_effect=runner.CommandFailed('GitHub request failed (HTTP 403)')):
+            self.assertEqual([{'product': 'foreverpin', 'ok': False, 'reason': 'GitHub request failed (HTTP 403)'}],
+                             artifacts.latest())
+        with patch.object(artifacts, 'fetch', return_value=b'[]'):
+            self.assertEqual([{'product': 'foreverpin', 'ok': True, 'release': None}], artifacts.latest())
+
     def test_selected_bundle_is_checked_and_cached(self):
         with patch.object(artifacts, 'fetch', side_effect=self.fetch):
             bundle = artifacts.prepare(self.root, 'foreverpin-gh-123', transport.import_bundle)

@@ -332,6 +332,27 @@ aggregates; nothing is stored.
 - `GET /api/deployments` (50 newest) and `GET /api/deployments/stats?days=` stay for Home, the product overview and the
   MCP `list_deployments` tool.
 
+## Deployment automation
+
+The control plane deploys on the owner's behalf with the actor `automation`: a hosted worker
+(`DeploymentAutomationWorker`) runs one pass every `Deployment:AutomationSeconds` (120; 0 turns it off). Work outside a
+request acts as `automation`, so every automatic submission goes through the ordinary audited deploy command
+(`deployment.start`, detail `…, automatic: a new release`) with the same runner gates.
+
+- **Auto-deploy to dev** is on per product unless the owner turns it off (`product_automation`, migration
+  `016-deploy-automation`; a product without a row takes the defaults). Wheelhouse is CI-deployed (`deploy: ci`) and
+  never deploys on its own; the API refuses turning it on (409).
+- **Release watcher:** for every auto-deploying product with a release source and a dev target, the runner's `latest`
+  read lists its newest published release (one GitHub call per product, pre-releases ignored). A product's first read
+  only records its watermark (`release_watermarks`), so turning automation on never deploys a backlog; a release
+  published after the watermark is queued for each dev target. A webhook can feed the same watermark later.
+- **Queue:** one slot per target (`deployment_queue`), latest wins: a newer release replaces a queued older one. A
+  queued deploy waits while its target runs a rollout, and is dropped when the owner turned its automation off, or the
+  target already ran that release. A refused submission is dropped too; the audit trail keeps why.
+- `GET /api/deployments/automation` lists every product's `{ product, autoDeployDev, autoPromote, ciDeployed }` and the
+  queue; `PUT /api/deployments/automation/{product}` `{ autoDeployDev?, autoPromote? }` (action header `automation`,
+  audited `product.automation`) changes the choices it names.
+
 ## Secrets vaults
 
 Secrets Vault stays a separate service and repository; Wheelhouse is its central management console.

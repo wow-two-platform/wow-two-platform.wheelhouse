@@ -141,34 +141,58 @@ def candidates(source):
     return result
 
 
+def published(source, per_page=100):
+    """A source's published releases with a complete, checksummed asset, as GitHub lists them (newest first)."""
+    require(source.provider is ArtifactProvider.GITHUB_RELEASES, "Unsupported artifact provider")
+    result = []
+    for release in json.loads(fetch(API + source.repository + "/releases?per_page=" + str(per_page))):
+        tag = release.get("tag_name", "")
+        if release.get("draft") or not release.get("published_at") or not VERSION.fullmatch(tag):
+            continue
+        assets = [asset for asset in release.get("assets", []) if asset.get("name") == source.asset_name]
+        if len(assets) != 1:
+            continue
+        asset = assets[0]
+        if (asset.get("state") != "uploaded" or not 0 < asset.get("size", 0) <= MAX_ARCHIVE
+                or not re.fullmatch(r"sha256:[a-f0-9]{64}", asset.get("digest") or "")
+                or type(asset.get("id")) is not int or asset["id"] <= 0):
+            continue
+        result.append({"id": source.product + "-gh-" + str(asset["id"]), "product": source.product,
+                       "release": tag, "kind": "release", "repository": source.repository,
+                       "provider": source.provider.value, "publishedAt": release["published_at"],
+                       "prerelease": bool(release.get("prerelease")),
+                       "assetDigest": asset["digest"], "assetName": source.asset_name})
+    return result
+
+
+def latest():
+    """Each release source's newest published release (a pre-release never counts), for the release watcher: one
+    small GitHub read per product. A source GitHub cannot serve says so and names no release."""
+    result = []
+    for source in sources():
+        try:
+            releases = [item for item in published(source, per_page=10) if not item["prerelease"]]
+        except (CommandFailed, ValueError) as error:
+            result.append({"product": source.product, "ok": False,
+                           "reason": str(error)[:300] if isinstance(error, CommandFailed) else "Unreadable releases"})
+            continue
+        newest = max(releases, key=lambda item: item["publishedAt"], default=None)
+        result.append({"product": source.product, "ok": True,
+                       "release": None if newest is None else {key: newest[key] for key in
+                                                               ("id", "release", "publishedAt")}})
+    return result
+
+
 def available(root=None):
     result = []
     for source in sources():
-        require(source.provider is ArtifactProvider.GITHUB_RELEASES, "Unsupported artifact provider")
         # A bounded recent catalog; old deployed bundles remain in the target recovery journal.
         try:
-            releases = json.loads(fetch(API + source.repository + "/releases?per_page=100"))
+            result += published(source)
         except CommandFailed:
             if rehearsal():
                 continue  # An offline local server still lists its imported bundles.
             raise
-        for release in releases:
-            tag = release.get("tag_name", "")
-            if release.get("draft") or not release.get("published_at") or not VERSION.fullmatch(tag):
-                continue
-            assets = [asset for asset in release.get("assets", []) if asset.get("name") == source.asset_name]
-            if len(assets) != 1:
-                continue
-            asset = assets[0]
-            if (asset.get("state") != "uploaded" or not 0 < asset.get("size", 0) <= MAX_ARCHIVE
-                    or not re.fullmatch(r"sha256:[a-f0-9]{64}", asset.get("digest") or "")
-                    or type(asset.get("id")) is not int or asset["id"] <= 0):
-                continue
-            result.append({"id": source.product + "-gh-" + str(asset["id"]), "product": source.product,
-                           "release": tag, "kind": "release", "repository": source.repository,
-                           "provider": source.provider.value, "publishedAt": release["published_at"],
-                           "prerelease": bool(release.get("prerelease")),
-                           "assetDigest": asset["digest"], "assetName": source.asset_name})
         # Candidates are a convenience for dev; an unreachable listing leaves the releases usable.
         try:
             result += candidates(source)

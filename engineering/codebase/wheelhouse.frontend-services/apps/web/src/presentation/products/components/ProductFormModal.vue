@@ -52,6 +52,7 @@ import {
 import { identityNoteOf, isIdentityReadOnly } from "@/domain/products";
 import { failureReason } from "@/integration/common";
 import { DeleteConfirm, RowsField } from "@/presentation/common/components";
+import ProductDeployControls from "@/presentation/deployments/components/automation/ProductDeployControls.vue";
 
 /**
  * Edits a product's identity, workspace, status and release source, and removes a product nothing runs any more. The
@@ -197,6 +198,8 @@ async function remove(): Promise<void> {
               ]"
             />
           </template>
+          <!-- Saved on their own as they are switched, apart from the form. -->
+          <ProductDeployControls v-if="product" :product="product.slug" />
           <Alert
             v-if="removeError || form.state.submitError"
             severity="danger"

@@ -3,6 +3,8 @@ using System.Globalization;
 using Wheelhouse.Api.Requests;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments;
+using Wheelhouse.Application.Deployments.Automation.Commands;
+using Wheelhouse.Application.Deployments.Automation.Queries;
 using Wheelhouse.Application.Deployments.History.Queries;
 using Wheelhouse.Application.Operations;
 using Microsoft.AspNetCore.Mvc;
@@ -62,6 +64,21 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
     [HttpGet("promotions")]
     public async Task<IActionResult> Promotions([FromQuery] DeploymentFilterApiRequest filter, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentPromotionsQuery(filter.ToFilter()), ct));
+
+    /// <summary>Lists every product's automation choices — auto-deploy each new release to dev, auto-promote to prod —
+    /// and the automatic deploys waiting for their targets.</summary>
+    [HttpGet("automation")]
+    public async Task<IActionResult> Automation(CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentAutomationQuery(), ct));
+
+    /// <summary>Changes what the control plane deploys of one product on its own; <c>{product}</c> is its id or slug.</summary>
+    [HttpPut("automation/{product}")]
+    [RequireActionHeader("automation")]
+    public async Task<IActionResult> UpdateAutomation(string product, ProductAutomationRequest request, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new ProductAutomationUpdateCommand
+        {
+            Product = product, AutoDeployDev = request.AutoDeployDev, AutoPromote = request.AutoPromote,
+        }, ct));
 
     /// <summary>Reads one deployment in full from local records: services from and to, steps, sites, warnings and
     /// what a roll back restores. Never contacts the target.</summary>

@@ -106,6 +106,7 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<IIntegrationKeysRepository, IntegrationKeysRepository>();
         builder.Services.AddScoped<IApiKeyRepository, IntegrationKeysRepository>();
         builder.Services.AddScoped<IAuditTrail, EfAuditTrail>();
+        builder.Services.AddScoped<IDeploymentAutomationStore, DeploymentAutomationStore>();
         builder.Services.AddScoped<IVitalsHistory, EfVitalsHistory>();
         builder.Services.AddHashChain<Wheelhouse.Domain.Audit.Entities.AuditEntry,
             Wheelhouse.Persistence.Audit.AuditEntryCanonicalizer>();
@@ -133,6 +134,8 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Infrastructure.Inventory.LocalRigSeedService>();
         builder.Services.AddHostedService<Wheelhouse.Infrastructure.Inventory.InventoryStartupService>();
         builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.DeploymentOutcomeFollower>();
+        // Automatic deploys: the release watcher and the per-target queue, every Deployment:AutomationSeconds.
+        builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.DeploymentAutomationWorker>();
         // The runner-sites read holds briefly in the SDK cache, in process.
         builder.Services.AddHybridCaching();
         builder.Services.AddScoped<ITargetSites, Wheelhouse.Infrastructure.Products.RunnerTargetSites>();
@@ -185,6 +188,7 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Application.Products.Services.ProductsProjectionService>();
         builder.Services.AddScoped<Wheelhouse.Application.Targets.Services.TargetsProjectionService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.History.Services.DeploymentHistoryService>();
+        builder.Services.AddScoped<Wheelhouse.Application.Deployments.Automation.Services.DeploymentAutomationService>();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<IActorContext, Wheelhouse.Api.Auth.HttpActorContext>();
         builder.Services.AddFluentValidatorsFromAssemblies(typeof(IApplicationMarker).Assembly);

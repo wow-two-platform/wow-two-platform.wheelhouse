@@ -35,6 +35,12 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
     /// <summary>The runner's history projection the <c>history</c> read answers; tests add records to it.</summary>
     public List<object> History { get; } = [];
 
+    /// <summary>What the release watcher's <c>latest</c> read answers: each product's newest release; tests add them.</summary>
+    public List<object> Latest { get; } = [];
+
+    /// <summary>Every submission, in order: target, release (bundle) and actor.</summary>
+    public List<(string Target, string Release, string Actor)> Starts { get; } = [];
+
     /// <summary>The local observation each <c>observation</c> read answers, by submission id; a missing one is refused.</summary>
     public Dictionary<string, object> Observations { get; } = [];
 
@@ -55,6 +61,7 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
         {
             "servers" => new object[] { new { id = "pilot-host", name = "Pilot", provider = "Hetzner", host = "vps.example.net", region = "hel1", sshUser = "deploy" } },
             "history" => History.ToArray(),
+            "latest" => Latest.ToArray(),
             "jobs" => new object[] { new { id = Guid.Empty, targetId = "pilot", release = "v1", status = "failed", reason = "compose up failed (exit 1)" } },
             "state" => new { targetId = id, condition = "needs_reconciliation", active = new { id = Guid.Empty, status = "failed" } },
             "topology" => new { targetId = id, availability = "available", release = "v1", collectedAt = "2026-09-26T12:00:00+00:00",
@@ -87,6 +94,7 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
         LastActor = actor;
         LastConfirm = confirm;
         LastSkipDevPass = skipDevPass;
+        Starts.Add((target, release, actor));
         if (Runner is not null)
             return Runner.StartAsync(target, release, actor, confirm, skipDevPass, ct);
         if (StartRefusal is not null)

@@ -36,3 +36,9 @@ export {
   type DeploymentViewState,
 } from "./DeploymentFilterQuery";
 export { buildEntityTree } from "./EntityTreeBuilder";
+export {
+  AutomationKeys,
+  useDeploymentAutomation,
+  useProductAutomation,
+  useUpdateAutomation,
+} from "./hooks/useDeploymentAutomation";

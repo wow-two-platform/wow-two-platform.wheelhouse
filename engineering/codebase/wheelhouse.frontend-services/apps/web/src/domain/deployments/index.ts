@@ -22,3 +22,4 @@ export {
   type ServiceComparison,
 } from './EnvironmentComparison';
 export * from './history';
+export * from './automation';

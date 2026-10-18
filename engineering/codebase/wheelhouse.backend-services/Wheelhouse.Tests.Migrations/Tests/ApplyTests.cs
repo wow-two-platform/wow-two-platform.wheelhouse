@@ -24,6 +24,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "001-baseline", "002-snake-enums", "003-audit-updated-at", "004-audit-trail", "005-vitals-samples",
         "006-product-catalog", "007-inventory", "008-product-manifests", "009-server-vitals", "010-workspaces",
         "011-product-status", "012-pins", "013-drop-test-environment", "015-product-pins-only",
+        "016-deploy-automation",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -562,6 +563,58 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
             Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 14, CancellationToken.None));
             (await Scalar(connection, pins)).Should().Be("max:product:pilot:0,max:product:shop:1,other:product:pilot:0");
         }
+    }
+
+    [Fact]
+    public async Task DeployAutomation_ShouldStartWheelhouseWithAutoDeployOff_AndGoWithItsProductAndTarget_WhenApplied()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 15, CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000001", "pilot"));
+        // The catalog migration seeded Wheelhouse beside ForeverPin.
+        (await Scalar(connection, "SELECT count(*) FROM products WHERE slug = 'wheelhouse'")).Should().Be(1L);
+        await Execute(connection,
+            "INSERT INTO servers (id, slug, name, provider, host, region, ssh_user, ssh_port, ingress, created_at_utc, updated_at_utc) " +
+            "VALUES ('00000000-0000-0000-0000-0000000000a1', 'hel1', 'Helsinki', 'hetzner', 'vps.example.net', 'hel1', " +
+            "'deploy', 22, '{}'::jsonb, now(), now())");
+        await Execute(connection,
+            "INSERT INTO targets (id, slug, product_id, server_id, environment, network, root, settings, smoke_checks, " +
+            "sites, created_at_utc, updated_at_utc) VALUES ('00000000-0000-0000-0000-0000000000b1', 'pilot-dev', " +
+            "'00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a1', 'dev', " +
+            "'platform', '/srv/wheelhouse', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now(), now())");
+
+        for (var cycle = 0; cycle < 2; cycle++)
+        {
+            Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal("016-deploy-automation");
+            // Only Wheelhouse, which its own CI deploys, starts with a row; every other product takes the defaults.
+            (await Scalar(connection, "SELECT string_agg(p.slug || ':' || a.auto_deploy_dev || ':' || a.auto_promote, ',') " +
+                                      "FROM product_automation a JOIN products p ON p.id = a.product_id"))
+                .Should().Be("wheelhouse:false:false");
+            await Execute(connection, "INSERT INTO release_watermarks (product_id, release, published_at, checked_at_utc) " +
+                                      "VALUES ('00000000-0000-0000-0000-000000000001', 'v1.0.0', now(), now())");
+            await Execute(connection, "INSERT INTO deployment_queue (target_id, bundle_id, release, published_at, cause, queued_at_utc) " +
+                                      "VALUES ('00000000-0000-0000-0000-0000000000b1', 'pilot-gh-1', 'v1.0.0', now(), 'auto_dev', now())");
+            var second = async () => await Execute(connection,
+                "INSERT INTO deployment_queue (target_id, bundle_id, release, cause, queued_at_utc) " +
+                "VALUES ('00000000-0000-0000-0000-0000000000b1', 'pilot-gh-2', 'v1.1.0', 'auto_dev', now())");
+            await second.Should().ThrowAsync<Npgsql.PostgresException>("a target has one queue slot");
+
+            Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 15, CancellationToken.None));
+            foreach (var table in new[] { "product_automation", "release_watermarks", "deployment_queue" })
+                (await migrator.HasTableAsync(table)).Should().BeFalse();
+        }
+
+        // The rows go with their product and target.
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        await Execute(connection, "INSERT INTO deployment_queue (target_id, bundle_id, release, cause, queued_at_utc) " +
+                                  "VALUES ('00000000-0000-0000-0000-0000000000b1', 'pilot-gh-1', 'v1.0.0', 'auto_dev', now())");
+        await Execute(connection, "DELETE FROM targets");
+        (await Scalar(connection, "SELECT count(*) FROM deployment_queue")).Should().Be(0L);
+        await Execute(connection, "DELETE FROM products WHERE slug = 'wheelhouse'");
+        (await Scalar(connection, "SELECT count(*) FROM product_automation")).Should().Be(0L);
     }
 
     /// <summary>The SQL that stores one vitals reading of a target slug, or of its server's host for <c>NULL</c>.</summary>

@@ -316,6 +316,13 @@ restart in `<runner root>/following/`; it never submits, retries or reconciles a
 final only when `completedAt` is present, after rollback or cleanup. Explicit status reads can still observe a later
 target-side acknowledgement. Preserve `jobs/`, `observed/`, `reconciled/` and `following/` with the runner root.
 
+A background automation worker runs every `Deployment:AutomationSeconds` (default 120; 0 turns it off): it reads each
+auto-deploying product's newest published release and queues a new one for its dev targets, one slot per target with
+the latest release winning, and submits a queued deploy once its target runs no rollout, as actor `automation`
+([architecture](../architecture/architecture.md#deployment-automation)). Each pass costs one GitHub API call per
+auto-deploying product; give the catalog token (`Deployment:GitHubTokenFile`) so the calls stay within the
+authenticated limit.
+
 A background sampler reads the vitals each `Operations:VitalsSampleMinutes` (default 5; 0 turns it off), stores each
 server's load, memory and fullest disk (a row with no target) and each target's container health in `vitals_samples`,
 and deletes readings older than 30 days.
