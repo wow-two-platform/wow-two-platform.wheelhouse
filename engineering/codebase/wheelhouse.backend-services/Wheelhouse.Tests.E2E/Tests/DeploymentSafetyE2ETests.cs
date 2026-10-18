@@ -87,6 +87,27 @@ public sealed class DeploymentSafetyE2ETests(WheelhouseAppFixture fixture) : Whe
         snapshot.GetProperty("restore").GetArrayLength().Should().Be(1);
     }
 
+    [Fact]
+    public async Task BuildFailures_ShouldListAFailingMainBuild_OfAKnownProduct_WithItsRun()
+    {
+        (await AnonymousClient.GetAsync("/api/deployments/issues/builds")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Fixture.Deployments.Builds.Add(new
+        {
+            product = "foreverpin", ok = true,
+            failing = new { runId = 9, conclusion = "failure", commit = new string('b', 40), title = "feat: billing", at = "2026-10-18T09:05:00Z",
+                url = "https://github.com/sulton-max/10x-venture-forever-pin/actions/runs/9" },
+        });
+        Fixture.Deployments.Builds.Add(new { product = "wheelhouse", ok = true, failing = (object?)null });
+        Fixture.Deployments.Builds.Add(new { product = "gone", ok = true, failing = new { runId = 1, url = "https://github.com/o/gone/actions/runs/1" } });
+        Fixture.Deployments.Builds.Add(new { product = "foreverpin-evil", ok = true, failing = new { runId = 2, url = "https://evil.example/run" } });
+
+        var failure = (await DataAsync("/api/deployments/issues/builds")).EnumerateArray().Single();
+        (failure.GetProperty("product").GetString(), failure.GetProperty("workspace").GetString(), failure.GetProperty("runId").GetInt64(),
+                failure.GetProperty("title").GetString())
+            .Should().Be(("foreverpin", "own-ventures", 9L, "feat: billing"));
+        (await DataAsync("/api/deployments/issues/builds?workspace=ocharo")).GetArrayLength().Should().Be(0);
+    }
+
     private static object Record(string id, string target, string release, string bundle, string submitted, bool rollbackCompatible,
         bool? migrations) => new
     {

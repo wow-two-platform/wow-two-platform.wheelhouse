@@ -6,7 +6,7 @@ import { bundleModule } from "./BundleModule.mjs";
 // The real rules of automatic deploys and freezes, and their wire decoding.
 const automation = await bundleModule(`
   export { DefaultAutomation, DeployFreezes, rollbackRisks, DeploymentIssues } from './src/domain/deployments';
-  export { DeploymentAutomationSchema, DeployFreezeSchema, ReleaseChangelogSchema } from './src/integration/deployments/automationSchemas';
+  export { BuildFailureSchema, DeploymentAutomationSchema, DeployFreezeSchema, ReleaseChangelogSchema } from './src/integration/deployments/automationSchemas';
   export { DeploymentPromotionSchema, DeploymentItemSchema } from './src/integration/deployments/historySchemas';
 `);
 after(() => stop());
@@ -82,4 +82,10 @@ test("a rollout that regressed while watched names its first finding", () => {
   });
   assert.equal(automation.DeploymentIssues.headline({ kind: "degraded", deployment }), "Regressed after the deploy: api restarted 2 times since the deploy");
   assert.equal(automation.DeploymentItemSchema.parse({ id: "x", status: "succeeded", outcome: "succeeded", submittedAt: "x", watch: { status: "odd" } }).watch.status, "unverified");
+});
+
+test("a failed build links only to GitHub", () => {
+  const parsed = automation.BuildFailureSchema.parse({ product: "foreverpin", runId: 9, url: "https://github.com/o/p/actions/runs/9" });
+  assert.equal(parsed.conclusion, "failure");
+  assert.throws(() => automation.BuildFailureSchema.parse({ product: "foreverpin", runId: 9, url: "https://evil.example/run" }));
 });

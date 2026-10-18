@@ -330,6 +330,11 @@ aggregates; nothing is stored.
   `failed` or `rollback_failed` one that had replaced containers, which the runner refuses to deploy over until a
   reconcile. That flag reads local records only; the target's own state decides, so the console reads it before its
   reconcile dialog opens. Likely-locked targets come first, then newest first; a removed target is left out.
+- `GET /api/deployments/issues/builds` lists the products whose newest finished run of their build workflow on the
+  default branch failed (`failure`, `timed_out`, `startup_failure`): `{ product, workspace, runId, conclusion, commit,
+  title, at, url }`, newest first; a later success clears one. The runner (`builds`) reads GitHub Actions at most every
+  two minutes and keeps the read in `<runner root>/github/builds.json`; a product GitHub cannot serve, one without a
+  build workflow and one the inventory lacks are left out. The console lists them in Issues, linked to the run.
 - `GET /api/deployments/{id}/detail` answers one deployment: each service from and to, the previous success, the
   observation's steps, sites and warnings (`observed` false when unreadable), and `rollback`, the previous release,
   only when this rollout is what its target runs and its release declares the previous images compatible.

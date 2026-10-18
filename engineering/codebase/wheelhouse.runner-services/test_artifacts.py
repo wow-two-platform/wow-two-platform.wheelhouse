@@ -148,6 +148,35 @@ class ArtifactTests(unittest.TestCase):
                 with self.subTest(start=start, end=end), self.assertRaises(ValueError):
                     artifacts.changelog('foreverpin', start, end)
 
+    def test_a_failed_main_build_shows_until_a_later_run_succeeds_and_reads_are_kept_two_minutes(self):
+        self.source = replace(FOREVERPIN)
+        runs = {'workflow_runs': [
+            {'id': 7, 'status': 'completed', 'conclusion': 'success', 'created_at': '2026-10-18T08:00:00Z', 'head_sha': 'a' * 40},
+            {'id': 9, 'status': 'completed', 'conclusion': 'failure', 'created_at': '2026-10-18T09:00:00Z',
+             'updated_at': '2026-10-18T09:05:00Z', 'head_sha': 'b' * 40, 'display_title': 'feat: billing',
+             'html_url': 'https://evil.example/run'},
+            {'id': 10, 'status': 'in_progress', 'conclusion': None, 'created_at': '2026-10-18T10:00:00Z'}]}
+        with patch.object(artifacts, 'fetch', return_value=json.dumps(runs).encode()) as fetch:
+            [result] = artifacts.builds(self.root, clock=lambda: 1000.0)
+            self.assertIn('/actions/workflows/publish-docker-image.yml/runs?', fetch.call_args.args[0])
+            self.assertIn('branch=main', fetch.call_args.args[0])
+            self.assertEqual({'runId': 9, 'conclusion': 'failure', 'commit': 'b' * 40, 'title': 'feat: billing',
+                              'at': '2026-10-18T09:05:00Z',
+                              'url': 'https://github.com/sulton-max/10x-venture-forever-pin/actions/runs/9'}, result['failing'])
+            artifacts.builds(self.root, clock=lambda: 1100.0)
+            self.assertEqual(1, fetch.call_count, 'a read is kept two minutes')
+        runs['workflow_runs'].append({'id': 11, 'status': 'completed', 'conclusion': 'success', 'created_at': '2026-10-18T11:00:00Z'})
+        with patch.object(artifacts, 'fetch', return_value=json.dumps(runs).encode()):
+            self.assertIsNone(artifacts.builds(self.root, clock=lambda: 1200.0)[0]['failing'])
+
+    def test_a_product_github_cannot_serve_says_so_and_one_without_a_workflow_is_left_out(self):
+        self.source = replace(FOREVERPIN)
+        with patch.object(artifacts, 'fetch', side_effect=runner.CommandFailed('GitHub request failed (HTTP 404)')):
+            self.assertEqual([{'product': 'foreverpin', 'ok': False, 'failing': None, 'reason': 'GitHub request failed (HTTP 404)'}],
+                             artifacts.builds(self.root, clock=lambda: 1.0))
+        self.source = replace(FOREVERPIN, workflow=None)
+        self.assertEqual([], artifacts.builds(self.root, clock=lambda: 500.0))
+
     def test_selected_bundle_is_checked_and_cached(self):
         with patch.object(artifacts, 'fetch', side_effect=self.fetch):
             bundle = artifacts.prepare(self.root, 'foreverpin-gh-123', transport.import_bundle)

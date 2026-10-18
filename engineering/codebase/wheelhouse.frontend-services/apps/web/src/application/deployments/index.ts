@@ -38,6 +38,7 @@ export {
 export { buildEntityTree } from "./EntityTreeBuilder";
 export {
   AutomationKeys,
+  useBuildFailures,
   useCoveringFreeze,
   useDeployFreezes,
   useDeploymentAutomation,

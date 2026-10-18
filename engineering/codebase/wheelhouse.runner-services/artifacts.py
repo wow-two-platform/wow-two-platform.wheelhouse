@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import tarfile
 import tempfile
+import time
 import zipfile
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
@@ -241,6 +242,53 @@ def changelog(product, start, end):
     result["migrations"] = sorted({str(item["filename"])[:300] for item in files or []
                                    if isinstance(item, dict) and isinstance(item.get("filename"), str)
                                    and MIGRATION_PATH.search(item["filename"])})[:50]
+    return result
+
+
+BUILDS_SECONDS = 120
+FAILED_RUNS = ("failure", "timed_out", "startup_failure")
+
+
+def failed_build(source):
+    """The newest finished run of a product's build workflow on its default branch when it failed, else None; a later
+    success clears it."""
+    listing = json.loads(fetch(API + source.repository + "/actions/workflows/" + quote(source.workflow, safe="")
+                               + "/runs?per_page=10&exclude_pull_requests=true&branch=" + quote(source.default_branch, safe="")))
+    runs = [run for run in (listing.get("workflow_runs") or [] if isinstance(listing, dict) else [])
+            if isinstance(run, dict) and run.get("status") == "completed" and type(run.get("id")) is int]
+    latest = max(runs, key=lambda run: str(run.get("created_at") or ""), default=None)
+    if latest is None or latest.get("conclusion") not in FAILED_RUNS:
+        return None
+    sha = latest.get("head_sha")
+    return {"runId": latest["id"], "conclusion": latest["conclusion"],
+            "commit": sha if isinstance(sha, str) and SHA.fullmatch(sha) else None,
+            "title": str(latest.get("display_title") or "")[:200],
+            "at": latest.get("updated_at") or latest.get("created_at"),
+            # Built from the code-owned repository and the run's numeric id, never taken from the response.
+            "url": "https://github.com/" + source.repository + "/actions/runs/" + str(latest["id"])}
+
+
+def builds(root, clock=None):
+    """Each product's failing main build, read from GitHub at most every two minutes and kept in
+    <root>/github/builds.json between reads; a product GitHub cannot serve says so."""
+    now = (clock or time.time)()
+    cache = Path(root) / "github" / "builds.json"
+    try:
+        kept = json.loads(cache.read_text())
+        if isinstance(kept, dict) and now - float(kept.get("fetchedAt", 0)) < BUILDS_SECONDS:
+            return kept["products"]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    result = []
+    for source in sources():
+        if not source.workflow:
+            continue
+        try:
+            result.append({"product": source.product, "ok": True, "failing": failed_build(source)})
+        except (CommandFailed, ValueError) as error:
+            result.append({"product": source.product, "ok": False, "failing": None,
+                           "reason": str(error)[:300] if isinstance(error, CommandFailed) else "Unreadable runs"})
+    write_json(cache, {"fetchedAt": now, "products": result})
     return result
 
 

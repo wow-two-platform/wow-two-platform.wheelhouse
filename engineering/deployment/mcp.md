@@ -31,14 +31,16 @@ an authenticated external client connection remains manual acceptance.
   inactive service keys, repository, release source, environment sites and each environment's vault and namespace.
   Secret values are never returned. The five-value `lifecycle` was replaced by `status` (`active`/`inactive`) in v0.5.
 - `list_targets` omits settings and credential paths.
-- `list_deployments` names each deployment's `actor`, whoever submitted it: a signed-in user's login, or `key:{name}`
-  for an integration key — the word the console and the REST API use too.
+- `list_deployments` names each deployment's `actor`, whoever submitted it: a signed-in user's login, `key:{name}`
+  for an integration key, or `automation` for a deploy the control plane made on its own (auto-deploy to dev,
+  auto-promote) — the word the console and the REST API use too — and the owner's `deployReason` when one was given.
 - Target-specific tools require an existing lowercase target ID from `list_targets`.
 - `get_health` reports control-plane database readiness, build identity and the local-rehearsal marker.
 - Fleet reads reuse the existing mediator handlers and runner; a queued result is not deployment success.
 - Discovery lists only tools authorized by the supplied key, and direct unauthorized calls are refused.
 - Revoking a key takes effect on its next request; no MCP authentication session is retained.
-- No tools build, deploy, reconcile, read logs, expose secrets or modify inventory.
+- No tools build, deploy, reconcile, read logs, expose secrets or modify inventory. Freezes, automation choices,
+  changelogs and failed builds are console and REST reads only for now.
 
 ## Errors
 

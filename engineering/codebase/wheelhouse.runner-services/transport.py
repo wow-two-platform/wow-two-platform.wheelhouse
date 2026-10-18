@@ -779,7 +779,7 @@ def main():
     parser.add_argument("action", choices=["import", "sites", "fixtures", "servers", "targets", "vaults", "releases", "template", "submit",
                                            "status", "jobs", "follow", "state", "check", "reconcile", "vitals", "stats", "topology",
                                            "branches", "commits", "build", "logs", "history", "observation",
-                                           "latest", "facts", "changelog", "watch"])
+                                           "latest", "facts", "changelog", "watch", "builds"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
@@ -823,6 +823,8 @@ def main():
             result = facts(root, args.bundle)
         elif args.action == "watch":
             result = watch(root, args.minutes)
+        elif args.action == "builds":
+            result = artifacts.builds(root)
         elif args.action == "changelog":
             result = artifacts.changelog(args.product, args.start, args.end)
         elif args.action == "template":

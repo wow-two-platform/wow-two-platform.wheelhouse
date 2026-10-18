@@ -10,6 +10,7 @@ export const AutomationKeys = {
   freezes: ['deployments', 'freezes'] as const,
   facts: (release: string) => ['deployments', 'facts', release] as const,
   changelog: (product: string, from: string, to: string) => ['deployments', 'changelog', product, from, to] as const,
+  builds: ['deployments', 'builds'] as const,
 };
 
 /** How often the automation choices and the queue are read while a view shows them. */
@@ -97,6 +98,16 @@ export function useReleaseChangelog(
     key: () => AutomationKeys.changelog(toValue(product), toValue(from) ?? '', toValue(to)),
     queryFn: ({ signal }) => deploymentAutomationApi.getChangelog(toValue(product), toValue(from), toValue(to), signal),
     enabled: () => toValue(enabled) && Boolean(toValue(to)),
+    meta: { suppressGlobalError: true },
+  });
+}
+
+/** The products whose newest finished main build failed, read every minute while the page is visible. */
+export function useBuildFailures() {
+  return useAppQuery({
+    key: () => AutomationKeys.builds,
+    queryFn: ({ signal }) => deploymentAutomationApi.listBuildFailures([], signal),
+    refetchInterval: 60_000,
     meta: { suppressGlobalError: true },
   });
 }

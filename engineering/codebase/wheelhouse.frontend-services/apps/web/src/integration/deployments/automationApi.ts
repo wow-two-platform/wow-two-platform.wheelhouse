@@ -1,6 +1,14 @@
-import type { DeployFreeze, DeploymentAutomation, ProductAutomation, ReleaseChangelog, ReleaseFacts } from '@/domain/deployments';
+import type {
+  BuildFailure,
+  DeployFreeze,
+  DeploymentAutomation,
+  ProductAutomation,
+  ReleaseChangelog,
+  ReleaseFacts,
+} from '@/domain/deployments';
 import { requestData, requestEmpty } from '@/integration/common';
 import {
+  BuildFailureSchema,
   DeployFreezeSchema,
   DeploymentAutomationSchema,
   ProductAutomationSchema,
@@ -35,6 +43,14 @@ export const deploymentAutomationApi = {
       ReleaseChangelogSchema,
       { signal },
     );
+  },
+
+  /** The products whose newest finished main build failed; `params` are the history filter's entity parameters. */
+  listBuildFailures: (params: ReadonlyArray<readonly [string, string]>, signal?: AbortSignal) => {
+    const query = new URLSearchParams(params.map(([key, value]) => [key, value])).toString();
+    return requestData<BuildFailure[]>(`/api/deployments/issues/builds${query ? `?${query}` : ''}`, BuildFailureSchema.array(), {
+      signal,
+    });
   },
 
   /** Every hold on deploys. */

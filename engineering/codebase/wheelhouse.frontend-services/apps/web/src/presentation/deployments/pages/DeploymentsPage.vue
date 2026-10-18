@@ -8,6 +8,7 @@ import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
 
 import {
   buildEntityTree,
+  useBuildFailures,
   useDeploymentIssues,
   useDeploymentPromotions,
   useRunningDeployments,
@@ -55,6 +56,8 @@ const hiddenProducts = computed(
     ),
 );
 const offers = computed(() => promotions.data.value?.filter((item) => !hiddenProducts.value.has(item.product)));
+const builds = useBuildFailures();
+const shownBuilds = computed(() => (builds.data.value ?? []).filter((item) => !hiddenProducts.value.has(item.product)));
 const shownIssues = computed(() =>
   issues.data.value?.filter((item) => !item.deployment.product || !hiddenProducts.value.has(item.deployment.product)),
 );
@@ -113,8 +116,9 @@ function promote(item: DeploymentPromotion): void {
       </Button>
     </PageHeaderActions>
     <IssuesPanel
-      v-if="shownIssues?.length"
-      :items="shownIssues"
+      v-if="shownIssues?.length || shownBuilds.length"
+      :items="shownIssues ?? []"
+      :builds="shownBuilds"
       :product-names="productNames"
       :checking-target="checkingTarget"
       @redeploy="redeploy"

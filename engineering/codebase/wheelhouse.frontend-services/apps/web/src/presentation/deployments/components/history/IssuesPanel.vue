@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { DeploymentIssue } from "@/domain/deployments";
+import type { BuildFailure, DeploymentIssue } from "@/domain/deployments";
 
 /** Defines the targets that need attention. */
 export interface IssuesPanelProps {
@@ -9,12 +9,15 @@ export interface IssuesPanelProps {
   readonly productNames: ReadonlyMap<string, string>;
   /** The target whose state is being read before its reconcile dialog opens. */
   readonly checkingTarget?: string | null;
+  /** The products whose newest finished main build failed. */
+  readonly builds?: readonly BuildFailure[];
 }
 </script>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import { ArrowUpRight, RotateCcw, TriangleAlert, Wrench } from "lucide-vue-next";
+import { ArrowUpRight, Hammer, RotateCcw, TriangleAlert, Wrench } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge, RelativeTime } from "@wow-two-beta/fe/presentation/display";
@@ -31,7 +34,8 @@ import FrozenBadge from "../automation/FrozenBadge.vue";
  * likely locked come first.
  */
 defineOptions({ name: "IssuesPanel" });
-const props = withDefaults(defineProps<IssuesPanelProps>(), { checkingTarget: null });
+const props = withDefaults(defineProps<IssuesPanelProps>(), { checkingTarget: null, builds: () => [] });
+const total = computed(() => props.items.length + props.builds.length);
 const emit = defineEmits<{ redeploy: [issue: DeploymentIssue]; reconcile: [issue: DeploymentIssue] }>();
 const router = useRouter();
 
@@ -52,7 +56,7 @@ function describe(issue: DeploymentIssue): string {
 <template>
   <Panel
     title="Issues"
-    :description="`${props.items.length} ${props.items.length === 1 ? 'target needs' : 'targets need'} attention.`"
+    :description="`${total} ${total === 1 ? 'issue needs' : 'issues need'} attention.`"
   >
     <ul class="flex flex-col divide-y divide-border">
       <li
@@ -125,6 +129,40 @@ function describe(issue: DeploymentIssue): string {
             @click="emit('reconcile', issue)"
           >
             <template #leading><Wrench :size="14" aria-hidden="true" /></template>Reconcile
+          </Button>
+        </div>
+      </li>
+      <li
+        v-for="build in props.builds"
+        :key="`build-${build.product}`"
+        class="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-3 gap-y-3 py-3 first:pt-0 last:pb-0 md:grid-cols-[1.25rem_minmax(0,1fr)_auto] md:items-center"
+      >
+        <Hammer :size="18" class="mt-0.5 text-destructive md:mt-0" aria-hidden="true" />
+        <div class="min-w-0">
+          <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <RouterLink :to="ConsolePaths.product(build.product)" class="font-medium hover:text-primary focus-visible:outline-primary">{{
+              props.productNames.get(build.product) ?? build.product
+            }}</RouterLink>
+            <Badge variant="neutral">main</Badge>
+            <span v-if="build.commit" class="font-mono text-xs">{{ build.commit.slice(0, 7) }}</span>
+          </p>
+          <p class="mt-1 text-sm">
+            <span class="text-destructive">{{ build.conclusion === "timed_out" ? "Main build timed out" : "Main build failed" }}</span>
+            <span v-if="build.title" class="text-muted-foreground"> · {{ build.title }}</span>
+          </p>
+          <p class="mt-0.5 text-xs text-muted-foreground">
+            <RelativeTime v-if="build.at" :value="build.at" /> · dev gets no new release until a build succeeds
+          </p>
+        </div>
+        <div class="col-start-2 flex flex-wrap gap-2 md:col-start-3 md:justify-end">
+          <Button as-child variant="ghost" tone="neutral" size="sm" class="max-md:min-h-11">
+            <a
+              :href="build.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              :aria-label="`Open the failed build of ${props.productNames.get(build.product) ?? build.product} on GitHub`"
+              ><ArrowUpRight :size="14" aria-hidden="true" />Run</a
+            >
           </Button>
         </div>
       </li>

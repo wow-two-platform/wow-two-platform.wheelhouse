@@ -54,6 +54,17 @@ export const ReleaseChangelogSchema = z.object({
   reason: z.string().nullable().default(null),
 });
 
+export const BuildFailureSchema = z.object({
+  product: z.string(),
+  workspace: z.string().nullable().default(null),
+  runId: z.number().int(),
+  conclusion: z.string().default('failure'),
+  commit: z.string().nullable().default(null),
+  title: z.string().default(''),
+  at: z.string().nullable().default(null),
+  url: githubUrl,
+});
+
 export const ReleaseFactsSchema = z.object({
   id: z.string(),
   product: z.string(),
