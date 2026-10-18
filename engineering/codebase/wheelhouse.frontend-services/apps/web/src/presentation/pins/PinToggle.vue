@@ -1,13 +1,15 @@
 <script lang="ts">
 import type { PinSubject } from "@/domain/pins";
 
-/** Pins or unpins one workspace, product or service. */
+/** Pins or unpins one product. */
 export interface PinToggleProps {
   readonly subject: PinSubject;
   /** What the pin names, for the button's accessible name: "Pin {label}". */
   readonly label: string;
   /** Shows "Pin" or "Pinned" beside the icon. */
   readonly showText?: boolean;
+  /** An icon-only toggle is ghost unless it sits among outlined actions. A labelled one is always outlined. */
+  readonly variant?: "ghost" | "outline";
 }
 </script>
 <script setup lang="ts">
@@ -18,7 +20,7 @@ import { usePins } from "@/application/pins";
 
 /** A pin toggle: pressed while pinned. The change shows at once and rolls back if the host refuses it. */
 defineOptions({ name: "PinToggle" });
-const props = withDefaults(defineProps<PinToggleProps>(), { showText: false });
+const props = withDefaults(defineProps<PinToggleProps>(), { showText: false, variant: "ghost" });
 defineSlots<{}>();
 const pins = usePins();
 const pinned = computed(() => pins.isPinned(props.subject));
@@ -27,7 +29,7 @@ const name = computed(() => `${pinned.value ? "Unpin" : "Pin"} ${props.label}`);
 <template>
   <Button
     size="sm"
-    :variant="props.showText ? 'outline' : 'ghost'"
+    :variant="props.showText ? 'outline' : props.variant"
     tone="neutral"
     :shape="props.showText ? 'default' : 'square'"
     :class="props.showText ? '' : 'max-md:size-11'"
