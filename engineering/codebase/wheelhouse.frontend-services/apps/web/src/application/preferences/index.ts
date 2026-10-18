@@ -6,7 +6,10 @@ export const PreferenceKeys = {
   showInactive: "wheelhouse.show-inactive",
   sidebarCollapsed: "wheelhouse.sidebar-collapsed",
   environment: "wheelhouse.environment",
-  collapsedWorkspaces: "wheelhouse.sidebar-collapsed-workspaces",
+  collapsedGroups: "wheelhouse.products-collapsed-workspaces",
+  productsView: "wheelhouse.products-view",
+  lastProduct: "wheelhouse.last-product",
+  sidebarProductsOpen: "wheelhouse.sidebar-products-open",
 } as const;
 
 /** Reads a remembered value; storage that is blocked or full reads as nothing remembered. @internal */
@@ -50,8 +53,8 @@ const environment = preference<DeploymentEnvironment | null>(
   (value) => value ?? "",
 );
 
-const collapsedWorkspaces = preference<string[]>(
-  PreferenceKeys.collapsedWorkspaces,
+const collapsedGroups = preference<string[]>(
+  PreferenceKeys.collapsedGroups,
   (raw) => {
     try {
       const value: unknown = JSON.parse(raw ?? "[]");
@@ -79,16 +82,71 @@ export function useLastEnvironment(): Ref<DeploymentEnvironment | null> {
 }
 
 /**
- * Which sidebar workspaces are collapsed, by workspace id. A workspace starts expanded, so one created or imported later
- * shows its products until the owner folds it.
+ * Which workspace groups on the Products page are collapsed, by workspace id. A group starts expanded, so one created
+ * or imported later shows its products until the owner folds it.
  */
-export function useWorkspaceExpansion() {
+export function useGroupExpansion() {
   return {
-    isExpanded: (id: string) => !collapsedWorkspaces.value.includes(id),
+    isExpanded: (id: string) => !collapsedGroups.value.includes(id),
     toggle: (id: string) => {
-      collapsedWorkspaces.value = collapsedWorkspaces.value.includes(id)
-        ? collapsedWorkspaces.value.filter((item) => item !== id)
-        : [...collapsedWorkspaces.value, id];
+      collapsedGroups.value = collapsedGroups.value.includes(id)
+        ? collapsedGroups.value.filter((item) => item !== id)
+        : [...collapsedGroups.value, id];
+    },
+    expand: (id: string) => {
+      if (collapsedGroups.value.includes(id)) collapsedGroups.value = collapsedGroups.value.filter((item) => item !== id);
     },
   };
+}
+
+/** How the Products page lays out workspaces and products from tablets up; phones always show cards. */
+export const ProductsView = { Cards: "cards", Rows: "rows" } as const;
+export type ProductsView = (typeof ProductsView)[keyof typeof ProductsView];
+
+const productsView = preference<ProductsView>(
+  PreferenceKeys.productsView,
+  (raw) => (raw === ProductsView.Rows ? ProductsView.Rows : ProductsView.Cards),
+  (value) => value,
+);
+
+/** The Products page's Cards or Rows choice, remembered across visits. */
+export function useProductsView(): Ref<ProductsView> {
+  return productsView;
+}
+
+/** The product page last opened, and its tab: where the sidebar's Products returns to. */
+export interface LastProduct {
+  readonly slug: string;
+  readonly tab: string | null;
+}
+
+const lastProduct = preference<LastProduct | null>(
+  PreferenceKeys.lastProduct,
+  (raw) => {
+    try {
+      const value: unknown = JSON.parse(raw ?? "null");
+      if (!value || typeof value !== "object") return null;
+      const { slug, tab } = value as Record<string, unknown>;
+      return typeof slug === "string" && slug ? { slug, tab: typeof tab === "string" && tab ? tab : null } : null;
+    } catch {
+      return null;
+    }
+  },
+  (value) => JSON.stringify(value),
+);
+
+/** The product page last opened; null before any, or after it was forgotten. */
+export function useLastProduct(): Ref<LastProduct | null> {
+  return lastProduct;
+}
+
+const sidebarProductsOpen = preference(
+  PreferenceKeys.sidebarProductsOpen,
+  (raw) => raw !== "false",
+  (value) => String(value),
+);
+
+/** Whether the sidebar's Products tree is unfolded; it starts unfolded. */
+export function useSidebarProductsOpen(): Ref<boolean> {
+  return sidebarProductsOpen;
 }

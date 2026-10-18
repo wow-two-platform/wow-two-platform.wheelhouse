@@ -14,5 +14,7 @@ export function useApiConnection() {
   );
   const localRig = computed(() => data.value?.localRig === true);
   const version = computed(() => data.value?.version ?? null);
-  return { connection, localRig, version } as const;
+  /** The environment this console serves, once the status answers. */
+  const environment = computed(() => data.value?.environment ?? null);
+  return { connection, localRig, version, environment } as const;
 }

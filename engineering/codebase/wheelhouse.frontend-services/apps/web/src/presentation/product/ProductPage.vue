@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, useTemplateRef, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
+import { ChevronLeft } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import {
   EmptyState,
@@ -13,6 +14,7 @@ import { DataRegion } from "@wow-two-beta/fe/presentation/feedback";
 import { ConsolePaths, ProductTab, ProductTabs, productTabOf } from "@/application/navigation";
 import { workspaceOf } from "@/application/portfolio";
 import { buildProductInventory } from "@/application/product/ProductInventory";
+import { useLastProduct } from "@/application/preferences";
 import { useProducts } from "@/application/products";
 import { useWorkspaces } from "@/application/workspaces";
 import { useDeploymentTargets } from "@/application/deployments";
@@ -29,7 +31,9 @@ const ProductDeployments = defineAsyncComponent(() => import("./tabs/ProductDepl
  * One product on its own page: the header — what it is and what applies to all of it — over its tabs: Overview
  * (environments, services, comparison, inspector), Releases, Secrets and Activity. Each tab has its own address,
  * `/p/{product}/{tab}`, with Overview at `/p/{product}`; the tabs scroll sideways on phones. A tab's top-bar actions
- * come from its panel. A new tab adds its entry to `ProductTabs` (application/navigation) and its panel below.
+ * come from its panel. A new tab adds its entry to `ProductTabs` (application/navigation) and its panel below. The page
+ * it shows is remembered — product and tab — so the sidebar's Products returns to it; phones get "All products" at the
+ * top, since their bottom bar's Products returns here too.
  */
 defineOptions({ name: "ProductPage" });
 const route = useRoute();
@@ -38,6 +42,7 @@ const products = useProducts();
 const workspaces = useWorkspaces();
 const targets = useDeploymentTargets();
 const header = useTemplateRef<{ addEnvironment(): void }>("header");
+const lastProduct = useLastProduct();
 
 const productKey = computed(() => param(route.params["product"]) ?? "");
 const tabSegment = computed(() => param(route.params["tab"]));
@@ -80,6 +85,15 @@ watch(
   { immediate: true, flush: "post" },
 );
 
+/* The product shown, and its tab, become the place the Products destination returns to. */
+watch(
+  () => [record.value?.slug ?? null, tab.value.value] as const,
+  ([slug, value]) => {
+    if (slug) lastProduct.value = { slug, tab: value === ProductTab.Overview ? null : value };
+  },
+  { immediate: true },
+);
+
 /* An address naming no tab opens Overview, keeping its query. */
 watch(
   tabSegment,
@@ -104,6 +118,12 @@ watch(
     <template #emptyActions
       ><Button as-child variant="outline"><RouterLink :to="ConsolePaths.home">Home</RouterLink></Button
       ><Button as-child><RouterLink :to="ConsolePaths.products">Products</RouterLink></Button></template
+    >
+    <!-- Phones have no sidebar: the way back to the grid sits above the header. -->
+    <RouterLink
+      :to="ConsolePaths.products"
+      class="-my-2 inline-flex min-h-11 items-center gap-1 self-start rounded-md pe-2 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring md:hidden"
+      ><ChevronLeft :size="16" aria-hidden="true" />All products</RouterLink
     >
     <ProductHeader ref="header" :product="firstLoad ? null : product" :workspace="workspace" />
     <TabsGroup :model-value="tab.value" activation-mode="manual" class="min-w-0 gap-5" @update:model-value="chooseTab">

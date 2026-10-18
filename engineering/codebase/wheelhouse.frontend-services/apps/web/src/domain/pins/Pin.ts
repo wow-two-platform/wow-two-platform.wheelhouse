@@ -1,19 +1,20 @@
-/** What a pin keeps one click away. */
+/** What a pin keeps one click away. Only products are pinned (2026-10-18); the host still reports a pin's kind. */
 export const PinKind = {
+  /** A workspace; no longer pinned, and the host converted every one. */
   Workspace: 'workspace',
   Product: 'product',
-  /** A service of a product; one pin covers every environment, and opens the one selected. */
+  /** A service of a product; no longer pinned, and the host turned every one into its product's pin. */
   Service: 'service',
 } as const;
 export type PinKind = (typeof PinKind)[keyof typeof PinKind];
 
-/** A workspace, product or service the owner pinned, in the custom order. */
+/** A pinned product, in the owner's custom order. */
 export interface Pin {
   id: string;
   kind: PinKind;
   workspaceId: string | null;
   productId: string | null;
-  /** The service's key in the product's deployment; set for a service pin only. */
+  /** Set only on a pin made before pins became products only. */
   service: string | null;
   order: number;
 }
@@ -24,16 +25,14 @@ export interface PinProduct {
   readonly slug: string;
 }
 
-/** What a pin points at. */
-export type PinSubject =
-  | { readonly kind: typeof PinKind.Workspace; readonly workspaceId: string }
-  | { readonly kind: typeof PinKind.Product; readonly product: PinProduct }
-  | { readonly kind: typeof PinKind.Service; readonly product: PinProduct; readonly service: string };
+/** What a pin points at: a product. */
+export interface PinSubject {
+  readonly kind: typeof PinKind.Product;
+  readonly product: PinProduct;
+}
 
-/** A new pin. Pinning the same thing twice answers the existing pin. */
+/** A new pin. Pinning the same product twice answers the existing pin. */
 export interface CreatePinRequest {
-  kind: PinKind;
-  workspaceId?: string;
-  productId?: string;
-  service?: string;
+  kind: typeof PinKind.Product;
+  productId: string;
 }

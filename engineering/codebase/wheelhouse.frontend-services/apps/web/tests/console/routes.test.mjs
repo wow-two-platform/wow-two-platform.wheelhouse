@@ -66,10 +66,10 @@ test("an old Workspace link opens the product's own page with its other paramete
   assert.equal(router.currentRoute.value.path, "/");
 });
 
-test("workspace and product pages take their slug from the path and title from it", async () => {
+test("an old workspace link opens its group on the Products page; a product page takes its slug and title from the path", async () => {
   await router.push("/w/platform");
-  assert.equal(router.currentRoute.value.params.workspace, "platform");
-  assert.equal(router.currentRoute.value.meta.title(router.currentRoute.value), "platform");
+  assert.equal(router.currentRoute.value.path, "/products");
+  assert.equal(router.currentRoute.value.hash, "#workspace-platform");
 
   await router.push("/p/wheelhouse?env=prod&inspect=service&item=api");
   assert.equal(router.currentRoute.value.params.product, "wheelhouse");
@@ -78,7 +78,7 @@ test("workspace and product pages take their slug from the path and title from i
   assert.equal(router.currentRoute.value.params.tab, "");
 });
 
-test("a product's tab is a path segment on the same route, and a workspace opens the products browser", async () => {
+test("a product's tab is a path segment on the same route", async () => {
   await router.push("/p/wheelhouse/releases");
   const tabRecord = router.currentRoute.value.matched.at(-1);
   assert.deepEqual(router.currentRoute.value.params, { product: "wheelhouse", tab: "releases" });
@@ -86,7 +86,4 @@ test("a product's tab is a path segment on the same route, and a workspace opens
   await router.push("/p/wheelhouse?env=prod");
   assert.equal(router.currentRoute.value.matched.at(-1), tabRecord, "Overview and the tabs share one route record.");
 
-  await router.push("/w/platform");
-  assert.equal(router.currentRoute.value.params.workspace, "platform");
-  assert.equal(router.currentRoute.value.matched.at(-1).meta.description, "A workspace and its products.");
 });

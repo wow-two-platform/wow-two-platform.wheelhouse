@@ -11,6 +11,8 @@ export interface SystemStatus {
   status: string;
   /** The API's informational version: `X.Y.Z+<commit>`. */
   version?: string;
+  /** The environment this console serves: `prod` when it runs as Production, else `dev`. Its own CI deploys it. */
+  environment?: string;
   /** True when this instance drives the local rehearsal rig instead of real hosts. */
   localRig?: boolean;
 }

@@ -28,6 +28,10 @@
   --color-chart-2: #8c693b;
   --color-chart-3: #5967a0;
   --color-chart-4: #aa5965;
+
+  /* Deploy trends: dev and prod as two categorical hues, validated for colour-vision separation on both surfaces. */
+  --color-chart-dev: #7a5cc8;
+  --color-chart-prod: #1f8a6a;
 }
 
 /* The console's glass is stronger than the fe SDK `glass` variants (75% header / 70% card fill, 12px blur, no edge
@@ -49,6 +53,8 @@
   --color-chart-2: #d9b583;
   --color-chart-3: #b7bee9;
   --color-chart-4: #e5abb5;
+  --color-chart-dev: #9380e6;
+  --color-chart-prod: #3aa47e;
 
   --wh-glass-color: #1b2420e6;
   --wh-glass-subtle-color: #1b2420b8;

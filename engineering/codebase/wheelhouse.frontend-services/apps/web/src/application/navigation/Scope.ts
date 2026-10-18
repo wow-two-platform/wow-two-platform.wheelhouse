@@ -1,6 +1,6 @@
 import type { Product } from '@/domain/products';
 import type { Workspace } from '@/domain/workspaces';
-import { ConsolePaths, productLocation, serviceLocation, type ConsoleLocation } from './ConsolePaths';
+import { ConsolePaths, productLocation, serviceLocation, workspaceLocation, type ConsoleLocation } from './ConsolePaths';
 import { ProductTab, productTabOf } from './ProductTabs';
 
 /** Which level of the hierarchy a crumb names. */
@@ -34,9 +34,9 @@ function crumb(level: ScopeLevel, label: string, location: ConsoleLocation, prod
   return productSlug ? { level, label, location, productSlug } : { level, label, location };
 }
 
-/** The workspace crumb. @internal */
+/** The workspace crumb: its group on the Products page. @internal */
 function workspaceCrumb(workspace: Workspace): ScopeCrumb {
-  return crumb('workspace', workspace.name, { path: ConsolePaths.workspace(workspace.slug), query: {} });
+  return crumb('workspace', workspace.name, workspaceLocation(workspace.slug));
 }
 
 /**
@@ -63,9 +63,7 @@ export function scopeOf(input: ScopeInput): ScopeCrumb[] {
     const workspace = input.workspaces.find((item) => item.slug === workspaceSlug);
     return [
       home,
-      workspace
-        ? workspaceCrumb(workspace)
-        : crumb('workspace', workspaceSlug, { path: ConsolePaths.workspace(workspaceSlug), query: {} }),
+      workspace ? workspaceCrumb(workspace) : crumb('workspace', workspaceSlug, workspaceLocation(workspaceSlug)),
     ];
   }
   if (input.path === ConsolePaths.home) return [home];

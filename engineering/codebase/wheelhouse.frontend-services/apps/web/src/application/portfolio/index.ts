@@ -1,4 +1,5 @@
 export { groupPortfolio, workspaceOf, type PortfolioGroup } from './Portfolio';
-export { browse, workspaceChips, type BrowserView, type WorkspaceChip } from './ProductBrowser';
 export { usePortfolio } from './usePortfolio';
+export { usePortfolioSummary, PortfolioSummaryKey, TrendWeeks } from './usePortfolioSummary';
+export { ConsoleProduct, TrendScalesKey, useProductFacts, type TrendScales } from './useProductFacts';
 export { useProductReadings } from './useProductReadings';

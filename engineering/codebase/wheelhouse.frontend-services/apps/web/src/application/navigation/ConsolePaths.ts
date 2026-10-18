@@ -5,10 +5,11 @@ export interface ProductQuery {
   readonly item?: string | null | undefined;
 }
 
-/** A location the router can open: a path and its query. */
+/** A location the router can open: a path, its query and, for a place on a page, its hash. */
 export interface ConsoleLocation {
   readonly path: string;
   readonly query: Record<string, string>;
+  readonly hash?: string;
 }
 
 import { ProductTab, type ProductTabValue } from './ProductTabs';
@@ -16,8 +17,8 @@ import { ProductTab, type ProductTabValue } from './ProductTabs';
 /** The console's addresses. */
 export const ConsolePaths = {
   home: '/',
-  /** The products browser narrowed to one workspace. */
-  workspace: (slug: string) => `/w/${encodeURIComponent(slug)}`,
+  /** A workspace's group on the Products page; workspaces have no page of their own. */
+  workspace: (slug: string) => `/products${workspaceHash(slug)}`,
   /** A product page on one of its tabs; Overview is the product's own address. */
   product: (slug: string, tab: ProductTabValue | string = ProductTab.Overview) =>
     tab === ProductTab.Overview
@@ -31,6 +32,27 @@ export const ConsolePaths = {
   keys: '/settings/keys',
   catalog: '/settings/catalog',
 } as const;
+
+/** The hash that names a workspace's group on the Products page, which scrolls to it. */
+export function workspaceHash(slug: string): string {
+  return `#workspace-${encodeURIComponent(slug)}`;
+}
+
+/** The workspace a Products page hash names, or null for any other hash. */
+export function workspaceOfHash(hash: string | null | undefined): string | null {
+  const match = /^#workspace-(.+)$/.exec(hash ?? '');
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+/** A workspace's group on the Products page as a router location. */
+export function workspaceLocation(slug: string): ConsoleLocation {
+  return { path: '/products', query: {}, hash: workspaceHash(slug) };
+}
 
 /** Drops absent values so a link never carries an empty parameter. @internal */
 function defined(values: Record<string, string | null | undefined>): Record<string, string> {

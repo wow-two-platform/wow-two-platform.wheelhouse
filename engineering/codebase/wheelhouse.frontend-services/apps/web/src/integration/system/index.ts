@@ -6,6 +6,7 @@ const SystemStatusSchema = z.object({
   service: z.string(),
   status: z.string(),
   version: z.string().optional(),
+  environment: z.string().optional(),
   localRig: z.boolean().optional(),
 });
 

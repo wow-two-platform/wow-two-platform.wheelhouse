@@ -1,5 +1,5 @@
 import { createAppRouter, type AppRoute, type LazyRoute } from '@wow-two-beta/fe/router';
-import { legacyProductRedirect } from '@/application/navigation/ConsolePaths';
+import { legacyProductRedirect, workspaceHash } from '@/application/navigation/ConsolePaths';
 
 /** The portfolio home: every workspace and its products. */
 export const HomePlace = {
@@ -13,7 +13,7 @@ export const HomePlace = {
  * rail and the phone's bottom bar show them.
  */
 export const PrimaryPlaces = [
-  { path: '/products', label: 'Products', description: 'Every product, by workspace.' },
+  { path: '/products', label: 'Products', description: 'Every workspace, then its products.' },
   {
     path: '/deployments',
     label: 'Deployments',
@@ -74,11 +74,13 @@ function param(value: unknown): string {
 export const router = createAppRouter(
   [
     placeRoute(HomePlace),
-    // The products browser narrowed to one workspace: the same page as /products, with the workspace chosen.
+    // Workspaces have no page of their own: an old workspace link opens its group on the Products page.
     {
       path: '/w/:workspace',
       lazy: Pages['/products'],
-      handle: { title: (route) => param(route.params['workspace']), description: 'A workspace and its products.' },
+      guard: ({ params }) => ({
+        redirect: { path: '/products', hash: workspaceHash(param(params['workspace'])) },
+      }),
     },
     // One route for every tab, so moving between tabs keeps the page and its reads; the page answers an unknown tab.
     {

@@ -11,25 +11,23 @@ const PendingPrefix = 'pending:';
 
 /** Pure rules for pins: finding one, the request that adds one and the optimistic list changes. */
 export const PinRules = {
-  /** Whether the pin points at the subject. */
-  matches: (pin: Pin, subject: PinSubject): boolean => {
-    if (pin.kind !== subject.kind) return false;
-    if (subject.kind === PinKind.Workspace) return pin.workspaceId === subject.workspaceId;
-    if (!namesProduct(pin.productId, subject.product)) return false;
-    return subject.kind === PinKind.Product || pin.service === subject.service;
-  },
+  /** Whether the pin is a product pin naming the subject's product. */
+  matches: (pin: Pin, subject: PinSubject): boolean =>
+    pin.kind === PinKind.Product && namesProduct(pin.productId, subject.product),
 
   /** The pin that points at the subject, if any. */
   find: (pins: readonly Pin[] | undefined, subject: PinSubject): Pin | undefined =>
     (pins ?? []).find((pin) => PinRules.matches(pin, subject)),
 
+  /** The product pins alone, in custom order; any other kind the host still reports is left out. */
+  products: (pins: readonly Pin[] | undefined): Pin[] =>
+    Ordering.sort((pins ?? []).filter((pin) => pin.kind === PinKind.Product)),
+
   /** The request that pins the subject; a product is named by its row identifier when the host sends one. */
-  requestOf: (subject: PinSubject): CreatePinRequest =>
-    subject.kind === PinKind.Workspace
-      ? { kind: subject.kind, workspaceId: subject.workspaceId }
-      : subject.kind === PinKind.Product
-        ? { kind: subject.kind, productId: subject.product.id ?? subject.product.slug }
-        : { kind: subject.kind, productId: subject.product.id ?? subject.product.slug, service: subject.service },
+  requestOf: (subject: PinSubject): CreatePinRequest => ({
+    kind: PinKind.Product,
+    productId: subject.product.id ?? subject.product.slug,
+  }),
 
   /** The list with the subject pinned at the end, for an optimistic update; an existing pin leaves it unchanged. */
   withPin: (pins: readonly Pin[] | undefined, subject: PinSubject): Pin[] => {
@@ -37,11 +35,11 @@ export const PinRules = {
     if (PinRules.find(list, subject)) return list;
     const request = PinRules.requestOf(subject);
     const pending: Pin = {
-      id: `${PendingPrefix}${request.kind}:${request.workspaceId ?? request.productId}:${request.service ?? ''}`,
+      id: `${PendingPrefix}${request.kind}:${request.productId}`,
       kind: request.kind,
-      workspaceId: request.workspaceId ?? null,
-      productId: request.productId ?? null,
-      service: request.service ?? null,
+      workspaceId: null,
+      productId: request.productId,
+      service: null,
       order: list.length,
     };
     return [...list, pending];

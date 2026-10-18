@@ -7,9 +7,7 @@ import { PageHeaderActions } from '@wow-two-beta/fe/presentation/layout';
 import { ConsolePaths } from '@/application/navigation';
 import { usePortfolio, useProductReadings, type PortfolioGroup } from '@/application/portfolio';
 import { useRefresh } from '@/bootstrap/query';
-import { PinKind } from '@/domain/pins';
 import { RefreshButton } from '@/presentation/common/components';
-import { PinToggle } from '@/presentation/pins';
 import AttentionSummary from '../components/AttentionSummary.vue';
 import PinnedStrip from '../components/PinnedStrip.vue';
 import WorkspaceSection from '../components/WorkspaceSection.vue';
@@ -57,11 +55,7 @@ const groups = computed(() => (portfolio.isFirstLoad.value ? placeholders : port
         :group="group"
         :readings="readings"
         :is-loading="portfolio.isFirstLoad.value"
-      >
-        <template v-if="group.workspace" #actions>
-          <PinToggle :subject="{ kind: PinKind.Workspace, workspaceId: group.workspace.id }" :label="group.workspace.name" />
-        </template>
-      </WorkspaceSection>
+      />
     </DataRegion>
   </div>
 </template>

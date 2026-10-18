@@ -1,11 +1,11 @@
 <script lang="ts">
 import type { PinnedEntry } from "@/application/pins";
 
-/** The pins in edit mode: reorder and unpin. */
+/** The pinned products in edit mode: reorder and unpin. */
 export interface PinEditorProps {
   /** Every pin in custom order, including ones whose target is gone. */
   readonly entries: readonly PinnedEntry[];
-  /** Tighter rows for the sidebar: smaller controls and no product name beside a service. */
+  /** Tighter rows for the sidebar: smaller controls. */
   readonly compact?: boolean;
 }
 </script>
@@ -50,10 +50,9 @@ const controlClass = computed(() => `${controlBase} ${props.compact ? "size-6" :
         ><GripVertical :size="14"
       /></SortableGroupHandle>
       <PinIcon :entry="entry" />
-      <span class="min-w-0 flex-1 truncate text-sm" :class="entry.location ? '' : 'text-muted-foreground'"
-        >{{ entry.label
-        }}<span v-if="entry.detail && !props.compact" class="text-xs text-muted-foreground"> · {{ entry.detail }}</span></span
-      >
+      <span class="min-w-0 flex-1 truncate text-sm" :class="entry.location ? '' : 'text-muted-foreground'">{{
+        entry.label
+      }}</span>
       <SortableGroupMoveButton direction="previous" :label="`Move ${entry.label} up`" :class="controlClass"
         ><ArrowUp :size="14"
       /></SortableGroupMoveButton>

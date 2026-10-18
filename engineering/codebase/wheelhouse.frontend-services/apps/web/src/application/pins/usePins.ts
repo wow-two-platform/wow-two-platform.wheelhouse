@@ -7,7 +7,7 @@ import { pinsApi } from "@/integration/pins";
 /** Query keys for pins. */
 export const PinKeys = { list: ["pins"] as const };
 
-/** The owner's pins in custom order; pinning, unpinning and reordering show at once and roll back on refusal. */
+/** The owner's pinned products in custom order; pinning, unpinning and reordering show at once and roll back on refusal. */
 export function usePins() {
   const list = useAppQuery({
     key: PinKeys.list,
@@ -31,7 +31,8 @@ export function usePins() {
       },
     ],
   });
-  const pins = computed(() => Ordering.sort(list.data.value ?? []));
+  /** The product pins in custom order; a pin of another kind the host still reports is left out. */
+  const pins = computed(() => PinRules.products(list.data.value));
 
   /** The pin for a subject, if it is pinned. */
   function find(subject: PinSubject): Pin | undefined {
@@ -45,7 +46,7 @@ export function usePins() {
     error: computed(() => list.error.value?.message ?? null),
     find,
     isPinned: (subject: PinSubject) => Boolean(find(subject)),
-    /** Pins the subject, or unpins it when it is pinned. */
+    /** Pins the product, or unpins it when it is pinned. */
     toggle: (subject: PinSubject) => {
       const pin = find(subject);
       return pin ? remove.mutateAsync(pin.id) : add.mutateAsync(subject);

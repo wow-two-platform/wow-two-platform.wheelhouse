@@ -24,7 +24,8 @@ test("the scope names Home, the workspace, the product and the inspected service
     query: { env: "prod", inspect: "service", item: "api" } });
   assert.deepEqual(crumbs.map((crumb) => [crumb.level, crumb.label]),
     [["home", "Home"], ["workspace", "Platform"], ["product", "Wheelhouse"], ["service", "api"]]);
-  assert.deepEqual(crumbs[1].location, { path: "/w/platform", query: {} });
+  // Workspaces have no page: the crumb opens the workspace's group on the Products page.
+  assert.deepEqual(crumbs[1].location, { path: "/products", query: {}, hash: "#workspace-platform" });
   assert.deepEqual(crumbs[2].location, { path: "/p/wheelhouse", query: { env: "prod" } });
   assert.deepEqual(crumbs[3].location.query, { env: "prod", inspect: "service", item: "api" });
 });
@@ -46,7 +47,7 @@ test("links carry only the parameters they need", () => {
   assert.deepEqual(productLocation("wheelhouse"), { path: "/p/wheelhouse", query: {} });
   assert.deepEqual(serviceLocation("wheelhouse", "api", null), { path: "/p/wheelhouse", query: { inspect: "service", item: "api" } });
   assert.deepEqual(serviceLocation("wheelhouse", "api", "prod").query, { env: "prod", inspect: "service", item: "api" });
-  assert.equal(ConsolePaths.workspace("a b"), "/w/a%20b");
+  assert.equal(ConsolePaths.workspace("a b"), "/products#workspace-a%20b");
 });
 
 test("an old Workspace link keeps every other parameter and needs a product", () => {

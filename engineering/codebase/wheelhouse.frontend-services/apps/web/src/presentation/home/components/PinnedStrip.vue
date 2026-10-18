@@ -8,7 +8,7 @@ import { usePinned } from '@/application/pins';
 import { PinIcon } from '@/presentation/pins';
 
 /**
- * The pins on the home page, in the owner's order: a row that scrolls sideways, with Edit for reordering and
+ * The pinned products on the home page, in the owner's order: a row that scrolls sideways, with Edit for reordering and
  * unpinning. On phones it leads the page, since the sidebar that also lists pins is absent there.
  */
 /** The editor loads when editing starts; it draws on the SDK's sortable list, which browsing never needs. @internal */
@@ -61,10 +61,7 @@ const editing = ref(false);
             :class="entry.active ? '' : 'opacity-60'"
           >
             <PinIcon :entry="entry" size="sm" />
-            <span class="min-w-0">
-              <span class="block truncate font-medium">{{ entry.label }}</span>
-              <span v-if="entry.detail" class="block truncate text-xs text-muted-foreground">{{ entry.detail }}</span>
-            </span>
+            <span class="min-w-0 truncate font-medium">{{ entry.label }}</span>
           </RouterLink>
         </li>
       </ul>
