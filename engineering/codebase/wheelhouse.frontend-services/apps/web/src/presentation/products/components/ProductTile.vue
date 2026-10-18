@@ -72,12 +72,12 @@ const problem = computed(() => identityProblemOf(props.product));
       props.product ? props.product.description || props.product.slug : ""
     }}</Text>
     <div class="mt-auto flex min-w-0 items-center gap-2">
-      <ul role="list" aria-label="Environments" class="flex min-w-0 flex-wrap items-center gap-1.5">
+      <ul role="list" aria-label="Environments" data-intro-target="pills" class="flex min-w-0 flex-wrap items-center gap-1.5">
         <li v-for="(environment, index) in EnvironmentOrder" :key="environment" class="min-w-0">
           <EnvironmentPill :pill="props.product ? (props.facts?.pills[index] ?? null) : null" :environment="environment" />
         </li>
       </ul>
-      <span class="ms-auto flex shrink-0 items-center"><ProductTrend :facts="props.product ? props.facts : undefined" :weeks="props.weeks" /></span>
+      <span class="ms-auto flex shrink-0 items-center" data-intro-target="trend"><ProductTrend :facts="props.product ? props.facts : undefined" :weeks="props.weeks" /></span>
     </div>
   </article>
 </template>

@@ -27,6 +27,7 @@ import { useIsPhone } from "@/presentation/deployments/hooks/useIsPhone";
 import ProductFilters from "../components/ProductFilters.vue";
 import ProductFormModal from "../components/ProductFormModal.vue";
 import ProductGroupSection from "../components/ProductGroupSection.vue";
+import ProductsInfo from "../components/ProductsInfo.vue";
 import type { WorkspaceOption } from "../components/WorkspaceFilterList.vue";
 import WorkspaceListRow from "../components/WorkspaceListRow.vue";
 import WorkspacesModal from "../components/WorkspacesModal.vue";
@@ -264,9 +265,12 @@ function emptyTextOf(group: PortfolioGroup): string {
       </section>
 
       <section aria-labelledby="products-heading" class="flex min-w-0 flex-col gap-3">
-        <h2 id="products-heading" class="text-sm font-semibold text-muted-foreground">
-          Products<span v-if="narrowed && !firstLoad" class="font-normal"> · {{ matchCount }} match</span>
-        </h2>
+        <div class="flex items-center gap-1">
+          <h2 id="products-heading" class="text-sm font-semibold text-muted-foreground">
+            Products<span v-if="narrowed && !firstLoad" class="font-normal"> · {{ matchCount }} match</span>
+          </h2>
+          <ProductsInfo :is-ready="!firstLoad && !facts.isLoading.value && matchCount > 0" />
+        </div>
         <EmptyState
           v-if="narrowed && !firstLoad && !matchCount"
           title="No product matches"

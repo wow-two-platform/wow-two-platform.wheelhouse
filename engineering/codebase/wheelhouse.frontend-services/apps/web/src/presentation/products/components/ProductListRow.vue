@@ -65,10 +65,15 @@ const problem = computed(() => identityProblemOf(props.product));
         props.product.description
       }}</span>
     </div>
-    <div v-for="(environment, index) in EnvironmentOrder" :key="environment" class="min-w-0">
+    <div
+      v-for="(environment, index) in EnvironmentOrder"
+      :key="environment"
+      class="min-w-0"
+      :data-intro-target="index === 0 ? 'pills' : undefined"
+    >
       <EnvironmentPill :pill="props.product ? (props.facts?.pills[index] ?? null) : null" :environment="environment" />
     </div>
-    <div class="flex justify-end"><ProductTrend :facts="props.product ? props.facts : undefined" :weeks="props.weeks" /></div>
+    <div class="flex justify-end" data-intro-target="trend"><ProductTrend :facts="props.product ? props.facts : undefined" :weeks="props.weeks" /></div>
     <div v-if="props.product" class="relative z-10 flex items-center justify-end gap-0.5">
       <OpenSiteMenu :product="props.product" />
       <ProductMoreMenu :product="props.product" @edit="emit('edit')" />
