@@ -32,6 +32,12 @@ written from it when the version opens.
 | 20 | Deployed dev runs as .NET `Development`, prod as `Production` | 2026-10-17 |
 | 21 | Primary navigation is Home, Products, Deployments, Servers; secrets and activity belong to products | 2026-10-17 |
 | 22 | Before Ocharo goes live: settings and secrets editor, public hosting, backups, logs, monitoring and alerts, one manifest, zero-disruption deploys | 2026-10-17 |
+| 23 | Products page: workspaces on top, products grouped by workspace below; one Cards/Rows switch for both, cards only on phones; search, filter and sort (name by default) | 2026-10-18 |
+| 24 | Environment pills: outline, status icon, env name and version or state; details on hover; "no target" and "nothing deployed" are one state | 2026-10-18 |
+| 25 | Pins are products only and live in the sidebar's Products tree, which also remembers the last opened product; the sidebar has no workspace tree | 2026-10-18 |
+| 26 | Promotion lives only on the Deployments page; the open-site menu lists every front-facing service with dev and prod | 2026-10-18 |
+| 27 | Explanatory copy (legends, hints) sits behind an info button with a one-time first-run intro | 2026-10-18 |
+| 28 | Every release auto-deploys to dev by default (opt-out per product); freeze, rollback-risk badges, prod deploy reasons, pre-deploy snapshots, changelogs from GitHub release notes, failed-build Issues, retention cleanup, watch window with opt-in auto-promote | 2026-10-18 |
 
 | Fact | Owner |
 |---|---|
