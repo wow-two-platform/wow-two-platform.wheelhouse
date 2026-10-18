@@ -163,6 +163,20 @@ export const ActivityCalendar = {
     });
   },
 
+  /**
+   * The line under the calendar: `3 deployments · 2 succeeded · 1 failed`, with `· 1 running` only while any run, and
+   * the running counted among the deployments. A filtered view names its one outcome: `1 deployment failed`.
+   */
+  summary(totals: RangeTotals, status: StatusFilter = StatusFilter.All, running = 0): string {
+    const deployments = (count: number) => `${count} ${count === 1 ? 'deployment' : 'deployments'}`;
+    if (status === StatusFilter.Failed) return `${deployments(totals.failed)} failed`;
+    if (status === StatusFilter.Succeeded) return `${deployments(totals.succeeded)} succeeded`;
+    const live = Math.max(0, running);
+    const parts = [deployments(totals.succeeded + totals.failed + live), `${totals.succeeded} succeeded`, `${totals.failed} failed`];
+    if (live > 0) parts.push(`${live} running`);
+    return parts.join(' · ');
+  },
+
   /** The date an arrow key moves the focus to: a week (one column) for left and right, a day (one row) for up and down. */
   step(date: string, key: string): string | null {
     const days = key === 'ArrowLeft' ? -7 : key === 'ArrowRight' ? 7 : key === 'ArrowUp' ? -1 : key === 'ArrowDown' ? 1 : 0;

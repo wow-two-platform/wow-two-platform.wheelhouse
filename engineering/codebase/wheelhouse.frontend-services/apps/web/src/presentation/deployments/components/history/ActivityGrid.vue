@@ -9,8 +9,10 @@ export interface ActivityGridProps {
   readonly status: StatusFilter;
   /** The day expanded below the calendar, `YYYY-MM-DD`. */
   readonly selected: string | null;
-  /** A rollout runs now: today's cell beats. */
+  /** A rollout runs now: today's mark pulses. */
   readonly isLive?: boolean;
+  /** The live rollouts the range holds, which the line under the calendar counts among its deployments. */
+  readonly running?: number;
 }
 </script>
 
@@ -29,7 +31,7 @@ import { ActivityCalendar, DeploymentFilters, type CalendarCell } from "@/domain
  * today dot. Arrow keys move between days; a day toggles its list.
  */
 defineOptions({ name: "ActivityGrid" });
-const props = withDefaults(defineProps<ActivityGridProps>(), { isLive: false });
+const props = withDefaults(defineProps<ActivityGridProps>(), { isLive: false, running: 0 });
 const emit = defineEmits<{ select: [day: string | null] }>();
 
 const scroller = ref<HTMLElement | null>(null);
@@ -201,12 +203,7 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
     </div>
     <!-- As wide as the calendar and never wider: the line wraps rather than widening a calendar that sizes to its days. -->
     <div class="mt-3 flex w-0 min-w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs text-muted-foreground">
-      <span class="tabular-nums">
-        <template v-if="props.status === 'failed'">{{ totals.failed }} failed</template>
-        <template v-else-if="props.status === 'succeeded'">{{ totals.succeeded }} succeeded</template>
-        <template v-else>{{ totals.succeeded + totals.failed }} finished · {{ totals.succeeded }} succeeded · {{ totals.failed }} failed</template>
-        <template v-if="props.isLive"> · <span class="text-primary">a rollout runs today</span></template>
-      </span>
+      <span class="tabular-nums">{{ ActivityCalendar.summary(totals, props.status, props.running) }}</span>
       <span class="flex flex-wrap items-center gap-3" aria-label="Legend">
         <span class="flex items-center gap-1"><span class="size-3 rounded-[3px] bg-success" aria-hidden="true" />succeeded</span>
         <span class="flex items-center gap-1">

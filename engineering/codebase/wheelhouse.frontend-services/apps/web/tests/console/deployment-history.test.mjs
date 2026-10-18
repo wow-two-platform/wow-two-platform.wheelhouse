@@ -243,3 +243,11 @@ test("the range totals its days, and an older answer without busiest products st
   const activity = history.DeploymentActivitySchema.parse({ from: "2026-04-18", to: "2026-10-18", timeZone: "UTC", days: [] });
   assert.deepEqual(activity.products, []);
 });
+
+test("the line under the calendar counts deployments, names running ones only while any run, and minds plurals", () => {
+  assert.equal(ActivityCalendar.summary({ succeeded: 1, failed: 0 }), "1 deployment · 1 succeeded · 0 failed");
+  assert.equal(ActivityCalendar.summary({ succeeded: 2, failed: 1 }, "all", 1), "4 deployments · 2 succeeded · 1 failed · 1 running");
+  assert.equal(ActivityCalendar.summary({ succeeded: 0, failed: 0 }), "0 deployments · 0 succeeded · 0 failed");
+  assert.equal(ActivityCalendar.summary({ succeeded: 0, failed: 1 }, "failed", 2), "1 deployment failed");
+  assert.equal(ActivityCalendar.summary({ succeeded: 5, failed: 0 }, "succeeded"), "5 deployments succeeded");
+});

@@ -153,6 +153,7 @@ function setView(value: unknown): void {
               :status="route.filter.value.status"
               :selected="route.day.value"
               :is-live="isLive"
+              :running="runningInRange"
               @select="route.setDay"
             />
           </DataRegion>
