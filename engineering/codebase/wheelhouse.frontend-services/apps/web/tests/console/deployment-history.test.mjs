@@ -10,6 +10,7 @@ const history = await bundleModule(`
   export { readDeploymentQuery, writeDeploymentQuery, mergeDeploymentQuery, buildEntityTree } from './src/application/deployments';
   export { DeploymentItemSchema, DeploymentDetailSchema, DeploymentIssueSchema, DeploymentActivitySchema } from './src/integration/deployments/historySchemas';
   export { scopeOf } from './src/application/navigation/Scope';
+  export { HintPlacement } from './src/presentation/deployments/components/history/HintPlacement';
 `);
 after(() => stop());
 const { ActivityCalendar, EntitySelection, EntityKeys, DeploymentFilters } = history;
@@ -250,4 +251,16 @@ test("the line under the calendar counts deployments, names running ones only wh
   assert.equal(ActivityCalendar.summary({ succeeded: 0, failed: 0 }), "0 deployments · 0 succeeded · 0 failed");
   assert.equal(ActivityCalendar.summary({ succeeded: 0, failed: 1 }, "failed", 2), "1 deployment failed");
   assert.equal(ActivityCalendar.summary({ succeeded: 5, failed: 0 }, "succeeded"), "5 deployments succeeded");
+});
+
+test("the day tooltip sits above its cell, flips below at the top edge and slides inside the screen's sides", () => {
+  const { HintPlacement } = history;
+  const viewport = { width: 390, height: 844 };
+  const size = { width: 200, height: 24 };
+  // Room above: centred over the cell.
+  assert.deepEqual(HintPlacement.place({ left: 190, top: 300, width: 20, height: 20 }, size, viewport), { left: 100, top: 270, side: "top" });
+  // At the right edge: slid left to stay 8px inside, never cut off.
+  assert.deepEqual(HintPlacement.place({ left: 360, top: 300, width: 20, height: 20 }, size, viewport), { left: 182, top: 270, side: "top" });
+  // At the left edge, and too near the top: slid right and flipped below.
+  assert.deepEqual(HintPlacement.place({ left: 0, top: 10, width: 20, height: 20 }, size, viewport), { left: 8, top: 36, side: "bottom" });
 });

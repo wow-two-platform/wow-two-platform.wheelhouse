@@ -17,9 +17,11 @@ export interface ActivityGridProps {
 </script>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 
 import { ActivityCalendar, DeploymentFilters, type CalendarCell } from "@/domain/deployments";
+
+import { HintPlacement } from "./HintPlacement";
 
 /**
  * A GitHub-style calendar of deployments: week columns over weekday rows, month labels above, in 20px day cells (22px
@@ -28,7 +30,8 @@ import { ActivityCalendar, DeploymentFilters, type CalendarCell } from "@/domain
  * and mixed days also carry an inner mark, and every day names its date and counts. Today and the chosen day differ in
  * more than thickness: today wears a dashed ring in a muted tone, pulsing while a rollout runs (still under reduced
  * motion); the chosen day a solid primary ring set off from the cell; chosen today keeps the solid ring and adds a small
- * today dot. Arrow keys move between days; a day toggles its list.
+ * today dot. Arrow keys move between days; a day toggles its list. The shared day tooltip is drawn in the top layer and
+ * kept inside the viewport, so neither the panel's edge nor the screen's clips it.
  */
 defineOptions({ name: "ActivityGrid" });
 const props = withDefaults(defineProps<ActivityGridProps>(), { isLive: false, running: 0 });
@@ -39,8 +42,9 @@ const surface = ref<HTMLElement | null>(null);
 const today = DeploymentFilters.localDate(new Date());
 /** The day that holds the tab stop; arrow keys move it. */
 const active = ref<string | null>(null);
-/** The day the shared tooltip describes, and where it sits. */
-const hint = ref<{ label: string; left: number; top: number } | null>(null);
+/** The day the shared tooltip describes, the cell it points at, and where it sits once measured. */
+const hint = ref<{ label: string; anchor: HTMLElement; left: number; top: number; isPlaced: boolean } | null>(null);
+const tip = ref<HTMLElement | null>(null);
 
 const calendar = computed(() => {
   const activity = props.activity;
@@ -94,16 +98,47 @@ watch(
 );
 
 function show(event: Event, cell: CalendarCell): void {
-  const target = event.currentTarget as HTMLElement | null;
-  const box = surface.value?.getBoundingClientRect();
-  const rect = target?.getBoundingClientRect();
-  if (!box || !rect) return;
-  hint.value = { label: cell.label, left: rect.left - box.left + rect.width / 2, top: rect.top - box.top };
+  const anchor = event.currentTarget as HTMLElement | null;
+  if (!anchor) return;
+  hint.value = { label: cell.label, anchor, left: 0, top: 0, isPlaced: false };
+  void nextTick(place);
+}
+
+/** Measures the tooltip and sets it beside its cell, inside the viewport. */
+function place(): void {
+  const current = hint.value;
+  const element = tip.value;
+  if (!current || !element) return;
+  const anchor = current.anchor.getBoundingClientRect();
+  const position = HintPlacement.place(
+    { left: anchor.left, top: anchor.top, width: anchor.width, height: anchor.height },
+    { width: element.offsetWidth, height: element.offsetHeight },
+    { width: document.documentElement.clientWidth, height: window.innerHeight },
+  );
+  hint.value = { ...current, left: position.left, top: position.top, isPlaced: true };
 }
 
 function hide(): void {
   hint.value = null;
 }
+
+/* While it shows, the tooltip follows its cell through any scroll — the page's or the calendar's own — and a resize. */
+watch(
+  () => hint.value !== null,
+  (shown) => {
+    if (shown) {
+      window.addEventListener("scroll", place, true);
+      window.addEventListener("resize", place);
+    } else {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    }
+  },
+);
+onBeforeUnmount(() => {
+  window.removeEventListener("scroll", place, true);
+  window.removeEventListener("resize", place);
+});
 
 function choose(cell: CalendarCell): void {
   active.value = cell.date;
@@ -193,14 +228,17 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
         </template>
       </div>
     </div>
-    <div
-      v-if="hint"
-      role="tooltip"
-      class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md bg-foreground px-2 py-1 text-xs whitespace-nowrap text-background shadow-md"
-      :style="{ left: `${hint.left}px`, top: `${hint.top - 6}px` }"
-    >
-      {{ hint.label }}
-    </div>
+    <Teleport to="body">
+      <div
+        v-if="hint"
+        ref="tip"
+        role="tooltip"
+        class="pointer-events-none fixed z-tooltip max-w-[calc(100vw-1rem)] rounded-md bg-foreground px-2 py-1 text-xs whitespace-nowrap text-background shadow-md"
+        :style="{ left: `${hint.left}px`, top: `${hint.top}px`, visibility: hint.isPlaced ? 'visible' : 'hidden' }"
+      >
+        {{ hint.label }}
+      </div>
+    </Teleport>
     <!-- As wide as the calendar and never wider: the line wraps rather than widening a calendar that sizes to its days. -->
     <div class="mt-3 flex w-0 min-w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs text-muted-foreground">
       <span class="tabular-nums">{{ ActivityCalendar.summary(totals, props.status, props.running) }}</span>
