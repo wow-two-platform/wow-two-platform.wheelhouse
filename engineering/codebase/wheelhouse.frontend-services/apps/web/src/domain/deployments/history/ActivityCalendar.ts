@@ -37,6 +37,12 @@ export interface CalendarMonth {
   readonly column: number;
 }
 
+/** A range's finished rollouts. */
+export interface RangeTotals {
+  readonly succeeded: number;
+  readonly failed: number;
+}
+
 /** The calendar: week columns over weekday rows, month labels above. */
 export interface Calendar {
   readonly weeks: readonly CalendarWeek[];
@@ -147,6 +153,14 @@ export const ActivityCalendar = {
     const spaced = months.filter((month, index) => (months[index + 1]?.column ?? Infinity) - month.column >= 3);
     const weekdays = Array.from({ length: 7 }, (_, row) => WEEKDAY.format(new Date(Date.UTC(2026, 0, 4 + weekStart + row))));
     return { weeks, months: spaced, weekdays };
+  },
+
+  /** The finished rollouts across the range's days. */
+  totals(days: ReadonlyArray<Pick<ActivityDay, 'succeeded' | 'failed'>>): RangeTotals {
+    return days.reduce((sum, day) => ({ succeeded: sum.succeeded + day.succeeded, failed: sum.failed + day.failed }), {
+      succeeded: 0,
+      failed: 0,
+    });
   },
 
   /** The date an arrow key moves the focus to: a week (one column) for left and right, a day (one row) for up and down. */

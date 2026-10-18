@@ -46,6 +46,7 @@ export const DeploymentActivitySchema = z.object({
   to: z.string(),
   timeZone: z.string(),
   days: z.array(z.object({ date: z.string(), succeeded: z.number().int(), failed: z.number().int() })),
+  products: z.array(z.object({ product: z.string(), succeeded: z.number().int(), failed: z.number().int() })).default([]),
 });
 
 const RangeMeasuresSchema = z.object({

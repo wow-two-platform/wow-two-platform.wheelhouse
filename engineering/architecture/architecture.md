@@ -307,7 +307,8 @@ aggregates; nothing is stored.
   environment, release, bundle, status and outcome (`succeeded` | `failed` | `refused` | `pending` | `unknown`),
   duration, changed services (null when the bundle is unknown) and, while live, the current step.
 - `GET /api/deployments/history/activity?tz=` counts finished rollouts per local day in an IANA zone (default `UTC`,
-  range six months, at most 731 days); only days with a rollout are listed, and the status filter applies.
+  range six months, at most 731 days); only days with a rollout are listed, and the status filter applies. The same
+  rollouts name the range's five busiest products (`products`: succeeded and failed per product, most first).
 - `GET /api/deployments/history/stats` measures the entities over the range (30 days by default) beside the range of
   equal length before it, as the runner's statistics always have; the status filter does not apply.
 - `GET /api/deployments/running` lists live rollouts with their step; `GET /api/deployments/promotions` lists, per

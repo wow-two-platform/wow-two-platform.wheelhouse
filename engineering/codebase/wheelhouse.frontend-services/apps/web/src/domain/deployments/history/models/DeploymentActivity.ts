@@ -6,6 +6,14 @@ export interface ActivityDay {
   failed: number;
 }
 
+/** One product's finished rollouts over the range. */
+export interface ActivityProduct {
+  /** The product's slug. */
+  product: string;
+  succeeded: number;
+  failed: number;
+}
+
 /** Finished rollouts per day over a range; only days with a rollout are listed. */
 export interface DeploymentActivity {
   /** The range's first local date. */
@@ -14,4 +22,6 @@ export interface DeploymentActivity {
   to: string;
   timeZone: string;
   days: ActivityDay[];
+  /** The range's busiest products, most finished rollouts first; at most five. */
+  products: ActivityProduct[];
 }

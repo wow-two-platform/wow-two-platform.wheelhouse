@@ -162,6 +162,8 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
         tashkent.GetProperty("from").GetString().Should().Be("2026-09-28");
         tashkent.GetProperty("to").GetString().Should().Be("2026-10-08");
         Days(tashkent).Should().Equal(("2026-10-01", 1, 0), ("2026-10-02", 1, 0), ("2026-10-04", 0, 2), ("2026-10-05", 1, 0));
+        // The same finished rollouts name the busiest products, most first.
+        Products(tashkent).Should().Equal(("foreverpin", 3, 1), ("ocharo-shop", 0, 1));
 
         // The failure at 23:30 UTC falls on the 3rd in UTC; refused and running submissions colour no day.
         var utc = await DataAsync("/api/deployments/history/activity?" + range + "&tz=UTC");
@@ -170,6 +172,7 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
 
         var failures = await DataAsync("/api/deployments/history/activity?" + range + "&tz=UTC&status=failed&product=foreverpin");
         Days(failures).Should().Equal(("2026-10-03", 0, 1));
+        Products(failures).Should().Equal(("foreverpin", 0, 1));
     }
 
     [Theory]
@@ -497,6 +500,11 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
         issues.EnumerateArray()
             .Select(issue => (issue.GetProperty("kind").GetString(), issue.GetProperty("needsReconcile").GetBoolean(),
                 issue.GetProperty("deployment").GetProperty("id").GetString()))
+            .ToArray();
+
+    private static IEnumerable<(string?, int, int)> Products(JsonElement activity) =>
+        activity.GetProperty("products").EnumerateArray()
+            .Select(item => (item.GetProperty("product").GetString(), item.GetProperty("succeeded").GetInt32(), item.GetProperty("failed").GetInt32()))
             .ToArray();
 
     private static IEnumerable<(string?, int, int)> Days(JsonElement activity) =>

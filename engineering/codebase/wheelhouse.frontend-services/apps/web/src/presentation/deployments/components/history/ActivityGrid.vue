@@ -20,10 +20,11 @@ import { computed, nextTick, ref, watch } from "vue";
 import { ActivityCalendar, DeploymentFilters, type CalendarCell } from "@/domain/deployments";
 
 /**
- * A GitHub-style calendar of deployments: week columns over weekday rows, month labels above. A day is green when
- * every rollout succeeded, red when every one failed, amber when both; four steps of fill follow the count (1, 2–3,
- * 4–6, 7+). Failed and mixed days also carry an inner mark, every day names its date and counts, and today keeps a
- * ring — beating while a rollout runs, still under reduced motion. Arrow keys move between days; a day toggles its list.
+ * A GitHub-style calendar of deployments: week columns over weekday rows, month labels above, in 20px day cells (22px
+ * on a phone, which scrolls it sideways) that take only the width they need. A day is green when every rollout
+ * succeeded, red when every one failed, amber when both; four steps of fill follow the count (1, 2–3, 4–6, 7+). Failed
+ * and mixed days also carry an inner mark, every day names its date and counts, and today keeps a ring — beating while
+ * a rollout runs, still under reduced motion. Arrow keys move between days; a day toggles its list.
  */
 defineOptions({ name: "ActivityGrid" });
 const props = withDefaults(defineProps<ActivityGridProps>(), { isLive: false });
@@ -52,12 +53,7 @@ const tabStop = computed(() => {
   const wanted = active.value ?? props.selected ?? (today <= last.value && today >= first.value ? today : last.value);
   return wanted >= first.value && wanted <= last.value ? wanted : last.value;
 });
-const totals = computed(() =>
-  cells.value.reduce(
-    (sum, cell) => ({ succeeded: sum.succeeded + cell.succeeded, failed: sum.failed + cell.failed }),
-    { succeeded: 0, failed: 0 },
-  ),
-);
+const totals = computed(() => ActivityCalendar.totals(cells.value));
 
 const fills: Record<CalendarCell["tone"], readonly string[]> = {
   empty: ["bg-muted", "bg-muted", "bg-muted", "bg-muted", "bg-muted"],
@@ -127,13 +123,14 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
 </script>
 
 <template>
-  <div ref="surface" class="relative min-w-0">
+  <div ref="surface" class="relative w-max max-w-full min-w-0">
     <div ref="scroller" class="overflow-x-auto overscroll-x-contain pb-1" tabindex="-1">
+      <!-- Fixed day cells: 22px with 3px gaps on a phone, for touch; 20px with 4px gaps from md. -->
       <div
-        class="grid w-full gap-[3px] p-1.5"
+        class="grid w-max gap-[3px] p-1.5 [--wh-cell:1.375rem] md:gap-1 md:[--wh-cell:1.25rem]"
         :style="{
-          gridTemplateColumns: `2rem repeat(${calendar.weeks.length}, minmax(0.875rem, 2.5rem))`,
-          minWidth: `calc(2.75rem + ${calendar.weeks.length} * (0.875rem + 3px))`,
+          gridTemplateColumns: `1.75rem repeat(${calendar.weeks.length}, var(--wh-cell))`,
+          gridTemplateRows: 'auto repeat(7, var(--wh-cell))',
         }"
         role="group"
         :aria-label="`Deployments per day, ${first} to ${last}`"
@@ -165,7 +162,7 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
               :aria-pressed="props.selected === cell.date"
               :aria-current="cell.date === today ? 'date' : undefined"
               :class="[
-                '@container relative flex aspect-square w-full items-center justify-center rounded-[3px] transition-[outline-color] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary',
+                'relative flex size-(--wh-cell) items-center justify-center rounded-[3px] transition-[outline-color] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary',
                 fill(cell),
                 props.selected === cell.date ? 'outline-2 outline-offset-1 outline-foreground' : '',
                 cell.date === today ? 'ring-2 ring-primary ring-offset-1 ring-offset-card' : '',
@@ -178,8 +175,8 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
               @focus="show($event, cell)"
               @blur="hide"
             >
-              <span v-if="cell.mark === 'failed'" :class="['size-[clamp(0.375rem,20cqw,0.625rem)] rounded-full', markColour(cell)]" aria-hidden="true" />
-              <span v-else-if="cell.mark === 'mixed'" :class="['h-[clamp(0.125rem,6cqw,0.1875rem)] w-[clamp(0.5rem,32cqw,0.875rem)] rounded-full', markColour(cell)]" aria-hidden="true" />
+              <span v-if="cell.mark === 'failed'" :class="['size-1.5 rounded-full', markColour(cell)]" aria-hidden="true" />
+              <span v-else-if="cell.mark === 'mixed'" :class="['h-0.5 w-2 rounded-full', markColour(cell)]" aria-hidden="true" />
               <span v-if="cell.date === today && props.isLive" class="wh-heartbeat" aria-hidden="true" />
             </button>
           </template>
@@ -194,7 +191,8 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
     >
       {{ hint.label }}
     </div>
-    <div class="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs text-muted-foreground">
+    <!-- As wide as the calendar and never wider: the line wraps rather than widening a calendar that sizes to its days. -->
+    <div class="mt-3 flex w-0 min-w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs text-muted-foreground">
       <span class="tabular-nums">
         <template v-if="props.status === 'failed'">{{ totals.failed }} failed</template>
         <template v-else-if="props.status === 'succeeded'">{{ totals.succeeded }} succeeded</template>

@@ -8,7 +8,7 @@ import { bundleModule } from "./BundleModule.mjs";
 const history = await bundleModule(`
   export { ActivityCalendar, EntitySelection, EntityKeys, DeploymentFilters, StatusFilter, RangePreset, DeploymentIssues } from './src/domain/deployments';
   export { readDeploymentQuery, writeDeploymentQuery, mergeDeploymentQuery, buildEntityTree } from './src/application/deployments';
-  export { DeploymentItemSchema, DeploymentDetailSchema, DeploymentIssueSchema } from './src/integration/deployments/historySchemas';
+  export { DeploymentItemSchema, DeploymentDetailSchema, DeploymentIssueSchema, DeploymentActivitySchema } from './src/integration/deployments/historySchemas';
   export { scopeOf } from './src/application/navigation/Scope';
 `);
 after(() => stop());
@@ -235,4 +235,11 @@ test("an issue says what happened and offers Redeploy, or Reconcile when the tar
   const unknown = DeploymentIssueSchema.parse({ kind: "melted", at: "2026-10-01T10:03:00Z", deployment: { ...deployment, bundleId: null } });
   assert.equal(DeploymentIssues.headline(unknown), "Failed");
   assert.equal(DeploymentIssues.canRedeploy(unknown), false);
+});
+
+test("the range totals its days, and an older answer without busiest products still decodes", () => {
+  assert.deepEqual(ActivityCalendar.totals([{ succeeded: 3, failed: 1 }, { succeeded: 0, failed: 2 }]), { succeeded: 3, failed: 3 });
+  assert.deepEqual(ActivityCalendar.totals([]), { succeeded: 0, failed: 0 });
+  const activity = history.DeploymentActivitySchema.parse({ from: "2026-04-18", to: "2026-10-18", timeZone: "UTC", days: [] });
+  assert.deepEqual(activity.products, []);
 });

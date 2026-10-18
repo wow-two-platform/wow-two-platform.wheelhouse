@@ -4,7 +4,7 @@ export {
   type DeploymentItem,
 } from './models/DeploymentItem';
 export type { DeploymentPage } from './models/DeploymentPage';
-export type { ActivityDay, DeploymentActivity } from './models/DeploymentActivity';
+export type { ActivityDay, ActivityProduct, DeploymentActivity } from './models/DeploymentActivity';
 export type { DeploymentRangeStats, RangeMeasures } from './models/DeploymentRangeStats';
 export type { DeploymentPromotion } from './models/DeploymentPromotion';
 export { DeploymentIssueKind, type DeploymentIssue } from './models/DeploymentIssue';
@@ -42,4 +42,5 @@ export {
   type CellLevel,
   type CellMark,
   type CellTone,
+  type RangeTotals,
 } from './ActivityCalendar';
