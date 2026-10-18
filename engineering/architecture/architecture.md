@@ -313,6 +313,14 @@ aggregates; nothing is stored.
 - `GET /api/deployments/running` lists live rollouts with their step; `GET /api/deployments/promotions` lists, per
   product and prod target, the newest release (never a commit build) that succeeded on dev and is not what prod runs —
   left out while a prod rollout of it runs or prod runs it or a later release.
+- `GET /api/deployments/issues` lists the inventory targets that need attention, each judged by its latest rollout that
+  succeeded, failed or is live (a refusal changed nothing and an unknown receipt proves nothing, so both are passed
+  over): a failure there — `failed`, `rolled_back`, `rollback_failed` or `interrupted` — has had no success since, and a
+  live one that started over 30 minutes ago is `stuck`. Each issue carries its `kind`, `at` (the failure's completion or
+  the stuck rollout's start), the rollout as a history item and `needsReconcile`: true for a stuck rollout and for a
+  `failed` or `rollback_failed` one that had replaced containers, which the runner refuses to deploy over until a
+  reconcile. That flag reads local records only; the target's own state decides, so the console reads it before its
+  reconcile dialog opens. Likely-locked targets come first, then newest first; a removed target is left out.
 - `GET /api/deployments/{id}/detail` answers one deployment: each service from and to, the previous success, the
   observation's steps, sites and warnings (`observed` false when unreadable), and `rollback`, the previous release,
   only when this rollout is what its target runs and its release declares the previous images compatible.

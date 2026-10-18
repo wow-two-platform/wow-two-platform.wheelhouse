@@ -1,6 +1,7 @@
 import type {
   DeploymentActivity,
   DeploymentDetail,
+  DeploymentIssue,
   DeploymentItem,
   DeploymentPage,
   DeploymentPromotion,
@@ -10,6 +11,7 @@ import { requestData } from '@/integration/common';
 import {
   DeploymentActivitySchema,
   DeploymentDetailSchema,
+  DeploymentIssueSchema,
   DeploymentItemSchema,
   DeploymentPageSchema,
   DeploymentPromotionSchema,
@@ -54,6 +56,10 @@ export const deploymentHistoryApi = {
     requestData<DeploymentPromotion[]>(withQuery('/api/deployments/promotions', params), DeploymentPromotionSchema.array(), {
       signal,
     }),
+
+  /** The targets that need attention: a failure with no success since, or a rollout live too long. */
+  listIssues: (params: QueryParams, signal?: AbortSignal) =>
+    requestData<DeploymentIssue[]>(withQuery('/api/deployments/issues', params), DeploymentIssueSchema.array(), { signal }),
 
   /** One deployment in full, from local records. */
   getDetail: (id: string, signal?: AbortSignal) =>

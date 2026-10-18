@@ -6,9 +6,9 @@ import { bundleModule } from "./BundleModule.mjs";
 // The real rules: the activity calendar, the entity picker's selection model, the filter's address round trip and the
 // history wire decoding.
 const history = await bundleModule(`
-  export { ActivityCalendar, EntitySelection, EntityKeys, DeploymentFilters, StatusFilter, RangePreset } from './src/domain/deployments';
+  export { ActivityCalendar, EntitySelection, EntityKeys, DeploymentFilters, StatusFilter, RangePreset, DeploymentIssues } from './src/domain/deployments';
   export { readDeploymentQuery, writeDeploymentQuery, mergeDeploymentQuery, buildEntityTree } from './src/application/deployments';
-  export { DeploymentItemSchema, DeploymentDetailSchema } from './src/integration/deployments/historySchemas';
+  export { DeploymentItemSchema, DeploymentDetailSchema, DeploymentIssueSchema } from './src/integration/deployments/historySchemas';
   export { scopeOf } from './src/application/navigation/Scope';
 `);
 after(() => stop());
@@ -217,4 +217,22 @@ test("one deployment's scope leads back to the Deployments page", () => {
   assert.deepEqual(trail.map((crumb) => [crumb.label, crumb.location.path]), [
     ["Home", "/"], ["Deployments", "/deployments"], ["Deployment 00000000", "/deployments/00000000-0000-4000-8000-000000000001"],
   ]);
+});
+
+test("an issue says what happened and offers Redeploy, or Reconcile when the target is likely locked", () => {
+  const { DeploymentIssues, DeploymentIssueSchema } = history;
+  const deployment = { id: "x", targetId: "fp-prod", bundleId: "fp-gh-2", status: "running", outcome: "pending",
+    submittedAt: "2026-10-01T10:00:00Z", currentStep: { name: "Verify services", index: 4 } };
+  const stuck = DeploymentIssueSchema.parse({ kind: "stuck", needsReconcile: true, at: "2026-10-01T10:00:05Z", deployment });
+  assert.equal(DeploymentIssues.headline(stuck), "Stuck on Verify services");
+  assert.deepEqual([DeploymentIssues.canRedeploy(stuck), DeploymentIssues.canReconcile(stuck)], [false, true]);
+  const rolledBack = DeploymentIssueSchema.parse({ kind: "rolled_back", at: "2026-10-01T10:03:00Z",
+    deployment: { ...deployment, status: "rolled_back", outcome: "failed", currentStep: null } });
+  assert.equal(rolledBack.needsReconcile, false);
+  assert.equal(DeploymentIssues.headline(rolledBack), "Rolled back to the previous release");
+  assert.deepEqual([DeploymentIssues.canRedeploy(rolledBack), DeploymentIssues.canReconcile(rolledBack)], [true, false]);
+  // A kind this console does not know reads as a failure; a bundle the runner no longer holds cannot be redeployed.
+  const unknown = DeploymentIssueSchema.parse({ kind: "melted", at: "2026-10-01T10:03:00Z", deployment: { ...deployment, bundleId: null } });
+  assert.equal(DeploymentIssues.headline(unknown), "Failed");
+  assert.equal(DeploymentIssues.canRedeploy(unknown), false);
 });

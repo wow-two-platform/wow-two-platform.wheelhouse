@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DeploymentOutcome, JobStatus, StepStatus } from '@/domain/deployments';
+import { DeploymentIssueKind, DeploymentOutcome, JobStatus, StepStatus } from '@/domain/deployments';
 
 const nullableText = z.string().nullable();
 // Site links open in the operator's browser, so only http(s) addresses survive decoding.
@@ -76,6 +76,13 @@ export const DeploymentPromotionSchema = z.object({
   devSucceededAt: z.string(),
   prodTargetId: z.string(),
   prodRelease: nullableText.default(null),
+});
+
+export const DeploymentIssueSchema = z.object({
+  kind: z.enum(DeploymentIssueKind).catch(DeploymentIssueKind.Failed),
+  needsReconcile: z.boolean().default(false),
+  at: z.string(),
+  deployment: DeploymentItemSchema,
 });
 
 const ReferenceSchema = z.object({ id: z.string(), release: nullableText.default(null), bundleId: nullableText.default(null) });

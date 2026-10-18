@@ -14,6 +14,9 @@ import { DeploymentKeys } from "../DeploymentKeys";
 /** How often live rollouts are read while the page is visible. */
 const RunningPollMilliseconds = 3000;
 
+/** How often the issues are read while the page is visible. */
+const IssuesPollMilliseconds = 60_000;
+
 /** The operator's IANA time zone, which the calendar counts days in. */
 export function operatorTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -107,6 +110,18 @@ export function useDeploymentPromotions(entities: MaybeRefOrGetter<readonly stri
   return useAppQuery({
     key: () => DeploymentKeys.promotions([...toValue(entities)].sort().join(",")),
     queryFn: ({ signal }) => deploymentHistoryApi.listPromotions(entityParams(toValue(entities)), signal),
+  });
+}
+
+/**
+ * The targets that need attention, read again with the history views when a rollout finishes, and every minute while
+ * the page is visible, since a rollout turns stuck by time alone.
+ */
+export function useDeploymentIssues(entities: MaybeRefOrGetter<readonly string[]> = []) {
+  return useAppQuery({
+    key: () => DeploymentKeys.issues([...toValue(entities)].sort().join(",")),
+    queryFn: ({ signal }) => deploymentHistoryApi.listIssues(entityParams(toValue(entities)), signal),
+    refetchInterval: IssuesPollMilliseconds,
   });
 }
 

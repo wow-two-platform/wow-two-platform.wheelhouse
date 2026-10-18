@@ -21,6 +21,7 @@ export {
   operatorTimeZone,
   useDeploymentActivity,
   useDeploymentDetail,
+  useDeploymentIssues,
   useDeploymentPages,
   useDeploymentPromotions,
   useDeploymentRangeStats,

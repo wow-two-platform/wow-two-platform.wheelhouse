@@ -16,8 +16,8 @@ namespace Wheelhouse.Tests.E2E.Tests;
 /// <summary>
 /// E2E for the deployment history the Deployments page reads: the runner's records joined with the inventory, then
 /// filtered by entity (workspace, product, <c>product/service</c>, as a union), status and range; cursor paging; per-day
-/// activity in the operator's time zone; measures beside the prior range; live rollouts; releases ready for prod; and one
-/// deployment in full.
+/// activity in the operator's time zone; measures beside the prior range; live rollouts; releases ready for prod; the
+/// targets that need attention; and one deployment in full.
 /// </summary>
 /// <remarks>
 /// The records: ForeverPin (own-ventures) dev and prod, Ocharo's shop (ocharo) dev only, and a removed target.
@@ -55,6 +55,7 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
     [InlineData("/api/deployments/history/stats")]
     [InlineData("/api/deployments/running")]
     [InlineData("/api/deployments/promotions")]
+    [InlineData("/api/deployments/issues")]
     [InlineData("/api/deployments/" + FirstDev + "/detail")]
     public async Task Reads_RequireTheOperator(string path)
     {
@@ -254,6 +255,71 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
     }
 
     [Fact]
+    public async Task Issues_ListFailuresWithNoSuccessSinceAndStuckRollouts_ThoseNeedingAReconcileFirst()
+    {
+        await SeedIssuesAsync(
+            // fp-dev: a success, then a rollout live for two hours — stuck.
+            Record(Issue(1), "foreverpin-dev", Ago(TimeSpan.FromDays(3)), "succeeded", "v1.0.0", "foreverpin-gh-1", WebA),
+            Record(Issue(2), "foreverpin-dev", Ago(TimeSpan.FromHours(2)), "running", "v1.1.0", "foreverpin-gh-2", WebB),
+            // fp-prod: a rollback, then a refusal that changed nothing — the rollback still stands.
+            Record(Issue(3), "foreverpin-prod", Ago(TimeSpan.FromDays(5)), "succeeded", "v1.0.0", "foreverpin-gh-1", WebA),
+            Record(Issue(4), "foreverpin-prod", Ago(TimeSpan.FromDays(1)), "rolled_back", "v1.1.0", "foreverpin-gh-2", WebB),
+            Record(Issue(5), "foreverpin-prod", Ago(TimeSpan.FromHours(1)), "rejected", "v1.1.0", "foreverpin-gh-2", WebB),
+            // The shop: a failure that had replaced containers, so the runner refuses the next rollout until a reconcile.
+            new
+            {
+                id = Issue(6), targetId = "ocharo-shop-dev", bundleId = "ocharo-shop-gh-3", release = "v0.3.0", actor = "key:release-bot",
+                status = "failed", submittedAt = Ago(TimeSpan.FromHours(6)), startedAt = Ago(TimeSpan.FromHours(6) - TimeSpan.FromSeconds(5)),
+                completedAt = Ago(TimeSpan.FromHours(5)), mutationStarted = true, reason = "web did not become healthy",
+            },
+            // A removed target's failure: nothing can be redeployed there.
+            new { id = Issue(7), targetId = "gone-dev", bundleId = "gone-gh-1", release = "v0.1.0", status = "failed", submittedAt = Ago(TimeSpan.FromHours(3)) });
+
+        var issues = await DataAsync("/api/deployments/issues");
+        Issues(issues).Should().Equal(("stuck", true, Issue(2)), ("failed", true, Issue(6)), ("rolled_back", false, Issue(4)));
+        issues[0].GetProperty("at").GetDateTimeOffset().Should().Be(Fixture.Host.Clock.GetUtcNow() - TimeSpan.FromHours(2) + TimeSpan.FromSeconds(10));
+        issues[1].GetProperty("at").GetDateTimeOffset().Should().Be(Fixture.Host.Clock.GetUtcNow() - TimeSpan.FromHours(5));
+        var failed = issues[1].GetProperty("deployment");
+        (failed.GetProperty("product").GetString(), failed.GetProperty("environment").GetString(), failed.GetProperty("release").GetString(),
+                failed.GetProperty("reason").GetString(), failed.GetProperty("actor").GetString())
+            .Should().Be(("ocharo-shop", "dev", "v0.3.0", "web did not become healthy", "key:release-bot"));
+        Issues(await DataAsync("/api/deployments/issues?workspace=ocharo")).Should().Equal(("failed", true, Issue(6)));
+    }
+
+    [Fact]
+    public async Task Issues_ClearOnALaterSuccessAndLeaveARolloutOnTimeAlone()
+    {
+        await SeedIssuesAsync(
+            Record(Issue(1), "foreverpin-dev", Ago(TimeSpan.FromDays(1)), "failed", "v1.1.0", "foreverpin-gh-2", WebB),
+            Record(Issue(2), "foreverpin-dev", Ago(TimeSpan.FromMinutes(5)), "running", "v1.1.1", "foreverpin-gh-3", WebB),
+            Record(Issue(3), "foreverpin-prod", Ago(TimeSpan.FromDays(2)), "rolled_back", "v1.1.0", "foreverpin-gh-2", WebB),
+            Record(Issue(4), "foreverpin-prod", Ago(TimeSpan.FromDays(1)), "succeeded", "v1.0.1", "foreverpin-gh-5", WebA),
+            // Reconciled after it stopped mid-way, with nothing deployed since: still an issue, no longer locked.
+            new
+            {
+                id = Issue(5), targetId = "ocharo-shop-dev", bundleId = "ocharo-shop-gh-3", release = "v0.3.0", actor = "max",
+                status = "interrupted", submittedAt = Ago(TimeSpan.FromHours(4)), completedAt = Ago(TimeSpan.FromHours(3)),
+                mutationStarted = true,
+            });
+
+        Issues(await DataAsync("/api/deployments/issues")).Should().Equal(("interrupted", false, Issue(5)));
+    }
+
+    /// <summary>Seeds the inventory, then replaces the eight dated records with ones relative to the host's fake clock.</summary>
+    private async Task SeedIssuesAsync(params object[] records)
+    {
+        await SeedAsync();
+        Fixture.Deployments.History.Clear();
+        Fixture.Deployments.History.AddRange(records);
+    }
+
+    /// <summary>An instant this long before the host's fake clock, as the runner writes it.</summary>
+    private string Ago(TimeSpan span) =>
+        (Fixture.Host.Clock.GetUtcNow() - span).ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Issue(int number) => $"00000000-0000-4000-8000-0000000001{number:D2}";
+
+    [Fact]
     public async Task Detail_ShowsServicesFromAndToStepsSitesAndTheRollBack()
     {
         await SeedAsync();
@@ -426,6 +492,12 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
 
     private static JsonElement Item(JsonElement page, string id) =>
         page.GetProperty("items").EnumerateArray().Single(item => item.GetProperty("id").GetString() == id);
+
+    private static IEnumerable<(string?, bool, string?)> Issues(JsonElement issues) =>
+        issues.EnumerateArray()
+            .Select(issue => (issue.GetProperty("kind").GetString(), issue.GetProperty("needsReconcile").GetBoolean(),
+                issue.GetProperty("deployment").GetProperty("id").GetString()))
+            .ToArray();
 
     private static IEnumerable<(string?, int, int)> Days(JsonElement activity) =>
         activity.GetProperty("days").EnumerateArray()

@@ -7,6 +7,8 @@ export type { DeploymentPage } from './models/DeploymentPage';
 export type { ActivityDay, DeploymentActivity } from './models/DeploymentActivity';
 export type { DeploymentRangeStats, RangeMeasures } from './models/DeploymentRangeStats';
 export type { DeploymentPromotion } from './models/DeploymentPromotion';
+export { DeploymentIssueKind, type DeploymentIssue } from './models/DeploymentIssue';
+export { DeploymentIssues } from './DeploymentIssues';
 export type { DeploymentDetail, DeploymentReference, DeploymentSite, ServiceChange } from './models/DeploymentDetail';
 export {
   DefaultFilter,

@@ -51,6 +51,12 @@ public sealed class DeploymentsController(ISender sender) : ControllerBase
     public async Task<IActionResult> Running([FromQuery] DeploymentFilterApiRequest filter, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentRunningQuery(filter.ToFilter()), ct));
 
+    /// <summary>Lists the targets that need attention: a latest rollout that failed or rolled back with no success since,
+    /// or a rollout live for over 30 minutes; the filter's entities apply.</summary>
+    [HttpGet("issues")]
+    public async Task<IActionResult> Issues([FromQuery] DeploymentFilterApiRequest filter, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentIssuesQuery(filter.ToFilter()), ct));
+
     /// <summary>Lists, per product, the newest release that succeeded on dev and is not what prod runs.</summary>
     [HttpGet("promotions")]
     public async Task<IActionResult> Promotions([FromQuery] DeploymentFilterApiRequest filter, CancellationToken ct) =>
