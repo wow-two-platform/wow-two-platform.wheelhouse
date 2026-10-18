@@ -35,6 +35,8 @@ export interface DeploymentItem {
   branch: string | null;
   sourceCommit: string | null;
   actor: string | null;
+  /** The owner's one-line why for the deploy, when one was given. */
+  deployReason: string | null;
   status: JobStatus;
   outcome: DeploymentOutcome;
   reason: string | null;

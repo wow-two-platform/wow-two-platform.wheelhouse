@@ -62,16 +62,16 @@ public sealed class DevPassGateE2ETests(WheelhouseAppFixture fixture) : Wheelhou
     {
         await UseRunnerAsync();
 
-        var untyped = await Deploy(new { target = "foreverpin-prod", release = Bundle, skipDevPass = true });
+        var untyped = await Deploy(new { target = "foreverpin-prod", release = Bundle, skipDevPass = true, reason = "dev is down" });
         Assert.Equal(HttpStatusCode.Conflict, untyped.StatusCode);
         Assert.Contains("Type the target ID to deploy without a dev pass", await untyped.Content.ReadAsStringAsync());
 
-        var typed = await Deploy(new { target = "foreverpin-prod", release = Bundle, confirm = "foreverpin-prod", skipDevPass = true });
+        var typed = await Deploy(new { target = "foreverpin-prod", release = Bundle, confirm = "foreverpin-prod", skipDevPass = true, reason = "dev is down" });
         Assert.Equal(HttpStatusCode.Conflict, typed.StatusCode);
         Assert.Contains(PastTheGates, await typed.Content.ReadAsStringAsync());
 
         var entry = (await AdminClient.GetFromJsonAsync<JsonElement>("/api/audit")).GetProperty("data")[0];
-        Assert.Equal(Bundle + ", without a dev pass", entry.GetProperty("detail").GetString());
+        Assert.Equal(Bundle + ", without a dev pass, reason: dev is down", entry.GetProperty("detail").GetString());
     }
 
     [Fact]

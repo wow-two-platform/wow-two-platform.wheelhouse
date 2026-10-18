@@ -36,6 +36,9 @@ public sealed record DeploymentItemDto
     /// <summary>Gets who submitted it.</summary>
     public string? Actor { get; init; }
 
+    /// <summary>Gets the owner's one-line why for the deploy, when one was given.</summary>
+    public string? DeployReason { get; init; }
+
     /// <summary>Gets the runner status.</summary>
     public required string Status { get; init; }
 
@@ -87,6 +90,7 @@ public sealed record DeploymentItemDto
             Branch = record.Branch,
             SourceCommit = record.SourceCommit,
             Actor = record.Actor,
+            DeployReason = record.DeployReason,
             Status = record.Status,
             Outcome = entry.Outcome,
             Reason = record.Reason,

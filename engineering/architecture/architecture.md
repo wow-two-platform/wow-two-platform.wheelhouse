@@ -352,6 +352,30 @@ request acts as `automation`, so every automatic submission goes through the ord
 - `GET /api/deployments/automation` lists every product's `{ product, autoDeployDev, autoPromote, ciDeployed }` and the
   queue; `PUT /api/deployments/automation/{product}` `{ autoDeployDev?, autoPromote? }` (action header `automation`,
   audited `product.automation`) changes the choices it names.
+- **Freezes** (`deploy_freezes`, migration `017-deploy-freezes`) hold deploys everywhere, to one product, or to one
+  product's environment; the narrowest covering freeze names the hold. While a freeze covers a target, an automatic
+  deploy is refused (`…; the automatic deploy was skipped`, audited, dropped from the queue) and an owner's deploy is
+  refused (409) unless it sends `overrideFreeze: true` with a `reason` (400 without one). `GET /api/deployments/freezes`
+  lists `{ id, scope, product, environment, reason, actor, at, covers }`; `POST /api/deployments/freezes`
+  `{ product?, environment?, reason? }` freezes a scope once (a second freeze answers the first) and
+  `DELETE /api/deployments/freezes?product=&environment=` lifts it (204); both carry the action header `freeze` and are
+  audited `deployment.freeze` / `deployment.unfreeze` with subject `portfolio`, `{product}` or `{product}/{environment}`.
+  Freezes bind the console and the API; the runner CLI stays the operator's own tool.
+- **Deploy reason:** `POST /api/deployments` takes an optional one-line `reason` (300 characters at most), required to
+  override a freeze or skip the dev pass (400 without one). The runner keeps it on the job (`deployReason`), history
+  items and the deployment page carry it, and the audit detail ends `, reason: …`.
+- **Rollback risk:** a promotion carries `rollbackCompatible` (false: a failed prod rollout cannot restore the previous
+  images on its own) and `hasMigrations` (from the bundle's `migrations`, null while a bundle does not say), and the
+  console shows them on Ready to promote rows. `GET /api/deployments/releases/{release}/facts` (runner `facts`) reads
+  one bundle's `{ rollbackCompatible, migrations, sourceCommit, kind }` into the cache without contacting a target; the
+  prod confirm step reads it.
+- **Changelog at promote:** every `main` release's GitHub body lists its commits since the previous release above
+  GitHub's generated notes (the shared publish workflow, `release.py notes`). `GET /api/deployments/products/{product}/changelog?from=&to=`
+  (runner `changelog`) returns the bodies of the releases published after `from` (what the target runs; omitted when it
+  runs nothing, which shows the last ten) up to `to`, newest first, plain text cut at 20,000 characters, and the
+  compare commit list (`compareUrl`, `commits`, `totalCommits`; null with a `reason` when GitHub cannot compare) with
+  the changed files under a `Migrations/` folder. Ready to promote rows and the prod confirm step show it expandable;
+  the console renders bodies as text and opens only `https://github.com/` links.
 
 ## Secrets vaults
 

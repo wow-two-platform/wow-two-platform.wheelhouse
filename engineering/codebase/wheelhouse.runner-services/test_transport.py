@@ -478,6 +478,43 @@ class TransportTests(unittest.TestCase):
             self.gated(skip=True)
         self.assertEqual("passed the gate", self.gated(skip=True, confirm="pilot-prod"))
 
+    def test_a_deploy_reason_is_kept_on_the_job_and_listed(self):
+        config = {**self.policy_config("dev", True, False), "requiresDevPass": False}
+
+        class FakeSsh:
+            def __init__(self, ssh_config):
+                pass
+
+            def run(self, command, stdin=None, timeout=30):
+                return json.dumps({"id": "55555555-5555-4555-8555-555555555555", "status": "queued"}) if "launch" in command else ""
+
+            def copy(self, files, destination):
+                pass
+
+        with patch.object(transport.fleet, "resolve_target", return_value=config), \
+                patch.object(transport.artifacts, "prepare", return_value=self.release_bundle()), \
+                patch.object(transport, "Ssh", FakeSsh):
+            submitted = transport.submit(self.root, "pilot-dev", "pilot-gh-1", "max", reason="  hotfix for the login loop ")
+        record = json.loads((self.root / "jobs" / (submitted["id"] + ".json")).read_text())
+        self.assertEqual("hotfix for the login loop", record["deployReason"])
+        self.assertEqual("hotfix for the login loop", transport.jobs(self.root)[0]["deployReason"])
+
+    def test_a_deploy_reason_is_one_short_line(self):
+        for reason in ("", "   ", "two\nlines", "x" * 301):
+            with self.subTest(reason=reason), self.assertRaisesRegex(ValueError, "one line of 300"):
+                transport.submit(self.root, "pilot-dev", "pilot-gh-1", "max", reason=reason)
+
+    def test_release_facts_name_rollback_risk_and_migrations_without_contacting_a_target(self):
+        bundle = self.release_bundle()
+        with patch.object(transport.artifacts, "prepare", return_value=bundle), patch.object(transport, "Ssh") as ssh:
+            self.assertEqual({"id": "pilot-gh-1", "product": "pilot", "release": "v1.0.0", "kind": "release",
+                              "sourceCommit": "a" * 40, "rollbackCompatible": False, "migrations": None},
+                             transport.facts(self.root, "pilot-gh-1"))
+            manifest = json.loads((bundle / "release.json").read_text())
+            (bundle / "release.json").write_text(json.dumps({**manifest, "migrations": True}))
+            self.assertTrue(transport.facts(self.root, "pilot-gh-1")["migrations"])
+            ssh.assert_not_called()
+
     def test_targets_carry_their_environment_rules(self):
         with patch.dict("os.environ", {"WHEELHOUSE_REHEARSAL": "1"}):
             listed = {item["id"]: (item["environment"], item["acceptsCandidates"], item["needsConfirmation"])

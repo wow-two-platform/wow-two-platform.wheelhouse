@@ -47,6 +47,7 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual("pilot", record["product"])
         self.assertEqual("release", record["kind"])
         self.assertTrue(record["rollbackCompatible"])
+        self.assertIsNone(record["migrations"], "a bundle that does not say carries no claim either way")
         self.assertEqual({"image": image, "version": "1.2.0"}, record["services"]["api"])
         self.assertIsNone(record["services"]["web"]["version"])
         self.assertEqual("2026-10-01T09:00:00Z", record["publishedAt"])

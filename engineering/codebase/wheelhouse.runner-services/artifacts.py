@@ -183,6 +183,67 @@ def latest():
     return result
 
 
+NOTES_LIMIT = 20000
+MIGRATION_PATH = re.compile(r"(^|/)(Migrations|migrations)/")
+
+
+def changelog(product, start, end):
+    """What changed between two releases of a product: the bodies of the releases published after `start` up to `end`,
+    newest first, and the compare commit list as a fallback for bodies that say little, with the changed files that
+    look like schema migrations. `start` is what the target runs now, or None when it runs nothing. Bodies are
+    returned as plain text for the console to show, never rendered."""
+    source = source_of(product)
+    for label in (start, end):
+        require(label is None or VERSION.fullmatch(label), "A changelog runs between two release tags")
+    require(end is not None, "A changelog needs the release to promote")
+    listing = json.loads(fetch(API + source.repository + "/releases?per_page=100"))
+    published = sorted((item for item in listing if isinstance(item, dict) and not item.get("draft")
+                        and item.get("published_at") and VERSION.fullmatch(str(item.get("tag_name", "")))),
+                       key=lambda item: item["published_at"])
+    tags = [item["tag_name"] for item in published]
+    require(end in tags, "The release to promote is not published")
+    first = tags.index(start) + 1 if start in tags else max(0, tags.index(end) - 9)
+    chosen = published[first:tags.index(end) + 1]
+    releases = []
+    for item in reversed(chosen):
+        body = item.get("body") if isinstance(item.get("body"), str) else ""
+        releases.append({"release": item["tag_name"], "name": str(item.get("name") or item["tag_name"])[:200],
+                         "publishedAt": item["published_at"], "body": body[:NOTES_LIMIT],
+                         "truncated": len(body) > NOTES_LIMIT, "prerelease": bool(item.get("prerelease")),
+                         "url": "https://github.com/" + source.repository + "/releases/tag/" + quote(item["tag_name"], safe="")})
+    result = {"product": product, "from": start, "to": end, "releases": releases, "commits": None,
+              "totalCommits": None, "migrations": [], "compareUrl": None, "reason": None}
+    if start is None or start not in tags:
+        return result
+    result["compareUrl"] = ("https://github.com/" + source.repository + "/compare/" + quote(start, safe="") + "..."
+                            + quote(end, safe=""))
+    try:
+        compare = json.loads(fetch(API + source.repository + "/compare/" + quote(start, safe="") + "..."
+                                   + quote(end, safe=""), limit=8 * 1024 * 1024))
+    except CommandFailed as error:
+        result["reason"] = str(error)[:300]
+        return result
+    commits = []
+    for item in reversed((compare.get("commits") or []) if isinstance(compare, dict) else []):
+        sha = item.get("sha") if isinstance(item, dict) else None
+        if not isinstance(sha, str) or not SHA.fullmatch(sha):
+            continue
+        detail = item.get("commit") if isinstance(item.get("commit"), dict) else {}
+        author = detail.get("author") if isinstance(detail.get("author"), dict) else {}
+        message = detail.get("message") if isinstance(detail.get("message"), str) else ""
+        commits.append({"sha": sha, "message": message.splitlines()[0][:200] if message else "",
+                        "author": str(author.get("name") or "")[:80], "date": author.get("date"),
+                        "url": "https://github.com/" + source.repository + "/commit/" + sha})
+    result["commits"] = commits[:100]
+    total = compare.get("total_commits") if isinstance(compare, dict) else None
+    result["totalCommits"] = total if type(total) is int else len(commits)
+    files = compare.get("files") if isinstance(compare, dict) else None
+    result["migrations"] = sorted({str(item["filename"])[:300] for item in files or []
+                                   if isinstance(item, dict) and isinstance(item.get("filename"), str)
+                                   and MIGRATION_PATH.search(item["filename"])})[:50]
+    return result
+
+
 def available(root=None):
     result = []
     for source in sources():

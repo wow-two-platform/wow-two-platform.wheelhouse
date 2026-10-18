@@ -24,6 +24,7 @@ export const DeploymentItemSchema = z.object({
   branch: nullableText.default(null),
   sourceCommit: nullableText.default(null),
   actor: nullableText.default(null),
+  deployReason: nullableText.default(null),
   status: z.enum(JobStatus).catch(JobStatus.Unknown),
   outcome: z.enum(DeploymentOutcome).catch(DeploymentOutcome.Unknown),
   reason: nullableText.default(null),
@@ -77,6 +78,8 @@ export const DeploymentPromotionSchema = z.object({
   devSucceededAt: z.string(),
   prodTargetId: z.string(),
   prodRelease: nullableText.default(null),
+  rollbackCompatible: z.boolean().nullable().default(null),
+  hasMigrations: z.boolean().nullable().default(null),
 });
 
 export const DeploymentIssueSchema = z.object({

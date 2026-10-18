@@ -7,8 +7,12 @@ namespace Wheelhouse.Api.Requests;
 /// <param name="Release">The catalog entry to deploy.</param>
 /// <param name="Confirm">The target ID typed out; required for prod on the local server and to skip the dev pass.</param>
 /// <param name="SkipDevPass">Deploys to prod a release that has not succeeded on dev; needs <paramref name="Confirm"/>.</param>
+/// <param name="Reason">The owner's one-line why, stored on the job and in the audit trail; needed to override a freeze.</param>
+/// <param name="OverrideFreeze">Deploys although a freeze holds the target; needs <paramref name="Reason"/>.</param>
 public sealed record DeploymentStartRequest(
     [Required, RegularExpression("^[a-z][a-z0-9-]{0,47}$")] string Target,
     [Required, RegularExpression("^[a-z][a-z0-9-]{0,47}$")] string Release,
     [RegularExpression("^[a-z][a-z0-9-]{0,47}$")] string? Confirm = null,
-    bool SkipDevPass = false);
+    bool SkipDevPass = false,
+    [MaxLength(300)] string? Reason = null,
+    bool OverrideFreeze = false);

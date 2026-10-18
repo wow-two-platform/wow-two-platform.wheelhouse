@@ -5,6 +5,8 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments;
 using Wheelhouse.Application.Deployments.Automation.Commands;
 using Wheelhouse.Application.Deployments.Automation.Queries;
+using Wheelhouse.Application.Deployments.Freezes.Commands;
+using Wheelhouse.Application.Deployments.Freezes.Queries;
 using Wheelhouse.Application.Deployments.History.Queries;
 using Wheelhouse.Application.Operations;
 using Microsoft.AspNetCore.Mvc;
@@ -80,6 +82,28 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
             Product = product, AutoDeployDev = request.AutoDeployDev, AutoPromote = request.AutoPromote,
         }, ct));
 
+    /// <summary>Lists the holds on deploys: everywhere, per product, or per product environment.</summary>
+    [HttpGet("freezes")]
+    public async Task<IActionResult> Freezes(CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeployFreezesQuery(), ct));
+
+    /// <summary>Holds deploys: without a product everywhere, with one that product, with an environment too only there.
+    /// Automatic deploys skip a frozen target; an owner's deploy needs an override with a reason.</summary>
+    [HttpPost("freezes")]
+    [RequireActionHeader("freeze")]
+    public async Task<IActionResult> Freeze(DeployFreezeRequest request, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeployFreezeCreateCommand
+        {
+            Product = request.Product, Environment = request.Environment, Reason = request.Reason, Actor = actor.Actor,
+        }, ct));
+
+    /// <summary>Lifts the hold on one scope, named the way it was frozen; lifting an unfrozen scope changes nothing.</summary>
+    [HttpDelete("freezes")]
+    [RequireActionHeader("freeze")]
+    public async Task<IActionResult> Unfreeze([FromQuery] string? product, [FromQuery] string? environment, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeployFreezeDeleteCommand { Product = product, Environment = environment }, ct),
+            _ => NoContent());
+
     /// <summary>Reads one deployment in full from local records: services from and to, steps, sites, warnings and
     /// what a roll back restores. Never contacts the target.</summary>
     [HttpGet("{id:guid}/detail")]
@@ -139,6 +163,13 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
     public async Task<IActionResult> Releases(CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentReadQuery("releases"), ct));
 
+    /// <summary>Reads what a release's bundle declares that a deploy should weigh — whether a failed rollout can restore
+    /// the previous images, and whether it carries schema migrations — downloading it into the cache; no target is
+    /// contacted.</summary>
+    [HttpGet("releases/{release}/facts")]
+    public async Task<IActionResult> ReleaseFacts([RegularExpression(Slug)] string release, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentReadQuery("facts", release), ct));
+
     /// <summary>Lists a product's branches, to choose which commits to build or deploy to dev.</summary>
     [HttpGet("products/{product}/branches")]
     public async Task<IActionResult> Branches([RegularExpression(Slug)] string product, CancellationToken ct) =>
@@ -149,6 +180,14 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
     public async Task<IActionResult> Commits(
         [RegularExpression(Slug)] string product, [FromQuery, Required, RegularExpression(Branch)] string branch, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentCommitsQuery(product, branch), ct));
+
+    /// <summary>Reads what changed between what a target runs (<c>from</c>, omitted when it runs nothing) and the release
+    /// to promote (<c>to</c>): the release bodies GitHub holds, newest first, and the compare commit list with the changed
+    /// files that look like schema migrations.</summary>
+    [HttpGet("products/{product}/changelog")]
+    public async Task<IActionResult> Changelog(
+        [RegularExpression(Slug)] string product, [FromQuery] string? from, [FromQuery, Required] string to, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentChangelogQuery(product, from, to), ct));
 
     /// <summary>Starts a build of a commit that has none; the build appears in the catalog once its workflow finishes.</summary>
     [HttpPost("products/{product}/builds")]
@@ -179,7 +218,8 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
     public async Task<IActionResult> Start(DeploymentStartRequest request, CancellationToken ct)
     {
         var result = await sender.SendAsync(
-            new DeploymentStartCommand(request.Target, request.Release, actor.Actor, request.Confirm, request.SkipDevPass), ct);
+            new DeploymentStartCommand(request.Target, request.Release, actor.Actor, request.Confirm, request.SkipDevPass,
+                Reason: request.Reason, OverrideFreeze: request.OverrideFreeze), ct);
         return this.ToActionResult(result, envelope =>
             AcceptedAtAction(nameof(Status), new { id = envelope.Data.GetProperty("id").GetString() }, envelope));
     }

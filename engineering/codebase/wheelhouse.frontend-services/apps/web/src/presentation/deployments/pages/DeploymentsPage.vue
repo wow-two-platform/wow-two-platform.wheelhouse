@@ -25,6 +25,7 @@ import IssuesPanel from "../components/history/IssuesPanel.vue";
 import RangeStatsTiles from "../components/history/RangeStatsTiles.vue";
 import ReadyToPromotePanel from "../components/history/ReadyToPromotePanel.vue";
 import RunningNowPanel from "../components/history/RunningNowPanel.vue";
+import PortfolioFreezeToggle from "../components/automation/PortfolioFreezeToggle.vue";
 import { useDeployModal } from "../hooks/useDeployModal";
 import { useDeploymentViewRoute } from "../hooks/useDeploymentViewRoute";
 
@@ -106,6 +107,7 @@ function promote(item: DeploymentPromotion): void {
 <template>
   <div class="flex min-w-0 flex-col gap-6">
     <PageHeaderActions>
+      <PortfolioFreezeToggle />
       <Button variant="solid" tone="primary" @click="deploy.openDeploy()">
         <template #leading><Rocket :size="16" /></template>Deploy
       </Button>

@@ -24,11 +24,14 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "001-baseline", "002-snake-enums", "003-audit-updated-at", "004-audit-trail", "005-vitals-samples",
         "006-product-catalog", "007-inventory", "008-product-manifests", "009-server-vitals", "010-workspaces",
         "011-product-status", "012-pins", "013-drop-test-environment", "015-product-pins-only",
-        "016-deploy-automation",
+        "016-deploy-automation", "017-deploy-freezes",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
     private static string[] After(int ordinal) => Migrations[ordinal..];
+
+    /// <summary>The migrations from <paramref name="name"/> on, as the migrator labels them.</summary>
+    private static string[] From(string name) => Migrations[Array.IndexOf(Migrations, name)..];
 
     /// <summary>The ordinals 1 through <paramref name="ordinal"/>.</summary>
     private static int[] Through(int ordinal) => [.. Enumerable.Range(1, ordinal)];
@@ -588,7 +591,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
 
         for (var cycle = 0; cycle < 2; cycle++)
         {
-            Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal("016-deploy-automation");
+            Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("016-deploy-automation"));
             // Only Wheelhouse, which its own CI deploys, starts with a row; every other product takes the defaults.
             (await Scalar(connection, "SELECT string_agg(p.slug || ':' || a.auto_deploy_dev || ':' || a.auto_promote, ',') " +
                                       "FROM product_automation a JOIN products p ON p.id = a.product_id"))
@@ -615,6 +618,37 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         (await Scalar(connection, "SELECT count(*) FROM deployment_queue")).Should().Be(0L);
         await Execute(connection, "DELETE FROM products WHERE slug = 'wheelhouse'");
         (await Scalar(connection, "SELECT count(*) FROM product_automation")).Should().Be(0L);
+    }
+
+    [Fact]
+    public async Task DeployFreezes_ShouldHoldEachScopeOnce_NeedAProductForAnEnvironment_AndGoWithTheProduct_WhenApplied()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000001", "pilot"));
+        const string freeze = "INSERT INTO deploy_freezes (id, product_id, environment, reason, actor, created_at_utc) " +
+                              "VALUES (gen_random_uuid(), {0}, {1}, NULL, 'max', now())";
+        const string pilot = "'00000000-0000-0000-0000-000000000001'";
+        await Execute(connection, string.Format(freeze, "NULL", "NULL"));
+        await Execute(connection, string.Format(freeze, pilot, "NULL"));
+        await Execute(connection, string.Format(freeze, pilot, "'prod'"));
+        foreach (var refused in new[]
+        {
+            string.Format(freeze, "NULL", "NULL"), string.Format(freeze, pilot, "'prod'"), string.Format(freeze, "NULL", "'dev'"),
+        })
+        {
+            var insert = async () => await Execute(connection, refused);
+            await insert.Should().ThrowAsync<Npgsql.PostgresException>(refused);
+        }
+
+        await Execute(connection, "DELETE FROM products WHERE slug = 'pilot'");
+        (await Scalar(connection, "SELECT count(*) FROM deploy_freezes")).Should().Be(1L, "the portfolio freeze stays");
+
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 16, CancellationToken.None));
+        (await migrator.HasTableAsync("deploy_freezes")).Should().BeFalse();
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("017-deploy-freezes"));
     }
 
     /// <summary>The SQL that stores one vitals reading of a target slug, or of its server's host for <c>NULL</c>.</summary>

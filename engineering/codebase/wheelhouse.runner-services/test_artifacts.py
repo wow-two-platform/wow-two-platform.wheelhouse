@@ -102,6 +102,52 @@ class ArtifactTests(unittest.TestCase):
         with patch.object(artifacts, 'fetch', return_value=b'[]'):
             self.assertEqual([{'product': 'foreverpin', 'ok': True, 'release': None}], artifacts.latest())
 
+    def changelog_fetch(self, compare=None):
+        def release(tag, published, body):
+            return {**self.release, 'tag_name': tag, 'published_at': published, 'body': body, 'name': tag}
+        listing = [release('v0.9.0', '2026-09-19T00:00:00Z', 'first'), release('v0.9.1', '2026-09-20T00:00:00Z', 'fixed login'),
+                   release('v0.9.2', '2026-09-21T00:00:00Z', 'x' * 20001), {**release('v0.9.3', '2026-09-22T00:00:00Z', ''), 'draft': True}]
+
+        def fetch(url, limit=artifacts.MAX_ARCHIVE):
+            if '/releases?' in url:
+                return json.dumps(listing).encode()
+            if '/compare/' in url:
+                if compare is None:
+                    raise runner.CommandFailed('GitHub request failed (HTTP 404)')
+                return json.dumps(compare).encode()
+            raise AssertionError(url)
+        return fetch
+
+    def test_a_changelog_lists_the_release_bodies_since_what_prod_runs_newest_first_with_the_commits(self):
+        commit = {'sha': 'c' * 40, 'commit': {'message': 'feat: billing\n\nbody', 'author': {'name': 'Max', 'date': '2026-09-21T00:00:00Z'}}}
+        compare = {'total_commits': 2, 'commits': [{'sha': 'd' * 40, 'commit': {'message': 'fix: login'}}, commit],
+                   'files': [{'filename': 'engineering/codebase/x/Persistence/Migrations/014-billing/Apply.sql'}, {'filename': 'README.md'}]}
+        with patch.object(artifacts, 'fetch', side_effect=self.changelog_fetch(compare)):
+            result = artifacts.changelog('foreverpin', 'v0.9.0', 'v0.9.2')
+        self.assertEqual(['v0.9.2', 'v0.9.1'], [item['release'] for item in result['releases']])
+        self.assertTrue(result['releases'][0]['truncated'])
+        self.assertEqual(20000, len(result['releases'][0]['body']))
+        self.assertEqual('fixed login', result['releases'][1]['body'])
+        self.assertEqual(['feat: billing', 'fix: login'], [item['message'] for item in result['commits']])
+        self.assertEqual(('Max', 2), (result['commits'][0]['author'], result['totalCommits']))
+        self.assertEqual(['engineering/codebase/x/Persistence/Migrations/014-billing/Apply.sql'], result['migrations'])
+        self.assertTrue(result['compareUrl'].endswith('/compare/v0.9.0...v0.9.2'))
+
+    def test_a_changelog_keeps_the_bodies_when_the_compare_fails_and_takes_recent_ones_for_a_first_promotion(self):
+        with patch.object(artifacts, 'fetch', side_effect=self.changelog_fetch()):
+            failed = artifacts.changelog('foreverpin', 'v0.9.0', 'v0.9.1')
+            first = artifacts.changelog('foreverpin', None, 'v0.9.1')
+        self.assertEqual((['v0.9.1'], None, 'GitHub request failed (HTTP 404)'),
+                         ([item['release'] for item in failed['releases']], failed['commits'], failed['reason']))
+        self.assertEqual(['v0.9.1', 'v0.9.0'], [item['release'] for item in first['releases']])
+        self.assertIsNone(first['compareUrl'])
+
+    def test_a_changelog_runs_between_published_release_tags_only(self):
+        with patch.object(artifacts, 'fetch', side_effect=self.changelog_fetch()):
+            for start, end in (('main', 'v0.9.1'), ('v0.9.0', 'v0.9.3'), ('v0.9.0', None), ('v0.9.0', 'v1.0.0;id')):
+                with self.subTest(start=start, end=end), self.assertRaises(ValueError):
+                    artifacts.changelog('foreverpin', start, end)
+
     def test_selected_bundle_is_checked_and_cached(self):
         with patch.object(artifacts, 'fetch', side_effect=self.fetch):
             bundle = artifacts.prepare(self.root, 'foreverpin-gh-123', transport.import_bundle)

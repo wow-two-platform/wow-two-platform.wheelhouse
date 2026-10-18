@@ -36,6 +36,9 @@ public sealed record DeploymentRecord
     /// <summary>Gets who submitted it.</summary>
     public string? Actor { get; init; }
 
+    /// <summary>Gets the owner's one-line why for the deploy, when one was given.</summary>
+    public string? DeployReason { get; init; }
+
     /// <summary>Gets the last observed status, such as <c>running</c>, <c>succeeded</c> or <c>rolled_back</c>.</summary>
     public required string Status { get; init; }
 
@@ -65,6 +68,9 @@ public sealed record DeploymentRecord
 
     /// <summary>Gets whether the release declares that the previous release's images run on its schema.</summary>
     public bool? RollbackCompatible { get; init; }
+
+    /// <summary>Gets whether the release declares schema migrations; null while its bundle does not say.</summary>
+    public bool? Migrations { get; init; }
 
     /// <summary>Gets when the release source published the bundle.</summary>
     public DateTimeOffset? PublishedAt { get; init; }

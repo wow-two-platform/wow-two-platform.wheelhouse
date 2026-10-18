@@ -22,6 +22,7 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
             "state" when id is not null => RunAsync(["state", "--target", id], ct),
             "topology" when id is not null => RunAsync(["topology", "--target", id], ct),
             "branches" when id is not null => RunAsync(["branches", "--product", id], ct),
+            "facts" when id is not null => RunAsync(["facts", "--bundle", id], ct),
             "vitals" => RunAsync(id is null ? ["vitals"] : ["vitals", "--target", id], ct),
             "stats" when int.TryParse(id, out var days) => RunAsync(["stats", "--days", days.ToString(CultureInfo.InvariantCulture)], ct),
             _ => Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.NotFound("Unknown deployment resource.")))
@@ -33,13 +34,16 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
 
     /// <inheritdoc />
     public Task<AppResult<JsonElement>> StartAsync(
-        string target, string release, string actor, string? confirm, bool skipDevPass, CancellationToken ct)
+        string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, CancellationToken ct)
     {
         List<string> arguments = ["submit", "--target", target, "--bundle", release, "--actor", actor];
         if (confirm is not null)
             arguments.AddRange(["--confirm", confirm]);
         if (skipDevPass)
             arguments.Add("--skip-dev-pass");
+        // An argument list, never a shell: the reason reaches the runner as one value.
+        if (reason is not null)
+            arguments.AddRange(["--reason", reason]);
         return RunAsync([.. arguments], ct);
     }
 
@@ -50,6 +54,10 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
     /// <inheritdoc />
     public Task<AppResult<JsonElement>> CommitsAsync(string product, string branch, CancellationToken ct) =>
         RunAsync(["commits", "--product", product, "--branch", branch], ct);
+
+    /// <inheritdoc />
+    public Task<AppResult<JsonElement>> ChangelogAsync(string product, string? from, string to, CancellationToken ct) =>
+        RunAsync(from is null ? ["changelog", "--product", product, "--to", to] : ["changelog", "--product", product, "--from", from, "--to", to], ct);
 
     /// <inheritdoc />
     public Task<AppResult<JsonElement>> RequestBuildAsync(string product, string commit, CancellationToken ct) =>

@@ -21,6 +21,8 @@ import { ConsolePaths } from "@/application/navigation";
 import { Measures } from "@/domain/common";
 import { Panel } from "@/presentation/common/components";
 
+import FrozenBadge from "../automation/FrozenBadge.vue";
+
 /** Shows each live rollout with the step it is on and how long it has run; the time ticks every second. */
 defineOptions({ name: "RunningNowPanel" });
 const props = defineProps<RunningNowPanelProps>();
@@ -52,6 +54,7 @@ function elapsed(item: DeploymentItem): string {
               <span class="font-medium">{{ item.product ? (props.productNames.get(item.product) ?? item.product) : item.targetId }}</span>
               <Badge :variant="item.environment === 'prod' ? 'info' : 'neutral'">{{ item.environment ?? item.targetId }}</Badge>
               <span class="font-mono text-xs">{{ item.release ?? item.bundleId }}</span>
+              <FrozenBadge :product="item.product" :environment="item.environment" />
             </span>
             <span class="mt-0.5 block truncate text-sm text-muted-foreground">
               <template v-if="item.currentStep">

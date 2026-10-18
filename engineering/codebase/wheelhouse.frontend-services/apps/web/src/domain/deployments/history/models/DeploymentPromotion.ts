@@ -11,4 +11,8 @@ export interface DeploymentPromotion {
   prodTargetId: string;
   /** What prod runs now; null when it runs nothing yet. */
   prodRelease: string | null;
+  /** False when a failed prod rollout cannot restore the previous images on its own; null when unknown. */
+  rollbackCompatible: boolean | null;
+  /** True when the release declares schema migrations; null while its bundle does not say. */
+  hasMigrations: boolean | null;
 }

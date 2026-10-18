@@ -11,6 +11,10 @@ namespace Wheelhouse.Application.Deployments.History.Models;
 /// <param name="DevSucceededAt">When it finished there.</param>
 /// <param name="ProdTargetId">The prod target to promote it to.</param>
 /// <param name="ProdRelease">The release prod runs now; null when it runs none.</param>
+/// <param name="RollbackCompatible">Whether a failed prod rollout can restore the previous images on its own; false
+/// means it cannot roll back automatically; null when the bundle is unknown.</param>
+/// <param name="HasMigrations">Whether the release declares schema migrations; null while its bundle does not say.</param>
 public sealed record DeploymentPromotionDto(
     string Product, string? Workspace, string Release, string BundleId, DateTimeOffset? PublishedAt,
-    string DevTargetId, DateTimeOffset DevSucceededAt, string ProdTargetId, string? ProdRelease);
+    string DevTargetId, DateTimeOffset DevSucceededAt, string ProdTargetId, string? ProdRelease,
+    bool? RollbackCompatible = null, bool? HasMigrations = null);

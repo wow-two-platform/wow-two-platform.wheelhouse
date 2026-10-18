@@ -17,11 +17,15 @@ import { RouterLink } from "vue-router";
 import { ArrowRight, Rocket } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
-import { RelativeTime } from "@wow-two-beta/fe/presentation/display";
+import { Badge, RelativeTime } from "@wow-two-beta/fe/presentation/display";
 import { DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
 
 import { ConsolePaths } from "@/application/navigation";
+import { rollbackRisks } from "@/domain/deployments";
 import { Panel } from "@/presentation/common/components";
+
+import FrozenBadge from "../automation/FrozenBadge.vue";
+import ReleaseChangelog from "../automation/ReleaseChangelog.vue";
 
 /** Offers each product's newest dev-proven release to prod in one action, which opens the deploy dialog on it. */
 defineOptions({ name: "ReadyToPromotePanel" });
@@ -49,18 +53,24 @@ const rows = useSkeletonItems(() => props.items, 2);
           class="flex flex-wrap items-center justify-between gap-3 py-3"
         >
           <div class="min-w-0">
-            <RouterLink
-              v-if="item"
-              :to="ConsolePaths.product(item.product)"
-              class="font-medium hover:text-primary focus-visible:outline-primary"
-              >{{ props.productNames.get(item.product) ?? item.product }}</RouterLink
-            >
+            <p v-if="item" class="flex flex-wrap items-center gap-2">
+              <RouterLink
+                :to="ConsolePaths.product(item.product)"
+                class="font-medium hover:text-primary focus-visible:outline-primary"
+                >{{ props.productNames.get(item.product) ?? item.product }}</RouterLink
+              >
+              <FrozenBadge :product="item.product" environment="prod" />
+            </p>
             <p v-if="item" class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
               <span class="font-mono text-xs text-foreground">{{ item.prodRelease ?? "nothing" }}</span>
               <ArrowRight :size="14" aria-label="to" />
               <span class="font-mono text-xs font-medium text-foreground">{{ item.release }}</span>
               <span>· passed dev <RelativeTime :value="item.devSucceededAt" /></span>
             </p>
+            <p v-if="item && rollbackRisks(item).length" class="mt-1 flex flex-wrap gap-1.5">
+              <Badge v-for="risk in rollbackRisks(item)" :key="risk" variant="warning">{{ risk }}</Badge>
+            </p>
+            <ReleaseChangelog v-if="item" class="mt-2" :product="item.product" :from="item.prodRelease" :to="item.release" />
           </div>
           <Button
             v-if="item"

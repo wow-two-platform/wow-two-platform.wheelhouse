@@ -19,6 +19,7 @@ import { computed, ref, shallowRef, watch } from "vue";
 import { ArrowLeft, Hammer, Rocket, ShieldCheck } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Badge } from "@wow-two-beta/fe/presentation/display";
 import { Alert, Spinner } from "@wow-two-beta/fe/presentation/feedback";
 import {
   Field,
@@ -42,6 +43,8 @@ import {
 } from "@wow-two-beta/fe/presentation/overlays";
 
 import {
+  useCoveringFreeze,
+  useReleaseFacts,
   useDeploymentOutcome,
   useDeploymentTargets,
   useProductBranches,
@@ -53,7 +56,9 @@ import {
   useTargetState,
 } from "@/application/deployments";
 import {
+  DeployFreezes,
   JobStatus,
+  rollbackRisks,
   type DeploymentTarget,
   type ReleaseArtifact,
   type TargetCheck,
@@ -63,6 +68,7 @@ import CheckResultList from "./CheckResultList.vue";
 import JobStatusBadge from "./JobStatusBadge.vue";
 import DeploymentSteps from "./DeploymentSteps.vue";
 import TargetSites from "./TargetSites.vue";
+import ReleaseChangelog from "./automation/ReleaseChangelog.vue";
 import { failureReason } from "@/integration/common";
 
 /** Renders choose, confirm and follow stages for deploying one complete release bundle. */
@@ -121,6 +127,31 @@ const typedLabel = computed(() =>
       ? `Type ${target.value} to deploy prod to the local server`
       : `Type ${target.value} to deploy without a dev pass`,
 );
+/** The freeze holding the chosen target: a deploy needs an override with a reason. */
+const freeze = useCoveringFreeze(
+  () => selectedTarget.value?.product,
+  () => selectedTarget.value?.environment,
+);
+const overrideFreeze = ref(false);
+const reason = ref("");
+const isProd = computed(() => selectedTarget.value?.environment === "prod");
+/** A reason is asked for on prod and wherever a freeze holds the target; it is required to override a freeze or to skip
+ *  the dev pass. */
+const asksReason = computed(() => isProd.value || Boolean(freeze.value));
+const reasonNeeded = computed(() => (Boolean(freeze.value) && overrideFreeze.value) || skipDev.value);
+/** What the release declares that a prod deploy should weigh, read when the prod confirm step opens. */
+const facts = useReleaseFacts(() => (step.value === "confirm" && isProd.value ? release.value : null));
+const risks = computed(() => rollbackRisks(facts.data.value));
+/** What prod runs now, read when its confirm step opens, so the changelog runs from it. */
+const prodState = useTargetState(() => (step.value === "confirm" && isProd.value ? target.value : null));
+const prodRuns = computed(() => prodState.data.value?.current?.release ?? null);
+const canDeploy = computed(
+  () =>
+    canChoose.value &&
+    confirmed.value &&
+    (!freeze.value || overrideFreeze.value) &&
+    (!reasonNeeded.value || reason.value.trim().length > 0),
+);
 const settled = computed(
   () => outcome.data.value?.status === JobStatus.Succeeded,
 );
@@ -155,6 +186,8 @@ watch(
     readiness.value = null;
     typed.value = "";
     skipDev.value = false;
+    overrideFreeze.value = false;
+    reason.value = "";
     requested.value = null;
     check.reset();
     start.reset();
@@ -169,6 +202,7 @@ watch([target, release], () => {
   readiness.value = null;
   typed.value = "";
   skipDev.value = false;
+  overrideFreeze.value = false;
   check.reset();
 });
 
@@ -236,13 +270,14 @@ function confirmSelection(): void {
 
 /** Submits the confirmed bundle and follows only an acknowledged submission. */
 async function deploy(): Promise<void> {
-  if (!canChoose.value || start.loading.value) return;
-  if (!confirmed.value) return;
+  if (!canDeploy.value || start.loading.value) return;
   const result = await start.mutateAsync({
     target: target.value,
     release: release.value,
     ...(typedNeeded.value ? { confirm: typed.value } : {}),
     ...(skipDev.value ? { skipDevPass: true } : {}),
+    ...(asksReason.value && reason.value.trim() ? { reason: reason.value.trim() } : {}),
+    ...(freeze.value && overrideFreeze.value ? { overrideFreeze: true } : {}),
   });
   if (!result.ok) return;
   jobId.value = result.value.id;
@@ -473,6 +508,12 @@ function close(open: boolean): void {
               </div>
             </details>
             <Alert
+              v-if="freeze"
+              severity="warning"
+              title="Deploys here are frozen"
+              :description="`${DeployFreezes.describe(freeze)}. Deploying needs an override with a reason.`"
+            />
+            <Alert
               v-if="check.error.value"
               severity="danger"
               title="Check unavailable"
@@ -543,6 +584,23 @@ function close(open: boolean): void {
               }}
             </dd>
           </dl>
+          <Alert
+            v-if="facts.data.value?.rollbackCompatible === false"
+            severity="warning"
+            title="Can't roll back automatically"
+            description="This release does not declare that the previous images run on its schema. If the rollout fails after replacing containers, the target stays on it until you recover it by hand."
+          />
+          <p v-if="risks.length" class="flex flex-wrap gap-1.5" aria-label="Release risks">
+            <Badge v-for="risk in risks" :key="risk" variant="warning">{{ risk }}</Badge>
+          </p>
+          <ReleaseChangelog
+            v-if="isProd && selectedTarget && selectedRelease && selectedRelease.kind === 'release' && !prodState.loading.value"
+            :key="`${prodRuns ?? ''}-${selectedRelease.release}`"
+            :product="selectedTarget.product"
+            :from="prodRuns === selectedRelease.release ? null : prodRuns"
+            :to="selectedRelease.release"
+            open
+          />
           <template v-if="selectedTarget?.requiresDevPass">
             <p class="text-sm text-muted-foreground">
               Prod takes a release only after it succeeded on dev. Check
@@ -554,6 +612,27 @@ function close(open: boolean): void {
               :disabled="start.loading.value"
             />
           </template>
+          <template v-if="freeze">
+            <Alert severity="warning" title="Deploys here are frozen" :description="DeployFreezes.describe(freeze)" />
+            <CheckboxField
+              v-model="overrideFreeze"
+              label="Override the freeze"
+              :disabled="start.loading.value"
+            />
+          </template>
+          <Field
+            v-if="asksReason"
+            label="Reason"
+            :helper="reasonNeeded ? 'Required to override a freeze or skip the dev pass; kept on the deployment and in the audit trail' : 'Optional; kept on the deployment and in the audit trail'"
+          >
+            <TextInput
+              v-model="reason"
+              :disabled="start.loading.value"
+              autocomplete="off"
+              maxlength="300"
+              placeholder="Why this deploy"
+            />
+          </Field>
           <Field v-if="typedNeeded" :label="typedLabel">
             <TextInput
               v-model="typed"
@@ -586,7 +665,7 @@ function close(open: boolean): void {
             variant="solid"
             tone="primary"
             :is-loading="start.loading.value"
-            :is-disabled="!canChoose || !confirmed"
+            :is-disabled="!canDeploy"
             @click="deploy"
           >
             <template #leading><Rocket :size="16" /></template>Deploy

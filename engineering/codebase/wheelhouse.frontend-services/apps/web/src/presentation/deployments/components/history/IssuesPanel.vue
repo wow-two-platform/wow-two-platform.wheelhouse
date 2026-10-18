@@ -23,6 +23,8 @@ import { ConsolePaths } from "@/application/navigation";
 import { DeploymentIssueKind, DeploymentIssues } from "@/domain/deployments";
 import { Panel } from "@/presentation/common/components";
 
+import FrozenBadge from "../automation/FrozenBadge.vue";
+
 /**
  * Each target whose latest rollout failed or rolled back with no success since, and each rollout stuck long enough to
  * need a reconcile: product, environment, release, what happened and when, with Open, Redeploy and Reconcile. Those
@@ -77,6 +79,7 @@ function describe(issue: DeploymentIssue): string {
               issue.deployment.environment ?? issue.deployment.targetId
             }}</Badge>
             <span class="font-mono text-xs">{{ issue.deployment.release ?? issue.deployment.bundleId ?? "—" }}</span>
+            <FrozenBadge :product="issue.deployment.product" :environment="issue.deployment.environment" />
           </p>
           <p class="mt-1 text-sm">
             <span :class="issue.kind === DeploymentIssueKind.RolledBack || issue.kind === DeploymentIssueKind.Interrupted ? 'text-warning' : 'text-destructive'">{{

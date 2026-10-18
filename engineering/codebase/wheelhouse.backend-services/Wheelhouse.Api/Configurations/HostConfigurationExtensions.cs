@@ -107,6 +107,7 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<IApiKeyRepository, IntegrationKeysRepository>();
         builder.Services.AddScoped<IAuditTrail, EfAuditTrail>();
         builder.Services.AddScoped<IDeploymentAutomationStore, DeploymentAutomationStore>();
+        builder.Services.AddScoped<IDeployFreezesRepository, DeployFreezesRepository>();
         builder.Services.AddScoped<IVitalsHistory, EfVitalsHistory>();
         builder.Services.AddHashChain<Wheelhouse.Domain.Audit.Entities.AuditEntry,
             Wheelhouse.Persistence.Audit.AuditEntryCanonicalizer>();
@@ -189,6 +190,7 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Application.Targets.Services.TargetsProjectionService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.History.Services.DeploymentHistoryService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Automation.Services.DeploymentAutomationService>();
+        builder.Services.AddScoped<Wheelhouse.Application.Deployments.Freezes.Services.DeployFreezeService>();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<IActorContext, Wheelhouse.Api.Auth.HttpActorContext>();
         builder.Services.AddFluentValidatorsFromAssemblies(typeof(IApplicationMarker).Assembly);

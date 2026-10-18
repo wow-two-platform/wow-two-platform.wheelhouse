@@ -83,13 +83,15 @@ export const deploymentsApi = {
       { signal },
     ),
 
-  /** `confirm` is the typed target ID that local prod and a skipped dev pass require. */
+  /** `confirm` is the typed target ID that local prod and a skipped dev pass require; `extra.reason` is the owner's
+   *  one-line why, kept on the job, and `extra.overrideFreeze` deploys although a freeze holds the target. */
   startDeployment: (
     target: string,
     release: string,
     confirm?: string,
     skipDevPass?: boolean,
     signal?: AbortSignal,
+    extra: { readonly reason?: string | undefined; readonly overrideFreeze?: boolean | undefined } = {},
   ) =>
     requestData<DeploymentJob>("/api/deployments", DeploymentJobSchema, {
       signal,
@@ -100,6 +102,8 @@ export const deploymentsApi = {
         release,
         ...(confirm ? { confirm } : {}),
         ...(skipDevPass ? { skipDevPass: true } : {}),
+        ...(extra.reason?.trim() ? { reason: extra.reason.trim() } : {}),
+        ...(extra.overrideFreeze ? { overrideFreeze: true } : {}),
       },
     }),
 

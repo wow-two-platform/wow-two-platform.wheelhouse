@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DeploymentCause } from '@/domain/deployments';
+import { DeploymentCause, FreezeScope } from '@/domain/deployments';
 
 export const ProductAutomationSchema = z.object({
   product: z.string(),
@@ -24,4 +24,53 @@ export const DeploymentAutomationSchema = z.object({
       }),
     )
     .default([]),
+});
+
+// Links open in the owner's browser, so only GitHub addresses survive decoding.
+const githubUrl = z.string().refine((value) => value.startsWith('https://github.com/'), 'GitHub links only');
+
+export const ReleaseChangelogSchema = z.object({
+  from: z.string().nullable().default(null),
+  to: z.string(),
+  releases: z
+    .array(
+      z.object({
+        release: z.string(),
+        name: z.string(),
+        publishedAt: z.string(),
+        body: z.string().default(''),
+        truncated: z.boolean().default(false),
+        url: githubUrl,
+      }),
+    )
+    .default([]),
+  commits: z
+    .array(z.object({ sha: z.string(), message: z.string().default(''), author: z.string().default(''), url: githubUrl }))
+    .nullable()
+    .default(null),
+  totalCommits: z.number().int().nullable().default(null),
+  migrations: z.array(z.string()).default([]),
+  compareUrl: githubUrl.nullable().default(null),
+  reason: z.string().nullable().default(null),
+});
+
+export const ReleaseFactsSchema = z.object({
+  id: z.string(),
+  product: z.string(),
+  release: z.string(),
+  kind: z.string().default('release'),
+  sourceCommit: z.string(),
+  rollbackCompatible: z.boolean(),
+  migrations: z.boolean().nullable().default(null),
+});
+
+export const DeployFreezeSchema = z.object({
+  id: z.string(),
+  scope: z.enum(FreezeScope).catch(FreezeScope.Portfolio),
+  product: z.string().nullable().default(null),
+  environment: z.string().nullable().default(null),
+  reason: z.string().nullable().default(null),
+  actor: z.string(),
+  at: z.string(),
+  covers: z.string(),
 });

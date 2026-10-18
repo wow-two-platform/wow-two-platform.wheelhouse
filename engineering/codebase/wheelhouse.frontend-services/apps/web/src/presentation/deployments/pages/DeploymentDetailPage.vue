@@ -68,6 +68,7 @@ const facts = computed(() => {
   return [
     { label: "Target", value: item.targetId ?? "—" },
     { label: "Actor", value: item.actor ?? "—" },
+    ...(item.deployReason ? [{ label: "Reason", value: item.deployReason }] : []),
     { label: "Submitted", value: Measures.moment(item.submittedAt) },
     { label: "Started", value: Measures.moment(item.startedAt) },
     { label: "Completed", value: Measures.moment(item.completedAt) },

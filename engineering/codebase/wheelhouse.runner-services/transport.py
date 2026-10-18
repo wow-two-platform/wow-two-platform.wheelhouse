@@ -191,6 +191,17 @@ def import_bundle(root, archive, bundle_id):
     return {"id": bundle_id, "product": manifest["product"], "release": manifest["release"]}
 
 
+def facts(root, bundle_id):
+    """What a release's bundle declares that a deploy should weigh: whether a failed rollout can restore the previous
+    images, and whether it carries schema migrations (null while the bundle does not say). Downloads and validates the
+    bundle into the local cache the way a submission would; no target is contacted."""
+    manifest = validate_bundle(artifacts.prepare(root, bundle_id, import_bundle))
+    return {"id": bundle_id, "product": manifest["product"], "release": manifest["release"],
+            "kind": manifest.get("kind", "release"), "sourceCommit": manifest["sourceCommit"],
+            "rollbackCompatible": manifest["rollbackCompatible"],
+            "migrations": manifest["migrations"] if type(manifest.get("migrations")) is bool else None}
+
+
 def template(root, bundle_id, service=None):
     bundle = child(root, "bundles", bundle_id)
     if not bundle.exists():
@@ -214,7 +225,17 @@ def template(root, bundle_id, service=None):
     return result[service]
 
 
-def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False):
+def deploy_reason(value):
+    """The owner's one-line why for a deploy, kept on the job; None when none was given."""
+    if value is None:
+        return None
+    require(isinstance(value, str) and 0 < len(value.strip()) <= 300 and not any(ord(c) < 32 or ord(c) == 127 for c in value),
+            "A deploy reason is one line of 300 characters at most")
+    return value.strip()
+
+
+def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False, reason=None):
+    reason = deploy_reason(reason)
     config = fleet.resolve_target(root, target_id)
     require(not config["needsConfirmation"] or confirm == target_id,
             "Type the target ID to deploy prod to the local server")
@@ -241,6 +262,8 @@ def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False)
     record = {"id": request_id, "targetId": target_id, "environment": config["target"]["environment"],
               "bundleId": bundle_id, "release": manifest["release"], "remote": remote, "actor": actor, "status": "submitting", "submittedAt": now(),
               "ssh": config["ssh"], "serverId": config["serverId"]}
+    if reason:
+        record["deployReason"] = reason
     write_json(root / "jobs" / (request_id + ".json"), record)
     command = shlex.join(["python3", remote + "/runner.py", "launch", "--bundle", remote,
                           "--target", remote + "/target.json", "--actor", actor])
@@ -425,7 +448,7 @@ def jobs(root, limit=50):
         item = {"id": record["id"], "targetId": record.get("targetId"),
                 "environment": recorded_environment(record, observed, inventory), "bundleId": record.get("bundleId"),
                 "release": record.get("release") or observed.get("release") or record.get("bundleId"),
-                "actor": record.get("actor"), "submittedAt": submitted,
+                "actor": record.get("actor"), "deployReason": record.get("deployReason"), "submittedAt": submitted,
                 "status": observed.get("status") or record.get("status")}
         for key in ("reason", "failure", "startedAt", "completedAt", "mutationStarted", "sourceCommit", "warnings"):
             if key in observed:
@@ -651,7 +674,7 @@ def main():
     parser.add_argument("action", choices=["import", "sites", "fixtures", "servers", "targets", "vaults", "releases", "template", "submit",
                                            "status", "jobs", "follow", "state", "check", "reconcile", "vitals", "stats", "topology",
                                            "branches", "commits", "build", "logs", "history", "observation",
-                                           "latest"])
+                                           "latest", "facts", "changelog"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
@@ -665,6 +688,9 @@ def main():
     parser.add_argument("--branch")
     parser.add_argument("--commit")
     parser.add_argument("--confirm", help="submit: the target ID, typed, for prod on the local server")
+    parser.add_argument("--reason", help="submit: the owner's one-line why, kept on the job")
+    parser.add_argument("--from", dest="start", help="changelog: the release the target runs now")
+    parser.add_argument("--to", dest="end", help="changelog: the release to promote")
     parser.add_argument("--skip-dev-pass", action="store_true",
                         help="submit: deploy to prod without a dev pass; needs --confirm with the target ID")
     args = parser.parse_args()
@@ -687,11 +713,15 @@ def main():
             result = releases(root)
         elif args.action == "latest":
             result = artifacts.latest()
+        elif args.action == "facts":
+            result = facts(root, args.bundle)
+        elif args.action == "changelog":
+            result = artifacts.changelog(args.product, args.start, args.end)
         elif args.action == "template":
             print(json.dumps(template(root, args.bundle, args.service), indent=2))
             return 0
         elif args.action == "submit":
-            result = submit(root, args.target, args.bundle, args.actor, args.confirm, args.skip_dev_pass)
+            result = submit(root, args.target, args.bundle, args.actor, args.confirm, args.skip_dev_pass, args.reason)
         elif args.action == "branches":
             result = artifacts.branches(args.product)
         elif args.action == "commits":

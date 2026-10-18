@@ -118,10 +118,16 @@ public sealed class DeploymentsE2ETests(WheelhouseAppFixture fixture) : Wheelhou
     {
         var client = AdminClient;
         client.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "deploy");
-        var response = await client.PostAsJsonAsync("/api/deployments",
+        var unexplained = await client.PostAsJsonAsync("/api/deployments",
             new { target = "foreverpin-prod", release = "v1", confirm = "foreverpin-prod", skipDevPass = true });
+        Assert.Equal(HttpStatusCode.BadRequest, unexplained.StatusCode);
+        Assert.Contains("Give a reason to deploy without a dev pass", await unexplained.Content.ReadAsStringAsync());
+
+        var response = await client.PostAsJsonAsync("/api/deployments",
+            new { target = "foreverpin-prod", release = "v1", confirm = "foreverpin-prod", skipDevPass = true, reason = "dev is down" });
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         Assert.True(Fixture.Deployments.LastSkipDevPass);
+        Assert.Equal("dev is down", Fixture.Deployments.LastReason);
     }
 
     [Fact]

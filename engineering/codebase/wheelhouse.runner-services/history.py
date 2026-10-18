@@ -10,8 +10,9 @@ OBSERVED = ("status", "reason", "failure", "startedAt", "completedAt", "mutation
 
 
 def bundle_facts(root, bundle_id):
-    """What a cached bundle declares: product, kind, branch, rollback compatibility and each service's image and
-    version, plus when its source published it. None when the bundle is not cached or not readable."""
+    """What a cached bundle declares: product, kind, branch, rollback compatibility, whether it carries schema
+    migrations (null while the bundle does not say) and each service's image and version, plus when its source
+    published it. None when the bundle is not cached or not readable."""
     if not isinstance(bundle_id, str) or not SLUG.fullmatch(bundle_id):
         return None
     bundle = root / "bundles" / bundle_id
@@ -31,7 +32,9 @@ def bundle_facts(root, bundle_id):
     published = source.get("publishedAt") if isinstance(source, dict) else None
     return {"product": manifest.get("product") if isinstance(manifest.get("product"), str) else None,
             "kind": manifest.get("kind", "release"), "branch": manifest.get("branch"),
-            "rollbackCompatible": manifest.get("rollbackCompatible") is True, "services": services,
+            "rollbackCompatible": manifest.get("rollbackCompatible") is True,
+            "migrations": manifest["migrations"] if type(manifest.get("migrations")) is bool else None,
+            "services": services,
             "publishedAt": published if isinstance(published, str) else None}
 
 
@@ -61,7 +64,8 @@ def records(root, submissions):
             facts[bundle_id] = bundle_facts(root, bundle_id)
         bundle = facts[bundle_id] or {}
         item = {**job, "product": bundle.get("product"), "kind": bundle.get("kind"), "branch": bundle.get("branch"),
-                "rollbackCompatible": bundle.get("rollbackCompatible"), "services": bundle.get("services"),
+                "rollbackCompatible": bundle.get("rollbackCompatible"), "migrations": bundle.get("migrations"),
+                "services": bundle.get("services"),
                 "publishedAt": bundle.get("publishedAt")}
         if job.get("status") in PENDING:
             item["currentStep"] = current_step(root, job["id"])

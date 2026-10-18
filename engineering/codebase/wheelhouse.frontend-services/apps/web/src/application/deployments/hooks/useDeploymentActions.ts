@@ -24,11 +24,17 @@ export function useStartDeployment() {
         release,
         confirm,
         skipDevPass,
+        reason,
+        overrideFreeze,
       }: {
         target: string;
         release: string;
         confirm?: string;
         skipDevPass?: boolean;
+        /** The owner's one-line why, kept on the job; needed to override a freeze. */
+        reason?: string;
+        /** Deploys although a freeze holds the target. */
+        overrideFreeze?: boolean;
       },
       { signal },
     ) =>
@@ -38,6 +44,7 @@ export function useStartDeployment() {
         confirm,
         skipDevPass,
         signal,
+        { reason, overrideFreeze },
       ),
     invalidates: ({ target }) => [
       DeploymentKeys.history,

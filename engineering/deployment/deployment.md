@@ -254,7 +254,7 @@ R=engineering/codebase/wheelhouse.runner-services/transport.py
 python3 $R targets  --root /path/to/inventory
 python3 $R releases --root /path/to/inventory
 python3 $R check    --root /path/to/inventory --target foreverpin-dev --bundle <artifact-id>
-python3 $R submit   --root /path/to/inventory --target foreverpin-dev --bundle <artifact-id> --actor operator
+python3 $R submit   --root /path/to/inventory --target foreverpin-dev --bundle <artifact-id> --actor operator [--reason "…"]
 python3 $R status   --root /path/to/inventory --job <returned-id>
 python3 $R jobs     --root /path/to/inventory
 python3 $R state    --root /path/to/inventory --target foreverpin-dev
@@ -293,7 +293,13 @@ every settings file and the target's lock state; each failure names the rule or 
 | `GET /api/deployments/products/{product}/branches` | The product repository's branches |
 | `GET /api/deployments/products/{product}/commits?branch=` | A branch's recent commits, each with its build when one exists |
 | `POST /api/deployments/products/{product}/builds` | `{"commit":"<sha>"}` with `X-Wheelhouse-Action: build`; `202` means the workflow was started |
-| `POST /api/deployments` | `{"target":"…","release":"…","confirm":"…"}` with `X-Wheelhouse-Action: deploy`; `202` means queued |
+| `POST /api/deployments` | `{"target":"…","release":"…","confirm":"…","reason":"…","overrideFreeze":false}` with `X-Wheelhouse-Action: deploy`; `202` means queued, `409` a freeze or gate refused it |
+| `GET /api/deployments/automation` | Each product's auto-deploy and auto-promote choices, and the queued automatic deploys |
+| `PUT /api/deployments/automation/{product}` | `{"autoDeployDev":false}` with `X-Wheelhouse-Action: automation` |
+| `GET /api/deployments/freezes` | The holds on deploys: everywhere, per product, per product environment |
+| `GET /api/deployments/releases/{release}/facts` | Whether a release can roll back automatically and declares migrations; reads only the bundle |
+| `GET /api/deployments/products/{product}/changelog?from=&to=` | Release notes and compare commits between what a target runs and a release |
+| `POST` / `DELETE /api/deployments/freezes` | `{"product":"…","environment":"prod","reason":"…"}` / `?product=&environment=` with `X-Wheelhouse-Action: freeze` |
 | `GET /api/deployments/{id}` | The target-owned outcome, with each rollout step and any warning |
 | `GET /api/deployments/targets/{id}/services/{service}/logs?tail=200` | One service's last container lines (1-1000), never cached |
 | `GET /api/audit?limit=50&before=` | Operator actions, newest first; `before` pages back from a sequence number |
@@ -346,7 +352,8 @@ A step's detail is operator-safe text; a failed step shows the refused rule or f
 
 ## Audit trail
 
-Every operator action lands in `audit_entries`: deploy, reconcile, build, vault changes and product changes.
+Every operator action lands in `audit_entries`: deploy, reconcile, build, freezes, automation choices, vault changes
+and product changes. Automatic deploys record the actor `automation`; a deploy's reason ends its detail.
 A pipeline behavior records each audited command's outcome, refusals included, with the operator's login.
 Entries hold the action, its subject and operator-safe detail, never a secret value or token.
 Each entry is hash-chained to the one before it; the Activity page shows whether the chain still verifies.

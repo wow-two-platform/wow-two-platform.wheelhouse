@@ -10,12 +10,14 @@ public interface IDeploymentGateway
     Task<AppResult<JsonElement>> ReadAsync(string resource, string? id, CancellationToken ct);
     /// <summary>Checks a target's readiness without changing it, optionally against one release.</summary>
     Task<AppResult<JsonElement>> CheckAsync(string target, string? release, CancellationToken ct);
-    /// <summary>Submits a trusted release to a configured target; <paramref name="confirm"/> is the typed target ID where the target asks for one, and <paramref name="skipDevPass"/> lets prod take a release that has not succeeded on dev.</summary>
-    Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass, CancellationToken ct);
+    /// <summary>Submits a trusted release to a configured target; <paramref name="confirm"/> is the typed target ID where the target asks for one, <paramref name="skipDevPass"/> lets prod take a release that has not succeeded on dev, and <paramref name="reason"/> is the owner's one-line why, stored on the job.</summary>
+    Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, CancellationToken ct);
     /// <summary>Records the owner's reconciliation of an interrupted or failed rollout on its target.</summary>
     Task<AppResult<JsonElement>> ReconcileAsync(string target, string job, string actor, CancellationToken ct);
     /// <summary>Reads a branch's recent commits of a product, each with its build when one exists.</summary>
     Task<AppResult<JsonElement>> CommitsAsync(string product, string branch, CancellationToken ct);
+    /// <summary>Reads the release bodies and compare commits between what a target runs and the release to promote.</summary>
+    Task<AppResult<JsonElement>> ChangelogAsync(string product, string? from, string to, CancellationToken ct);
     /// <summary>Starts the product's build workflow for a commit that has no build yet.</summary>
     Task<AppResult<JsonElement>> RequestBuildAsync(string product, string commit, CancellationToken ct);
     /// <summary>Reads the last <paramref name="tail"/> lines one service's container wrote on a target.</summary>

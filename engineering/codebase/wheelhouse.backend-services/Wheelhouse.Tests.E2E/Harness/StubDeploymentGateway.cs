@@ -14,6 +14,7 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
     public string? LastActor { get; private set; }
     public string? LastConfirm { get; private set; }
     public bool LastSkipDevPass { get; private set; }
+    public string? LastReason { get; private set; }
     public (string Product, string Value)? LastBuild { get; private set; }
     public (string Product, string Branch)? LastCommits { get; private set; }
 
@@ -87,8 +88,9 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
             new { targetId = target, ok = false, checks = new[] { new { name = "Settings: management", ok = false, detail = "Missing required setting: management:Billing:SecretKey" } } })));
     }
 
-    public Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass, CancellationToken ct)
+    public Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, CancellationToken ct)
     {
+        LastReason = reason;
         LastTarget = target;
         LastRelease = release;
         LastActor = actor;
@@ -96,7 +98,7 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
         LastSkipDevPass = skipDevPass;
         Starts.Add((target, release, actor));
         if (Runner is not null)
-            return Runner.StartAsync(target, release, actor, confirm, skipDevPass, ct);
+            return Runner.StartAsync(target, release, actor, confirm, skipDevPass, reason, ct);
         if (StartRefusal is not null)
             return Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(StartRefusal)));
         return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(
@@ -110,6 +112,18 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
         {
             new { sha = new string('c', 40), message = "feat: pins", author = "Max", date = "2026-09-27T09:00:00Z", buildId = (string?)"foreverpin-ci-7" },
             new { sha = new string('e', 40), message = "fix: other", author = "Max", date = "2026-09-27T08:00:00Z", buildId = (string?)null }
+        })));
+    }
+
+    public (string Product, string? From, string To)? LastChangelog { get; private set; }
+
+    public Task<AppResult<JsonElement>> ChangelogAsync(string product, string? from, string to, CancellationToken ct)
+    {
+        LastChangelog = (product, from, to);
+        return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new
+        {
+            product, from, to, releases = new[] { new { release = to, name = to, publishedAt = "2026-10-02T10:00:00Z", body = "- fix: login", truncated = false, url = "https://github.com/o/p/releases/tag/" + to } },
+            commits = Array.Empty<object>(), totalCommits = 0, migrations = Array.Empty<string>(), compareUrl = (string?)null, reason = (string?)null,
         })));
     }
 
