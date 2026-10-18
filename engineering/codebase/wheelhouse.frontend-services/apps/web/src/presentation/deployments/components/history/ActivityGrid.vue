@@ -62,6 +62,8 @@ const tabStop = computed(() => {
   return wanted >= first.value && wanted <= last.value ? wanted : last.value;
 });
 const totals = computed(() => ActivityCalendar.totals(cells.value));
+/** The line under the calendar in its parts, each kept whole when the line wraps. */
+const summaryParts = computed(() => ActivityCalendar.summary(totals.value, props.status, props.running).split(" · "));
 
 const fills: Record<CalendarCell["tone"], readonly string[]> = {
   empty: ["bg-muted", "bg-muted", "bg-muted", "bg-muted", "bg-muted"],
@@ -241,7 +243,11 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
     </Teleport>
     <!-- As wide as the calendar and never wider: the line wraps rather than widening a calendar that sizes to its days. -->
     <div class="mt-3 flex w-0 min-w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs text-muted-foreground">
-      <span class="tabular-nums">{{ ActivityCalendar.summary(totals, props.status, props.running) }}</span>
+      <span class="tabular-nums"
+        ><template v-for="(part, index) in summaryParts" :key="index"
+          ><template v-if="index"> · </template><span class="whitespace-nowrap">{{ part }}</span></template
+        ></span
+      >
       <span class="flex flex-wrap items-center gap-3" aria-label="Legend">
         <span class="flex items-center gap-1"><span class="size-3 rounded-[3px] bg-success" aria-hidden="true" />succeeded</span>
         <span class="flex items-center gap-1">
