@@ -220,7 +220,8 @@ hand.
 `/api/products` joins the inventory and the product identity: each product's environments come from its targets, each environment's sites from
 the newest rollout this control plane saw succeed (no target is contacted; one address per site, the one nearest its
 root), and its vault namespace is
-`{product}-{environment}` on its server's first vault. The response carries no targets, releases or deployment state,
+`{product}-{environment}` on its server's first vault, else on the inventory's first (the control host's), where a
+deploy's render reads it. The response carries no targets, releases or deployment state,
 so an integration reads products without deployment concepts. The runner read is cached for 30 seconds.
 
 ### Workspaces

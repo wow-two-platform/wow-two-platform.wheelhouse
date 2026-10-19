@@ -40,7 +40,8 @@ public sealed class ProductsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE
         foreverPin.Environments.Select(environment => environment.Name).Should().Equal("dev", "prod");
         foreverPin.Environments[0].Sites.Should().Equal(new ProductSiteResponse("app", "https://dev.foreverpin.example", "public"));
         foreverPin.Environments[0].Secrets.Should().Be(new ProductSecretsResponse("pilot-vault", "foreverpin-dev"));
-        foreverPin.Environments[1].Secrets.Should().BeNull();
+        foreverPin.Environments[1].Secrets.Should().Be(new ProductSecretsResponse("pilot-vault", "foreverpin-prod"),
+            "a server without a vault keeps its environments' secrets in the inventory's first");
     }
 
     [Fact]

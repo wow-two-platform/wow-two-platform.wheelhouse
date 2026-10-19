@@ -32,10 +32,15 @@ public sealed class ProductsProjectionService(
         IReadOnlyList<ProductEntity> products, IReadOnlyDictionary<Guid, ProductIdentity> resolved, CancellationToken ct)
     {
         var allTargets = await targets.GetAllAsync(ct);
-        // A server's first vault, by slug, holds its products' settings.
-        var vaultByServer = (await vaults.GetAllAsync(ct))
+        // A server's first vault, by slug, holds its products' settings; a server without one uses the inventory's first
+        // (the control host's), as a deploy's settings render does.
+        var allVaults = await vaults.GetAllAsync(ct);
+        var vaultByServer = allVaults
             .GroupBy(vault => vault.ServerId)
             .ToDictionary(group => group.Key, group => group.Select(vault => vault.Slug).Min(StringComparer.Ordinal)!);
+        if (allVaults.Select(vault => vault.Slug).Min(StringComparer.Ordinal) is { } first)
+            foreach (var server in allTargets.Select(target => target.ServerId).Distinct())
+                vaultByServer.TryAdd(server, first);
         var published = await sites.ReadAsync(ct);
         var inactive = (await serviceStatuses.GetAllAsync(ct))
             .Where(row => row.Status == ProductStatus.Inactive)
