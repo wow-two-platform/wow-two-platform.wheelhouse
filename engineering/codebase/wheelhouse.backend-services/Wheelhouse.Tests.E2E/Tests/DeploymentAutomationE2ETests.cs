@@ -159,6 +159,14 @@ public sealed class DeploymentAutomationE2ETests(WheelhouseAppFixture fixture) :
         waiting.GetProperty("cause").GetString().Should().Be("auto_dev");
         Fixture.Deployments.Starts.Should().BeEmpty();
 
+        // The release the newer one replaced changed nothing; the history lists it as Not applied · superseded.
+        var replaced = (await DataAsync("/api/deployments/history?status=not-applied")).GetProperty("items").EnumerateArray().ToList();
+        var dropped = replaced.Should().ContainSingle().Subject;
+        (dropped.GetProperty("release").GetString(), dropped.GetProperty("state").GetString(), dropped.GetProperty("substate").GetString(),
+                dropped.GetProperty("actor").GetString(), dropped.GetProperty("environment").GetString())
+            .Should().Be(("v1.1.0", "not_applied", "superseded", "automation", "dev"));
+        dropped.GetProperty("cause").GetProperty("message").GetString().Should().Be("Replaced by v1.2.0 while queued.");
+
         Fixture.Deployments.History.Clear();
         (await PassAsync()).Submitted.Should().Be(1);
         Fixture.Deployments.Starts.Should().Equal(("foreverpin-dev", "foreverpin-gh-3", "automation"));
@@ -185,6 +193,10 @@ public sealed class DeploymentAutomationE2ETests(WheelhouseAppFixture fixture) :
         pass.Dropped.Should().Be(1);
         Fixture.Deployments.Starts.Should().BeEmpty();
         Fixture.Deployments.LastRead.Should().NotBe(("latest", (string?)null), "no product is watched");
+        var cancelled = (await DataAsync("/api/deployments/history?status=not-applied")).GetProperty("items")[0];
+        (cancelled.GetProperty("release").GetString(), cancelled.GetProperty("substate").GetString(),
+                cancelled.GetProperty("cause").GetProperty("kind").GetString())
+            .Should().Be(("v1.1.0", "cancelled", "operator"));
     }
 
     [Fact]

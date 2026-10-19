@@ -3,7 +3,8 @@ using Wheelhouse.Domain.Deployments.Entities;
 namespace Wheelhouse.Application.Abstractions;
 
 /// <summary>Defines the store of what the control plane deploys on its own: each product's automation choices, the
-/// release watcher's watermarks and the per-target queue of automatic deploys.</summary>
+/// release watcher's watermarks, the per-target queue of automatic deploys and the deploys that never reached their
+/// target (refused, replaced in the queue, cancelled, expired or aborted).</summary>
 public interface IDeploymentAutomationStore
 {
     /// <summary>Gets every product's recorded automation choices; a product without a row takes the defaults.</summary>
@@ -53,4 +54,14 @@ public interface IDeploymentAutomationStore
     /// <param name="targetId">The target.</param>
     /// <param name="ct">A cancellation token.</param>
     Task RemoveQueuedAsync(Guid targetId, CancellationToken ct = default);
+
+    /// <summary>Records a deploy that never reached its target, for the history to list as Not applied.</summary>
+    /// <param name="intent">The deploy and how it ended.</param>
+    /// <param name="ct">A cancellation token.</param>
+    Task AddIntentAsync(DeploymentIntentEntity intent, CancellationToken ct = default);
+
+    /// <summary>Gets every recorded deploy that never reached its target, oldest first.</summary>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The intents.</returns>
+    Task<IReadOnlyList<DeploymentIntentEntity>> GetIntentsAsync(CancellationToken ct = default);
 }

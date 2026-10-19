@@ -1,9 +1,13 @@
+using System.Text.Json.Serialization;
+using Wheelhouse.Domain.Deployments.Entities;
+
 namespace Wheelhouse.Application.Deployments.History.Models;
 
 /// <summary>Represents one submission as the runner's history projection reports it: the submission, its last observed
 /// outcome, what its cached bundle declares and, while it is live, the step it is on.</summary>
 /// <remarks>The runner owns these facts in its local files; the API joins them with the inventory and never stores
-/// them. A bundle missing from the runner's cache leaves <see cref="Product"/> and <see cref="Services"/> null.</remarks>
+/// them. A bundle missing from the runner's cache leaves <see cref="Product"/> and <see cref="Services"/> null. A deploy
+/// that never reached its target is no runner record: the history builds one from its <see cref="Intent"/>.</remarks>
 public sealed record DeploymentRecord
 {
     /// <summary>Gets the submission's identifier.</summary>
@@ -89,4 +93,13 @@ public sealed record DeploymentRecord
 
     /// <summary>Gets the step a live rollout is on; null once it finished or before its worker started.</summary>
     public DeploymentStepRecord? CurrentStep { get; init; }
+
+    /// <summary>Gets how the rollout treated each service, as the target reported it; null for a rollout older than
+    /// service-aware rollouts. Read by the adapter, never bound from the runner's JSON directly.</summary>
+    [JsonIgnore]
+    public ServiceRolloutDto? ServiceRollout { get; init; }
+
+    /// <summary>Gets the control plane's record of a deploy that never reached its target; null for a runner record.</summary>
+    [JsonIgnore]
+    public DeploymentIntentEntity? Intent { get; init; }
 }

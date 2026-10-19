@@ -8,9 +8,9 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Portfolio.QueryHandlers;
 
 /// <summary>Handles <see cref="PortfolioSummaryQuery"/> over the joined deployment history. Weeks start on Monday in the
-/// owner's time zone and count finished rollouts only, as the activity calendar does: a refused or live submission
-/// counts in no week. The latest rollout skips refused submissions, which changed nothing on the target; a rollout
-/// whose product the inventory no longer holds counts nowhere.</summary>
+/// owner's time zone and count finished rollouts only, as the activity calendar does: a deploy that changed nothing or
+/// a live one counts in no week. The latest rollout skips deploys that changed nothing on the target; a rollout whose
+/// product the inventory no longer holds counts nowhere.</summary>
 public sealed class PortfolioSummaryQueryHandler(DeploymentHistoryService history, TimeProvider time)
     : IQueryHandler<PortfolioSummaryQuery, AppResult<PortfolioSummaryDto>>
 {
@@ -50,7 +50,7 @@ public sealed class PortfolioSummaryQueryHandler(DeploymentHistoryService histor
                 var weekly = new int[weeks.Length];
                 foreach (var entry in entries)
                 {
-                    if (entry.Outcome is not (DeploymentOutcome.Succeeded or DeploymentOutcome.Failed)
+                    if (entry.NotApplied || entry.Outcome is not (DeploymentOutcome.Succeeded or DeploymentOutcome.Failed)
                         || WeekOf(entry.Record.SubmittedAt, zone, weeks) is not { } week)
                         continue;
                     weekly[week]++;
@@ -65,12 +65,17 @@ public sealed class PortfolioSummaryQueryHandler(DeploymentHistoryService histor
                     }
                 }
 
-                // Entries arrive newest first.
+                // Entries arrive newest first. A deploy that changed nothing never stands for the environment; one that
+                // needs a look marks the pill while nothing has changed the environment since.
+                var latest = entries.FirstOrDefault(entry => !entry.NotApplied);
+                var attempt = entries.TakeWhile(entry => !ReferenceEquals(entry, latest))
+                    .FirstOrDefault(entry => entry.NotApplied && entry.State.Attention == DeploymentAttention.Look);
                 rows.Add(new PortfolioEnvironmentDto(
                     environment,
-                    Map(entries.FirstOrDefault(entry => entry.Outcome != DeploymentOutcome.Refused)),
-                    Map(entries.FirstOrDefault(entry => entry.Outcome == DeploymentOutcome.Succeeded)),
-                    weekly));
+                    Map(latest),
+                    Map(entries.FirstOrDefault(entry => entry.Outcome == DeploymentOutcome.Succeeded && !entry.NotApplied)),
+                    weekly,
+                    Map(attempt)));
             }
 
             products.Add(new PortfolioProductDto(product, workspaces[product], succeeded, failed, rows));
@@ -119,7 +124,10 @@ public sealed class PortfolioSummaryQueryHandler(DeploymentHistoryService histor
         entry is null
             ? null
             : new PortfolioDeployDto(entry.Record.Id, entry.Record.Release, entry.Record.Status, entry.Outcome,
-                entry.Record.Actor, entry.Record.SubmittedAt, entry.Record.CompletedAt, entry.Record.Reason);
+                entry.Record.Actor, entry.Record.SubmittedAt, entry.Record.CompletedAt, entry.Record.Reason ?? entry.State.Cause?.Message,
+                entry.State.State, entry.State.Substate, entry.State.Attention,
+                entry.State.Services?.Count(item => item.Result is "updated" or "new" or "unchanged" or "affected"),
+                entry.State.Services?.Count, entry.Record.Watch?.Status);
 
     /// <summary>Orders environments in promotion order — dev, then prod — and any other after them by name. @internal</summary>
     private sealed class EnvironmentOrder : IComparer<string>

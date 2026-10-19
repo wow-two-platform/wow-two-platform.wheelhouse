@@ -6,9 +6,11 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Deployments.History.QueryHandlers;
 
-/// <summary>Handles <see cref="DeploymentActivityQuery"/>: finished rollouts only, so a refused or live submission never
-/// colours a day. The status filter applies, so a failures-only view counts no success. The same rollouts name the
-/// range's busiest products; a rollout whose product is unknown counts on its day only.</summary>
+/// <summary>Handles <see cref="DeploymentActivityQuery"/>: each day counts the finished rollouts that changed its
+/// environment by the attention they need, so a live submission never colours a day, and, when the filter includes
+/// them, the deploys that changed nothing beside them. The status filter applies, so a needs-action view counts no
+/// success. The same applied rollouts name the range's busiest products; a rollout whose product is unknown counts on
+/// its day only.</summary>
 public sealed class DeploymentActivityQueryHandler(DeploymentHistoryService history, TimeProvider time)
     : IQueryHandler<DeploymentActivityQuery, AppResult<DeploymentActivityDto>>
 {
@@ -23,22 +25,40 @@ public sealed class DeploymentActivityQueryHandler(DeploymentHistoryService hist
         var to = request.Filter.To ?? time.GetUtcNow();
         var from = request.Filter.From ?? to.AddMonths(-6);
         var filter = request.Filter with { From = from, To = to };
-        var days = new SortedDictionary<DateOnly, (int Succeeded, int Failed)>();
+        var days = new SortedDictionary<DateOnly, DeploymentDayDto>();
         var products = new Dictionary<string, (int Succeeded, int Failed)>(StringComparer.Ordinal);
         foreach (var entry in loaded.Entries.Where(entry => DeploymentQuerying.Matches(entry, filter)))
         {
-            if (entry.Outcome is not (DeploymentOutcome.Succeeded or DeploymentOutcome.Failed))
+            var date = LocalDate(entry.Record.SubmittedAt, zone);
+            var day = days.GetValueOrDefault(date) ?? new DeploymentDayDto(date, 0, 0);
+            if (entry.NotApplied)
+            {
+                days[date] = day with { NotApplied = day.NotApplied + 1 };
                 continue;
-            var day = LocalDate(entry.Record.SubmittedAt, zone);
-            var counts = days.GetValueOrDefault(day);
-            days[day] = Count(counts, entry.Outcome);
+            }
+
+            if (entry.State.State is DeploymentState.InProgress or DeploymentState.Unknown
+                || entry.Outcome is not (DeploymentOutcome.Succeeded or DeploymentOutcome.Failed))
+                continue;
+            var succeeded = entry.Outcome == DeploymentOutcome.Succeeded;
+            days[date] = day with
+            {
+                Succeeded = day.Succeeded + (succeeded ? 1 : 0),
+                Failed = day.Failed + (succeeded ? 0 : 1),
+                Calm = day.Calm + (entry.State.Attention == DeploymentAttention.None ? 1 : 0),
+                Look = day.Look + (entry.State.Attention == DeploymentAttention.Look ? 1 : 0),
+                Act = day.Act + (entry.State.Attention == DeploymentAttention.Act ? 1 : 0),
+            };
             if (entry.Product is { } product)
-                products[product] = Count(products.GetValueOrDefault(product), entry.Outcome);
+            {
+                var counts = products.GetValueOrDefault(product);
+                products[product] = succeeded ? (counts.Succeeded + 1, counts.Failed) : (counts.Succeeded, counts.Failed + 1);
+            }
         }
 
         return AppResult<DeploymentActivityDto>.Ok(new DeploymentActivityDto(
             LocalDate(from, zone), LocalDate(to.AddTicks(-1), zone), request.TimeZone,
-            [.. days.Select(pair => new DeploymentDayDto(pair.Key, pair.Value.Succeeded, pair.Value.Failed))],
+            [.. days.Values],
             [
                 .. products
                     .OrderByDescending(pair => pair.Value.Succeeded + pair.Value.Failed)
@@ -47,10 +67,6 @@ public sealed class DeploymentActivityQueryHandler(DeploymentHistoryService hist
                     .Select(pair => new DeploymentProductCountDto(pair.Key, pair.Value.Succeeded, pair.Value.Failed)),
             ]));
     }
-
-    /// <summary>Adds one finished rollout to a tally. @internal</summary>
-    private static (int Succeeded, int Failed) Count((int Succeeded, int Failed) counts, string outcome) =>
-        outcome == DeploymentOutcome.Succeeded ? (counts.Succeeded + 1, counts.Failed) : (counts.Succeeded, counts.Failed + 1);
 
     /// <summary>The calendar date an instant falls on in a time zone. @internal</summary>
     private static DateOnly LocalDate(DateTimeOffset instant, TimeZoneInfo zone) =>

@@ -24,7 +24,8 @@ public sealed class DeploymentFilterValidator : AbstractValidator<DeploymentFilt
         RuleForEach(x => x.Services)
             .Must(BeProductService)
             .WithMessage("'service' must name a product and one of its services, as product/service.");
-        RuleFor(x => x.Status).IsInEnum();
+        RuleFor(x => x.Status).IsInEnum()
+            .WithMessage("'status' must be all, needs-action, look, succeeded or not-applied.");
         RuleFor(x => x.To)
             .Must((filter, to) => filter.From is not { } from || to is not { } end || from < end)
             .WithMessage("'from' must come before 'to'.");

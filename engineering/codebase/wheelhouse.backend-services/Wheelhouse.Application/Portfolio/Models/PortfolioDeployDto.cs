@@ -1,3 +1,5 @@
+using Wheelhouse.Application.Deployments.History.Models;
+
 namespace Wheelhouse.Application.Portfolio.Models;
 
 /// <summary>Represents one rollout as a product card's environment pill describes it on hover.</summary>
@@ -9,6 +11,14 @@ namespace Wheelhouse.Application.Portfolio.Models;
 /// <param name="SubmittedAt">When it was submitted.</param>
 /// <param name="CompletedAt">When it finished; null while it runs.</param>
 /// <param name="Reason">The display-safe reason a rollout failed.</param>
+/// <param name="State">What the environment runs because of it, in the status taxonomy.</param>
+/// <param name="Substate">Which way it got there.</param>
+/// <param name="Attention">How much attention it needs.</param>
+/// <param name="ServicesOnRelease">How many of its services run the release it brought; null when the target did not
+/// report its services.</param>
+/// <param name="ServiceCount">How many services it reported.</param>
+/// <param name="Watch">Its watch window's status after a success, such as <c>watching</c>; null when not watched.</param>
 public sealed record PortfolioDeployDto(
     string Id, string? Release, string Status, string Outcome, string? Actor, DateTimeOffset SubmittedAt,
-    DateTimeOffset? CompletedAt, string? Reason);
+    DateTimeOffset? CompletedAt, string? Reason, string State = DeploymentState.Unknown, string? Substate = null,
+    string Attention = DeploymentAttention.Muted, int? ServicesOnRelease = null, int? ServiceCount = null, string? Watch = null);

@@ -28,6 +28,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "018-auto-promotions",
         "022-fleet-rollouts",
         "025-product-deploy-mode",
+        "026-deployment-intents",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -77,6 +78,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         (await migrator.HasIndexAsync("ix_servers_slug")).Should().BeTrue("007-inventory replaces the placeholder servers");
         (await migrator.HasTableAsync("product_manifests")).Should().BeTrue("008-product-manifests caches each product's manifest");
         (await migrator.HasTableAsync("workspaces")).Should().BeTrue("010-workspaces groups products");
+        (await migrator.HasTableAsync("deployment_intents")).Should().BeTrue("026-deployment-intents keeps deploys that changed nothing");
         (await migrator.HasIndexAsync("ix_workspaces_slug")).Should().BeTrue();
 
         // The migrator's own bookkeeping table exists, with one row per migration stamped by the host label.

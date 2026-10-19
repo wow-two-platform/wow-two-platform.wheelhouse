@@ -4,7 +4,8 @@ using Wheelhouse.Domain.Deployments.Entities;
 
 namespace Wheelhouse.Persistence.Repositories;
 
-/// <summary>Accesses the products' automation choices, the release watermarks and the automatic deploy queue.</summary>
+/// <summary>Accesses the products' automation choices, the release watermarks, the automatic deploy queue and the
+/// deploys that never reached their target.</summary>
 internal sealed class DeploymentAutomationStore(WheelhouseDbContext db) : IDeploymentAutomationStore
 {
     /// <inheritdoc />
@@ -94,4 +95,19 @@ internal sealed class DeploymentAutomationStore(WheelhouseDbContext db) : IDeplo
     /// <inheritdoc />
     public async Task RemoveQueuedAsync(Guid targetId, CancellationToken ct = default) =>
         await db.Set<QueuedDeploymentEntity>().Where(entity => entity.TargetId == targetId).ExecuteDeleteAsync(ct);
+
+    /// <inheritdoc />
+    public async Task AddIntentAsync(DeploymentIntentEntity intent, CancellationToken ct = default)
+    {
+        db.Set<DeploymentIntentEntity>().Add(intent);
+        await db.SaveChangesAsync(ct);
+        db.Entry(intent).State = EntityState.Detached;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<DeploymentIntentEntity>> GetIntentsAsync(CancellationToken ct = default) =>
+        (await db.Set<DeploymentIntentEntity>().AsNoTracking().ToListAsync(ct))
+        .OrderBy(entity => entity.At)
+        .ThenBy(entity => entity.Id)
+        .ToList();
 }

@@ -1,6 +1,6 @@
 namespace Wheelhouse.Application.Deployments.History.Models;
 
-/// <summary>Represents which deployments a view shows: the entities it covers, the outcomes and the time range.</summary>
+/// <summary>Represents which deployments a view shows: the entities it covers, the states and the time range.</summary>
 /// <remarks>Entities combine as a union: a deployment matches when it belongs to any listed workspace or product, or
 /// changed any listed service. No entity at all means every deployment.</remarks>
 public sealed record DeploymentFilter
@@ -14,8 +14,12 @@ public sealed record DeploymentFilter
     /// <summary>Gets the services, as <c>product/service</c>, whose changes match.</summary>
     public IReadOnlyList<string> Services { get; init; } = [];
 
-    /// <summary>Gets which outcomes match.</summary>
+    /// <summary>Gets which states match.</summary>
     public DeploymentStatusFilter Status { get; init; } = DeploymentStatusFilter.All;
+
+    /// <summary>Gets whether deployments that changed nothing show beside the others; the <c>not-applied</c> status shows
+    /// them anyway.</summary>
+    public bool IncludeNotApplied { get; init; }
 
     /// <summary>Gets the earliest submission instant that matches, inclusive.</summary>
     public DateTimeOffset? From { get; init; }

@@ -95,7 +95,11 @@ public sealed class PortfolioSummaryE2ETests(WheelhouseAppFixture fixture) : Whe
         (shop.GetProperty("lastDeploy").GetProperty("status").GetString(), shop.GetProperty("lastDeploy").GetProperty("outcome").GetString(),
                 shop.GetProperty("lastDeploy").GetProperty("reason").GetString())
             .Should().Be(("rolled_back", "failed", "Smoke check failed"));
+        (shop.GetProperty("lastDeploy").GetProperty("state").GetString(), shop.GetProperty("lastDeploy").GetProperty("attention").GetString())
+            .Should().Be(("rolled_back", "look"));
         shop.GetProperty("running").ValueKind.Should().Be(JsonValueKind.Null);
+        (latest.GetProperty("state").GetString(), latest.GetProperty("attention").GetString()).Should().Be(("in_progress", "info"));
+        prod.GetProperty("lastAttempt").ValueKind.Should().Be(JsonValueKind.Null, "a refusal never marks the pill");
     }
 
     [Fact]
@@ -203,7 +207,8 @@ public sealed class PortfolioSummaryE2ETests(WheelhouseAppFixture fixture) : Whe
         ]);
     }
 
-    /// <summary>A ForeverPin record; a finished one completes three minutes after its submission.</summary>
+    /// <summary>A ForeverPin record; a finished one completes three minutes after its submission, and a failed one had
+    /// changed containers, so it counts as an applied failure.</summary>
     private static object Record(string id, string target, string submitted, string status, string release)
     {
         var at = DateTimeOffset.Parse(submitted, CultureInfo.InvariantCulture);
@@ -211,7 +216,7 @@ public sealed class PortfolioSummaryE2ETests(WheelhouseAppFixture fixture) : Whe
         {
             id, targetId = target, bundleId = "foreverpin-" + release, release, actor = "max", status, submittedAt = submitted,
             completedAt = status is "succeeded" or "failed" ? at.AddMinutes(3).ToString("O", CultureInfo.InvariantCulture) : null,
-            product = "foreverpin", kind = "release",
+            product = "foreverpin", kind = "release", mutationStarted = status == "failed" ? true : (bool?)null,
         };
     }
 

@@ -151,6 +151,8 @@ public sealed partial class DeploymentAutomationService(
                 if (queue.GetValueOrDefault(prod.Id) is { } waiting && waiting.PublishedAt is { } held
                     && proven.Record.PublishedAt is { } candidate && held >= candidate)
                     continue;
+                if (queue.GetValueOrDefault(prod.Id) is { } replaced && replaced.Release != proven.Record.Release)
+                    await RecordAsync(replaced, prod, product, DeploymentIntentOutcome.Superseded, null, proven.Record.Release, ct);
                 await store.SetQueuedAsync(new QueuedDeploymentEntity
                 {
                     TargetId = prod.Id, BundleId = proven.Record.BundleId!, Release = proven.Record.Release!,
@@ -217,10 +219,13 @@ public sealed partial class DeploymentAutomationService(
 
             foreach (var target in targetRows.Where(row => row.ProductId == product.Id && row.Environment == DeploymentEnvironment.Dev))
             {
-                // Latest wins: a queued release is replaced only by a newer one.
+                // Latest wins: a queued release is replaced only by a newer one, and the one it replaces is kept as a
+                // deploy that changed nothing.
                 if (queue.GetValueOrDefault(target.Id) is { } waiting && waiting.PublishedAt is { } held
                     && newest.PublishedAt is { } offered && held >= offered)
                     continue;
+                if (queue.GetValueOrDefault(target.Id) is { } replaced && replaced.Release != newest.Release)
+                    await RecordAsync(replaced, target, product, DeploymentIntentOutcome.Superseded, null, newest.Release, ct);
                 var item = new QueuedDeploymentEntity
                 {
                     TargetId = target.Id, BundleId = newest.BundleId, Release = newest.Release, PublishedAt = newest.PublishedAt,
@@ -260,10 +265,14 @@ public sealed partial class DeploymentAutomationService(
             var wanted = item.Cause == DeploymentCause.AutoPromote ? choices.AutoPromote : choices.AutoDeployDev;
             var done = onTarget.Any(entry => entry.Record.Release == item.Release
                 && entry.Outcome is DeploymentOutcome.Succeeded or DeploymentOutcome.Failed);
+            if (!wanted && !done)
+                await RecordAsync(item, target, product, DeploymentIntentOutcome.Cancelled,
+                    item.Cause == DeploymentCause.AutoPromote ? "Auto-promote was turned off before it ran."
+                        : "Auto-deploy was turned off before it ran.", null, ct);
             if (wanted && !done)
             {
                 var result = await sender.SendAsync(new DeploymentStartCommand(target.Slug, item.BundleId,
-                    AutomationConstants.Actor, Cause: item.Cause), ct);
+                    AutomationConstants.Actor, Cause: item.Cause, ReleaseLabel: item.Release), ct);
                 if (result is AppResult<JsonElement>.Success)
                 {
                     submitted++;
@@ -280,6 +289,19 @@ public sealed partial class DeploymentAutomationService(
 
         return (submitted, dropped);
     }
+
+    /// <summary>Keeps a queued deploy that never ran — replaced by a newer release, or dropped once its automation was
+    /// turned off — for the history to list as changing nothing.</summary>
+    private Task RecordAsync(
+        QueuedDeploymentEntity item, TargetEntity target, ProductEntity product, DeploymentIntentOutcome outcome, string? message,
+        string? replacedBy, CancellationToken ct) =>
+        store.AddIntentAsync(new DeploymentIntentEntity
+        {
+            Id = Guid.NewGuid(), Target = target.Slug, Product = product.Slug, Environment = Environment(target),
+            BundleId = item.BundleId, Release = item.Release, Actor = AutomationConstants.Actor, Outcome = outcome,
+            Message = message ?? (replacedBy is null ? null : "Replaced by " + replacedBy + " while queued."),
+            ReplacedBy = replacedBy, Cause = item.Cause, At = time.GetUtcNow(),
+        }, ct);
 
     /// <summary>Whether a release is newer than the watermark: published later, or the first one at all.</summary>
     private static bool IsNewer(LatestRelease newest, ReleaseWatermarkEntity mark) =>

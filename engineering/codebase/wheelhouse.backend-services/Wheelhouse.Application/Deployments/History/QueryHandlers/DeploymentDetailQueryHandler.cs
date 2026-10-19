@@ -25,7 +25,9 @@ public sealed class DeploymentDetailQueryHandler(DeploymentHistoryService histor
         if (entry is null)
             return AppResult<DeploymentDetailDto>.Fail(AppErrorFactory.NotFound("Deployment was not found."));
 
-        var observed = await records.ObserveAsync(request.Id, cancellationToken) is AppResult<DeploymentObservation>.Success { Data: var data }
+        // A deploy that never reached its target has no report to read.
+        var observed = entry.Record.Intent is null
+            && await records.ObserveAsync(request.Id, cancellationToken) is AppResult<DeploymentObservation>.Success { Data: var data }
             ? data
             : null;
         var previous = entry.Previous is { } prior ? new DeploymentReferenceDto(prior.Id, prior.Release, prior.BundleId) : null;

@@ -88,7 +88,11 @@ public sealed partial class RunnerDeploymentRecords(
         try
         {
             var record = element.Deserialize<DeploymentRecord>(JsonSerializerOptions.Web);
-            return record is { Id.Length: > 0, Status.Length: > 0 } ? record : null;
+            if (record is not { Id.Length: > 0, Status.Length: > 0 })
+                return null;
+            // A watch window another rollout ended was recorded `superseded` before the rename to `replaced`.
+            var watch = record.Watch is { Status: "superseded" } legacy ? legacy with { Status = "replaced" } : record.Watch;
+            return record with { Watch = watch, ServiceRollout = ParseServiceRollout(element) };
         }
         catch (JsonException)
         {
@@ -158,7 +162,8 @@ public sealed partial class RunnerDeploymentRecords(
             var services = Each(rollout, "services", item =>
                 Text(item, "name") is { } name && Text(item, "change") is { } change && Text(item, "outcome") is { } outcome
                     ? new ServiceRolloutItemDto(name, change, outcome,
-                        Each(item, "dependsOn", other => other.ValueKind == JsonValueKind.String ? other.GetString() : null) ?? [])
+                        Each(item, "dependsOn", other => other.ValueKind == JsonValueKind.String ? other.GetString() : null) ?? [],
+                        Text(item, "from"), Text(item, "to"), Text(item, "reason"), Text(item, "health"), Instant(item, "at"))
                     : null) ?? [];
             var waves = Each(rollout, "waves", wave => wave.ValueKind == JsonValueKind.Array
                 ? (IReadOnlyList<string>)[.. wave.EnumerateArray().Where(name => name.ValueKind == JsonValueKind.String).Select(name => name.GetString()!)]

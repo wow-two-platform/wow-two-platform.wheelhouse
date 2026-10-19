@@ -3,7 +3,8 @@ namespace Wheelhouse.Application.Deployments.History.Models;
 /// <summary>Represents the watch window after a successful rollout: its containers and sites looked at once a minute.</summary>
 public sealed record DeploymentWatchDto
 {
-    /// <summary>Gets <c>watching</c>, <c>passed</c>, <c>degraded</c>, <c>superseded</c> or <c>unverified</c>.</summary>
+    /// <summary>Gets <c>watching</c>, <c>passed</c>, <c>degraded</c>, <c>replaced</c> (another rollout ended the window) or
+    /// <c>unverified</c>.</summary>
     public required string Status { get; init; }
 
     /// <summary>Gets when the window opened: the rollout's completion.</summary>

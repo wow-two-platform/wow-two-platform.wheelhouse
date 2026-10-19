@@ -65,6 +65,17 @@ public sealed class RunnerDeploymentRecordsTests
     }
 
     [Fact]
+    public async Task ListAsync_ShouldReadEachRowsServiceRolloutAndCallAReplacedWatchReplaced()
+    {
+        var result = await Records().ListAsync(CancellationToken.None);
+        var record = result.Should().BeOfType<AppResult<IReadOnlyList<DeploymentRecord>>.Success>().Subject.Data[0];
+        record.Watch!.Status.Should().Be("replaced", "a window recorded `superseded` before the rename reads by its new word");
+        var api = record.ServiceRollout!.Services.Single();
+        (api.Name, api.Outcome, api.From, api.To, api.Reason, api.Health).Should().Be(("api", "updated", "0.9.0", "1.0.0", "image", "healthy"));
+        api.At.Should().Be(DateTimeOffset.Parse("2026-10-01T10:01:00Z"));
+    }
+
+    [Fact]
     public async Task ObserveAsync_ShouldReadEachServicesChangeWaveAndOutcome()
     {
         var observed = await Records().ObserveAsync(Guid.Parse("00000000-0000-4000-8000-000000000001"), CancellationToken.None);
@@ -118,6 +129,19 @@ public sealed class RunnerDeploymentRecordsTests
                 {
                     id = "00000000-0000-4000-8000-000000000001", status = "succeeded", submittedAt = "2026-10-01T10:00:00.123456+00:00",
                     services = new Dictionary<string, object> { ["api"] = new { image = "ghcr.io/o/api@sha256:" + new string('a', 64), version = "1.0.0" } },
+                    watch = new { status = "superseded", checks = 2 },
+                    serviceRollout = new
+                    {
+                        staged = false, waves = new[] { new[] { "api" } }, removed = Array.Empty<string>(),
+                        services = new object[]
+                        {
+                            new
+                            {
+                                name = "api", change = "updated", outcome = "updated", dependsOn = Array.Empty<string>(), from = "0.9.0",
+                                to = "1.0.0", reason = "image", health = "healthy", at = "2026-10-01T10:01:00+00:00",
+                            },
+                        },
+                    },
                 },
                 new { id = "broken", status = "failed", submittedAt = "yesterday" },
                 new { status = "failed", submittedAt = "2026-10-01T10:00:00+00:00" },

@@ -101,6 +101,39 @@ public sealed class DeployFreezesE2ETests(WheelhouseAppFixture fixture) : Wheelh
             .Where(entry => entry.GetProperty("action").GetString() == "deployment.start")
             .Select(entry => entry.GetProperty("detail").GetString()).ToList();
         details.Should().Contain("foreverpin-gh-1, overriding a freeze, reason: security fix");
+
+        // The refusal changed nothing: hidden from the list by default, listed when asked for, with the freeze as its cause.
+        (await DataAsync("/api/deployments/history")).GetProperty("items").GetArrayLength().Should().Be(0);
+        var refusal = (await DataAsync("/api/deployments/history?notApplied=true")).GetProperty("items").EnumerateArray()
+            .Should().ContainSingle().Subject;
+        (refusal.GetProperty("state").GetString(), refusal.GetProperty("substate").GetString(), refusal.GetProperty("attention").GetString(),
+                refusal.GetProperty("product").GetString(), refusal.GetProperty("environment").GetString(), refusal.GetProperty("actor").GetString(),
+                refusal.GetProperty("bundleId").GetString())
+            .Should().Be(("not_applied", "refused", "none", "foreverpin", "prod", "test-admin", "foreverpin-gh-1"));
+        (refusal.GetProperty("cause").GetProperty("kind").GetString(), refusal.GetProperty("cause").GetProperty("message").GetString())
+            .Should().Be(("freeze", "Frozen: foreverpin prod."));
+        (refusal.GetProperty("status").GetString(), refusal.GetProperty("outcome").GetString()).Should().Be(("rejected", "refused"));
+        var detail = await DataAsync("/api/deployments/" + refusal.GetProperty("id").GetString() + "/detail");
+        detail.GetProperty("observed").GetBoolean().Should().BeFalse("a deploy that never reached its target has no report");
+    }
+
+    [Fact]
+    public async Task Deploy_ShouldKeepARunnerGateRefusal_AsADeployThatChangedNothing()
+    {
+        Fixture.Deployments.StartRefusal = "Deployment rejected: Deploy this release to dev first, or type the target ID to skip the dev pass";
+        (await Owner("deploy").PostAsJsonAsync("/api/deployments", new { target = "foreverpin-prod", release = "foreverpin-gh-2" }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        Fixture.Deployments.StartRefusal = null;
+        var refusal = (await DataAsync("/api/deployments/history?status=not-applied")).GetProperty("items")[0];
+        (refusal.GetProperty("substate").GetString(), refusal.GetProperty("cause").GetProperty("kind").GetString())
+            .Should().Be(("refused", "gate"));
+        // The day around the refusal, on the host's clock.
+        var at = refusal.GetProperty("submittedAt").GetDateTimeOffset().ToUniversalTime();
+        var range = "from=" + Uri.EscapeDataString(at.AddDays(-1).ToString("O")) + "&to=" + Uri.EscapeDataString(at.AddDays(1).ToString("O"));
+        var stats = (await DataAsync("/api/deployments/history/stats?notApplied=true&" + range)).GetProperty("current");
+        (stats.GetProperty("deploys").GetInt32(), stats.GetProperty("notApplied").GetInt32()).Should().Be((1, 1));
+        (await DataAsync("/api/deployments/history/stats?" + range)).GetProperty("current").GetProperty("deploys").GetInt32()
+            .Should().Be(0, "stats leave out what changed nothing unless asked for it");
     }
 
     [Fact]

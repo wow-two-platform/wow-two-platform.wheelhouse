@@ -13,13 +13,16 @@ public static class DeploymentMeasures
     /// <returns>The measures.</returns>
     public static DeploymentMeasuresDto Measure(IEnumerable<DeploymentEntry> entries, DateTimeOffset from, DateTimeOffset to)
     {
-        int succeeded = 0, failed = 0, refused = 0, pending = 0, deploys = 0;
+        int succeeded = 0, failed = 0, refused = 0, pending = 0, deploys = 0, notApplied = 0, look = 0, act = 0;
         var rollouts = new List<double>();
         var recoveries = new List<double>();
         var failingSince = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
         foreach (var entry in entries.OrderBy(item => item.Record.SubmittedAt).ThenBy(item => item.Record.Id, StringComparer.Ordinal))
         {
             deploys++;
+            notApplied += entry.NotApplied ? 1 : 0;
+            look += entry.State.Attention == DeploymentAttention.Look ? 1 : 0;
+            act += entry.State.Attention == DeploymentAttention.Act ? 1 : 0;
             var record = entry.Record;
             var began = record.StartedAt ?? record.SubmittedAt;
             var ended = record.CompletedAt;
@@ -49,7 +52,7 @@ public static class DeploymentMeasures
 
         var finished = succeeded + failed;
         return new DeploymentMeasuresDto(from, to, deploys, succeeded, failed, refused, pending,
-            finished > 0 ? (double)succeeded / finished : null, Median(rollouts), Median(recoveries));
+            finished > 0 ? (double)succeeded / finished : null, Median(rollouts), Median(recoveries), notApplied, look, act);
     }
 
     /// <summary>The middle value, or the mean of the two middle values; null for none.</summary>

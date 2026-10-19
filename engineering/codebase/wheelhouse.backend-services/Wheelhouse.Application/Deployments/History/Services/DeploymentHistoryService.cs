@@ -1,16 +1,20 @@
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments.History.Models;
+using Wheelhouse.Domain.Deployments.Entities;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Deployments.History.Services;
 
 /// <summary>Joins the runner's deployment records with the inventory: each target's product, workspace and environment,
-/// the target's previous success and the services each rollout changed.</summary>
+/// the target's previous success and the services each rollout changed. The deploys that never reached their target —
+/// refused, replaced in the queue, cancelled, expired or aborted — join from the control plane's intents, so the
+/// history lists them as Not applied.</summary>
 public sealed class DeploymentHistoryService(
     IDeploymentRecords records,
     ITargetsRepository targets,
     IProductsRepository products,
-    IWorkspacesRepository workspaces)
+    IWorkspacesRepository workspaces,
+    IDeploymentAutomationStore intents)
 {
     /// <summary>Reads every recorded deployment with the inventory joined.</summary>
     /// <param name="ct">A cancellation token.</param>
@@ -34,11 +38,12 @@ public sealed class DeploymentHistoryService(
                 row.Environment.ToString().ToLowerInvariant(), productModes[row.ProductId]))
             .ToArray();
         var byTarget = facts.ToDictionary(fact => fact.Slug, StringComparer.Ordinal);
+        var unapplied = (await intents.GetIntentsAsync(ct)).Select(FromIntent).ToList();
 
         // Oldest first, so each submission meets its target's previous success before it.
         var lastSuccess = new Dictionary<string, DeploymentRecord>(StringComparer.Ordinal);
-        var entries = new List<DeploymentEntry>(list.Count);
-        foreach (var record in list.OrderBy(item => item.SubmittedAt).ThenBy(item => item.Id, StringComparer.Ordinal))
+        var entries = new List<DeploymentEntry>(list.Count + unapplied.Count);
+        foreach (var record in list.Concat(unapplied).OrderBy(item => item.SubmittedAt).ThenBy(item => item.Id, StringComparer.Ordinal))
         {
             var target = record.TargetId is { } id ? byTarget.GetValueOrDefault(id) : null;
             var product = target?.Product ?? record.Product;
@@ -53,6 +58,28 @@ public sealed class DeploymentHistoryService(
         entries.Reverse();
         return AppResult<DeploymentHistory>.Ok(new DeploymentHistory(entries, facts));
     }
+
+    /// <summary>A deploy that never reached its target, as a record beside the runner's: it ended when it was dropped,
+    /// and its status stays the runner's word for a refusal, so integrations that read the status see it changed
+    /// nothing.</summary>
+    /// <param name="intent">The control plane's record.</param>
+    /// <returns>The record, carrying the intent.</returns>
+    public static DeploymentRecord FromIntent(DeploymentIntentEntity intent) => new()
+    {
+        Id = intent.Id.ToString(),
+        TargetId = intent.Target,
+        Environment = intent.Environment,
+        BundleId = intent.BundleId,
+        Release = intent.Release,
+        Product = intent.Product,
+        Actor = intent.Actor,
+        FleetId = intent.FleetId?.ToString(),
+        Status = "rejected",
+        Reason = intent.Message,
+        SubmittedAt = intent.At,
+        CompletedAt = intent.At,
+        Intent = intent,
+    };
 
     /// <summary>Compares each service's image with the target's previous success; every service is new without one.</summary>
     /// <param name="record">The rollout.</param>

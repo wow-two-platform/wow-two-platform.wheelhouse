@@ -2,7 +2,7 @@ using Wheelhouse.Application.Deployments.History.Models;
 
 namespace Wheelhouse.Application.Deployments.History.Services;
 
-/// <summary>Pure rules that pick deployments out of the history: entities, outcomes and time.</summary>
+/// <summary>Pure rules that pick deployments out of the history: entities, states and time.</summary>
 public static class DeploymentQuerying
 {
     /// <summary>Whether an entry belongs to any of the filter's entities: a listed workspace's or product's deployment,
@@ -34,16 +34,24 @@ public static class DeploymentQuerying
         return false;
     }
 
-    /// <summary>Whether an entry's outcome is one the status filter shows.</summary>
+    /// <summary>Whether an entry is one the status filter shows. A deployment that changed nothing shows only when the
+    /// filter includes them or asks for them alone; the old <c>failed</c> keeps its old meaning, a failed check
+    /// included.</summary>
     /// <param name="entry">The deployment.</param>
     /// <param name="status">The status filter.</param>
+    /// <param name="includeNotApplied">Whether deployments that changed nothing show beside the others.</param>
     /// <returns><c>true</c> when it shows.</returns>
-    public static bool MatchesStatus(DeploymentEntry entry, DeploymentStatusFilter status) => status switch
-    {
-        DeploymentStatusFilter.Succeeded => entry.Outcome == DeploymentOutcome.Succeeded,
-        DeploymentStatusFilter.Failed => entry.Outcome == DeploymentOutcome.Failed,
-        _ => true,
-    };
+    public static bool MatchesStatus(DeploymentEntry entry, DeploymentStatusFilter status, bool includeNotApplied = false) =>
+        (includeNotApplied || status is DeploymentStatusFilter.NotApplied or DeploymentStatusFilter.Failed || !entry.NotApplied)
+        && status switch
+        {
+            DeploymentStatusFilter.Succeeded => entry.State.State == DeploymentState.Succeeded,
+            DeploymentStatusFilter.Failed => entry.Outcome == DeploymentOutcome.Failed,
+            DeploymentStatusFilter.NeedsAction => entry.State.Attention == DeploymentAttention.Act,
+            DeploymentStatusFilter.Look => entry.State.Attention == DeploymentAttention.Look,
+            DeploymentStatusFilter.NotApplied => entry.NotApplied,
+            _ => true,
+        };
 
     /// <summary>Whether an entry was submitted inside a range: from inclusive, to exclusive; an open end is unbounded.</summary>
     /// <param name="entry">The deployment.</param>
@@ -58,5 +66,6 @@ public static class DeploymentQuerying
     /// <param name="filter">The filter.</param>
     /// <returns><c>true</c> when it matches.</returns>
     public static bool Matches(DeploymentEntry entry, DeploymentFilter filter) =>
-        MatchesEntities(entry, filter) && MatchesStatus(entry, filter.Status) && InRange(entry, filter.From, filter.To);
+        MatchesEntities(entry, filter) && MatchesStatus(entry, filter.Status, filter.IncludeNotApplied)
+        && InRange(entry, filter.From, filter.To);
 }

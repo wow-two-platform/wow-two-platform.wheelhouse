@@ -24,10 +24,10 @@ namespace Wheelhouse.Tests.E2E.Tests;
 /// <list type="number">
 /// <item>fp-dev v1.0.0 succeeded 10-01 — first rollout there, so every service is new.</item>
 /// <item>fp-prod v1.0.0 succeeded 10-02.</item>
-/// <item>fp-dev v1.1.0 failed 10-03 23:30 UTC (10-04 in Tashkent) — management changed.</item>
+/// <item>fp-dev v1.1.0 failed 10-03 23:30 UTC (10-04 in Tashkent) after it changed containers — management changed.</item>
 /// <item>ocharo-shop-dev v0.3.0 rolled back 10-04.</item>
 /// <item>fp-dev v1.1.0 succeeded with a warning 10-05 — management changed against #1.</item>
-/// <item>fp-prod v1.1.0 refused 10-05.</item>
+/// <item>fp-prod v1.1.0 refused 10-05 — it changed nothing, so lists show it only when asked to.</item>
 /// <item>fp-dev v1.2.0 running 10-06 — web changed.</item>
 /// <item>gone-dev, an unknown bundle on a removed target, 09-01.</item>
 /// </list>
@@ -68,7 +68,8 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
     public async Task History_ListsNewestFirstWithTheInventoryJoined()
     {
         await SeedAsync();
-        var page = await DataAsync("/api/deployments/history");
+        Ids(await DataAsync("/api/deployments/history")).Should().Equal(Running, SecondDev, RolledBack, FailedDev, FirstProd, FirstDev, Removed);
+        var page = await DataAsync("/api/deployments/history?notApplied=true");
         Ids(page).Should().Equal(Running, RefusedProd, SecondDev, RolledBack, FailedDev, FirstProd, FirstDev, Removed);
         page.GetProperty("nextCursor").ValueKind.Should().Be(JsonValueKind.Null);
 
@@ -86,6 +87,10 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
         Item(page, Running).GetProperty("outcome").GetString().Should().Be("pending");
         Item(page, RolledBack).GetProperty("outcome").GetString().Should().Be("failed");
         Item(page, RefusedProd).GetProperty("outcome").GetString().Should().Be("refused");
+        States(page).Should().Equal(("in_progress", "checking", "info"), ("not_applied", "refused", "none"),
+            ("degraded", "at_deploy", "look"), ("rolled_back", "automatic", "look"), ("failed", "rollback_not_allowed", "act"),
+            ("succeeded", null, "none"), ("succeeded", null, "none"), ("succeeded", null, "none"));
+        Item(page, SecondDev).GetProperty("cause").GetProperty("origin").GetString().Should().Be("Probe sites");
 
         var removed = Item(page, Removed);
         removed.GetProperty("product").ValueKind.Should().Be(JsonValueKind.Null);
@@ -96,16 +101,21 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
 
     [Theory]
     [InlineData("workspace=ocharo", new[] { RolledBack })]
-    [InlineData("product=foreverpin", new[] { Running, RefusedProd, SecondDev, FailedDev, FirstProd, FirstDev })]
+    [InlineData("product=foreverpin", new[] { Running, SecondDev, FailedDev, FirstProd, FirstDev })]
+    [InlineData("product=foreverpin&notApplied=true", new[] { Running, RefusedProd, SecondDev, FailedDev, FirstProd, FirstDev })]
     [InlineData("service=foreverpin/web", new[] { Running, FirstProd, FirstDev })]
-    [InlineData("service=foreverpin/management", new[] { RefusedProd, SecondDev, FailedDev, FirstProd, FirstDev })]
+    [InlineData("service=foreverpin/management", new[] { SecondDev, FailedDev, FirstProd, FirstDev })]
     [InlineData("service=foreverpin/web&workspace=ocharo", new[] { Running, RolledBack, FirstProd, FirstDev })]
-    [InlineData("workspace=own-ventures&product=ocharo-shop", new[] { Running, RefusedProd, SecondDev, RolledBack, FailedDev, FirstProd, FirstDev })]
+    [InlineData("workspace=own-ventures&product=ocharo-shop", new[] { Running, SecondDev, RolledBack, FailedDev, FirstProd, FirstDev })]
     [InlineData("status=failed", new[] { RolledBack, FailedDev })]
-    [InlineData("status=succeeded", new[] { SecondDev, FirstProd, FirstDev, Removed })]
+    [InlineData("status=succeeded", new[] { FirstProd, FirstDev, Removed })]
+    [InlineData("status=needs-action", new[] { FailedDev })]
+    [InlineData("status=look", new[] { SecondDev, RolledBack })]
+    [InlineData("status=not-applied", new[] { RefusedProd })]
+    [InlineData("status=refused", new[] { RefusedProd })]
     [InlineData("status=failed&product=foreverpin", new[] { FailedDev })]
     [InlineData("from=2026-10-02T00:00:00Z&to=2026-10-05T00:00:00Z", new[] { RolledBack, FailedDev, FirstProd })]
-    [InlineData("product=foreverpin&status=succeeded&from=2026-10-02T00:00:00Z", new[] { SecondDev, FirstProd })]
+    [InlineData("product=foreverpin&status=succeeded&from=2026-10-02T00:00:00Z", new[] { FirstProd })]
     [InlineData("workspace=nobody", new string[0])]
     public async Task History_FiltersByEntityStatusAndRange(string query, string[] expected)
     {
@@ -133,7 +143,7 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
             cursor = page.GetProperty("nextCursor").GetString();
         }
 
-        seen.Should().Equal(Running, RefusedProd, SecondDev, RolledBack, FailedDev, FirstProd, FirstDev, Removed);
+        seen.Should().Equal(Running, SecondDev, RolledBack, FailedDev, FirstProd, FirstDev, Removed);
     }
 
     [Theory]
@@ -173,6 +183,14 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
         var failures = await DataAsync("/api/deployments/history/activity?" + range + "&tz=UTC&status=failed&product=foreverpin");
         Days(failures).Should().Equal(("2026-10-03", 0, 1));
         Products(failures).Should().Equal(("foreverpin", 0, 1));
+
+        // Each day by the attention its applied rollouts need; the refusal counts only when asked for and never colours.
+        Attention(utc).Should().Equal(("2026-10-01", 1, 0, 0, 0), ("2026-10-02", 1, 0, 0, 0), ("2026-10-03", 0, 0, 1, 0),
+            ("2026-10-04", 0, 1, 0, 0), ("2026-10-05", 0, 1, 0, 0));
+        var all = await DataAsync("/api/deployments/history/activity?" + range + "&tz=UTC&notApplied=true");
+        Attention(all).Last().Should().Be(("2026-10-05", 0, 1, 0, 1));
+        Attention(await DataAsync("/api/deployments/history/activity?" + range + "&tz=UTC&status=needs-action"))
+            .Should().Equal(("2026-10-03", 0, 0, 1, 0));
     }
 
     [Theory]
@@ -193,7 +211,13 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
         var current = stats.GetProperty("current");
         (current.GetProperty("deploys").GetInt32(), current.GetProperty("succeeded").GetInt32(), current.GetProperty("failed").GetInt32(),
                 current.GetProperty("refused").GetInt32(), current.GetProperty("pending").GetInt32())
-            .Should().Be((3, 1, 0, 1, 1));
+            .Should().Be((2, 1, 0, 0, 1), "the refusal changed nothing, so it counts only when asked for");
+        (current.GetProperty("notApplied").GetInt32(), current.GetProperty("look").GetInt32(), current.GetProperty("act").GetInt32())
+            .Should().Be((0, 1, 0));
+        var counted = (await DataAsync(
+            "/api/deployments/history/stats?product=foreverpin&notApplied=true&from=2026-10-04T00:00:00Z&to=2026-10-08T00:00:00Z")).GetProperty("current");
+        (counted.GetProperty("deploys").GetInt32(), counted.GetProperty("refused").GetInt32(), counted.GetProperty("notApplied").GetInt32())
+            .Should().Be((3, 1, 1));
         current.GetProperty("successRate").GetDouble().Should().Be(1);
         current.GetProperty("medianRolloutSeconds").GetDouble().Should().Be(150);
 
@@ -411,7 +435,7 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
         await SeedAsync();
         Fixture.Deployments.History.Add(new { id = "broken", status = "succeeded", submittedAt = "not a time" });
         Fixture.Deployments.History.Add(new { targetId = "foreverpin-dev" });
-        Ids(await DataAsync("/api/deployments/history")).Should().HaveCount(8);
+        Ids(await DataAsync("/api/deployments/history?notApplied=true")).Should().HaveCount(8);
     }
 
     /// <summary>Adds the Ocharo workspace with its shop on dev, and writes the eight records.</summary>
@@ -444,7 +468,7 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
             WebA, published: "2026-09-30T12:00:00Z", managementVersion: "1.0.0"));
         history.Add(Record(FailedDev, "foreverpin-dev", "2026-10-03T23:30:00+00:00", "failed", "v1.1.0", "foreverpin-gh-2",
             WebA, management: ManagementB, published: "2026-10-03T12:00:00Z", managementVersion: "1.1.0",
-            completed: "2026-10-03T23:32:00+00:00"));
+            completed: "2026-10-03T23:32:00+00:00", mutation: true));
         history.Add(new
         {
             id = RolledBack, targetId = "ocharo-shop-dev", bundleId = "ocharo-shop-gh-3", release = "v0.3.0", actor = "max",
@@ -476,7 +500,7 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
     /// <summary>A ForeverPin record; started 10 seconds and finished 150 seconds after its submission unless told otherwise.</summary>
     private static object Record(string id, string target, string submitted, string status, string release, string bundle, string web,
         string? management = null, string kind = "release", string? published = null, string? managementVersion = null,
-        string? completed = null, string[]? warnings = null)
+        string? completed = null, string[]? warnings = null, bool? mutation = null)
     {
         var at = DateTimeOffset.Parse(submitted, System.Globalization.CultureInfo.InvariantCulture);
         var finished = status is "succeeded" or "failed" or "rolled_back"
@@ -488,6 +512,7 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
             startedAt = status == "rejected" ? null : at.AddSeconds(10).ToString("O", System.Globalization.CultureInfo.InvariantCulture),
             completedAt = finished, product = "foreverpin", kind, rollbackCompatible = true, publishedAt = published,
             warnings = warnings ?? [], services = Services(management ?? ManagementA, web, managementVersion),
+            mutationStarted = mutation,
         };
     }
 
@@ -519,6 +544,19 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
     private static IEnumerable<(string?, int, int)> Products(JsonElement activity) =>
         activity.GetProperty("products").EnumerateArray()
             .Select(item => (item.GetProperty("product").GetString(), item.GetProperty("succeeded").GetInt32(), item.GetProperty("failed").GetInt32()))
+            .ToArray();
+
+    private static IEnumerable<(string?, string?, string?)> States(JsonElement page) =>
+        page.GetProperty("items").EnumerateArray()
+            .Select(item => (item.GetProperty("state").GetString(),
+                item.GetProperty("substate").ValueKind == JsonValueKind.Null ? null : item.GetProperty("substate").GetString(),
+                item.GetProperty("attention").GetString()))
+            .ToArray();
+
+    private static IEnumerable<(string?, int, int, int, int)> Attention(JsonElement activity) =>
+        activity.GetProperty("days").EnumerateArray()
+            .Select(day => (day.GetProperty("date").GetString(), day.GetProperty("calm").GetInt32(), day.GetProperty("look").GetInt32(),
+                day.GetProperty("act").GetInt32(), day.GetProperty("notApplied").GetInt32()))
             .ToArray();
 
     private static IEnumerable<(string?, int, int)> Days(JsonElement activity) =>

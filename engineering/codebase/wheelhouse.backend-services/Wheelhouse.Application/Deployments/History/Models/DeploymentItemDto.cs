@@ -49,6 +49,25 @@ public sealed record DeploymentItemDto
     /// <c>unknown</c>.</summary>
     public required string Outcome { get; init; }
 
+    /// <summary>Gets what the environment runs because of it: <c>in_progress</c>, <c>succeeded</c>, <c>degraded</c>,
+    /// <c>rolled_back</c>, <c>partial</c>, <c>failed</c>, <c>not_applied</c> or <c>unknown</c>.</summary>
+    public required string State { get; init; }
+
+    /// <summary>Gets which way it got there, such as <c>partly_rolled_back</c> or <c>check_failed</c>.</summary>
+    public string? Substate { get; init; }
+
+    /// <summary>Gets how much attention it needs: <c>none</c>, <c>info</c>, <c>look</c>, <c>act</c> or <c>muted</c>.</summary>
+    public required string Attention { get; init; }
+
+    /// <summary>Gets why it ended so, with where it started; null for a calm outcome.</summary>
+    public DeploymentCauseDto? Cause { get; init; }
+
+    /// <summary>Gets the services its origin likely hurt, along a declared path.</summary>
+    public IReadOnlyList<DeploymentEffectDto> Effects { get; init; } = [];
+
+    /// <summary>Gets each service's result in rollout order; null when the target did not report them.</summary>
+    public IReadOnlyList<DeploymentServiceResultDto>? Services { get; init; }
+
     /// <summary>Gets the display-safe reason a rollout failed or was refused.</summary>
     public string? Reason { get; init; }
 
@@ -106,6 +125,12 @@ public sealed record DeploymentItemDto
             FleetId = record.FleetId,
             Status = record.Status,
             Outcome = entry.Outcome,
+            State = entry.State.State,
+            Substate = entry.State.Substate,
+            Attention = entry.State.Attention,
+            Cause = entry.State.Cause,
+            Effects = entry.State.Effects,
+            Services = Versioned(entry.State.Services, entry.Changes),
             Reason = record.Reason,
             Warnings = record.Warnings ?? [],
             SubmittedAt = record.SubmittedAt,
@@ -121,4 +146,14 @@ public sealed record DeploymentItemDto
             Verification = record.Verification,
         };
     }
+
+    /// <summary>Fills each service's versions from the comparison with the target's previous success where the runner did
+    /// not record them. @internal</summary>
+    private static IReadOnlyList<DeploymentServiceResultDto>? Versioned(
+        IReadOnlyList<DeploymentServiceResultDto>? services, IReadOnlyList<ServiceChangeDto>? changes) =>
+        services is null || changes is null
+            ? services
+            : [.. services.Select(item => changes.FirstOrDefault(change => change.Service == item.Service) is { } change
+                ? item with { From = item.From ?? change.From, To = item.To ?? change.To }
+                : item)];
 }

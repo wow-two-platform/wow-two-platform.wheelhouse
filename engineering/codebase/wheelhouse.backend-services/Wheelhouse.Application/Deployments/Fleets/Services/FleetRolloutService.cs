@@ -272,7 +272,8 @@ public sealed partial class FleetRolloutService(
     private async Task SubmitAsync(FleetRolloutEntity fleet, FleetRolloutItemEntity next, DateTimeOffset now, CancellationToken ct)
     {
         var result = await sender.SendAsync(new DeploymentStartCommand(next.Target, next.BundleId, fleet.Actor,
-            next.Confirmed ? next.Target : null, Reason: fleet.Reason, OverrideFreeze: fleet.OverrideFreeze, Fleet: fleet.Id), ct);
+            next.Confirmed ? next.Target : null, Reason: fleet.Reason, OverrideFreeze: fleet.OverrideFreeze, Fleet: fleet.Id,
+            ReleaseLabel: next.Release), ct);
         if (result is AppResult<JsonElement>.Success { Data: var submitted }
             && submitted.ValueKind == JsonValueKind.Object && submitted.TryGetProperty("id", out var id)
             && id.ValueKind == JsonValueKind.String)

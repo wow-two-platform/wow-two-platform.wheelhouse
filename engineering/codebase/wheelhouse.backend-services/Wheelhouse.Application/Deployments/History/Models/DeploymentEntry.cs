@@ -1,3 +1,5 @@
+using Wheelhouse.Application.Deployments.History.Services;
+
 namespace Wheelhouse.Application.Deployments.History.Models;
 
 /// <summary>Represents one submission joined with the inventory: its product, workspace and environment, the target's
@@ -16,6 +18,13 @@ public sealed record DeploymentEntry(
     DeploymentRecord? Previous,
     IReadOnlyList<ServiceChangeDto>? Changes)
 {
-    /// <summary>Gets what the status amounts to.</summary>
+    /// <summary>Gets what the status amounts to, as the API answered before the status taxonomy; kept one release for
+    /// integrations.</summary>
     public string Outcome { get; } = DeploymentOutcome.Of(Record.Status);
+
+    /// <summary>Gets the deployment in the status taxonomy: what the environment runs because of it.</summary>
+    public DeploymentStateReading State { get; } = DeploymentStateRules.Of(Record, Record.Watch, Record.Intent, Previous is null);
+
+    /// <summary>Gets whether the deployment changed nothing on its target.</summary>
+    public bool NotApplied => State.State == DeploymentState.NotApplied;
 }
