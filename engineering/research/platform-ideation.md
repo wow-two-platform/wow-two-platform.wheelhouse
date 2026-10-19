@@ -50,6 +50,7 @@ written from it when the version opens.
 | 38 | Only Wheelhouse deploys through CI; Wheelhouse deploys every other product; catalog `ci`/`none` entries never create products | 2026-10-19 |
 | 39 | Automatic rollback on a watch-window regression waits; the watch window flags the regression | 2026-10-19 |
 | 40 | Zero-disruption phase 1 also takes an emergency path through the drain, automation that honours each target's deploy policy, and dry runs bounded by lock and statement timeouts | 2026-10-19 |
+| 41 | A deployed target's mounted settings file is `appsettings.Target.json`; a machine's own overrides are `appsettings.Local.json`, replacing `appsettings.Machine.json` | 2026-10-19 |
 
 | Fact | Owner |
 |---|---|

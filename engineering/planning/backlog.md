@@ -93,6 +93,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | CVE gate: scan images at build, warn on prod confirm, rebuild on base-image fixes | feature | Parked 2026-10-19 |
 | Refresh dev's database from a redacted, compacted prod copy | feature | User 2026-10-19: no personal data reaches dev; feeds the end-to-end dev checks that gate auto-promote |
 | Roll prod back by promoting the previous release | feature | Dev-to-prod promotion exists |
+| Ability to see a product's deploys by hour and in other views in its details | feature | User 2026-10-19: not in the Deployments grid; product details only, after the Deployments, Products and Servers pages |
 | Ability to roll back automatically when the watch window sees a regression | feature | User 2026-10-19: later; the watch window flags the regression and the owner decides |
 | Recover database migrations across services when a later service fails | decision | User 2026-10-19, for discussion: A migrates, then B's migration fails, so A's must roll back too. Either every migration stays rollback-safe, or the release updates A and B first and migrates the databases after |
 | Show the maintenance page in Uzbek, Russian and English at least | feature | Parked 2026-10-19 from Iteration 15: per-product copy in the manifest, chosen by `Accept-Language` |
