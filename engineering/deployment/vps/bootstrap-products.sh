@@ -61,10 +61,7 @@ parse_arguments() {
 }
 
 require_host() {
-    . /etc/os-release
-    [[ $ID == ubuntu && $VERSION_ID == 26.04 && $(dpkg --print-architecture) == amd64 ]] || {
-        echo 'This bootstrap is reviewed only for Ubuntu 26.04 amd64.' >&2; exit 1;
-    }
+    require_platform
     # Password sign-in is turned off below; the administrator running this must already sign in with a key.
     [[ -n ${SUDO_USER:-} && $SUDO_USER != root ]] || {
         echo 'Run through sudo from the administrator account, so its SSH key can be checked first.' >&2
@@ -76,6 +73,18 @@ require_host() {
     [[ -f $admin_keys ]] && awk 'NF && $1 !~ /^#/ {found = 1} END {exit !found}' "$admin_keys" || {
         echo "Add your SSH public key to $admin_keys and sign in with it first: password sign-in is turned off." >&2
         exit 1
+    }
+}
+
+# The reviewed image and the kit beside this script; Wheelhouse's enrollment checks the administrator its own way.
+# Only the local rig (WHEELHOUSE_REHEARSAL, set by its runner) also takes arm64, the machine it runs on.
+require_platform() {
+    . /etc/os-release
+    local architecture
+    architecture=$(dpkg --print-architecture)
+    [[ $ID == ubuntu && $VERSION_ID == 26.04 \
+        && ( $architecture == amd64 || ( -n ${WHEELHOUSE_REHEARSAL:-} && $architecture == arm64 ) ) ]] || {
+        echo 'This bootstrap is reviewed only for Ubuntu 26.04 amd64.' >&2; exit 1;
     }
     for asset in "${kit_assets[@]}"; do
         [[ -f "$script_dir/$asset" ]] || { echo "Missing bootstrap asset: $asset" >&2; exit 1; }
@@ -102,7 +111,7 @@ Types: deb
 URIs: https://download.docker.com/linux/ubuntu
 Suites: $VERSION_CODENAME
 Components: stable
-Architectures: amd64
+Architectures: $(dpkg --print-architecture)
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
     curl --fail --silent --show-error --location --proto '=https' \
@@ -175,7 +184,8 @@ import json, sys
 network = json.load(sys.stdin)[0]
 expected = [{"Subnet": sys.argv[1], "IPRange": sys.argv[2], "Gateway": sys.argv[3]}]
 if network.get("Driver") != "bridge" or network.get("IPAM", {}).get("Config") != expected:
-    sys.exit("Existing platform network differs; review addresses before proceeding.")
+    sys.exit("Existing platform network differs; run repair-networks.sh for a missing dynamic range, or review "
+             "addresses before proceeding.")
 ' "$platform_subnet" "$platform_range" "$platform_gateway"
 }
 
@@ -237,7 +247,8 @@ print(status.get("BackendState", ""), " ".join((status.get("Self") or {}).get("T
 }
 
 # The host joins as tag:products: Wheelhouse prod's control node reaches its SSH and nothing else (tailnet-policy.hujson).
-# A node tagged at sign-in keeps its key without expiry. The policy must define the tag first.
+# A node tagged at sign-in keeps its key without expiry. The policy must define the tag first. With $auth_key_file
+# (Wheelhouse's enrollment: a single-use key it minted, in a private file) the join needs no sign-in link.
 join_tailnet() {
     local state tags
     read -r state tags <<<"$(tailnet_state)"
@@ -247,7 +258,7 @@ join_tailnet() {
             return
         fi
         tailscale up --hostname="$tailnet_hostname" --advertise-tags="$tailnet_tag" \
-            --accept-dns=false --accept-routes=false --ssh=false
+            --accept-dns=false --accept-routes=false --ssh=false ${auth_key_file:+"--auth-key=file:$auth_key_file"}
         read -r state tags <<<"$(tailnet_state)"
     fi
     [[ " $tags " == *" $tailnet_tag "* ]] || echo "This node lacks $tailnet_tag; tag it in the admin console." >&2

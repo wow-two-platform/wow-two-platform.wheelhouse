@@ -12,14 +12,17 @@ deploy_root=/srv/wheelhouse
 deploy_user=wheelhouse-deploy
 deploy_group=$(id -gn "$deploy_user")
 
+# Dynamic addresses come only from .128/25, so no container can take Traefik's or PostgreSQL's fixed one.
 if ! docker network inspect control >/dev/null 2>&1; then
-    docker network create --driver bridge --subnet 172.30.1.0/24 --gateway 172.30.1.1 control >/dev/null
+    docker network create --driver bridge --subnet 172.30.1.0/24 --ip-range 172.30.1.128/25 --gateway 172.30.1.1 \
+        control >/dev/null
 fi
 docker network inspect control | python3 -c '
 import json, sys
 network = json.load(sys.stdin)[0]
-if network.get("IPAM", {}).get("Config") != [{"Subnet": "172.30.1.0/24", "Gateway": "172.30.1.1"}]:
-    sys.exit("Existing control network differs; review addresses before proceeding.")
+if network.get("IPAM", {}).get("Config") != [{"Subnet": "172.30.1.0/24", "IPRange": "172.30.1.128/25",
+                                               "Gateway": "172.30.1.1"}]:
+    sys.exit("Existing control network differs; run repair-networks.sh, or review addresses before proceeding.")
 '
 
 # The allowlist must exist before Traefik restarts with it attached, or the console routes are refused.

@@ -1,5 +1,6 @@
 """The products-host kit: shell syntax, the rendered Compose file, the tailnet policy and the SSH-session guard.
 Never contacts a host; the Compose check uses the local Docker CLI when there is one."""
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -222,6 +223,225 @@ class CreateAdminTests(unittest.TestCase):
                               "create_admin", "main"}, set(result.stdout.split()))
 
 
+ENROLLMENT_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEnrollKeyEnrollKeyEnrollKeyEnrollKeyEnr wheelhouse-enroll-x"
+
+# enroll-products.sh's phases on the same scratch host, plus the SSH, firewall and tailnet commands they reach.
+ENROLL_HOST = ADMIN_HOST.replace('. "$KIT/create-admin.sh"', '. "$KIT/enroll-products.sh"') + r"""
+harden_ssh() { echo "harden_ssh" >> "$STATE/calls"; }
+tailnet_state() { echo "${TAILNET:-Running} tag:products"; }
+ip() { [[ ${TAILNET:-Running} == Running ]]; }
+ufw() { echo "ufw $*" >> "$STATE/calls"; }
+stat() { echo "$ADMIN"; }
+"""
+
+
+class EnrollPhaseTests(unittest.TestCase):
+    """enroll-products.sh: the administrator from the owner's own key, and the seal that never locks the owner out."""
+
+    setUp = CreateAdminTests.setUp
+    admin_keys = CreateAdminTests.admin_keys
+    calls = CreateAdminTests.calls
+    existing_user = CreateAdminTests.existing_user
+
+    def run_phase(self, steps, stdin="", tailnet="Running", uid=1001):
+        return subprocess.run(
+            ["bash", "-c", ENROLL_HOST + steps], input=stdin, capture_output=True, text=True,
+            env={**os.environ, "KIT": str(KIT), "STATE": str(self.state), "HOMES": str(self.homes),
+                 "ROOT_HOME": str(self.root_home), "ADMIN": "alice", "USER_UID": str(uid), "TAILNET": tailnet,
+                 "secret_dir": str(self.state)})
+
+    def test_a_new_administrator_gets_the_owner_s_key_never_root_s_one_time_key(self):
+        self.root_keys.write_text(ENROLLMENT_KEY + "\n")
+        result = self.run_phase("phase_admin alice", OWNER_KEY + "\n")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(OWNER_KEY + "\n", self.admin_keys().read_text())
+        self.assertIn("useradd --create-home --shell /bin/bash alice", self.calls())
+
+    def test_an_administrator_that_signs_in_with_its_own_keys_is_kept(self):
+        self.existing_user(OTHER_KEY + "\n")
+        result = self.run_phase("phase_admin alice", OWNER_KEY + "\n")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("kept as it is", result.stdout)
+        self.assertEqual(OTHER_KEY + "\n", self.admin_keys().read_text())
+        self.assertEqual([], self.calls())
+
+    def test_a_new_administrator_without_a_key_is_refused(self):
+        result = self.run_phase("phase_admin alice", "\n")
+        self.assertEqual(1, result.returncode)
+        self.assertIn("No administrator key was given", result.stderr)
+        self.assertEqual([], self.calls())
+
+    def test_seal_refuses_while_the_administrator_holds_only_the_one_time_key(self):
+        self.existing_user(ENROLLMENT_KEY + "\n")
+        result = self.run_phase("phase_seal alice", ENROLLMENT_KEY + "\n")
+        self.assertEqual(1, result.returncode)
+        self.assertIn("no SSH key besides Wheelhouse's one-time key", result.stderr)
+        self.assertEqual([], self.calls())
+
+    def test_seal_closes_public_ssh_and_removes_only_the_one_time_key(self):
+        self.root_keys.write_text(OWNER_KEY + "\n" + ENROLLMENT_KEY + "\n")
+        self.existing_user(OWNER_KEY + "\n" + ENROLLMENT_KEY + "\n")
+        result = self.run_phase("phase_seal alice", ENROLLMENT_KEY + "\n")
+        self.assertEqual(0, result.returncode, result.stderr)
+        calls = self.calls()
+        self.assertEqual("harden_ssh", calls[0])
+        self.assertIn("ufw --force delete allow 22/tcp", calls)
+        self.assertLess(calls.index("harden_ssh"), calls.index("ufw --force delete allow 22/tcp"))
+        self.assertEqual(OWNER_KEY + "\n", self.admin_keys().read_text())
+        self.assertEqual(OWNER_KEY + "\n", self.root_keys.read_text())
+
+    def test_seal_keeps_public_ssh_without_a_running_tailnet(self):
+        self.existing_user(OWNER_KEY + "\n" + ENROLLMENT_KEY + "\n")
+        result = self.run_phase("phase_seal alice", ENROLLMENT_KEY + "\n", tailnet="Stopped")
+        self.assertEqual(1, result.returncode)
+        self.assertIn("public SSH stays open", result.stderr)
+        self.assertNotIn("ufw --force delete allow 22/tcp", self.calls())
+        self.assertIn(ENROLLMENT_KEY, self.admin_keys().read_text())
+
+    @unittest.skipIf(os.geteuid() == 0, "running as root would pass the root check")
+    def test_every_phase_needs_root_and_a_known_name(self):
+        self.assertIn("Run as root", self.run_phase("enroll_main packages").stderr)
+        for steps in ("enroll_main reboot", "enroll_main", "enroll_main join", "enroll_main seal a b"):
+            with self.subTest(steps=steps):
+                result = self.run_phase("require_enrolling_root() { :; }; " + steps)
+                self.assertEqual(2, result.returncode)
+                self.assertIn("Usage: enroll-products.sh", result.stderr)
+
+
+# Stands in for the Docker CLI on a host whose networks predate the dynamic range: networks and container endpoints live
+# in a JSON file, and every changing call is logged.
+FAKE_DOCKER = r"""#!/usr/bin/env python3
+import ipaddress, json, os, sys
+path, args = os.environ["DOCKER_STATE"], sys.argv[1:]
+state = json.load(open(path))
+def save():
+    json.dump(state, open(path, "w"))
+def log(line):
+    open(os.environ["DOCKER_LOG"], "a").write(line + "\n")
+if args[:2] == ["network", "inspect"]:
+    network = state["networks"].get(args[2])
+    if network is None:
+        sys.exit(1)
+    containers = {name: {"Name": name} for name, endpoints in state["containers"].items() if args[2] in endpoints}
+    print(json.dumps([{"Name": args[2], "Driver": "bridge", "IPAM": {"Config": [network]}, "Containers": containers}]))
+elif args[0] == "inspect":
+    endpoints = state["containers"][args[1]]
+    print(json.dumps([{"Id": "abcdef1234567890", "Config": {"Hostname": "abcdef123456"},
+                       "NetworkSettings": {"Networks": endpoints}}]))
+elif args[:2] == ["network", "disconnect"]:
+    log(" ".join(args))
+    del state["containers"][args[-1]][args[-2]]
+    save()
+elif args[:2] == ["network", "rm"]:
+    log(" ".join(args))
+    del state["networks"][args[2]]
+    save()
+elif args[:2] == ["network", "create"]:
+    log(" ".join(args))
+    options = dict(zip(args[2:-1:2], args[3:-1:2]))
+    state["networks"][args[-1]] = {"Subnet": options["--subnet"], "IPRange": options["--ip-range"],
+                                   "Gateway": options["--gateway"]}
+    save()
+elif args[:2] == ["network", "connect"]:
+    log(" ".join(args))
+    options, aliases, rest = {}, [], args[2:]
+    while rest[0].startswith("--"):
+        if rest[0] == "--alias":
+            aliases.append(rest[1])
+        else:
+            options[rest[0]] = rest[1]
+        rest = rest[2:]
+    network, container = rest
+    used = {endpoint[network]["IPAddress"] for endpoint in state["containers"].values() if network in endpoint}
+    pool = ipaddress.ip_network(state["networks"][network].get("IPRange") or state["networks"][network]["Subnet"])
+    address = options.get("--ip") or next(str(host) for host in pool.hosts() if str(host) not in used
+                                          and not str(host).endswith(".1"))
+    state["containers"][container][network] = {
+        "IPAddress": address, "Aliases": aliases,
+        "IPAMConfig": {"IPv4Address": options["--ip"]} if "--ip" in options else None}
+    save()
+else:
+    sys.exit("unexpected docker call: " + " ".join(args))
+"""
+
+
+class RepairNetworksTests(unittest.TestCase):
+    """repair-networks.sh: a network made before the dynamic range gets it, its fixed addresses kept, once."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        base = Path(self.temp.name)
+        (base / "docker").write_text(FAKE_DOCKER)
+        (base / "docker").chmod(0o755)
+        self.state, self.log = base / "state.json", base / "calls.log"
+        self.state.write_text(json.dumps({
+            "networks": {"platform": {"Subnet": "172.30.0.0/24", "Gateway": "172.30.0.1"}},
+            "containers": {
+                "wheelhouse-products-ingress-1": {"platform": {
+                    "IPAddress": "172.30.0.2", "Aliases": ["ingress", "abcdef123456"],
+                    "IPAMConfig": {"IPv4Address": "172.30.0.2"}}},
+                "ocharo-platform-dev-desk-1": {"platform": {"IPAddress": "172.30.0.4", "Aliases": ["desk"],
+                                                            "IPAMConfig": None}},
+                "wheelhouse-products-postgres-1": {"platform": {
+                    "IPAddress": "172.30.0.3", "Aliases": ["postgres", "wheelhouse-postgres"],
+                    "IPAMConfig": {"IPv4Address": "172.30.0.3"}}}}}))
+        self.environment = {**os.environ, "PATH": str(base) + os.pathsep + os.environ["PATH"],
+                            "DOCKER_STATE": str(self.state), "DOCKER_LOG": str(self.log)}
+
+    def repair(self, *arguments):
+        return subprocess.run(["bash", str(KIT / "repair-networks.sh"), *arguments], capture_output=True, text=True,
+                              env=self.environment)
+
+    def calls(self):
+        return self.log.read_text().splitlines() if self.log.exists() else []
+
+    def test_a_network_without_the_range_is_recreated_with_its_fixed_addresses_kept(self):
+        self.assertIn("platform: repair", self.repair("--check").stdout)
+        self.assertEqual([], self.calls())
+        result = self.repair()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("control: not on this host", result.stdout)
+        self.assertIn("platform: recreated with 172.30.0.128/25", result.stdout)
+        calls = self.calls()
+        self.assertEqual("network rm platform", calls[3])
+        self.assertEqual("network create --driver bridge --subnet 172.30.0.0/24 --ip-range 172.30.0.128/25 "
+                         "--gateway 172.30.0.1 platform", calls[4])
+        # Fixed-address containers reconnect first, at their own address and with their aliases.
+        self.assertEqual(["network connect --ip 172.30.0.2 --alias ingress platform wheelhouse-products-ingress-1",
+                          "network connect --ip 172.30.0.3 --alias postgres --alias wheelhouse-postgres platform "
+                          "wheelhouse-products-postgres-1",
+                          "network connect --alias desk platform ocharo-platform-dev-desk-1"], calls[5:])
+        state = json.loads(self.state.read_text())
+        moved = state["containers"]["ocharo-platform-dev-desk-1"]["platform"]["IPAddress"]
+        self.assertIn(ipaddress.ip_address(moved), ipaddress.ip_network("172.30.0.128/25"))
+        self.log.unlink()
+        again = self.repair()
+        self.assertIn("platform: reserves 172.30.0.128/25", again.stdout)
+        self.assertEqual([], self.calls())
+
+    def test_a_network_with_other_addresses_is_refused_untouched(self):
+        state = json.loads(self.state.read_text())
+        state["networks"]["platform"]["Subnet"] = "10.9.0.0/24"
+        self.state.write_text(json.dumps(state))
+        result = self.repair()
+        self.assertEqual(1, result.returncode)
+        self.assertIn("review its addresses by hand", result.stderr)
+        self.assertEqual([], self.calls())
+
+    def test_every_kit_network_reserves_the_range_at_creation(self):
+        for script in ("bootstrap.sh", "bootstrap-products.sh", "migrate-control-network.sh"):
+            with self.subTest(script=script):
+                text = (KIT / script).read_text()
+                creates = re.findall(r"docker network create[^\n]*(?:\\\n[^\n]*)*", text)
+                self.assertTrue(creates)
+                self.assertTrue(all("--ip-range" in create for create in creates), creates)
+        self.assertIn("ensure_network platform 172.30.0.0/24 172.30.0.1 172.30.0.128/25",
+                      (KIT / "bootstrap.sh").read_text())
+        self.assertIn("ensure_network control 172.30.1.0/24 172.30.1.1 172.30.1.128/25",
+                      (KIT / "bootstrap.sh").read_text())
+
+
 class ComposeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -269,8 +489,22 @@ class TailnetPolicyTests(unittest.TestCase):
     def test_the_only_tagged_path_is_control_to_products_ssh(self):
         tagged = [grant for grant in self.policy["grants"] if any(src.startswith("tag:") for src in grant["src"])]
         self.assertEqual([{"src": ["tag:control"], "dst": ["tag:products"], "ip": ["tcp:22"]}], tagged)
-        self.assertEqual({"tag:control", "tag:canary", "tag:products", "tag:product-site"},
+        self.assertEqual({"tag:control", "tag:canary", "tag:wheelhouse", "tag:products", "tag:product-site"},
                          set(self.policy["tagOwners"]))
+
+    def test_only_the_wheelhouse_client_tag_mints_products_and_site_tags(self):
+        owners = self.policy["tagOwners"]
+        self.assertEqual(["autogroup:admin", "tag:wheelhouse"], owners["tag:products"])
+        self.assertEqual(["autogroup:admin", "tag:wheelhouse"], owners["tag:product-site"])
+        self.assertEqual(["autogroup:admin"], owners["tag:control"])
+        self.assertEqual(["autogroup:admin"], owners["tag:wheelhouse"])
+        self.assertFalse(any("tag:wheelhouse" in grant["src"] + grant["dst"] for grant in self.policy["grants"]))
+
+    def test_pasted_by_hand_the_inventory_markers_stay_comments(self):
+        text = (KIT / "tailnet-policy.hujson").read_text()
+        self.assertEqual(1, text.count("// wheelhouse:hosts"))
+        self.assertEqual(1, text.count("// wheelhouse:tests"))
+        self.assertEqual({}, self.policy["hosts"])
 
     def test_owner_devices_reach_products_ssh_and_the_product_sites(self):
         owner = {grant["dst"][0]: grant["ip"] for grant in self.policy["grants"]

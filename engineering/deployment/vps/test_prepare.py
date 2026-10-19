@@ -226,7 +226,9 @@ class ProductsPrepareTests(unittest.TestCase):
         self.assertIn("Site app (dev): https://ocharo-desk-dev.tail1234.ts.net on node ocharo-desk-dev at 172.30.0.65",
                       report)
         compose = self.compose()
-        rendered = dict(re.findall(r"^  ([a-z-]+):\n    <<: \*site-node\n    hostname: \1\n.*\n"
+        rendered = dict(re.findall(r"^  ([a-z-]+):\n    <<: \*site-node\n    hostname: \1\n"
+                                   r"    env_file:\n      - \{ path: \.\./private/tailscale-sites\.env, required: false \}\n"
+                                   r"      - \{ path: \.\./private/sites/\1\.env, required: false \}\n.*\n"
                                    r"    volumes: \[\./sites/\1:/var/lib/tailscale, .*\]\n"
                                    r"    networks: \{ platform: \{ ipv4_address: ([0-9.]+) \} \}$", compose, re.M))
         self.assertEqual({name: node["address"] for name, node in nodes.items()}, rendered)

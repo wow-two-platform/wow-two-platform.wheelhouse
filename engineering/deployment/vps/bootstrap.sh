@@ -127,21 +127,28 @@ printf 'WHEELHOUSE_DEPLOY_UID=%s\nWHEELHOUSE_DEPLOY_GID=%s\n' \
 chown "$deploy_user:$deploy_group" "$deploy_root/platform/host.env"
 chmod 0600 "$deploy_root/platform/host.env"
 
-# Fixed addresses make forwarded-header trust explicit. An incompatible existing network is refused.
+# Fixed addresses make forwarded-header trust explicit. Docker hands out dynamic addresses only from .128/25, so a
+# container that starts first can never take Traefik's .2, PostgreSQL's .3 or a canary node's address. An existing
+# network without that range is repaired by repair-networks.sh in a maintenance step; any other difference is refused.
 # control: consoles, PostgreSQL, Traefik. platform: product and canary workloads, PostgreSQL, Traefik.
 ensure_network() {
-    local name=$1 subnet=$2 gateway=$3
+    local name=$1 subnet=$2 gateway=$3 ip_range=$4
     if ! docker network inspect "$name" >/dev/null 2>&1; then
-        docker network create --driver bridge --subnet "$subnet" --gateway "$gateway" "$name" >/dev/null
+        docker network create --driver bridge --subnet "$subnet" --ip-range "$ip_range" --gateway "$gateway" \
+            "$name" >/dev/null
     fi
     docker network inspect "$name" | python3 -c '
 import json, sys
-network, subnet, gateway = json.load(sys.stdin)[0], sys.argv[1], sys.argv[2]
-if network.get("Driver") != "bridge" or network.get("IPAM", {}).get("Config") != [{"Subnet": subnet, "Gateway": gateway}]:
+network, subnet, gateway, ip_range = json.load(sys.stdin)[0], *sys.argv[1:4]
+config = network.get("IPAM", {}).get("Config")
+if network.get("Driver") == "bridge" and config == [{"Subnet": subnet, "Gateway": gateway}]:
+    sys.exit("Existing " + network["Name"] + " network lets a dynamic container take a fixed address; run "
+             "repair-networks.sh in a maintenance step (vps.md, Network repair).")
+if network.get("Driver") != "bridge" or config != [{"Subnet": subnet, "IPRange": ip_range, "Gateway": gateway}]:
     sys.exit("Existing " + network.get("Name", "?") + " network differs; review addresses before proceeding.")
-' "$subnet" "$gateway"
+' "$subnet" "$gateway" "$ip_range"
 }
-ensure_network platform 172.30.0.0/24 172.30.0.1
-ensure_network control 172.30.1.0/24 172.30.1.1
+ensure_network platform 172.30.0.0/24 172.30.0.1 172.30.0.128/25
+ensure_network control 172.30.1.0/24 172.30.1.1 172.30.1.128/25
 docker compose version
 echo 'Host dependencies prepared. Complete private settings and access checks in vps.md before starting services.'

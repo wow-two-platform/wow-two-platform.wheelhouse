@@ -1,14 +1,25 @@
-// Tailnet access policy for the control-plane host and the products hosts. Paste it in the Tailscale admin console,
-// Access controls. Owner devices reach the consoles, admin SSH, the canary sites and the product sites; the only tagged
-// path is Wheelhouse's control host to a products host's SSH, which prod's runner deploys over.
+// Tailnet access policy for the control-plane host and the products hosts. Wheelhouse prod applies it after a reviewed
+// diff (Servers › Tailnet › Review policy): it fills the two `wheelhouse:` markers below from its inventory, with one
+// host alias and one control-path test per products host. Pasted by hand (Tailscale admin console, Access controls),
+// the markers stay comments and the policy works as it is.
+// Owner devices reach the consoles, admin SSH, the canary sites and the product sites; the only tagged path is
+// Wheelhouse's control host to a products host's SSH, which prod's runner deploys over.
 // Save it first: a machine can carry a tag only once this policy defines it. Then tag the machines (Machines › Edit
-// ACL tags), or join them with the tag (bootstrap-products.sh does, for tag:products).
+// ACL tags), or join them with the tag (Wheelhouse's enrollment and bootstrap-products.sh do, for tag:products).
 {
+  // tag:wheelhouse is the tag Wheelhouse prod's OAuth client carries; no machine does. It owns the tags its single-use
+  // auth keys give: tag:products to an enrolled host, tag:product-site to a site node.
   "tagOwners": {
     "tag:control": ["autogroup:admin"],
     "tag:canary": ["autogroup:admin"],
-    "tag:products": ["autogroup:admin"],
-    "tag:product-site": ["autogroup:admin"],
+    "tag:wheelhouse": ["autogroup:admin"],
+    "tag:products": ["autogroup:admin", "tag:wheelhouse"],
+    "tag:product-site": ["autogroup:admin", "tag:wheelhouse"],
+  },
+
+  // Each products host by its server ID in Wheelhouse, at its tailnet address.
+  "hosts": {
+    // wheelhouse:hosts
   },
 
   "grants": [
@@ -30,8 +41,9 @@
     {"action": "check", "src": ["autogroup:member"], "dst": ["autogroup:self"], "users": ["autogroup:nonroot", "root"]},
   ],
 
-  // Rejected on save if a canary, products or site node could reach the control host or each other, or if the
-  // control host could reach more of a products host than its SSH.
+  // Rejected on save if a canary, products or site node could reach the control host or each other, if the control
+  // host could reach more of a products host than its SSH, or if it lost the SSH of a products host Wheelhouse names.
+  // Wheelhouse also refuses to apply a policy whose tests no longer accept tag:control to tag:products:22.
   "tests": [
     {"src": "tag:canary", "deny": ["tag:control:443", "tag:control:8443", "tag:control:22", "tag:canary:443",
                                    "tag:products:22", "tag:product-site:443"]},
@@ -41,5 +53,6 @@
                                      "tag:products:22", "tag:product-site:443"]},
     {"src": "tag:product-site", "deny": ["tag:control:443", "tag:control:8443", "tag:control:22", "tag:canary:443",
                                          "tag:products:22", "tag:product-site:443"]},
+    // wheelhouse:tests
   ],
 }

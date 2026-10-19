@@ -5,8 +5,9 @@
 # rendered file. Keep `services:` the last top-level key: the renderer appends each site node beneath it.
 name: wheelhouse-products
 # One tailnet node per product site and environment gives each its own name and trusted certificate; Serve hands HTTPS
-# to Traefik's private entry point, which routes by that name. The auth key file is operator-placed and only read at
-# first login; each node keeps its state in platform/sites/<node>/.
+# to Traefik's private entry point, which routes by that name. A node's auth key is read only at first login: the
+# single-use key Wheelhouse minted for it (private/sites/<node>.env, rendered in per node) or, by hand, the operator's
+# reusable one. Each node keeps its state in platform/sites/<node>/.
 x-site-node: &site-node
   image: tailscale/tailscale:v1.104.1
   env_file:

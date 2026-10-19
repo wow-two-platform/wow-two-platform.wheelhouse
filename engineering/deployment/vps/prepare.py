@@ -182,10 +182,15 @@ def render_products_compose(root):
     if not top or top[-1] != "services:":
         raise Refused("The products Compose template must end with its services")
     nodes = sorted(site_nodes(root), key=lambda node: ipaddress.ip_address(node["address"]))
+    # Each node also reads its own private/sites/<node>.env: the single-use key Wheelhouse minted for it, written just
+    # before the node first starts and removed once it has. The shared file is the hand-run kit's reusable key.
     blocks = "".join(
         "  " + node["name"] + ":\n"
         "    <<: *site-node\n"
         "    hostname: " + node["name"] + "\n"
+        "    env_file:\n"
+        "      - { path: ../private/tailscale-sites.env, required: false }\n"
+        "      - { path: ../private/sites/" + node["name"] + ".env, required: false }\n"
         "    environment: { <<: *site-env, TS_HOSTNAME: " + node["name"] + " }\n"
         "    volumes: [./sites/" + node["name"] + ":/var/lib/tailscale, ./tailscale-serve.json:/config/serve.json:ro]\n"
         "    networks: { platform: { ipv4_address: " + node["address"] + " } }\n" for node in nodes)

@@ -9,6 +9,9 @@ set -euo pipefail
 umask 077
 
 deploy_user=wheelhouse-deploy
+# The keys the administrator gets: root's authorized_keys by default. Wheelhouse's enrollment (enroll-products.sh) names
+# the owner's own keys instead, so its one-time key never reaches the administrator.
+admin_keys_source=${admin_keys_source:-}
 
 # Writes stdin to a file through a temporary copy beside it: Ubuntu 26.04's uutils install cannot replace an
 # existing file from /dev/stdin ("No such file or directory").
@@ -74,7 +77,11 @@ create_admin() {
     local root_home root_keys home group relation=missing password_state
     have_sudo || die 'Install sudo first (apt-get install sudo): the administrator reaches root through it.'
     root_home=$(getent passwd root | cut -d: -f6)
-    root_keys=$root_home/.ssh/authorized_keys
+    root_keys=${admin_keys_source:-$root_home/.ssh/authorized_keys}
+    if [[ -n $admin_keys_source ]]; then
+        [[ -f $root_keys && ! -L $root_keys && -n $(key_lines "$root_keys") ]] || die \
+            "No administrator key was given: add your SSH public key to the enrollment in Wheelhouse."
+    fi
     [[ -f $root_keys && ! -L $root_keys && -n $(key_lines "$root_keys") ]] || die \
         "Root has no SSH key in $root_keys. From your machine run: ssh-copy-id root@<public-ip>. The administrator copies root's keys, and password sign-in is turned off later."
 
