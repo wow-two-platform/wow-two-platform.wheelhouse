@@ -26,12 +26,11 @@ import {
 import { scopeOf } from '@/application/navigation';
 import { usePortfolio } from '@/application/portfolio/usePortfolio';
 import { useSidebarCollapsed } from '@/application/preferences';
-import { useApiConnection, useConsolePeer } from '@/application/system';
+import { useApiConnection } from '@/application/system';
 import {
   BrandMark,
   BrandWordmark,
   ConsoleNav,
-  EnvironmentSwitch,
   PhoneNav,
   ProfileMenu,
   ScopeBar,
@@ -52,7 +51,6 @@ const emit = defineEmits<{ signOut: [] }>();
 defineSlots<{ default(): unknown }>();
 const route = useRoute();
 const system = useApiConnection();
-const peer = useConsolePeer();
 const portfolio = usePortfolio();
 const collapsed = useSidebarCollapsed();
 const breakpoint = useBreakpoint(TailwindBreakpoints);
@@ -63,14 +61,6 @@ const consoleVersion = __APP_VERSION__;
 /** A numbered build shows as `v0.3.4`; a local build shows `dev`. @internal */
 const versionLabel = /^\d/.test(consoleVersion) ? `v${consoleVersion}` : consoleVersion;
 const main = useTemplateRef<{ el: HTMLElement | null }>('main');
-
-/**
- * The environment tag as a switch to the other console: only once the host names that console and this one's
- * environment is known. Without both, the tag stays the version label it always was. @internal
- */
-const environmentSwitch = computed(() =>
-  peer.value && system.environment.value ? { environment: system.environment.value, peer: peer.value } : null,
-);
 
 /** At least `lg`: the sidebar sits beside the content and can collapse. */
 const isDesktop = computed(() => breakpoint.value === 'lg' || breakpoint.value === 'xl' || breakpoint.value === '2xl');
@@ -152,15 +142,8 @@ watch(isDesktop, (desktop) => {
             <BrandMark v-if="isRail" :size="28" />
             <BrandWordmark v-else :height="22" />
           </RouterLink>
-          <EnvironmentSwitch
-            v-if="!isRail && environmentSwitch"
-            :environment="environmentSwitch.environment"
-            :peer="environmentSwitch.peer"
-            :full-path="route.fullPath"
-            :version="versionLabel"
-          />
           <span
-            v-else-if="!isRail"
+            v-if="!isRail"
             class="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground"
             :title="`Console ${consoleVersion}`"
             >{{ versionLabel }}</span
@@ -182,15 +165,6 @@ watch(isDesktop, (desktop) => {
             @click="toggleSidebar"
             ><PanelLeft :size="18"
           /></Button>
-          <!-- Where the brand cell shows only the mark — phones, tablets and the collapsed sidebar — the switch sits in
-               the top bar, so it is never out of reach. -->
-          <EnvironmentSwitch
-            v-if="isRail && environmentSwitch"
-            :environment="environmentSwitch.environment"
-            :peer="environmentSwitch.peer"
-            :full-path="route.fullPath"
-            :version="versionLabel"
-          />
           <ScopeBar :crumbs="crumbs" />
           <Badge
             v-if="system.localRig.value"

@@ -56,7 +56,7 @@ public static class AuthConfigurationExtensions
         builder.Services.AddCookieAuthentication(o =>
         {
             o.Mode = AuthChallengeMode.Api;
-            o.CookieName = ConsoleSettings.SessionCookieName(builder.Configuration[Configurations.LocalRun.DeployEnvironmentKey]);
+            o.CookieName = SessionCookies.SessionCookieName(builder.Configuration[Configurations.LocalRun.DeployEnvironmentKey]);
             o.ExpireTimeSpan = TimeSpan.FromHours(8);
         });
 

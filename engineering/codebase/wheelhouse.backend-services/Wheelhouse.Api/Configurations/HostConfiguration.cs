@@ -19,7 +19,6 @@ public static class HostConfiguration
         builder
             .AddPersistenceLayer()
             .AddInfrastructureLayer()
-            .AddConsoleSettings()
             .AddApplicationLayer()
             .AddAuthentication()
             .AddApiServices()
