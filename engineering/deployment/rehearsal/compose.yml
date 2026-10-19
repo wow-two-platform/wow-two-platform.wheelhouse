@@ -105,7 +105,7 @@ services:
       Deployment__RehearsalState: ${REHEARSAL_STATE}
     volumes:
       - ${REHEARSAL_STATE}/inventory:/data/deployments
-      - ${REHEARSAL_STATE}/console/appsettings.Local.json:/app/appsettings.Local.json:ro
+      - ${REHEARSAL_STATE}/console/appsettings.Target.json:/app/appsettings.Target.json:ro
       - console-keys:/data/keys
     ports:
       - "127.0.0.1:18210:8080"
@@ -129,7 +129,7 @@ services:
       interval: 2s
       retries: 30
     restart: unless-stopped
-  # The database for Wheelhouse run from an IDE (appsettings.Machine.json); loopback-only dev credentials.
+  # The database for Wheelhouse run from an IDE (appsettings.Local.json); loopback-only dev credentials.
   dev-db:
     image: postgres:16-alpine
     profiles: [dev]

@@ -179,7 +179,7 @@ docker compose -p wheelhouse-local -f engineering/deployment/docker-compose.yml 
 ```
 
 This Compose file is a local acceptance stack. Its PostgreSQL database and cookie keys use project-scoped volumes.
-The API binds to loopback. Configure GitHub credentials through a protected `appsettings.Local.json` mount for real sign-in.
+The API binds to loopback. Configure GitHub credentials through a protected `/app/appsettings.Target.json` mount for real sign-in.
 Production refuses an empty `Identity:AllowedGitHubLogins`.
 The local HTTP endpoint is not evidence of real HTTPS/OAuth readiness.
 
@@ -513,9 +513,9 @@ python3 rehearse.py down --volumes
 ### From an IDE
 
 `python3 rehearse.py dev` starts the server plus a loopback database (`127.0.0.1:15432`) and, when it is missing,
-writes `Wheelhouse.Api/appsettings.Machine.json` (gitignored, never in the image) pointing at it, with
+writes `Wheelhouse.Api/appsettings.Local.json` (gitignored, never in the image) pointing at it, with
 `Deployment:Rehearsal` = `host` and the runner paths resolved from the project folder. Only a run whose launch profile
-sets `MACHINE_SETTINGS=true` reads that file; `appsettings.Development.json` holds no local value, since deployed dev
+sets `LOCAL_SETTINGS=true` reads that file; `appsettings.Development.json` holds no local value, since deployed dev
 reads it too. Run `Wheelhouse.Api` with the `https` launch profile and open `https://localhost:8210`; the header's
 `Local server` badge marks an instance that deploys to the local server, not real hosts. Sign-in uses the API
 project's user-secrets (`Identity:GitHub`, callback `https://localhost:8210/api/identity/callback`).
@@ -538,7 +538,7 @@ One-time sign-in setup, on the GitHub account that will operate Wheelhouse:
 
 1. GitHub → Settings → Developer settings → OAuth Apps → New OAuth App.
 2. Homepage `http://localhost:18210`; callback `http://localhost:18210/api/identity/callback`.
-3. Put the client id and a new client secret in `rehearsal/state/console/appsettings.Local.json` (`Identity:GitHub`).
+3. Put the client id and a new client secret in `rehearsal/state/console/appsettings.Target.json` (`Identity:GitHub`).
 4. Check `Identity:AllowedGitHubLogins` names that account, then run `python3 rehearse.py console` again.
 
 Use a Chromium-based browser: it accepts the `Secure` session cookie on `http://localhost`.

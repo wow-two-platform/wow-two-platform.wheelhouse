@@ -46,9 +46,13 @@ INGRESS = "http://{site}-" + PRODUCT + ".{environment}.localhost:18080"
 REGISTRY = "localhost:15000"
 VAULT_IMAGE = "secrets-vault:local"
 CONSOLE = STATE / "console"
-# What an IDE run of Wheelhouse.Api reads on this machine only: the launch profile sets MACHINE_SETTINGS=true. Never
-# appsettings.Development.json, which a deployed dev console reads too.
-MACHINE_SETTINGS = HERE.parents[1] / "codebase" / "wheelhouse.backend-services" / "Wheelhouse.Api" / "appsettings.Machine.json"
+# What an IDE run of Wheelhouse.Api reads on this machine only: the launch profile sets LOCAL_SETTINGS=true. Never
+# appsettings.Development.json, which a deployed dev console reads too. Its name before 2026-10-19 was
+# appsettings.Machine.json; `migrate` renames an older copy.
+API = HERE.parents[1] / "codebase" / "wheelhouse.backend-services" / "Wheelhouse.Api"
+LOCAL_SETTINGS = API / "appsettings.Local.json"
+# The containerized console's settings, mounted as a deployed target's are (appsettings.Target.json).
+CONSOLE_SETTINGS = CONSOLE / "appsettings.Target.json"
 CONSOLE_URL = "http://localhost:18210"
 # The GitHub login that may sign in to the local console; change it in the generated settings if needed.
 CONSOLE_ADMIN = os.environ.get("WHEELHOUSE_ADMIN", "sulton-max")
@@ -97,10 +101,15 @@ def require_environment(name):
 
 
 def migrate():
-    """Moves inventory written before environments existed, when the rig was one `rehearsal` target."""
+    """Moves inventory written before environments existed, when the rig was one `rehearsal` target, and settings
+    files written before the target's file became appsettings.Target.json and the machine's appsettings.Local.json."""
     for old, new in ((INVENTORY / "ssh" / "rehearsal", INVENTORY / "ssh" / "local"),
                      (INVENTORY / "vaults" / "rehearsal-vault", INVENTORY / "vaults" / "local-vault")):
         if old.is_dir() and not new.exists():
+            old.rename(new)
+    for old, new in ((CONSOLE / "appsettings.Local.json", CONSOLE_SETTINGS),
+                     (API / "appsettings.Machine.json", LOCAL_SETTINGS)):
+        if old.is_file() and not new.exists():
             old.rename(new)
 
 
@@ -136,7 +145,7 @@ def console_files():
     password = CONSOLE / "database-password"
     if not password.exists():
         private_file(password, secrets.token_hex(24))
-    settings = CONSOLE / "appsettings.Local.json"
+    settings = CONSOLE_SETTINGS
     if not settings.exists():
         private_file(settings, json.dumps({
             "ConnectionStrings": {"Wheelhouse": "Host=console-db;Database=wheelhouse;Username=wheelhouse;Password="
@@ -149,17 +158,17 @@ def console_files():
 def machine_settings():
     """Points an IDE run at the local server: its database on 127.0.0.1:15432 and the runner over this checkout, paths
     relative to the API project. Written once; an edited file is left as it is."""
-    if MACHINE_SETTINGS.exists():
+    if LOCAL_SETTINGS.exists():
         return
-    MACHINE_SETTINGS.write_text(json.dumps({
-        "//Machine": "This machine's settings for an IDE run (the https launch profile sets MACHINE_SETTINGS=true); "
+    LOCAL_SETTINGS.write_text(json.dumps({
+        "//Local": "This machine's settings for an IDE run (the https launch profile sets LOCAL_SETTINGS=true); "
                      "gitignored and never in the image. Written by `python3 rehearse.py dev`.",
         "ConnectionStrings": {"Wheelhouse": "Host=localhost;Port=15432;Database=wheelhouse;Username=wheelhouse;"
                                             "Password=wheelhouse"},
         "Deployment": {"Rehearsal": "host", "Root": "../../../deployment/rehearsal/state/inventory",
                        "TransportPath": "../../wheelhouse.runner-services/transport.py"},
     }, indent=2) + "\n")
-    print("Wrote " + str(MACHINE_SETTINGS))
+    print("Wrote " + str(LOCAL_SETTINGS))
 
 
 def databases():
@@ -210,12 +219,12 @@ def up(console=False, dev=False):
                                                                        + " to add one)"))
     if console:
         print("Console: " + CONSOLE_URL + (" — sign in with GitHub" if signin else
-              " — sign-in is off until " + str(CONSOLE / "appsettings.Local.json") + " holds a GitHub OAuth app"
+              " — sign-in is off until " + str(CONSOLE_SETTINGS) + " holds a GitHub OAuth app"
               " (callback " + CONSOLE_URL + "/api/identity/callback)"))
     if dev:
         machine_settings()
         print("IDE: run Wheelhouse.Api with the `https` launch profile, then open https://localhost:8210"
-              " (database 127.0.0.1:15432 from appsettings.Machine.json; sign-in uses the API project's user-secrets)")
+              " (database 127.0.0.1:15432 from appsettings.Local.json; sign-in uses the API project's user-secrets)")
 
 
 def yaml_python():

@@ -4,13 +4,15 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Wheelhouse.Api.Auth;
 using Wheelhouse.Api.Configurations;
+using WoW.Two.Sdk.Beta.Be.Foundation.Configuration;
 
 namespace Wheelhouse.Tests.E2E.Tests;
 
 /// <summary>
 /// The host's local-run rules: deployed dev runs as Development, so only a local run — Development without the runner's
-/// <c>DEPLOY_ENVIRONMENT</c> — reads <c>appsettings.Machine.json</c> (and only when its launch profile asks) or boots with
-/// an open allowlist. Builds bare hosts over a throwaway content root; no database.
+/// <c>DEPLOY_ENVIRONMENT</c> — reads this machine's <c>appsettings.Local.json</c> (and only when its launch profile
+/// asks) or boots with an open allowlist; a deployed host reads the <c>appsettings.Target.json</c> its bundle mounts.
+/// Builds bare hosts over a throwaway content root; no database.
 /// </summary>
 public sealed class LocalRunE2ETests : IDisposable
 {
@@ -20,14 +22,14 @@ public sealed class LocalRunE2ETests : IDisposable
     {
         File.WriteAllText(Path.Combine(_root.FullName, "appsettings.json"), """{ "Probe": { "Shared": "base", "Machine": "base" } }""");
         File.WriteAllText(Path.Combine(_root.FullName, "appsettings.Development.json"), """{ "Probe": { "Machine": "development" } }""");
-        File.WriteAllText(Path.Combine(_root.FullName, LocalRun.MachineSettingsFile),
+        File.WriteAllText(Path.Combine(_root.FullName, SettingsFileExtensions.LocalFile),
             """{ "Probe": { "Machine": "machine", "Override": "machine" } }""");
     }
 
     [Fact]
-    public void MachineSettings_ShouldApplyAfterTheEnvironmentFile_OnALocalRunWhoseProfileAsks()
+    public void LocalSettings_ShouldApplyAfterTheEnvironmentFile_OnALocalRunWhoseProfileAsks()
     {
-        var builder = Builder(new() { ["MACHINE_SETTINGS"] = "true", ["Probe:Override"] = "explicit" });
+        var builder = Builder(new() { ["LOCAL_SETTINGS"] = "true", ["Probe:Override"] = "explicit" });
         builder.AddSettings();
 
         builder.Configuration["Probe:Machine"].Should().Be("machine", "the machine file follows appsettings.Development.json");
@@ -39,16 +41,30 @@ public sealed class LocalRunE2ETests : IDisposable
     [InlineData(null, "Development")]   // a test host or a bare run: the launch profile never asked
     [InlineData("dev", "Development")]  // deployed dev runs as Development; the runner names it
     [InlineData(null, "Production")]
-    public void MachineSettings_ShouldStayUnread_OutsideALocalRunThatAsks(string? deployed, string environment)
+    public void LocalSettings_ShouldStayUnread_OutsideALocalRunThatAsks(string? deployed, string environment)
     {
+        File.WriteAllText(Path.Combine(_root.FullName, SettingsFileExtensions.TargetFile), """{ "Probe": { "Target": "target" } }""");
         var settings = new Dictionary<string, string?> { ["DEPLOY_ENVIRONMENT"] = deployed };
         if (deployed is not null || environment == "Production")
-            settings["MACHINE_SETTINGS"] = "true";
+            settings["LOCAL_SETTINGS"] = "true";
         var builder = Builder(settings, environment);
         builder.AddSettings();
 
         builder.Configuration["Probe:Machine"].Should().Be(environment == "Development" ? "development" : "base");
         builder.Configuration["Probe:Override"].Should().BeNull();
+        builder.Configuration["Probe:Target"].Should().Be("target", "a target's mounted file applies on every run");
+    }
+
+    [Fact]
+    public void TargetSettings_ShouldApply_OnADeployedConsole()
+    {
+        File.WriteAllText(Path.Combine(_root.FullName, SettingsFileExtensions.TargetFile),
+            """{ "Probe": { "Machine": "target" }, "Deployment": { "TrustedProxies": [ "10.0.0.2" ] } }""");
+        var builder = Builder(new() { ["DEPLOY_ENVIRONMENT"] = "dev" });
+        builder.AddSettings();
+
+        builder.Configuration["Probe:Machine"].Should().Be("target");
+        builder.Configuration["Deployment:TrustedProxies:0"].Should().Be("10.0.0.2", "AddPlatformDefaults reads it next");
     }
 
     [Theory]

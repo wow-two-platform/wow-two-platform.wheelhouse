@@ -9,6 +9,7 @@ using WoW.Two.Sdk.Beta.Be.Caching.Hybrid;
 using WoW.Two.Sdk.Beta.Be.Data;
 using WoW.Two.Sdk.Beta.Be.Data.Migrations.Bespoke;
 using WoW.Two.Sdk.Beta.Be.Foundation.Audit;
+using WoW.Two.Sdk.Beta.Be.Foundation.Configuration;
 using WoW.Two.Sdk.Beta.Be.Foundation.Options;
 using WoW.Two.Sdk.Beta.Be.Foundation.Time;
 using WoW.Two.Sdk.Beta.Be.Foundation.Validation;
@@ -36,14 +37,13 @@ public static partial class HostConfigurationExtensions
     /// <summary>Holds the header every owner write carries its action name in; the console sends it.</summary>
     public const string ActionHeaderName = "X-Wheelhouse-Action";
 
-    /// <summary>Loads this machine's settings on a local run, then the optional settings file a deployed target mounts
-    /// (<c>appsettings.Local.json</c>, gitignored), and keeps the cookie key ring on disk.</summary>
+    /// <summary>Loads the settings file a deployed target mounts (<c>appsettings.Target.json</c>) and, on a local run, this
+    /// machine's own (<c>appsettings.Local.json</c>, gitignored), and keeps the cookie key ring on disk.</summary>
     public static WebApplicationBuilder AddSettings(this WebApplicationBuilder builder)
     {
-        // The local rig's database, runner paths and switch: never appsettings.Development.json, which deployed dev reads.
-        if (LocalRun.ReadsMachineSettings(builder.Environment, builder.Configuration))
-            LocalRun.AddMachineSettings(builder.Configuration, builder.Environment);
-        builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
+        // Before anything reads settings. The local rig's database, runner paths and switch sit in the machine's file,
+        // never appsettings.Development.json, which deployed dev reads.
+        builder.AddSettingsFiles();
 
         // Sign-in survives restarts and container replacement: keys live in DataProtection:KeyPath (the image sets
         // /data/keys); startup fails outside Development without it.

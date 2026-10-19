@@ -12,9 +12,10 @@ nonempty owner allowlist.
 
 Deployed dev runs as .NET `Development` and prod as `Production` (`dotnetEnvironment: true` in `deploy.yml`), so
 `appsettings.Development.json` holds defaults only. The IDE run's rig wiring — database `127.0.0.1:15432`, runner
-paths, `Deployment:Rehearsal` — lives in the gitignored `appsettings.Machine.json`, which the host reads right after
-`appsettings.Development.json` only on a local run whose launch profile sets `MACHINE_SETTINGS=true` (`LocalRun`):
-tests and containers never read it. OpenAPI and an empty allowlist are local-run only, never `Development` alone.
+paths, `Deployment:Rehearsal` — lives in the gitignored `appsettings.Local.json`, which the host reads right after
+`appsettings.Development.json` only on a local run whose launch profile sets `LOCAL_SETTINGS=true` (the be sdk's
+`AddSettingsFiles`): tests and containers never read it. A deployed console reads the `appsettings.Target.json` its
+release bundle mounts instead. OpenAPI and an empty allowlist are local-run only, never `Development` alone.
 
 ```mermaid
 flowchart LR

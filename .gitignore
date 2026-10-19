@@ -9,9 +9,11 @@ obj/
 *.db-shm
 *.db-wal
 
-# ---- Local settings overrides ----
-appsettings.Local.json
+# ---- Settings files that never reach git ----
 # This machine's settings, read by an IDE run only (rehearse.py dev writes Wheelhouse's)
+appsettings.Local.json
+# A target's settings, mounted at deploy; and the machine file's retired name
+appsettings.Target.json
 appsettings.Machine.json
 
 # ---- Node / frontend ----
