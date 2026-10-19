@@ -58,7 +58,7 @@ class SnapshotDocker:
     def assertions(arguments):
         assert "--network" in arguments and arguments[arguments.index("--network") + 1] == "none"
         assert any(item.endswith(":/volume:ro") for item in arguments)
-        assert runner.SQLITE_HEADER in arguments[-1]
+        assert runner.SQLITE_HEADER in arguments[-1] and "-name '*.litedb'" in arguments[-1]
 
     def run(self, arguments, step, secrets=None, timeout=1800):
         self.events.append(("run", step, arguments, dict(secrets or {})))

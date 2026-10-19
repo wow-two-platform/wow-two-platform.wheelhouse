@@ -70,8 +70,10 @@ REGISTRY_HOST = re.compile(r"[a-z0-9][a-z0-9.-]{0,252}(?::[0-9]{1,5})?")
 REGISTRY_USER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}")
 # How a pull signed in, as a job record names it: the GitHub App's installation token, or the control host's token file.
 CREDENTIALS = {"installation": "the GitHub App's token", "file": "the control host's read-only token"}
-# The first bytes of every SQLite database file.
+# The first bytes of every SQLite database file, and the names other embedded file databases give their files (LiteDB,
+# LMDB, DuckDB, Realm, WiredTiger, Berkeley DB): a volume holding one is archived with its writers paused.
 SQLITE_HEADER = "SQLite format 3"
+FILE_DATABASES = ("*.db", "*.db3", "*.sqlite", "*.sqlite3", "*.litedb", "*.mdb", "*.duckdb", "*.realm", "*.wt", "*.bdb")
 # Pre-deploy snapshots on prod: the image that runs pg_dump and tar (the platform's own PostgreSQL image, so nothing new
 # is pulled), and how many a target keeps. A target's `snapshot` entry may name others.
 SNAPSHOT_IMAGE = "postgres:16-alpine"
@@ -837,9 +839,12 @@ def take_snapshot(base, job_id, target, manifest, compose, project, docker):
 
 
 def holds_file_database(docker, volume, image):
-    """Whether a named volume holds a SQLite database: a file that starts with SQLite's header, read in a throwaway
-    container without a network. Reads 15 bytes per file, never a file's contents."""
-    script = ('find /volume -type f -size +99c 2>/dev/null | while IFS= read -r file; do '
+    """Whether a named volume holds a file database: a file named as one (FILE_DATABASES) or starting with SQLite's
+    header, whatever its name; read in a throwaway container without a network. Reads 15 bytes per file at most, never a
+    file's contents."""
+    names = " -o ".join("-name '" + pattern + "'" for pattern in FILE_DATABASES)
+    script = ('if [ -n "$(find /volume -type f \\( ' + names + ' \\) 2>/dev/null | head -n 1)" ]; then echo found; exit 0; fi; '
+              'find /volume -type f -size +99c 2>/dev/null | while IFS= read -r file; do '
               'if [ "$(head -c 15 "$file" 2>/dev/null)" = "' + SQLITE_HEADER + '" ]; then echo found; break; fi; done')
     output = docker.execute(["docker", "run", "--rm", "--network", "none", "-v", volume + ":/volume:ro", image,
                              "sh", "-c", script], "inspect " + volume, timeout=120)
