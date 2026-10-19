@@ -1,3 +1,4 @@
+import importlib.util
 import json
 from pathlib import Path
 import tempfile
@@ -150,6 +151,23 @@ class CiRemoteTests(unittest.TestCase):
         with self.assertRaisesRegex(runner.Rejected, 'not succeeded on wheelhouse-dev'):
             ci_remote.proven(self.target_path, 'v0.3.7')
 
+    def test_promotion_facts_name_the_newest_dev_proven_release_by_version_and_what_prod_runs(self):
+        dev_jobs = Path(self.target['root']) / 'wheelhouse-dev/jobs'
+        for job, release, status in (('a', 'v0.5.9', 'succeeded'), ('b', 'v0.5.10', 'succeeded'),
+                                     ('c', 'v0.5.11', 'rolled_back'), ('d', 'sha-abcdef0', 'succeeded'),
+                                     ('e', 'v0.4.7', 'succeeded')):
+            runner.write_json(dev_jobs / (job + '.json'), {'id': job, 'release': release, 'status': status,
+                                                           'completedAt': '2026-10-1' + str(len(job)) + 'T00:00:00'})
+        prod = {**self.target, 'environment': 'prod'}
+        prod_path = self.root / 'prod.json'
+        prod_path.write_text(json.dumps(prod))
+        runner.write_json(Path(prod['root']) / 'wheelhouse-prod/current.json', {'id': 'p', 'release': 'v0.3.9'})
+        facts = ci_remote.promotion_facts(prod_path, self.target_path)
+        self.assertEqual(('v0.5.10', 'b', 'v0.3.9'),
+                         (facts['newestProven']['release'], facts['newestProven']['job'], facts['prodRelease']))
+        with self.assertRaisesRegex(runner.Rejected, 'only wheelhouse-dev or wheelhouse-prod'):
+            ci_remote.promotion_facts(self.target_path, self.target_path)
+
     def test_prod_launch_uses_its_own_project_and_receipt(self):
         prod = {**self.target, 'environment': 'prod'}
         prod_path = self.root / 'prod.json'
@@ -205,30 +223,144 @@ class CiDriverTests(unittest.TestCase):
                'GITHUB_EVENT_NAME': 'workflow_dispatch', 'PROMOTE_RELEASE': 'v0.3.6', 'GITHUB_SHA': 'a' * 40,
                'GITHUB_RUN_ID': '7', 'GITHUB_RUN_ATTEMPT': '1', 'GH_TOKEN': 'token', 'DEV_SSH_HOST': 'host',
                'DEV_SSH_USER': 'user', 'DEV_SSH_KEY': 'key', 'DEV_SSH_KNOWN_HOSTS': 'known'}
+        result, resolve, commands, summary = self.promote(env, {'newestProven': {'release': 'v0.3.7', 'job': 'j'},
+                                                               'prodRelease': 'v0.3.5'})
+        self.assertEqual('v0.3.6', resolve.call_args.args[1], 'a typed release wins over the newest dev-proven one')
+        self.assertIn('promotion', commands[1])
+        self.assertIn('proven', commands[2])
+        self.assertIn('wheelhouse-dev.json', commands[2])
+        self.assertIn('wheelhouse-prod.json', commands[3])
+        self.assertIn('--environment prod', commands[3])
+        self.assertEqual('prod', result['environment'])
+        self.assertIn('Promoting `v0.3.6` to wheelhouse-prod: as given; prod runs v0.3.5.', summary)
+
+    def promote(self, env, facts, release=None):
         ssh = Mock()
-        ssh.run.side_effect = ['', '', json.dumps({'id': 'job', 'resumed': False}),
+        ssh.run.side_effect = ['', json.dumps(facts), '', json.dumps({'id': 'job', 'resumed': False}),
                                json.dumps({'id': 'job', 'status': 'succeeded', 'completedAt': 'now'}),
                                json.dumps({'id': 'job', 'status': 'succeeded', 'verified': True})]
-        manifest = {'release': 'v0.3.6', 'sourceCommit': 'b' * 40}
-        with tempfile.TemporaryDirectory() as directory, patch.dict(ci_deploy.os.environ, env, clear=True), \
-                patch.object(ci_deploy.ci_artifacts, 'resolve_release', return_value=manifest) as resolve, \
-                patch.object(ci_deploy, 'Ssh', return_value=ssh), \
-                patch.object(ci_deploy, 'is_current') as current:
-            result = ci_deploy.deploy(Path(directory))
-        resolve.assert_called_once()
-        current.assert_not_called()
-        commands = [call.args[0] for call in ssh.run.call_args_list]
-        self.assertIn('proven', commands[1])
-        self.assertIn('wheelhouse-dev.json', commands[1])
-        self.assertIn('wheelhouse-prod.json', commands[2])
-        self.assertIn('--environment prod', commands[2])
-        self.assertEqual('prod', result['environment'])
+        with tempfile.TemporaryDirectory() as directory:
+            summary = Path(directory) / 'summary.md'
+            env = {**env, 'GITHUB_STEP_SUMMARY': str(summary)}
+            with patch.dict(ci_deploy.os.environ, env, clear=True), \
+                    patch.object(ci_deploy.ci_artifacts, 'resolve_release',
+                                 side_effect=lambda repository, tag, bundle: {'release': tag,
+                                                                              'sourceCommit': 'b' * 40}) as resolve, \
+                    patch.object(ci_deploy, 'Ssh', return_value=ssh), \
+                    patch.object(ci_deploy, 'is_current') as current:
+                result = ci_deploy.deploy(Path(directory))
+            current.assert_not_called()
+            return result, resolve, [call.args[0] for call in ssh.run.call_args_list], summary.read_text()
+
+    def test_an_empty_promotion_takes_the_newest_dev_proven_release_and_says_why(self):
+        env = {'GITHUB_REPOSITORY': 'wow-two-platform/wow-two-platform.wheelhouse', 'GITHUB_REF': 'refs/heads/main',
+               'GITHUB_EVENT_NAME': 'workflow_dispatch', 'PROMOTE': 'true', 'PROMOTE_RELEASE': '',
+               'GITHUB_SHA': 'a' * 40, 'GITHUB_RUN_ID': '7', 'GITHUB_RUN_ATTEMPT': '1', 'GH_TOKEN': 'token',
+               'DEV_SSH_HOST': 'host', 'DEV_SSH_USER': 'user', 'DEV_SSH_KEY': 'key', 'DEV_SSH_KNOWN_HOSTS': 'known'}
+        result, resolve, _, summary = self.promote(env, {
+            'newestProven': {'release': 'v0.5.21', 'job': 'j', 'completedAt': '2026-10-19T10:00:00+00:00'},
+            'prodRelease': 'v0.3.9'})
+        self.assertEqual('v0.5.21', resolve.call_args.args[1])
+        self.assertIn('Promoting `v0.5.21` to wheelhouse-prod: no release was given, so the newest release that'
+                      ' succeeded on wheelhouse-dev (2026-10-19T10:00:00+00:00); prod runs v0.3.9.', summary)
+
+    def test_a_promotion_choice_refuses_an_older_release_unless_it_is_a_rollback(self):
+        facts = {'newestProven': {'release': 'v0.5.21', 'completedAt': 'then'}, 'prodRelease': 'v0.5.20'}
+        for typed, rollback, expected in (('', False, 'v0.5.21'), ('v0.5.21', False, 'v0.5.21'),
+                                          ('v0.5.20', False, 'v0.5.20'), ('v0.5.19', True, 'v0.5.19'),
+                                          ('v0.10.0', False, 'v0.10.0')):
+            with self.subTest(typed=typed, rollback=rollback):
+                self.assertEqual(expected, ci_deploy.choose_promotion(typed, rollback, facts)[0])
+        self.assertIn('rollback from v0.5.20', ci_deploy.choose_promotion('v0.4.7', True, facts)[1])
+        self.assertIn('verified without a restart', ci_deploy.choose_promotion('v0.5.20', False, facts)[1])
+        for typed, rollback, refusal in (('v0.4.7', False, 'older than v0.5.20, which prod runs; set rollback'),
+                                         ('v0.5.9', False, 'older than v0.5.20'),
+                                         ('', True, 'Name the release to roll back to'),
+                                         ('latest', False, 'published release tag')):
+            with self.subTest(typed=typed), self.assertRaisesRegex(runner.Rejected, refusal):
+                ci_deploy.choose_promotion(typed, rollback, facts)
+        with self.assertRaisesRegex(runner.Rejected, 'No release has succeeded on wheelhouse-dev'):
+            ci_deploy.choose_promotion('', False, {'newestProven': None, 'prodRelease': 'v0.5.20'})
+        with self.assertRaisesRegex(runner.Rejected, 'Prod runs v0.6.0, newer than v0.5.21'):
+            ci_deploy.choose_promotion('', False, {**facts, 'prodRelease': 'v0.6.0'})
+        # A first promotion, onto a prod that runs nothing yet.
+        self.assertEqual('v0.4.7', ci_deploy.choose_promotion('v0.4.7', False, {'newestProven': None,
+                                                                                'prodRelease': None})[0])
+
+    def test_the_switch_turns_ci_deploys_off_only_when_it_says_true(self):
+        for value, off in (('true', True), (' TRUE ', True), ('false', False), ('', False), ('1', False), (None, False)):
+            with self.subTest(value=value):
+                environ = {} if value is None else {ci_deploy.SWITCH: value}
+                self.assertEqual(off, ci_deploy.self_deploys(environ))
+
+    def test_a_self_deploying_wheelhouse_refuses_ci_before_any_download_or_ssh(self):
+        environ = {'GITHUB_SHA': 'c' * 40, 'GITHUB_RUN_ID': '42', 'GITHUB_RUN_ATTEMPT': '1',
+                   'GITHUB_REPOSITORY': ci_deploy.REPOSITORY, 'GITHUB_REF': 'refs/heads/main',
+                   'GITHUB_EVENT_NAME': 'push', 'GH_TOKEN': 'token', ci_deploy.SWITCH: 'true'}
+        for promotion in ('', 'v0.5.20'):
+            with self.subTest(promotion=promotion), patch.dict('os.environ', {**environ, 'PROMOTE_RELEASE': promotion}), \
+                    patch.object(ci_deploy, 'is_current') as current, patch.object(ci_deploy, 'Ssh') as ssh, \
+                    patch.object(ci_deploy.ci_artifacts, 'resolve_release') as resolve, \
+                    tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(runner.Rejected, 'Wheelhouse deploys itself'):
+                    ci_deploy.deploy(Path(directory))
+                current.assert_not_called()
+                ssh.assert_not_called()
+                resolve.assert_not_called()
 
     def test_ci_credentials_are_private_files(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'key'
             ci_deploy.write_private(path, 'PRIVATE')
             self.assertEqual(0o600, path.stat().st_mode & 0o777)
+
+
+WORKFLOWS = Path(__file__).resolve().parents[3] / '.github' / 'workflows'
+
+
+@unittest.skipUnless(importlib.util.find_spec('yaml'), 'Reading the workflows needs PyYAML (CI installs it)')
+class FallbackSwitchWorkflowTests(unittest.TestCase):
+    """CI's deploy path stays a one-switch fallback: every job that reaches the host runs only while the repository
+    variable is not `true` and hands it to ci_deploy.py, and its twin job runs only while it is."""
+    ON = "vars.WHEELHOUSE_SELF_DEPLOY != 'true'"
+    OFF = "vars.WHEELHOUSE_SELF_DEPLOY == 'true'"
+
+    def jobs(self, name):
+        import yaml
+        return yaml.safe_load((WORKFLOWS / name).read_text())['jobs']
+
+    def test_each_host_reaching_job_is_gated_and_passes_the_switch_on(self):
+        for name, job in (('deploy-dev.yml', 'deploy'), ('promote-prod.yml', 'promote')):
+            with self.subTest(workflow=name):
+                jobs = self.jobs(name)
+                self.assertEqual(self.ON, jobs[job]['if'])
+                step = next(step for step in jobs[job]['steps'] if 'ci_deploy.py' in step.get('run', ''))
+                self.assertEqual('${{ vars.WHEELHOUSE_SELF_DEPLOY }}', step['env'][ci_deploy.SWITCH])
+                twin = jobs['self-deploy']
+                self.assertEqual(self.OFF, twin['if'])
+                self.assertNotIn('environment', twin, 'the twin never enters an environment that holds host secrets')
+                self.assertFalse(any('secrets.' in str(value) for value in twin.values()))
+
+    def test_a_dispatched_promotion_fails_loudly_while_wheelhouse_promotes_itself(self):
+        script = self.jobs('promote-prod.yml')['self-deploy']['steps'][0]['run']
+        self.assertIn('exit 1', script)
+        self.assertIn('WHEELHOUSE_SELF_DEPLOY=false', script)
+
+    def test_a_promotion_takes_an_optional_release_and_an_explicit_rollback(self):
+        import yaml
+        workflow = yaml.safe_load((WORKFLOWS / 'promote-prod.yml').read_text())
+        # PyYAML reads the bare `on:` key as True.
+        inputs = (workflow.get('on') or workflow[True])['workflow_dispatch']['inputs']
+        self.assertEqual((False, ''), (inputs['release']['required'], inputs['release']['default']))
+        self.assertEqual(('boolean', False), (inputs['rollback']['type'], inputs['rollback']['default']))
+        step = next(step for step in workflow['jobs']['promote']['steps'] if 'ci_deploy.py' in step.get('run', ''))
+        self.assertEqual(('true', '${{ inputs.release }}', '${{ inputs.rollback }}'),
+                         (step['env']['PROMOTE'], step['env']['PROMOTE_RELEASE'], step['env']['PROMOTE_ROLLBACK']))
+
+    def test_no_other_workflow_reaches_the_host(self):
+        reaching = sorted(path.name for path in WORKFLOWS.glob('*.yml')
+                          if 'DEV_SSH_KEY' in path.read_text() or 'ci_deploy.py' in path.read_text())
+        self.assertEqual(['deploy-dev.yml', 'promote-prod.yml'], reaching)
 
 
 if __name__ == '__main__':

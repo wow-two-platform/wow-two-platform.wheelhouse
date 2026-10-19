@@ -37,6 +37,35 @@ def proven(dev_target_path, release):
     raise runner.Rejected('The release has not succeeded on wheelhouse-dev')
 
 
+VERSION = re.compile(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)')
+
+
+def version_of(release):
+    """A published release's version as a sortable tuple; None for anything else (a commit build, a local label)."""
+    match = VERSION.fullmatch(release or '')
+    return tuple(map(int, match.groups())) if match else None
+
+
+def promotion_facts(prod_target_path, dev_target_path):
+    """What an empty promotion resolves to, by the console's rule: the newest published release that succeeded on
+    wheelhouse-dev (newest by version, as tags are published in order), and the release prod runs now."""
+    dev = checked_target(dev_target_path, 'dev')
+    prod = checked_target(prod_target_path, 'prod')
+    newest = None
+    for path in (project_root(dev) / 'jobs').glob('*.json'):
+        try:
+            job = runner.read_json(path)
+        except (OSError, ValueError):
+            continue
+        version = version_of(job.get('release')) if isinstance(job, dict) else None
+        if (version and job.get('status') == 'succeeded' and job.get('completedAt')
+                and (newest is None or version > version_of(newest['release'])
+                     or (version == version_of(newest['release']) and job['completedAt'] > newest['completedAt']))):
+            newest = {'release': job['release'], 'job': job.get('id'), 'completedAt': job['completedAt']}
+    current = runner.state(prod).get('current') or {}
+    return {'newestProven': newest, 'prodRelease': current.get('release')}
+
+
 def identity(run_id, commit, manifest):
     runner.require(re.fullmatch(r'[1-9][0-9]{0,19}', run_id), 'Invalid GitHub run id')
     runner.require(runner.SHA.fullmatch(commit), 'Invalid tested commit')
@@ -150,8 +179,9 @@ def verify(target_path, run_id, commit, environment='dev'):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['launch', 'status', 'verify', 'proven'])
+    parser.add_argument('action', choices=['launch', 'status', 'verify', 'proven', 'promotion'])
     parser.add_argument('--target', required=True)
+    parser.add_argument('--dev-target', help='promotion: wheelhouse-dev\'s target file')
     parser.add_argument('--environment', choices=ENVIRONMENTS, default='dev')
     parser.add_argument('--bundle')
     parser.add_argument('--release')
@@ -159,9 +189,12 @@ def main():
     parser.add_argument('--commit')
     args = parser.parse_args()
     try:
-        runner.require(args.action == 'proven' or (args.run_id and args.commit), 'Give the GitHub run id and commit')
+        runner.require(args.action in ('proven', 'promotion') or (args.run_id and args.commit),
+                       'Give the GitHub run id and commit')
         if args.action == 'proven':
             result = proven(args.target, args.release)
+        elif args.action == 'promotion':
+            result = promotion_facts(args.target, args.dev_target)
         elif args.action == 'launch':
             result = launch_once(args.bundle, args.target, args.run_id, args.commit, args.environment)
         elif args.action == 'status':

@@ -6,7 +6,8 @@
 #   pull request  → ci only
 # A push that changes only docs, planning or markdown runs no build, test, publish or deploy; its gate still passes.
 # One push event tests/builds its final SHA once, regardless of its commit count.
-# Dev deployment is enabled only after the VPS and environment secrets are provisioned.
+# Dev deployment is enabled only after the VPS and environment secrets are provisioned; once Wheelhouse deploys itself
+# (repository variable WHEELHOUSE_SELF_DEPLOY=true), deploy-dev only reports that prod deploys dev.
 name: publish-docker-image
 
 on:

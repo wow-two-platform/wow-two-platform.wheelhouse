@@ -1,14 +1,24 @@
 # Promotes one published release that already succeeded on wheelhouse-dev to wheelhouse-prod.
 # The prod environment requires the owner's approval; the job waits for it before touching the host.
-# Rollback is a promotion of the previous release. Wheelhouse never deploys itself from its console.
+# An empty release takes the newest release that succeeded on wheelhouse-dev, as the console's Ready to promote offers
+# it; the run summary names the release and why. A release older than prod's is refused unless `rollback` is set:
+# rollback is a promotion of an earlier release, said out loud.
+# The fallback since Wheelhouse promotes itself from its prod console (decision 64): with the repository variable
+# WHEELHOUSE_SELF_DEPLOY=true a dispatch refuses before the prod environment; false or unset keeps this path on.
 name: promote-prod
 
 on:
   workflow_dispatch:
     inputs:
       release:
-        description: The published release to promote, such as v0.3.6
-        required: true
+        description: The published release, such as v0.5.20; empty takes the newest release dev ran
+        required: false
+        default: ''
+      rollback:
+        description: Allow a release older than prod's (a rollback)
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -18,7 +28,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  self-deploy:
+    if: vars.WHEELHOUSE_SELF_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Refuse while Wheelhouse promotes itself
+        run: |
+          echo 'Wheelhouse promotes itself: open Ready to promote in the prod console. To use this fallback, set WHEELHOUSE_SELF_DEPLOY=false first.' | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1
+
   promote:
+    if: vars.WHEELHOUSE_SELF_DEPLOY != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: prod
@@ -34,7 +55,10 @@ jobs:
       - name: Promote the dev-proven release over pinned SSH
         env:
           GH_TOKEN: ${{ github.token }}
+          WHEELHOUSE_SELF_DEPLOY: ${{ vars.WHEELHOUSE_SELF_DEPLOY }}
+          PROMOTE: 'true'
           PROMOTE_RELEASE: ${{ inputs.release }}
+          PROMOTE_ROLLBACK: ${{ inputs.rollback }}
           DEV_SSH_HOST: ${{ secrets.DEV_SSH_HOST }}
           DEV_SSH_USER: ${{ secrets.DEV_SSH_USER }}
           DEV_SSH_PORT: ${{ vars.DEV_SSH_PORT || '22' }}

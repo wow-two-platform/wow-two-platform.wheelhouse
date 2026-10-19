@@ -1,4 +1,6 @@
 # Only the tested, published main-push workflow calls this. No independent push/release trigger.
+# The fallback since Wheelhouse deploys itself (decision 64): the repository variable WHEELHOUSE_SELF_DEPLOY=true turns
+# it off, as Wheelhouse prod then deploys each release to dev; false or unset keeps it on (deployment.md § Fallback).
 name: deploy-dev
 
 on:
@@ -8,7 +10,17 @@ permissions:
   contents: read
 
 jobs:
+  self-deploy:
+    if: vars.WHEELHOUSE_SELF_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report that Wheelhouse deploys itself
+        run: |
+          echo 'Wheelhouse prod deploys this release to wheelhouse-dev itself (WHEELHOUSE_SELF_DEPLOY=true); CI reaches no host.' >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
+    if: vars.WHEELHOUSE_SELF_DEPLOY != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: dev
@@ -40,6 +52,7 @@ jobs:
         if: vars.DEV_DEPLOY_ENABLED == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          WHEELHOUSE_SELF_DEPLOY: ${{ vars.WHEELHOUSE_SELF_DEPLOY }}
           DEV_SSH_HOST: ${{ secrets.DEV_SSH_HOST }}
           DEV_SSH_USER: ${{ secrets.DEV_SSH_USER }}
           DEV_SSH_PORT: ${{ vars.DEV_SSH_PORT || '22' }}
