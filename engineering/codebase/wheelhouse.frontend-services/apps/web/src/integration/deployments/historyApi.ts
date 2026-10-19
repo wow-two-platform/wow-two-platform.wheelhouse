@@ -39,9 +39,11 @@ export const deploymentHistoryApi = {
 
   /** Finished rollouts per local day in the IANA time zone `tz`. */
   getActivity: (params: QueryParams, tz: string, signal?: AbortSignal) =>
-    requestData<DeploymentActivity>(withQuery('/api/deployments/history/activity', [...params, ['tz', tz]]), DeploymentActivitySchema, {
-      signal,
-    }),
+    requestData<DeploymentActivity>(
+      withQuery('/api/deployments/history/activity', [...params.filter(([key]) => key !== 'tz'), ['tz', tz]]),
+      DeploymentActivitySchema,
+      { signal },
+    ),
 
   /** The filter's measures beside the range before it. */
   getStats: (params: QueryParams, signal?: AbortSignal) =>

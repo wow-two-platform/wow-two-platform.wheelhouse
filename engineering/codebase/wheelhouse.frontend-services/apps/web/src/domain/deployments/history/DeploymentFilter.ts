@@ -1,19 +1,16 @@
 import { EntityKeys } from './EntitySelection';
 
-/** Which deployments a view shows by the attention they need: all, those needing action, those worth a look, or the
- * successes that need nothing. Deploys that changed nothing follow the viewer's one Show unchanged switch instead. */
-export const StatusFilter = {
-  All: 'all',
-  NeedsAction: 'needs-action',
-  Look: 'look',
-  Succeeded: 'succeeded',
-} as const;
-export type StatusFilter = (typeof StatusFilter)[keyof typeof StatusFilter];
-
-/** Reads a status filter from an address value; the old `failed` reads as needs-action, anything else as all. */
-export function readStatusFilter(value: string | null | undefined): StatusFilter {
-  if (value === 'failed') return StatusFilter.NeedsAction;
-  return (Object.values(StatusFilter) as string[]).includes(value ?? '') ? (value as StatusFilter) : StatusFilter.All;
+/**
+ * What a history read keeps. Off, each target's latest applied deploy of a local day: earlier attempts that day and the
+ * deploys that changed nothing stay hidden, so a day whose last deploy succeeded reads as a success. On, every attempt
+ * and every deploy that changed nothing. The viewer's one Show all attempts toggle decides it; the measures always read
+ * every attempt.
+ */
+export interface HistoryView {
+  /** Every attempt, the deploys that changed nothing included; off keeps each target's latest deploy of a day. */
+  readonly everyAttempt: boolean;
+  /** The IANA time zone a day is counted in. */
+  readonly timeZone: string;
 }
 
 /** The ranges a view offers in one click, ending now. */
@@ -48,15 +45,15 @@ export type DeploymentRange =
   | { readonly kind: 'preset'; readonly preset: RangePreset }
   | { readonly kind: 'custom'; readonly from: string; readonly to: string };
 
-/** Which deployments a view shows: entity keys (`w:` workspace, `p:` product, `s:` product/service), outcomes, range. */
+/** Which deployments a view shows: entity keys (`w:` workspace, `p:` product, `s:` product/service) and the range. Which
+ * attempts show follows the viewer's Show all attempts toggle (`HistoryView`), not the filter. */
 export interface DeploymentFilterState {
   readonly entities: readonly string[];
-  readonly status: StatusFilter;
   readonly range: DeploymentRange;
 }
 
-/** The view a filter opens with: everything, every outcome, six months. */
-export const DefaultFilter: DeploymentFilterState = { entities: [], status: StatusFilter.All, range: DefaultRange };
+/** The view a filter opens with: everything over six months. */
+export const DefaultFilter: DeploymentFilterState = { entities: [], range: DefaultRange };
 
 /** A local wall-clock instant as the custom range writes it. */
 export const LocalMinutePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
@@ -117,14 +114,14 @@ export const DeploymentFilters = {
   },
 
   /**
-   * The API's query parameters for a filter: repeated `workspace`, `product` and `service`, then `status` (left out
-   * for all, and when `withStatus` is false), `notApplied` when the viewer shows the deploys that changed nothing, then
-   * ISO `from` and `to` resolved at `now`.
+   * The API's query parameters for a filter: repeated `workspace`, `product` and `service`, then, for a `view`, either
+   * `notApplied` (every attempt) or `latest` (each target's latest deploy of a day) with the `tz` days are counted in,
+   * then ISO `from` and `to` resolved at `now`.
    */
   params(
     filter: DeploymentFilterState,
     now: Date,
-    options: { readonly withStatus?: boolean; readonly bounds?: { from: Date; to: Date }; readonly unchanged?: boolean } = {},
+    options: { readonly bounds?: { from: Date; to: Date }; readonly view?: HistoryView } = {},
   ): Array<[string, string]> {
     const result: Array<[string, string]> = [];
     for (const key of filter.entities) {
@@ -134,8 +131,10 @@ export const DeploymentFilters = {
       else if (entity.kind === 'product') result.push(['product', entity.product]);
       else result.push(['service', `${entity.product}/${entity.service}`]);
     }
-    if ((options.withStatus ?? true) && filter.status !== StatusFilter.All) result.push(['status', filter.status]);
-    if (options.unchanged) result.push(['notApplied', 'true']);
+    if (options.view) {
+      result.push(options.view.everyAttempt ? ['notApplied', 'true'] : ['latest', 'true']);
+      result.push(['tz', options.view.timeZone]);
+    }
     const { from, to } = options.bounds ?? DeploymentFilters.resolve(filter.range, now);
     result.push(['from', from.toISOString()], ['to', to.toISOString()]);
     return result;
@@ -149,11 +148,12 @@ export const DeploymentFilters = {
   },
 
   /**
-   * A stable text of a filter for cache keys: the preset, not its instants, so a key holds while time moves; `unchanged`
-   * marks a read that includes the deploys that changed nothing.
+   * A stable text of a filter for cache keys: the preset, not its instants, so a key holds while time moves; a `view`
+   * marks whether the read keeps every attempt or each day's latest, and in which time zone.
    */
-  key(filter: DeploymentFilterState, unchanged = false): string {
+  key(filter: DeploymentFilterState, view?: HistoryView): string {
     const range = filter.range.kind === 'preset' ? filter.range.preset : `${filter.range.from}..${filter.range.to}`;
-    return `${[...filter.entities].sort().join(',')}|${filter.status}|${range}${unchanged ? '|unchanged' : ''}`;
+    const kept = view ? (view.everyAttempt ? '|every' : `|latest@${view.timeZone}`) : '';
+    return `${[...filter.entities].sort().join(',')}|${range}${kept}`;
   },
 } as const;

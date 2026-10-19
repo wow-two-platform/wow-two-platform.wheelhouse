@@ -3,7 +3,7 @@ import type { DeploymentFilterState } from "@/domain/deployments";
 
 /** Defines the measures tiles. */
 export interface RangeStatsTilesProps {
-  /** The shared filter; its entities and range apply, its status does not. */
+  /** The shared filter: its entities and range. */
   readonly filter: DeploymentFilterState;
   /** Draws the tiles as plain wells inside a panel, rather than as glass cards on the page. */
   readonly isInset?: boolean;
@@ -17,19 +17,17 @@ import { StatCard, type StatCardTrend } from "@wow-two-beta/fe/presentation/disp
 import { DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
 
 import { useDeploymentRangeStats } from "@/application/deployments";
-import { useShowUnchanged } from "@/application/preferences";
 import { Measures } from "@/domain/common";
 import { DeploymentFilters } from "@/domain/deployments";
 
 /**
  * Deploys, success rate, median rollout and median recovery for the filter's products and range, each against the
- * range of equal length before it. Every state counts, whatever the status filter shows; the deploys that changed
- * nothing count only while the viewer's Show unchanged deploys switch is on.
+ * range of equal length before it. Every attempt counts, the deploys that changed nothing included, whatever the
+ * viewer's Show all attempts toggle shows.
  */
 defineOptions({ name: "RangeStatsTiles" });
 const props = withDefaults(defineProps<RangeStatsTilesProps>(), { isInset: false });
 const stats = useDeploymentRangeStats(() => props.filter);
-const showUnchanged = useShowUnchanged();
 const period = computed(() => DeploymentFilters.label(props.filter.range).replace(/^Last /, "").toLowerCase());
 const priorLabel = computed(() => (props.filter.range.kind === "preset" ? `vs prior ${period.value}` : "vs prior period"));
 
@@ -45,7 +43,7 @@ const metrics = computed(() => {
         `${current.succeeded} succeeded`,
         `${current.act} need action`,
         `${current.look} worth a look`,
-        ...(showUnchanged.value && current.notApplied ? [`${current.notApplied} unchanged`] : []),
+        ...(current.notApplied ? [`${current.notApplied} unchanged`] : []),
       ].join(" · "),
       ...difference(current.deploys, previous?.deploys, (value) => String(value)),
       isLowerBetter: false,

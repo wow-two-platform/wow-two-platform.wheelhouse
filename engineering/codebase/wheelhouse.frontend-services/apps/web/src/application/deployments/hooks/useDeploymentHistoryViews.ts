@@ -1,12 +1,13 @@
 import { computed, toValue, watch, type MaybeRefOrGetter } from "vue";
 
-import { useShowUnchanged } from "@/application/preferences";
+import { useShowAllAttempts } from "@/application/preferences";
 import { useAppInfiniteQuery, useAppQuery, useInvalidate } from "@/bootstrap/query";
 import {
   DeploymentFilters,
   type DeploymentFilterState,
   type DeploymentItem,
   type DeploymentPage,
+  type HistoryView,
 } from "@/domain/deployments";
 import { deploymentHistoryApi } from "@/integration/deployments/historyApi";
 
@@ -23,24 +24,42 @@ export function ownerTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
+/** What the viewer's Show all attempts toggle asks the history for: every attempt, or each target's latest of a day. */
+export function useHistoryView() {
+  const everyAttempt = useShowAllAttempts();
+  return computed<HistoryView>(() => ({ everyAttempt: everyAttempt.value, timeZone: ownerTimeZone() }));
+}
+
+/** Every attempt in the owner's time zone: what the measures count, and what a read the toggle does not govern takes. */
+function everyAttempt(): HistoryView {
+  return { everyAttempt: true, timeZone: ownerTimeZone() };
+}
+
 /**
- * The filter's deployments, newest first, one cursor page at a time. A preset range resolves when each page is read;
- * the cursor holds the position, so a later page never repeats or skips an older deployment. `day` narrows to one local
- * calendar day, as the grid's expanded day does.
+ * The filter's deployments, newest first, one cursor page at a time: each target's latest deploy of a day, or every
+ * attempt while the viewer's toggle shows them (`everyAttempt` reads every attempt whatever it says). A preset range
+ * resolves when each page is read; the cursor holds the position, so a later page never repeats or skips an older
+ * deployment. `day` narrows to one local calendar day, as the grid's expanded day does.
  */
 export function useDeploymentPages(
   filter: MaybeRefOrGetter<DeploymentFilterState>,
-  options: { readonly limit?: number; readonly day?: MaybeRefOrGetter<string | null>; readonly enabled?: MaybeRefOrGetter<boolean> } = {},
+  options: {
+    readonly limit?: number;
+    readonly day?: MaybeRefOrGetter<string | null>;
+    readonly enabled?: MaybeRefOrGetter<boolean>;
+    readonly everyAttempt?: boolean;
+  } = {},
 ) {
   const limit = options.limit ?? 25;
   const day = () => toValue(options.day ?? null);
-  const unchanged = useShowUnchanged();
+  const viewer = useHistoryView();
+  const view = () => (options.everyAttempt ? everyAttempt() : viewer.value);
   return useAppInfiniteQuery<DeploymentItem, DeploymentPage>({
-    key: () => DeploymentKeys.historyPage(`${DeploymentFilters.key(toValue(filter), unchanged.value)}|${day() ?? ""}`, limit),
+    key: () => DeploymentKeys.historyPage(`${DeploymentFilters.key(toValue(filter), view())}|${day() ?? ""}`, limit),
     queryFn: ({ pageParam, signal }) => {
       const date = day();
       const params = DeploymentFilters.params(toValue(filter), new Date(), {
-        unchanged: unchanged.value,
+        view: view(),
         ...(date ? { bounds: DeploymentFilters.dayBounds(date) } : {}),
       });
       return deploymentHistoryApi.listPage(params, typeof pageParam === "string" ? pageParam : null, limit, signal);
@@ -52,41 +71,39 @@ export function useDeploymentPages(
   });
 }
 
-/** Finished rollouts per local day over the filter's range, in the owner's time zone; the deploys that changed nothing
- * count beside them while the viewer shows them. */
+/** Finished rollouts per local day over the filter's range, in the owner's time zone: each target's latest of a day, or
+ * every attempt with the deploys that changed nothing beside them while the viewer shows them. */
 export function useDeploymentActivity(filter: MaybeRefOrGetter<DeploymentFilterState>, enabled: MaybeRefOrGetter<boolean> = true) {
-  const tz = ownerTimeZone();
-  const unchanged = useShowUnchanged();
+  const view = useHistoryView();
   return useAppQuery({
-    key: () => DeploymentKeys.activity(DeploymentFilters.key(toValue(filter), unchanged.value), tz),
+    key: () => DeploymentKeys.activity(DeploymentFilters.key(toValue(filter), view.value), view.value.timeZone),
     queryFn: ({ signal }) =>
-      deploymentHistoryApi.getActivity(DeploymentFilters.params(toValue(filter), new Date(), { unchanged: unchanged.value }), tz, signal),
+      deploymentHistoryApi.getActivity(
+        DeploymentFilters.params(toValue(filter), new Date(), { view: view.value }),
+        view.value.timeZone,
+        signal,
+      ),
     enabled: () => toValue(enabled),
     keepPreviousData: true,
   });
 }
 
-/** The filter's measures over its range beside the range before it; the status filter does not apply, and the deploys
- * that changed nothing count only while the viewer shows them. */
+/** The filter's measures over its range beside the range before it. They count every attempt, the deploys that changed
+ * nothing included, whatever the viewer's toggle shows, and say how many a latest-of-day view hides. */
 export function useDeploymentRangeStats(filter: MaybeRefOrGetter<DeploymentFilterState>) {
-  const keyed = () => ({ ...toValue(filter), status: "all" as const });
-  const unchanged = useShowUnchanged();
   return useAppQuery({
-    key: () => DeploymentKeys.rangeStats(DeploymentFilters.key(keyed(), unchanged.value)),
+    key: () => DeploymentKeys.rangeStats(DeploymentFilters.key(toValue(filter), everyAttempt())),
     queryFn: ({ signal }) =>
-      deploymentHistoryApi.getStats(
-        DeploymentFilters.params(keyed(), new Date(), { withStatus: false, unchanged: unchanged.value }),
-        signal,
-      ),
+      deploymentHistoryApi.getStats(DeploymentFilters.params(toValue(filter), new Date(), { view: everyAttempt() }), signal),
     keepPreviousData: true,
   });
 }
 
 /** Entity-only query parameters: running rollouts and promotions take no range. @internal */
 function entityParams(entities: readonly string[]): Array<[string, string]> {
-  return DeploymentFilters.params({ entities, status: "all", range: { kind: "preset", preset: "24h" } }, new Date(), {
-    withStatus: false,
-  }).filter(([key]) => key !== "from" && key !== "to");
+  return DeploymentFilters.params({ entities, range: { kind: "preset", preset: "24h" } }, new Date()).filter(
+    ([key]) => key !== "from" && key !== "to",
+  );
 }
 
 /**

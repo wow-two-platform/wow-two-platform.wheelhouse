@@ -22,9 +22,8 @@ export {
   LocalMinutePattern,
   RangePreset,
   RangePresets,
-  StatusFilter,
-  readStatusFilter,
   type DeploymentFilterState,
+  type HistoryView,
   type DeploymentRange,
 } from './DeploymentFilter';
 export {

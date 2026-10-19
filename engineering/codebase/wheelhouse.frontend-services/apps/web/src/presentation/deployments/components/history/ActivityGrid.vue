@@ -3,13 +3,15 @@ import type { DeploymentActivity } from "@/domain/deployments";
 
 /** Defines the deployment activity calendar. */
 export interface ActivityGridProps {
-  /** Applied, finished rollouts per local day over the range, by attention; undefined until the first read, which draws
-   * an empty range. The status filter already narrowed them. */
+  /** Applied, finished rollouts per local day over the range, by attention — each target's latest of a day, or every
+   * attempt; undefined until the first read, which draws an empty range. */
   readonly activity: DeploymentActivity | undefined;
   /** The day expanded below the calendar, `YYYY-MM-DD`. */
   readonly selected: string | null;
   /** A rollout runs now: today's mark pulses. */
   readonly isLive?: boolean;
+  /** The counts cover every attempt: a day whose attempts were mixed is split, its lower-right half in the calm fill. */
+  readonly isAudit?: boolean;
 }
 </script>
 
@@ -26,7 +28,8 @@ import { HintPlacement } from "./HintPlacement";
  * on a phone, which scrolls it sideways) that take only the width they need. A day takes the loudest attention of its
  * applied, finished rollouts: green when none needs anything, amber with a half-dot when one is worth a look, red with
  * a cross when one needs action; four steps of fill follow the count (1, 2–3, 4–6, 7+). A deploy that changed nothing
- * never colours a day, and every day names its date and counts. Today and the chosen day differ in
+ * never colours a day, and every day names its date and counts. While every attempt shows, a day whose attempts were
+ * mixed — some needed nothing, others a look or action — is split diagonally, its lower-right half in the calm fill. Today and the chosen day differ in
  * more than thickness: today wears a dashed ring in a muted tone, pulsing while a rollout runs (still under reduced
  * motion); the chosen day a solid primary ring set off from the cell; chosen today keeps the solid ring and adds a small
  * today dot. Arrow keys move between days; a day toggles its list. The shared day tooltip is drawn in the top layer and
@@ -34,7 +37,7 @@ import { HintPlacement } from "./HintPlacement";
  * panel's info button (`ActivityGridInfo`), not under the calendar; the measures above carry the range's totals.
  */
 defineOptions({ name: "ActivityGrid" });
-const props = withDefaults(defineProps<ActivityGridProps>(), { isLive: false });
+const props = withDefaults(defineProps<ActivityGridProps>(), { isLive: false, isAudit: false });
 const emit = defineEmits<{ select: [day: string | null] }>();
 
 const scroller = ref<HTMLElement | null>(null);
@@ -48,7 +51,7 @@ const tip = ref<HTMLElement | null>(null);
 
 const calendar = computed(() => {
   const activity = props.activity;
-  if (activity) return ActivityCalendar.build(activity.from, activity.to, activity.days);
+  if (activity) return ActivityCalendar.build(activity.from, activity.to, activity.days, 1, { isAudit: props.isAudit });
   const end = new Date();
   const start = new Date(end);
   start.setMonth(start.getMonth() - 6);
@@ -182,7 +185,7 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
           >{{ row % 2 === 0 ? weekday : "" }}</span
         >
         <template v-for="(week, column) in calendar.weeks" :key="week.start">
-          <template v-for="cell in week.cells" :key="cell?.date ?? `${week.start}-gap`">
+          <template v-for="(cell, row) in week.cells" :key="cell?.date ?? `${week.start}-gap-${row}`">
             <button
               v-if="cell"
               type="button"
@@ -204,10 +207,15 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
               @focus="show($event, cell)"
               @blur="hide"
             >
-              <svg v-if="cell.mark === 'cross'" viewBox="0 0 8 8" :class="['size-2', markColour(cell)]" aria-hidden="true">
+              <span
+                v-if="cell.isMixed"
+                :class="['wh-mixed', CellFills.success[cell.level] ?? 'bg-success']"
+                aria-hidden="true"
+              />
+              <svg v-if="cell.mark === 'cross'" viewBox="0 0 8 8" :class="['relative size-2', markColour(cell)]" aria-hidden="true">
                 <path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
               </svg>
-              <svg v-else-if="cell.mark === 'half'" viewBox="0 0 8 8" :class="['size-2', markColour(cell)]" aria-hidden="true">
+              <svg v-else-if="cell.mark === 'half'" viewBox="0 0 8 8" :class="['relative size-2', markColour(cell)]" aria-hidden="true">
                 <circle cx="4" cy="4" r="3" fill="none" stroke="currentColor" stroke-width="1.2" />
                 <path d="M4 1a3 3 0 0 1 0 6z" fill="currentColor" />
               </svg>
@@ -239,6 +247,15 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
 </template>
 
 <style scoped>
+/* A mixed day while every attempt shows: the lower-right half in the calm fill, under the mark. */
+.wh-mixed {
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  pointer-events: none;
+}
+
 /* Today: a dashed ring in a muted tone, set off from the cell like the chosen day's but never solid or primary. An
    outline rather than a border: it never widens the scroller, so the newest week can sit at the panel's edge. */
 .wh-today-ring {

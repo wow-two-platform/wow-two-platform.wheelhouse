@@ -6,9 +6,11 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Deployments.History.QueryHandlers;
 
-/// <summary>Handles <see cref="DeploymentStatsQuery"/>: the filter's entities and range, not its status; the deploys
-/// that changed nothing count in the figures only when the filter includes them, as the list shows them, while
-/// <see cref="DeploymentMeasuresDto.NotApplied"/> always counts them, so the console can say how many it hides.</summary>
+/// <summary>Handles <see cref="DeploymentStatsQuery"/>: the filter's entities and range, not its status nor its
+/// latest-of-day choice, so every attempt counts; the deploys that changed nothing count in the figures only when the
+/// filter includes them, while <see cref="DeploymentMeasuresDto.NotApplied"/> always counts them and
+/// <see cref="DeploymentMeasuresDto.Superseded"/> the attempts a later deploy replaced that day, so the console can say
+/// how many a latest-of-day view hides.</summary>
 public sealed class DeploymentStatsQueryHandler(DeploymentHistoryService history, TimeProvider time)
     : IQueryHandler<DeploymentStatsQuery, AppResult<DeploymentStatsDto>>
 {
@@ -28,6 +30,9 @@ public sealed class DeploymentStatsQueryHandler(DeploymentHistoryService history
         var current = DeploymentMeasures.Measure(scoped.Where(entry => DeploymentQuerying.InRange(entry, from, to)), from, to) with
         {
             NotApplied = entities.Count(entry => entry.NotApplied && DeploymentQuerying.InRange(entry, from, to)),
+            Superseded = DeploymentQuerying.Superseded(
+                entities.Where(entry => DeploymentQuerying.InRange(entry, from, to)),
+                TimeZoneInfo.FindSystemTimeZoneById(request.Filter.TimeZone)).Count,
         };
         return AppResult<DeploymentStatsDto>.Ok(new DeploymentStatsDto(
             current, earlier.Count > 0 ? DeploymentMeasures.Measure(earlier, before, from) : null));

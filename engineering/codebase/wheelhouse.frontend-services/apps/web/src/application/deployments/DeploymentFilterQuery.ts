@@ -5,8 +5,6 @@ import {
   EntityKeys,
   EntitySelection,
   RangePresets,
-  StatusFilter,
-  readStatusFilter,
   type DeploymentFilterState,
   type DeploymentRange,
 } from '@/domain/deployments';
@@ -23,7 +21,9 @@ export interface DeploymentViewState {
   readonly day: string | null;
 }
 
-/** The query keys a deployments view owns; anything else in the address is left alone. */
+/** The query keys a deployments view owns; anything else in the address is left alone. An old link's `status` is one of
+ * them: the status filter is gone (one Show all attempts toggle replaced it), so it reads as nothing and the next write
+ * drops it. */
 export const DeploymentQueryKeys = ['workspace', 'product', 'service', 'status', 'range', 'from', 'to', 'view', 'day'] as const;
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -40,9 +40,9 @@ function first(value: unknown): string | null {
 }
 
 /**
- * Reads a deployments view from a route query: repeated `workspace`, `product` and `service` (`product/service`),
- * `status` (`needs-action`, `look` or `succeeded`; the old `failed` reads as needs-action), a `range` preset or custom `from` and `to` (local `YYYY-MM-DDTHH:mm`), `view`
- * (`list`) and the expanded `day`. A malformed value falls back to its default rather than failing the page.
+ * Reads a deployments view from a route query: repeated `workspace`, `product` and `service` (`product/service`), a
+ * `range` preset or custom `from` and `to` (local `YYYY-MM-DDTHH:mm`), `view` (`list`) and the expanded `day`. An old
+ * link's `status` is ignored. A malformed value falls back to its default rather than failing the page.
  */
 export function readDeploymentQuery(query: Readonly<Record<string, unknown>>): DeploymentViewState {
   const entities = EntitySelection.normalize([
@@ -50,7 +50,6 @@ export function readDeploymentQuery(query: Readonly<Record<string, unknown>>): D
     ...all(query['product']).map(EntityKeys.product),
     ...all(query['service']).map((value) => `s:${value}`),
   ]);
-  const status = readStatusFilter(first(query['status']));
   const from = first(query['from']);
   const to = first(query['to']);
   const preset = RangePresets.find((item) => item.value === first(query['range']))?.value;
@@ -62,7 +61,7 @@ export function readDeploymentQuery(query: Readonly<Record<string, unknown>>): D
         : DefaultRange;
   const day = first(query['day']);
   return {
-    filter: { entities, status, range },
+    filter: { entities, range },
     view: first(query['view']) === 'list' ? DeploymentView.List : DeploymentView.Grid,
     day: day && DATE.test(day) ? day : null,
   };
@@ -83,7 +82,6 @@ export function writeDeploymentQuery(state: DeploymentViewState): Record<string,
   if (workspaces.length) query['workspace'] = workspaces.length === 1 ? workspaces[0]! : workspaces;
   if (products.length) query['product'] = products.length === 1 ? products[0]! : products;
   if (services.length) query['service'] = services.length === 1 ? services[0]! : services;
-  if (state.filter.status !== StatusFilter.All) query['status'] = state.filter.status;
   const range = state.filter.range;
   if (range.kind === 'custom') {
     query['from'] = range.from;

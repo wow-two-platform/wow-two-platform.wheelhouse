@@ -4,7 +4,8 @@ using Wheelhouse.Application.Inventory.Extensions;
 
 namespace Wheelhouse.Application.Deployments.History.Validators;
 
-/// <summary>Validates a deployment filter: inventory slugs, <c>product/service</c> pairs and an ordered range.</summary>
+/// <summary>Validates a deployment filter: inventory slugs, <c>product/service</c> pairs, a known time zone and an ordered
+/// range.</summary>
 public sealed class DeploymentFilterValidator : AbstractValidator<DeploymentFilter>
 {
     /// <summary>Holds how many entities of one kind a filter may name.</summary>
@@ -26,6 +27,9 @@ public sealed class DeploymentFilterValidator : AbstractValidator<DeploymentFilt
             .WithMessage("'service' must name a product and one of its services, as product/service.");
         RuleFor(x => x.Status).IsInEnum()
             .WithMessage("'status' must be all, needs-action, look, succeeded or not-applied.");
+        RuleFor(x => x.TimeZone)
+            .Must(zone => zone is { Length: > 0 and <= 64 } && TimeZoneInfo.TryFindSystemTimeZoneById(zone, out _))
+            .WithMessage("'tz' must be an IANA time zone, such as Asia/Tashkent.");
         RuleFor(x => x.To)
             .Must((filter, to) => filter.From is not { } from || to is not { } end || from < end)
             .WithMessage("'from' must come before 'to'.");

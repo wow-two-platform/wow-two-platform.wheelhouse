@@ -9,7 +9,7 @@ export const PreferenceKeys = {
   collapsedGroups: "wheelhouse.products-collapsed-workspaces",
   productsView: "wheelhouse.products-view",
   lastProduct: "wheelhouse.last-product",
-  showUnchanged: "wheelhouse.show-unchanged",
+  showAllAttempts: "wheelhouse.show-all-attempts",
 } as const;
 
 /** Reads a remembered value; storage that is blocked or full reads as nothing remembered. @internal */
@@ -66,19 +66,20 @@ const collapsedGroups = preference<string[]>(
   (value) => JSON.stringify(value),
 );
 
-const showUnchanged = preference(
-  PreferenceKeys.showUnchanged,
+const showAllAttempts = preference(
+  PreferenceKeys.showAllAttempts,
   (raw) => raw === "true",
   (value) => String(value),
 );
 
 /**
- * Whether deploys that changed nothing — refused, replaced in the queue, cancelled, a failed check before changes —
- * show in the deployment lists, the calendar, its day panel and the product tabs, and count in the measures: the one
- * "Show unchanged deploys" switch, off by default.
+ * Whether the deployment views show every attempt — the ones a later deploy replaced that day and the deploys that
+ * changed nothing (refused, replaced in the queue, cancelled, a failed check before changes) — in the calendar, its day
+ * panel, the list and the product tabs: the one "Show all attempts" switch, off by default, when each target shows its
+ * latest deploy of a day. The measures count every attempt either way.
  */
-export function useShowUnchanged(): Ref<boolean> {
-  return showUnchanged;
+export function useShowAllAttempts(): Ref<boolean> {
+  return showAllAttempts;
 }
 
 /** Whether inactive products and services show everywhere — the one "Show inactive" switch. */

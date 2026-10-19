@@ -142,6 +142,7 @@ const RangeMeasuresSchema = z.object({
   notApplied: z.number().default(0),
   look: z.number().default(0),
   act: z.number().default(0),
+  superseded: z.number().default(0),
 });
 
 export const DeploymentRangeStatsSchema = z.object({

@@ -1,10 +1,6 @@
 <script lang="ts">
-import type { StatusFilter } from "@/domain/deployments";
-
 /** Defines the deployments panel's info button. */
 export interface DeploymentsInfoProps {
-  /** The status filter: a filtered calendar's scale runs in that attention's colour. */
-  readonly status: StatusFilter;
   /** Whether the calendar shows; the List view needs only the statuses. */
   readonly isGrid: boolean;
 }
@@ -32,12 +28,9 @@ const CalendarSections: readonly InfoSection[] = [
   { key: "marks", title: "Today and the chosen day" },
 ];
 const StatusSection: InfoSection = { key: "statuses", title: "States" };
-const UnchangedSection: InfoSection = { key: "unchanged", title: "Deploys that changed nothing" };
-const sections = computed(() => [...(props.isGrid ? CalendarSections : [StatusSection]), UnchangedSection]);
-const scale = computed(() =>
-  CellFills[props.status === "needs-action" ? "danger" : props.status === "look" ? "warning" : "success"].slice(1),
-);
-
+const AttemptsSection: InfoSection = { key: "attempts", title: "Latest deploy or every attempt" };
+const sections = computed(() => [...(props.isGrid ? CalendarSections : [StatusSection]), AttemptsSection]);
+const scale = CellFills.success.slice(1);
 </script>
 
 <template>
@@ -45,7 +38,7 @@ const scale = computed(() =>
     <template #days>
       <p>
         Weeks run left to right, Monday on top; finished rollouts that changed the environment count on the day they
-        were submitted. Point at a day for its counts, choose it to see its deploys as one row per product, and move between
+        were submitted — each target's last of the day, or every attempt while the eye toggle shows them. Point at a day for its counts, choose it to see its deploys as one row per product, and move between
         days with the arrow keys.
       </p>
     </template>
@@ -72,7 +65,16 @@ const scale = computed(() =>
           One needs action — partial or failed; a cross marks it
         </li>
       </ul>
-      <p class="mt-2.5">A day takes the loudest of its rollouts. A deploy that changed nothing never colours a day.</p>
+      <p class="mt-2.5">
+        A day takes the loudest of its rollouts, so a failure fixed later that day leaves it green. A deploy that changed
+        nothing never colours a day.
+      </p>
+      <p class="mt-2.5 flex items-center gap-2">
+        <span class="relative size-3.5 shrink-0 overflow-hidden rounded-[3px] bg-destructive" aria-hidden="true"
+          ><span class="wh-key-mixed bg-success"
+        /></span>
+        <span>With every attempt shown, a split day had both: attempts that failed or need a look, and ones that did not.</span>
+      </p>
       <p class="mt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
         <span>A deeper fill means more:</span>
         <span class="flex items-center gap-1 text-xs text-muted-foreground" aria-hidden="true">
@@ -99,12 +101,16 @@ const scale = computed(() =>
       </ul>
     </template>
     <template #statuses><DeploymentStatusLegend /></template>
-    <template #unchanged>
+    <template #attempts>
       <p>
-        Refused by a freeze or a gate, replaced in the queue by a newer release, cancelled, or stopped by a failed check
-        before any change: they stay out of the records and the measures. The eye toggle beside Grid and List counts
-        them and, pressed, shows them in the list, the calendar's days and the chosen day's rows (dashed), the product tabs and the
-        measures. This browser
+        The calendar, the chosen day's rows and the list show each target's last deploy of a day: a day that ended on a
+        success reads as one, and a failure nothing fixed still shows. Earlier attempts that day stay hidden, as do the
+        deploys that changed nothing — refused by a freeze or a gate, replaced in the queue, cancelled, or stopped by a
+        failed check before any change.
+      </p>
+      <p class="mt-2.5">
+        The eye toggle beside Grid and List counts the hidden attempts and, pressed, shows every one (those that changed
+        nothing dashed), and the calendar marks the mixed days. The measures count every attempt either way. This browser
         remembers it.
       </p>
     </template>
@@ -112,6 +118,13 @@ const scale = computed(() =>
 </template>
 
 <style scoped>
+/* The calendar's mixed day, drawn the same way on the key's swatch: the lower-right half in the calm fill. */
+.wh-key-mixed {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
 /* The calendar's today ring, drawn the same way on the key's swatch. */
 .wh-key-today {
   position: absolute;

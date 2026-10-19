@@ -16,7 +16,9 @@ namespace Wheelhouse.Application.Deployments.History.Models;
 /// stopped before changes. The range's own measures count them whether or not the other figures include them.</param>
 /// <param name="Look">Deploys worth a look, those that changed nothing included.</param>
 /// <param name="Act">Deploys that need action.</param>
+/// <param name="Superseded">Applied deploys a later one replaced on the same target the same local day, in the filter's
+/// time zone: the earlier attempts a latest-of-day view hides. The range's own measures count them.</param>
 public sealed record DeploymentMeasuresDto(
     DateTimeOffset From, DateTimeOffset To, int Deploys, int Succeeded, int Failed, int Refused, int Pending,
     double? SuccessRate, double? MedianRolloutSeconds, double? MedianRecoverySeconds, int NotApplied = 0, int Look = 0,
-    int Act = 0);
+    int Act = 0, int Superseded = 0);

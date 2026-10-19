@@ -21,6 +21,14 @@ public sealed record DeploymentFilter
     /// them anyway.</summary>
     public bool IncludeNotApplied { get; init; }
 
+    /// <summary>Gets whether only each target's latest applied deploy of a local day shows: earlier attempts that day are
+    /// hidden, so a day whose last deploy succeeded reads as a success. The deploys that changed nothing follow
+    /// <see cref="IncludeNotApplied"/> alone.</summary>
+    public bool LatestOfDay { get; init; }
+
+    /// <summary>Gets the IANA time zone <see cref="LatestOfDay"/> counts days in.</summary>
+    public string TimeZone { get; init; } = "UTC";
+
     /// <summary>Gets the earliest submission instant that matches, inclusive.</summary>
     public DateTimeOffset? From { get; init; }
 

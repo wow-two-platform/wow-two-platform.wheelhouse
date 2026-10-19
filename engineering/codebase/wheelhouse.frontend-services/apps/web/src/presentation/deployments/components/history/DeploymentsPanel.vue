@@ -33,6 +33,7 @@ import {
   useRunningDeployments,
 } from "@/application/deployments";
 import { usePortfolio } from "@/application/portfolio";
+import { useShowAllAttempts } from "@/application/preferences";
 import { DayLanes, DeploymentFilters } from "@/domain/deployments";
 import { useRefresh } from "@/bootstrap/query";
 import { InfoPopover, Panel, RefreshButton } from "@/presentation/common/components";
@@ -46,7 +47,7 @@ import DeploymentList from "./DeploymentList.vue";
 import DeploymentStatusLegend from "./DeploymentStatusLegend.vue";
 import DeploymentsInfo from "./DeploymentsInfo.vue";
 import RangeStatsTiles from "./RangeStatsTiles.vue";
-import UnchangedToggle from "./UnchangedToggle.vue";
+import AttemptsToggle from "./AttemptsToggle.vue";
 
 /** The day panel's narrowest width beside the calendar, with the gap before it: 18rem + 1.5rem. @internal */
 const SidePanelRoom = 312;
@@ -57,7 +58,8 @@ const SelectionPageLimit = 20;
 
 /**
  * Deployments under one shared filter, shown two ways: a calendar of outcomes per day (Grid), whose day expands into
- * that day's deployments, or every deployment newest first (List). From `lg`, where the panel has room beside the
+ * that day's deployments, or the deployments newest first (List). Both show each target's latest deploy of a day until
+ * the viewer's Show all attempts toggle shows every attempt, when the calendar also marks mixed days. From `lg`, where the panel has room beside the
  * calendar, a day panel sits to its right: the chosen day's date and counts over one compact row per product, a lane
  * per environment with a glyph per deploy (`DayProductRows`), or one line asking for a day; narrower, the chosen day
  * stacks under the calendar. A glyph opens its release on the product's Deployments tab, whose List chooses the
@@ -87,9 +89,14 @@ const dayList = useDeploymentPages(route.filter, {
   enabled: () => isGrid.value && route.day.value !== null,
 });
 const running = useRunningDeployments(() => route.filter.value.entities);
-/** The measures' read, shared with the tiles: it counts the deploys that changed nothing, which the toggle carries. */
+/** The measures' read, shared with the tiles: it counts every attempt, so it says how many the latest-of-day view
+ * hides — the attempts a later deploy replaced that day and the deploys that changed nothing — which the toggle carries. */
 const stats = useDeploymentRangeStats(route.filter);
-const unchangedCount = computed(() => stats.data.value?.current.notApplied ?? null);
+const hiddenCount = computed(() => {
+  const current = stats.data.value?.current;
+  return current ? current.notApplied + current.superseded : null;
+});
+const showAllAttempts = useShowAllAttempts();
 const isLive = computed(() => (running.data.value?.length ?? 0) > 0);
 
 /** The chosen day's rows, one per product, and the environments their lanes cover. */
@@ -198,10 +205,10 @@ function setView(value: unknown): void {
 <template>
   <Panel title="Deployments">
     <template #info>
-      <DeploymentsInfo :status="route.filter.value.status" :is-grid="isGrid" />
+      <DeploymentsInfo :is-grid="isGrid" />
     </template>
     <template #actions>
-      <UnchangedToggle :count="unchangedCount" />
+      <AttemptsToggle :hidden="hiddenCount" />
       <ToggleGroup variant="segmented" aria-label="View" :model-value="route.view.value" @update:model-value="setView">
         <ToggleInput :value="DeploymentView.Grid" size="sm" class="max-md:min-h-9">
           <CalendarDays :size="14" aria-hidden="true" /><span class="ml-1">Grid</span>
@@ -239,6 +246,7 @@ function setView(value: unknown): void {
               :activity="activity.data.value"
               :selected="route.day.value"
               :is-live="isLive"
+              :is-audit="showAllAttempts"
               @select="route.setDay"
             />
           </DataRegion>
@@ -259,11 +267,12 @@ function setView(value: unknown): void {
                 <Badge v-if="isToday" variant="neutral">today</Badge>
                 <InfoPopover title="The day">
                   <p class="mb-2.5">
-                    One row per product. Each environment's lane holds a glyph per deploy that day, oldest first, so the
-                    last is what it runs now. A bar on the left marks a row whose latest deploy needs action (red) or a
-                    look (amber); those rows lead. Point at a glyph for its release, time, state and actor, or tap it on
-                    touch; choose it to open the release on the product's Deployments tab. The counts above say how many
-                    deploys reached each state.
+                    One row per product. Each environment's lane holds its last deploy that day, what it runs now; with
+                    Show all attempts on, a glyph per attempt, oldest first, those that changed nothing dashed. A bar on
+                    the left marks a row whose latest deploy needs action (red) or a look (amber); those rows lead. Point
+                    at a glyph for its release, time, state and actor, or tap it on touch; choose it to open the release
+                    on the product's Deployments tab. The counts above say how many of the deploys shown reached each
+                    state.
                   </p>
                   <DeploymentStatusLegend />
                 </InfoPopover>
@@ -319,7 +328,7 @@ function setView(value: unknown): void {
         :has-data="!list.loading.value"
         :is-empty="!list.loading.value && !list.items.value.length"
         empty-title="No deployments match"
-        empty-description="Widen the range, choose All, or clear the products and services."
+        empty-description="Widen the range, show all attempts, or clear the products and services."
         loading-label="Loading deployments"
       >
         <div v-if="selection" class="mb-3 flex min-w-0 flex-wrap items-center gap-2 text-sm">

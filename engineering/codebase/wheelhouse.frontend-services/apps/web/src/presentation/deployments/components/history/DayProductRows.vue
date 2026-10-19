@@ -208,7 +208,7 @@ function unlisten(): void {
               :class="['absolute inset-y-1.5 left-0 w-[3px] rounded-full', BarClass[row.attention]]"
               aria-hidden="true"
             />
-            <span class="line-clamp-2 break-words" :title="row.name">{{ row.name }}</span>
+            <span class="line-clamp-2 break-words hyphens-auto" :title="row.name">{{ row.name }}</span>
             <span v-if="row.attention" class="sr-only">, {{ BarWords[row.attention] }}</span>
           </th>
           <td v-for="lane in row.lanes" :key="lane.environment" class="border-t border-border py-1.5 pe-2 align-middle">

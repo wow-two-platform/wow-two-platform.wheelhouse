@@ -6,7 +6,7 @@ import { bundleModule } from "./BundleModule.mjs";
 // The real rules: the activity calendar, the entity picker's selection model, the filter's address round trip and the
 // history wire decoding.
 const history = await bundleModule(`
-  export { ActivityCalendar, EntitySelection, EntityKeys, DeploymentFilters, StatusFilter, RangePreset, DeploymentIssues, DeploymentStates, DayLanes } from './src/domain/deployments';
+  export { ActivityCalendar, EntitySelection, EntityKeys, DeploymentFilters, RangePreset, DeploymentIssues, DeploymentStates, DayLanes } from './src/domain/deployments';
   export { readDeploymentQuery, writeDeploymentQuery, mergeDeploymentQuery, buildEntityTree } from './src/application/deployments';
   export { releaseLocation, readReleaseSelection, isSelectedRelease } from './src/application/deployments/ReleaseSelection';
   export { DeploymentItemSchema, DeploymentDetailSchema, DeploymentIssueSchema, DeploymentActivitySchema } from './src/integration/deployments/historySchemas';
@@ -39,6 +39,25 @@ test("an answer from before the taxonomy colours a failure red and a success gre
   assert.equal(ActivityCalendar.tone({ succeeded: 5, failed: 1 }), "danger");
   assert.equal(ActivityCalendar.tone({ succeeded: 5, failed: 0 }), "success");
   assert.equal(ActivityCalendar.count({ succeeded: 5, failed: 1 }), 6);
+});
+
+test("while every attempt shows, a day whose attempts were mixed says so; the latest-of-day view never does", () => {
+  // Four failures, then the fix: every attempt shows a red day split with green.
+  const audit = ActivityCalendar.build("2026-10-05", "2026-10-07", [
+    { date: "2026-10-05", ...day(1, 0, 4) },
+    { date: "2026-10-06", ...day(0, 0, 2) },
+    { date: "2026-10-07", ...day(2, 1, 0) },
+  ], 1, { isAudit: true });
+  const cells = audit.weeks.flatMap((week) => week.cells).filter(Boolean);
+  assert.deepEqual(cells.map((cell) => [cell.date, cell.tone, cell.isMixed]), [
+    ["2026-10-05", "danger", true], ["2026-10-06", "danger", false], ["2026-10-07", "warning", true],
+  ]);
+  // The latest-of-day counts of the same day read the fix alone: green, never mixed.
+  const latest = ActivityCalendar.build("2026-10-05", "2026-10-05", [{ date: "2026-10-05", ...day(1, 0, 0) }]);
+  const fixed = latest.weeks[0].cells.find(Boolean);
+  assert.deepEqual([fixed.tone, fixed.isMixed], ["success", false]);
+  assert.equal(ActivityCalendar.build("2026-10-05", "2026-10-05", [{ date: "2026-10-05", ...day(1, 0, 4) }])
+    .weeks[0].cells.find(Boolean).isMixed, false);
 });
 
 test("every day names its date and counts", () => {
@@ -132,16 +151,16 @@ test("entity keys refuse anything but slugs and one product/service pair", () =>
   assert.deepEqual(EntitySelection.normalize(["p:a", "p:a", "p:B", "w:ventures"]), ["p:a", "w:ventures"]);
 });
 
-test("the address round-trips entities, status, a preset or custom range, the view and the day", () => {
+test("the address round-trips entities, a preset or custom range, the view and the day", () => {
   const query = {
-    workspace: "ocharo", service: ["foreverpin/web", "pose-coach/api"], status: "needs-action", range: "30d", view: "list", day: "2026-10-04",
+    workspace: "ocharo", service: ["foreverpin/web", "pose-coach/api"], range: "30d", view: "list", day: "2026-10-04",
   };
   const state = history.readDeploymentQuery(query);
   assert.deepEqual(state.filter.entities, ["w:ocharo", "s:foreverpin/web", "s:pose-coach/api"]);
-  assert.equal(state.filter.status, "needs-action");
-  // The old address's failed reads as needs action; look round-trips.
-  assert.equal(history.readDeploymentQuery({ status: "failed" }).filter.status, "needs-action");
-  assert.equal(history.readDeploymentQuery({ status: "look" }).filter.status, "look");
+  // An old link's status filter is gone: it reads as nothing, and the view writes none.
+  const old = history.readDeploymentQuery({ ...query, status: "needs-action" });
+  assert.deepEqual(old, state);
+  assert.equal("status" in old.filter, false);
   assert.deepEqual(state.filter.range, { kind: "preset", preset: "30d" });
   assert.deepEqual([state.view, state.day], ["list", "2026-10-04"]);
   assert.deepEqual(history.writeDeploymentQuery(state), query);
@@ -153,7 +172,7 @@ test("the address round-trips entities, status, a preset or custom range, the vi
 
 test("a plain address is the default view, and malformed values fall back rather than fail", () => {
   const plain = history.readDeploymentQuery({});
-  assert.deepEqual(plain.filter, { entities: [], status: "all", range: { kind: "preset", preset: "6m" } });
+  assert.deepEqual(plain.filter, { entities: [], range: { kind: "preset", preset: "6m" } });
   assert.deepEqual([plain.view, plain.day], ["grid", null]);
   assert.deepEqual(history.writeDeploymentQuery(plain), {});
 
@@ -161,29 +180,34 @@ test("a plain address is the default view, and malformed values fall back rather
     status: "maybe", range: "forever", from: "2026-10-08T00:00", to: "2026-10-01T00:00", view: "table", day: "yesterday",
     product: ["Bad", "foreverpin"], service: "foreverpin",
   });
-  assert.deepEqual(broken.filter, { entities: ["p:foreverpin"], status: "all", range: { kind: "preset", preset: "6m" } });
+  assert.deepEqual(broken.filter, { entities: ["p:foreverpin"], range: { kind: "preset", preset: "6m" } });
   assert.deepEqual([broken.view, broken.day], ["grid", null]);
 });
 
-test("merging the view into an address keeps keys the view does not own", () => {
-  const state = history.readDeploymentQuery({ status: "succeeded" });
-  assert.deepEqual(history.mergeDeploymentQuery({ env: "prod", status: "failed", day: "2026-10-01" }, state), {
-    env: "prod", status: "succeeded",
+test("merging the view into an address keeps keys the view does not own and drops an old status", () => {
+  const state = history.readDeploymentQuery({ range: "30d" });
+  assert.deepEqual(history.mergeDeploymentQuery({ env: "prod", status: "failed", day: "2026-10-01", release: "v1.2.0" }, state), {
+    env: "prod", release: "v1.2.0", range: "30d",
   });
 });
 
-test("the API parameters repeat entities, leave out all and resolve the range at now", () => {
+test("the API parameters repeat entities, ask for the latest of a day or every attempt, and resolve the range at now", () => {
   const now = new Date("2026-10-17T12:00:00Z");
-  const filter = { entities: ["w:ocharo", "p:foreverpin", "s:pose-coach/api"], status: "needs-action", range: { kind: "preset", preset: "24h" } };
+  const filter = { entities: ["w:ocharo", "p:foreverpin", "s:pose-coach/api"], range: { kind: "preset", preset: "24h" } };
   assert.deepEqual(DeploymentFilters.params(filter, now), [
-    ["workspace", "ocharo"], ["product", "foreverpin"], ["service", "pose-coach/api"], ["status", "needs-action"],
+    ["workspace", "ocharo"], ["product", "foreverpin"], ["service", "pose-coach/api"],
     ["from", "2026-10-16T12:00:00.000Z"], ["to", "2026-10-17T12:00:00.000Z"],
   ]);
-  // The viewer's Show unchanged toggle asks for the deploys that changed nothing, and keys its own cache entry.
-  assert.ok(DeploymentFilters.params(filter, now, { unchanged: true }).some(([key, value]) => key === "notApplied" && value === "true"));
-  assert.notEqual(DeploymentFilters.key(filter, true), DeploymentFilters.key(filter));
-  const withoutStatus = DeploymentFilters.params({ ...filter, status: "all" }, now, { withStatus: false });
-  assert.ok(!withoutStatus.some(([key]) => key === "status"));
+  // Off, the toggle keeps each target's latest deploy of a day in the owner's zone; on, every attempt, the deploys that
+  // changed nothing included. Each keys its own cache entry.
+  const latest = { everyAttempt: false, timeZone: "Asia/Tashkent" };
+  const every = { everyAttempt: true, timeZone: "Asia/Tashkent" };
+  assert.deepEqual(DeploymentFilters.params(filter, now, { view: latest }).slice(3, 5), [["latest", "true"], ["tz", "Asia/Tashkent"]]);
+  assert.deepEqual(DeploymentFilters.params(filter, now, { view: every }).slice(3, 5), [["notApplied", "true"], ["tz", "Asia/Tashkent"]]);
+  const keys = new Set([DeploymentFilters.key(filter), DeploymentFilters.key(filter, latest), DeploymentFilters.key(filter, every),
+    DeploymentFilters.key(filter, { ...latest, timeZone: "UTC" })]);
+  assert.equal(keys.size, 4);
+  assert.ok(!DeploymentFilters.params(filter, now, { view: latest }).some(([key]) => key === "status"));
   const halfYear = DeploymentFilters.resolve({ kind: "preset", preset: "6m" }, now);
   assert.equal(halfYear.from.getMonth(), (now.getMonth() + 6) % 12);
   assert.equal(DeploymentFilters.key(filter), DeploymentFilters.key({ ...filter, entities: [...filter.entities].reverse() }));

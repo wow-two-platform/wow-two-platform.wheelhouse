@@ -6,7 +6,6 @@ import { useAppQuery } from "@/bootstrap/query";
 import {
   DeploymentFilters,
   EntityKeys,
-  StatusFilter,
   type DeploymentActivity,
   type DeploymentFilterState,
   type DeploymentRange,
@@ -44,7 +43,6 @@ export function useWorkspaceActivity(
         key: item.key,
         filter: {
           entities: [...item.products].sort().map(EntityKeys.product),
-          status: StatusFilter.All,
           range: toValue(range),
         } satisfies DeploymentFilterState,
       })),

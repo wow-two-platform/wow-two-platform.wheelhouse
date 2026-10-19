@@ -6,7 +6,8 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Deployments.History.QueryHandlers;
 
-/// <summary>Handles <see cref="DeploymentHistoryQuery"/>.</summary>
+/// <summary>Handles <see cref="DeploymentHistoryQuery"/>: the filter's deployments newest first, each target's latest of
+/// a day alone when the filter asks for it.</summary>
 public sealed class DeploymentHistoryQueryHandler(DeploymentHistoryService history)
     : IQueryHandler<DeploymentHistoryQuery, AppResult<DeploymentPageDto>>
 {
@@ -18,8 +19,7 @@ public sealed class DeploymentHistoryQueryHandler(DeploymentHistoryService histo
             return AppResult<DeploymentPageDto>.Fail(((AppResult<DeploymentHistory>.Failure)read).Error);
 
         var after = request.Cursor is { } cursor && DeploymentCursor.TryRead(cursor, out var position) ? position : ((long, string)?)null;
-        var matching = loaded.Entries
-            .Where(entry => DeploymentQuerying.Matches(entry, request.Filter))
+        var matching = DeploymentQuerying.Select(loaded.Entries, request.Filter)
             .Where(entry => after is not { } start || DeploymentCursor.IsAfter(entry, start))
             .Take(request.Limit + 1)
             .ToList();

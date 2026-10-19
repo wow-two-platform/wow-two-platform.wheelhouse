@@ -1,5 +1,5 @@
 import { ConsolePaths, ProductTab, type ConsoleLocation } from '@/application/navigation';
-import { StatusFilter, type DeploymentItem, type DeploymentRange } from '@/domain/deployments';
+import type { DeploymentItem, DeploymentRange } from '@/domain/deployments';
 
 import { DeploymentView, writeDeploymentQuery } from './DeploymentFilterQuery';
 
@@ -53,7 +53,7 @@ export function releaseLocation(
   const release = releaseOf(item);
   if (!item.product || !release) return null;
   const view = writeDeploymentQuery({
-    filter: { entities: [], status: StatusFilter.All, range },
+    filter: { entities: [], range },
     view: DeploymentView.List,
     day: null,
   });

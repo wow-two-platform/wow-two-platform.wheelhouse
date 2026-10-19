@@ -379,8 +379,10 @@ service is an origin — never a guessed edge.
   holds; `status` `all` | `needs-action` (attention act) | `look` (attention look) | `succeeded` (state succeeded) |
   `not-applied`, and the old `failed` (the old outcome: failed, rolled back, rollback failed, interrupted, a failed
   check included) and `refused` (as not-applied); `notApplied=true` lists the deploys that changed nothing beside the
-  others, which every status but `not-applied` and `failed` leaves out by default; `from` inclusive and `to` exclusive
-  (ISO-8601). Malformed values are 400.
+  others, which every status but `not-applied` and `failed` leaves out by default; `latest=true` keeps each target's
+  last applied deploy of a local day in the IANA zone `tz` (default `UTC`), hiding the earlier attempts that day, so a
+  day that ended on a success reads as one and a failure nothing fixed still shows — which deploy is last follows the
+  entities and range, never the status; `from` inclusive and `to` exclusive (ISO-8601). Malformed values are 400.
 - `GET /api/deployments/history` pages newest first: `limit` 1-100 (25), and an opaque `cursor` of the last item's
   submission instant and id, so a new submission never shifts a later page. Each item carries product, workspace,
   environment, release, bundle, status and outcome (`succeeded` | `failed` | `refused` | `pending` | `unknown`), the
@@ -388,12 +390,13 @@ service is an origin — never a guessed edge.
 - `GET /api/deployments/history/activity?tz=` counts per local day in an IANA zone (default `UTC`, range six months,
   at most 731 days) the finished rollouts that changed the environment, by attention (`calm`, `look`, `act`, beside the
   old `succeeded` and `failed`), and, with `notApplied=true`, the deploys that changed nothing (`notApplied`); only days
-  with one are listed, and the status filter applies. The same applied rollouts name the range's five busiest products
+  with one are listed, and the status filter and `latest` apply (`latest` counts days in this `tz`). The same applied rollouts name the range's five busiest products
   (`products`: succeeded and failed per product, most first).
 - `GET /api/deployments/history/stats` measures the entities over the range (30 days by default) beside the range of
-  equal length before it, as the runner's statistics always have, with `look` and `act` counts; the status filter does
-  not apply, and the deploys that changed nothing count only with `notApplied=true` — while `notApplied` always counts
-  them, so the console can say how many it hides.
+  equal length before it, as the runner's statistics always have, with `look` and `act` counts; the status filter and
+  `latest` do not apply, and the deploys that changed nothing count only with `notApplied=true` — while `notApplied`
+  always counts them and `superseded` the applied attempts a later deploy replaced on the same target that local day
+  (in `tz`), so the console can say how many a latest-of-day view hides.
 - `GET /api/deployments/running` lists live rollouts with their step; `GET /api/deployments/promotions` lists, per
   product and prod target, the newest release (never a commit build) that succeeded on dev and is not what prod runs —
   left out while a prod rollout of it runs or prod runs it or a later release.

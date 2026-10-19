@@ -18,10 +18,10 @@ import { InfoPopover, type InfoSection } from "@/presentation/common/components"
 
 import DeploymentFilterBar from "./DeploymentFilterBar.vue";
 
-/** What the filter's info button explains: its reach, and what the outcome choice changes. @internal */
+/** What the filter's info button explains: its reach, and which attempts show. @internal */
 const Sections: readonly InfoSection[] = [
   { key: "reach", title: "What it filters" },
-  { key: "outcome", title: "Status" },
+  { key: "attempts", title: "Attempts" },
 ];
 
 /**
@@ -51,13 +51,12 @@ const emit = defineEmits<{ change: [filter: Partial<Filter>] }>();
               cover every product.
             </p>
           </template>
-          <template #outcome>
+          <template #attempts>
             <p>
-              Needs action (partial, failed), Look (degraded, rolled back) or Succeeded narrows the calendar and the list
-              to deployments needing that much attention. The measures count every state.
+              The calendar and the list show each target's last deploy of a day; the eye toggle beside Grid and List
+              shows every attempt. The measures count every attempt and every state.
             </p>
           </template>
-
         </InfoPopover>
       </div>
       <DeploymentFilterBar :filter="props.filter" :tree="props.tree" is-single-row @change="emit('change', $event)" />

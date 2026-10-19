@@ -193,6 +193,64 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
             .Should().Equal(("2026-10-03", 0, 0, 1, 0));
     }
 
+    [Fact]
+    public async Task Latest_KeepsEachTargetsLastDeployOfALocalDayWhileTheStatsCountEveryAttempt()
+    {
+        await SeedAsync();
+        // fp-dev on 10-07: four failures, then a fix; a refusal on prod; then a failure at 21:00 UTC, already 10-08 in
+        // Tashkent.
+        string[] failures = ["00000000-0000-4000-8000-0000000000a1", "00000000-0000-4000-8000-0000000000a2",
+            "00000000-0000-4000-8000-0000000000a3", "00000000-0000-4000-8000-0000000000a4"];
+        const string fixedDev = "00000000-0000-4000-8000-0000000000a5";
+        const string refused = "00000000-0000-4000-8000-0000000000a6";
+        const string late = "00000000-0000-4000-8000-0000000000a7";
+        var history = Fixture.Deployments.History;
+        for (var index = 0; index < failures.Length; index++)
+            history.Add(Record(failures[index], "foreverpin-dev", $"2026-10-07T{8 + index:00}:00:00+00:00", "failed", "v1.2.1",
+                "foreverpin-gh-4", WebB, management: ManagementB, managementVersion: "1.1.0", mutation: true));
+        history.Add(Record(fixedDev, "foreverpin-dev", "2026-10-07T13:00:00+00:00", "succeeded", "v1.2.2", "foreverpin-gh-5",
+            WebB, management: ManagementB, managementVersion: "1.1.0"));
+        history.Add(Record(refused, "foreverpin-prod", "2026-10-07T14:00:00+00:00", "rejected", "v1.2.2", "foreverpin-gh-5",
+            WebB, management: ManagementB, managementVersion: "1.1.0"));
+        history.Add(Record(late, "foreverpin-dev", "2026-10-07T21:00:00+00:00", "failed", "v1.2.3", "foreverpin-gh-6",
+            WebA, management: ManagementB, managementVersion: "1.1.0", mutation: true));
+        const string range = "from=2026-10-07T00:00:00Z&to=2026-10-08T00:00:00Z";
+
+        // Every attempt, the refusal included, until the view keeps each day's latest.
+        Ids(await DataAsync("/api/deployments/history?notApplied=true&" + range)).Should()
+            .Equal([late, refused, fixedDev, .. Enumerable.Reverse(failures)]);
+        // In UTC the late failure is fp-dev's last deploy of the 7th: nothing fixed it, so it shows.
+        Ids(await DataAsync("/api/deployments/history?latest=true&tz=UTC&" + range)).Should().Equal(late);
+        // In Tashkent it falls on the 8th, so the 7th ends on the fix and the four failures before it hide.
+        Ids(await DataAsync("/api/deployments/history?latest=true&tz=Asia/Tashkent&" + range)).Should().Equal(late, fixedDev);
+        Ids(await DataAsync("/api/deployments/history?latest=true&notApplied=true&tz=Asia/Tashkent&" + range)).Should()
+            .Equal(late, refused, fixedDev);
+
+        Attention(await DataAsync("/api/deployments/history/activity?latest=true&tz=Asia/Tashkent&" + range)).Should()
+            .Equal(("2026-10-07", 1, 0, 0, 0), ("2026-10-08", 0, 0, 1, 0));
+        Attention(await DataAsync("/api/deployments/history/activity?latest=true&tz=UTC&" + range)).Should()
+            .Equal(("2026-10-07", 0, 0, 1, 0));
+        Attention(await DataAsync("/api/deployments/history/activity?notApplied=true&tz=Asia/Tashkent&" + range)).Should()
+            .Equal(("2026-10-07", 1, 0, 4, 1), ("2026-10-08", 0, 0, 1, 0));
+
+        // The measures count every attempt whatever the view keeps, and say how many a latest-of-day view hides.
+        var stats = (await DataAsync("/api/deployments/history/stats?notApplied=true&latest=true&tz=Asia/Tashkent&" + range))
+            .GetProperty("current");
+        (stats.GetProperty("deploys").GetInt32(), stats.GetProperty("act").GetInt32(), stats.GetProperty("notApplied").GetInt32(),
+                stats.GetProperty("superseded").GetInt32())
+            .Should().Be((7, 5, 1, 4));
+        (await DataAsync("/api/deployments/history/stats?tz=UTC&" + range)).GetProperty("current").GetProperty("superseded")
+            .GetInt32().Should().Be(5);
+    }
+
+    [Fact]
+    public async Task Latest_RefusesAnUnknownZone()
+    {
+        await SeedAsync();
+        (await AdminClient.GetAsync("/api/deployments/history?latest=true&tz=Mars/Olympus")).StatusCode
+            .Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [Theory]
     [InlineData("tz=Mars/Olympus")]
     [InlineData("from=2024-01-01T00:00:00Z&to=2026-10-01T00:00:00Z")]

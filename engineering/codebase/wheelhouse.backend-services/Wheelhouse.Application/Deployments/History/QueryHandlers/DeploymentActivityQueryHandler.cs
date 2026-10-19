@@ -8,9 +8,10 @@ namespace Wheelhouse.Application.Deployments.History.QueryHandlers;
 
 /// <summary>Handles <see cref="DeploymentActivityQuery"/>: each day counts the finished rollouts that changed its
 /// environment by the attention they need, so a live submission never colours a day, and, when the filter includes
-/// them, the deploys that changed nothing beside them. The status filter applies, so a needs-action view counts no
-/// success. The same applied rollouts name the range's busiest products; a rollout whose product is unknown counts on
-/// its day only.</summary>
+/// them, the deploys that changed nothing beside them. When the filter keeps each target's latest deploy of a day, a
+/// day counts only those, so a failure fixed later that day leaves it calm. The status filter applies, so a needs-action
+/// view counts no success. The same applied rollouts name the range's busiest products; a rollout whose product is
+/// unknown counts on its day only.</summary>
 public sealed class DeploymentActivityQueryHandler(DeploymentHistoryService history, TimeProvider time)
     : IQueryHandler<DeploymentActivityQuery, AppResult<DeploymentActivityDto>>
 {
@@ -24,10 +25,10 @@ public sealed class DeploymentActivityQueryHandler(DeploymentHistoryService hist
         var zone = TimeZoneInfo.FindSystemTimeZoneById(request.TimeZone);
         var to = request.Filter.To ?? time.GetUtcNow();
         var from = request.Filter.From ?? to.AddMonths(-6);
-        var filter = request.Filter with { From = from, To = to };
+        var filter = request.Filter with { From = from, To = to, TimeZone = request.TimeZone };
         var days = new SortedDictionary<DateOnly, DeploymentDayDto>();
         var products = new Dictionary<string, (int Succeeded, int Failed)>(StringComparer.Ordinal);
-        foreach (var entry in loaded.Entries.Where(entry => DeploymentQuerying.Matches(entry, filter)))
+        foreach (var entry in DeploymentQuerying.Select(loaded.Entries, filter))
         {
             var date = LocalDate(entry.Record.SubmittedAt, zone);
             var day = days.GetValueOrDefault(date) ?? new DeploymentDayDto(date, 0, 0);

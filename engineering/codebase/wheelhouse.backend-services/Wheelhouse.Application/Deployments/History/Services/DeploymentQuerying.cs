@@ -61,6 +61,49 @@ public static class DeploymentQuerying
     public static bool InRange(DeploymentEntry entry, DateTimeOffset? from, DateTimeOffset? to) =>
         (from is not { } start || entry.Record.SubmittedAt >= start) && (to is not { } end || entry.Record.SubmittedAt < end);
 
+    /// <summary>The applied deploys a newer applied deploy replaced on the same target and local day: the attempts a
+    /// latest-of-day view hides. A deploy that changed nothing never replaces one, nor counts here.</summary>
+    /// <param name="entries">The deployments to compare, in any order.</param>
+    /// <param name="zone">The time zone days are counted in.</param>
+    /// <returns>The replaced deployments' IDs.</returns>
+    public static HashSet<string> Superseded(IEnumerable<DeploymentEntry> entries, TimeZoneInfo zone)
+    {
+        var latest = new HashSet<(string Lane, DateOnly Day)>();
+        var superseded = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in entries
+                     .Where(entry => !entry.NotApplied)
+                     .OrderByDescending(entry => entry.Record.SubmittedAt)
+                     .ThenByDescending(entry => entry.Record.Id, StringComparer.Ordinal))
+        {
+            var day = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(entry.Record.SubmittedAt, zone).DateTime);
+            if (!latest.Add((LaneOf(entry), day)))
+                superseded.Add(entry.Record.Id);
+        }
+
+        return superseded;
+    }
+
+    /// <summary>The lane a deploy runs in: its target, else its product and environment for a record without one.</summary>
+    /// <param name="entry">The deployment.</param>
+    /// <returns>The lane's key.</returns>
+    public static string LaneOf(DeploymentEntry entry) =>
+        entry.Record.TargetId ?? $"{entry.Product ?? "unknown"}/{entry.Environment ?? "unknown"}";
+
+    /// <summary>The entries a filter shows, in their order: those matching it, without the attempts a newer deploy
+    /// replaced that day when it keeps each target's latest. Which deploy is latest follows the entities and the range,
+    /// never the status, so a status narrows what the latest deploys are.</summary>
+    /// <param name="entries">The history, newest first.</param>
+    /// <param name="filter">The filter.</param>
+    /// <returns>The matching entries.</returns>
+    public static IEnumerable<DeploymentEntry> Select(IReadOnlyList<DeploymentEntry> entries, DeploymentFilter filter)
+    {
+        var hidden = filter.LatestOfDay
+            ? Superseded(entries.Where(entry => MatchesEntities(entry, filter) && InRange(entry, filter.From, filter.To)),
+                TimeZoneInfo.FindSystemTimeZoneById(filter.TimeZone))
+            : null;
+        return entries.Where(entry => Matches(entry, filter) && hidden?.Contains(entry.Record.Id) != true);
+    }
+
     /// <summary>Whether an entry matches the whole filter: entities, outcomes and range.</summary>
     /// <param name="entry">The deployment.</param>
     /// <param name="filter">The filter.</param>

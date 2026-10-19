@@ -25,6 +25,7 @@ export {
   useDeploymentPages,
   useDeploymentPromotions,
   useDeploymentRangeStats,
+  useHistoryView,
   useRunningDeployments,
 } from "./hooks/useDeploymentHistoryViews";
 export {

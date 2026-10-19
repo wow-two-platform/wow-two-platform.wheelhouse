@@ -34,7 +34,8 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
         this.ToActionResult(await sender.SendAsync(new DeploymentReadQuery("jobs"), ct));
 
     /// <summary>Pages the deployments a filter picks, newest first: workspaces, products and <c>product/service</c>
-    /// pairs combine as a union, then status and range narrow; <c>cursor</c> continues a previous page.</summary>
+    /// pairs combine as a union, then status and range narrow, and <c>latest</c> keeps each target's last deploy of a day
+    /// in <c>tz</c>; <c>cursor</c> continues a previous page.</summary>
     [HttpGet("history")]
     public async Task<IActionResult> HistoryPage(
         [FromQuery] DeploymentFilterApiRequest filter, [FromQuery] string? cursor, [FromQuery] int limit = 25,
@@ -49,7 +50,8 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
         this.ToActionResult(await sender.SendAsync(new DeploymentActivityQuery(filter.ToFilter(), tz), ct));
 
     /// <summary>Measures the filter's entities over its range (the last 30 days without one) beside the range before
-    /// it; the status filter does not apply.</summary>
+    /// it; the status filter and <c>latest</c> do not apply, and <c>superseded</c> counts the attempts a later deploy
+    /// replaced that day in <c>tz</c>.</summary>
     [HttpGet("history/stats")]
     public async Task<IActionResult> HistoryStats([FromQuery] DeploymentFilterApiRequest filter, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentStatsQuery(filter.ToFilter()), ct));

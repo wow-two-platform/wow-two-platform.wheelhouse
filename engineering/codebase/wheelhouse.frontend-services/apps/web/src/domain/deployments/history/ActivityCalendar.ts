@@ -25,6 +25,8 @@ export interface CalendarCell {
   readonly tone: CellTone;
   readonly level: CellLevel;
   readonly mark: CellMark;
+  /** While every attempt shows: the day held both rollouts that needed nothing and ones needing a look or action. */
+  readonly isMixed: boolean;
   /** The tooltip and accessible name: date and counts. */
   readonly label: string;
 }
@@ -96,6 +98,13 @@ export const ActivityCalendar = {
     return calm + look + act;
   },
 
+  /** Whether a day's attempts were mixed: some needed nothing, others a look or action — a failure fixed that day, or
+   * products that ended apart. */
+  isMixed(day: DayCounts | undefined): boolean {
+    const { calm, look, act } = ActivityCalendar.attention(day);
+    return calm > 0 && look + act > 0;
+  },
+
   /** The inner mark of a tone: a half-dot for amber, a cross for red. */
   mark(tone: CellTone): CellMark {
     return tone === 'danger' ? 'cross' : tone === 'warning' ? 'half' : 'none';
@@ -114,9 +123,16 @@ export const ActivityCalendar = {
 
   /**
    * Lays a range out as week columns over weekday rows, `weekStart` 1 for Monday. Days outside the range are null, so
-   * the first and last columns can be partial; a month label sits over the first column holding its first day.
+   * the first and last columns can be partial; a month label sits over the first column holding its first day. With
+   * `isAudit` — the counts cover every attempt — a day whose attempts were mixed says so.
    */
-  build(from: string, to: string, days: ReadonlyArray<DayCounts & { readonly date: string }>, weekStart: 0 | 1 = 1): Calendar {
+  build(
+    from: string,
+    to: string,
+    days: ReadonlyArray<DayCounts & { readonly date: string }>,
+    weekStart: 0 | 1 = 1,
+    options: { readonly isAudit?: boolean } = {},
+  ): Calendar {
     const byDate = new Map(days.map((day) => [day.date, day]));
     const first = utc(from);
     const last = utc(to);
@@ -145,6 +161,7 @@ export const ActivityCalendar = {
           tone,
           level: tone === 'empty' ? 0 : ActivityCalendar.level(ActivityCalendar.count(day)),
           mark: ActivityCalendar.mark(tone),
+          isMixed: Boolean(options.isAudit) && ActivityCalendar.isMixed(day),
           label: ActivityCalendar.label(date, day),
         });
       }
