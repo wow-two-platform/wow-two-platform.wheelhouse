@@ -1,99 +1,303 @@
-import { StatusState, StatusWords } from '@/domain/common/StatusVocabulary';
+import {
+  Attention,
+  AttentionTones,
+  DeployState,
+  DeployStateWords,
+  ServiceResult,
+  ServiceResultWords,
+  SubstateWords,
+  type StatusTone,
+} from '@/domain/common/StatusVocabulary';
 
 import { JobStatus } from './enums/JobStatus';
-import type { DeploymentWatch } from './history/models/DeploymentItem';
+import type { DeploymentStep } from './models/DeploymentStep';
+import type {
+  DeploymentStateCause,
+  DeploymentEffect,
+  DeploymentServiceResult,
+  DeploymentWatch,
+} from './history/models/DeploymentItem';
 
-/** A deployment's status in the console's vocabulary: its state, the state's word, and why it holds. */
-export interface DeploymentStatusReading {
-  readonly state: StatusState;
+/** A deployment in the status taxonomy, ready for its chip: what it amounts to, which way, how loud and why. */
+export interface DeploymentStateReading {
+  readonly state: DeployState;
+  /** The state's word: `Partial`. */
   readonly word: string;
-  /** Why the state holds — `rolled back to the previous release`, a failure's reason; null when there is nothing to add. */
-  readonly cause: string | null;
+  readonly substate: string | null;
+  /** The sub-state's words: `partly rolled back`; null when there is none. */
+  readonly detail: string | null;
+  readonly attention: Attention;
+  /** The colour, from the attention. */
+  readonly tone: StatusTone;
+  /** Not applied wears a dashed outline, Unknown a dotted one, so the chip reads in greyscale too. */
+  readonly outline: 'solid' | 'dashed' | 'dotted';
+  readonly cause: DeploymentStateCause | null;
 }
 
-/** What a deployment's status is read from. */
-export interface DeploymentStatusInput {
-  readonly status: JobStatus;
-  /** The display-safe explanation of its outcome. */
+/** What a deployment's reading is made of: the API's state, or a runner status alone where only that is known. */
+export interface DeploymentStateInput {
+  readonly status: JobStatus | string;
+  readonly state?: DeployState | null | undefined;
+  readonly substate?: string | null | undefined;
+  readonly attention?: Attention | null | undefined;
+  readonly cause?: DeploymentStateCause | null | undefined;
+  /** The display-safe reason, the cause's message when the API names none. */
   readonly reason?: string | null | undefined;
-  /** The watch after a successful rollout: a regression turns the success degraded. */
   readonly watch?: Pick<DeploymentWatch, 'status' | 'findings'> | null | undefined;
-  /** The release a roll back restored, when the caller knows it. */
-  readonly restored?: string | null | undefined;
 }
 
 /** How many of a set of deployments are in one state. */
-export interface DeploymentStatusCount {
-  readonly state: StatusState;
+export interface DeploymentStateCount {
+  readonly state: DeployState;
   readonly word: string;
+  readonly attention: Attention;
   readonly count: number;
 }
 
-/** The order counts read in: outcomes first, from calm to urgent, then what is still running or changed nothing. */
-export const DeploymentStatusOrder: readonly StatusState[] = [
-  StatusState.Succeeded,
-  StatusState.Failed,
-  StatusState.Degraded,
-  StatusState.Interrupted,
-  StatusState.Deploying,
-  StatusState.Refused,
-  StatusState.Unknown,
-];
-
-const PENDING: ReadonlySet<JobStatus> = new Set([JobStatus.Submitting, JobStatus.Queued, JobStatus.Running]);
-
-/** Joins a state's own cause with the runner's reason. @internal */
-function joined(cause: string, reason: string | null | undefined): string {
-  return reason ? `${cause} · ${reason}` : cause;
+/** One line of a deployment's impact: an origin, or an effect indented under the origin it likely came from. */
+export interface ImpactLine {
+  readonly service: string;
+  readonly result: ServiceResult;
+  /** `origin`, `effect` (likely via an origin), or `other` (hurt, with no declared path to an origin). */
+  readonly role: 'origin' | 'effect' | 'other';
+  readonly via: string | null;
+  readonly text: string;
 }
 
-/** Pure rules putting a deployment's runner status into the console's status vocabulary. */
-export const DeploymentStatusRules = {
+/** A rollout's steps, cut where changes start: cancel is refused after the boundary. */
+export interface StepSections {
+  readonly before: readonly DeploymentStep[];
+  readonly changes: readonly DeploymentStep[];
+  readonly after: readonly DeploymentStep[];
+}
+
+/** The action that fits a state best. */
+export type StateAction = 'reconcile' | 'redeploy' | 'retry' | null;
+
+/** The order counts read in: calm to urgent among those that changed the environment, then the rest. */
+export const DeploymentStateOrder: readonly DeployState[] = [
+  DeployState.Succeeded,
+  DeployState.Degraded,
+  DeployState.RolledBack,
+  DeployState.Partial,
+  DeployState.Failed,
+  DeployState.InProgress,
+  DeployState.NotApplied,
+  DeployState.Unknown,
+];
+
+const PENDING: ReadonlySet<string> = new Set([JobStatus.Submitting, JobStatus.Queued, JobStatus.Running]);
+const STATES: ReadonlySet<string> = new Set(Object.values(DeployState));
+const ATTENTIONS: ReadonlySet<string> = new Set(Object.values(Attention));
+/** The services a deployment put on its new release, or left there. @internal */
+const ON_RELEASE: ReadonlySet<ServiceResult> = new Set([ServiceResult.Updated, ServiceResult.New, ServiceResult.Unchanged]);
+/** The steps before a rollout changes anything. @internal */
+const BEFORE_CHANGES: ReadonlySet<string> = new Set(['Check target', 'Snapshot data', 'Pull images', 'Dry-run migrations']);
+/** The steps once the services run, whatever happened to them. @internal */
+const AFTER_CHANGES: ReadonlySet<string> = new Set([
+  'Publish sites',
+  'Probe sites',
+  'Verify end to end',
+  'Remove unused images',
+  'Remove old files',
+]);
+
+/** Capitalizes the first letter. @internal */
+const sentence = (text: string) => (text ? text.charAt(0).toUpperCase() + text.slice(1) : text);
+
+/** Pure rules putting a deployment into the console's status taxonomy. */
+export const DeploymentStates = {
   /**
-   * A deployment's state: a success that regressed while watched, and a roll back, are degraded and name the cause; a
-   * failure, a failed roll back and an interruption are red; a refusal changed nothing; a live one is deploying.
+   * The state, sub-state and attention of a runner status alone, for reads that carry no state (a runner job, an older
+   * answer): a roll back is Rolled back, a failed roll back and an interruption Failed, a refusal Not applied.
    */
-  of(input: DeploymentStatusInput): DeploymentStatusReading {
-    const reading = (state: StatusState, cause: string | null = null): DeploymentStatusReading => ({
-      state,
-      word: StatusWords[state],
-      cause: cause || null,
-    });
-    const reason = input.reason ?? null;
-    switch (input.status) {
-      case JobStatus.Succeeded: {
-        if (input.watch?.status !== 'degraded') return reading(StatusState.Succeeded);
-        const finding = input.watch.findings[0];
-        return reading(StatusState.Degraded, finding ? `regressed after the deploy: ${finding}` : 'regressed after the deploy');
-      }
+  legacy(status: string, watch?: Pick<DeploymentWatch, 'status'> | null): {
+    state: DeployState;
+    substate: string | null;
+    attention: Attention;
+  } {
+    switch (status) {
+      case JobStatus.Succeeded:
+        return watch?.status === 'degraded'
+          ? { state: DeployState.Degraded, substate: 'in_watch', attention: Attention.Look }
+          : { state: DeployState.Succeeded, substate: watch?.status ?? null, attention: Attention.None };
       case JobStatus.RolledBack:
-        return reading(
-          StatusState.Degraded,
-          joined(input.restored ? `rolled back to ${input.restored}` : 'rolled back to the previous release', reason),
-        );
+        return { state: DeployState.RolledBack, substate: 'automatic', attention: Attention.Look };
       case JobStatus.RollbackFailed:
-        return reading(StatusState.Failed, reason ?? 'restoring the previous release failed too');
+        return { state: DeployState.Failed, substate: 'rollback_failed', attention: Attention.Act };
       case JobStatus.Failed:
-        return reading(StatusState.Failed, reason);
+        return { state: DeployState.Failed, substate: null, attention: Attention.Act };
       case JobStatus.Interrupted:
-        return reading(StatusState.Interrupted, reason ?? 'stopped mid-way');
+        return { state: DeployState.Failed, substate: 'interrupted', attention: Attention.Act };
       case JobStatus.Rejected:
-        return reading(StatusState.Refused, reason);
+        return { state: DeployState.NotApplied, substate: 'refused', attention: Attention.None };
       default:
-        return PENDING.has(input.status) ? reading(StatusState.Deploying) : reading(StatusState.Unknown, reason);
+        return PENDING.has(status)
+          ? { state: DeployState.InProgress, substate: status === JobStatus.Running ? null : 'queued', attention: Attention.Info }
+          : { state: DeployState.Unknown, substate: 'no_receipt', attention: Attention.Muted };
     }
   },
 
-  /** How many deployments are in each state, in {@link DeploymentStatusOrder}, leaving out the states none is in. */
-  counts(inputs: readonly DeploymentStatusInput[]): DeploymentStatusCount[] {
-    const tally = new Map<StatusState, number>();
+  /** A deployment's reading: the API's state when it carries one, else its runner status read the old way. */
+  of(input: DeploymentStateInput): DeploymentStateReading {
+    const known = input.state && STATES.has(input.state) && input.attention && ATTENTIONS.has(input.attention);
+    const base = known
+      ? { state: input.state!, substate: input.substate ?? null, attention: input.attention! }
+      : DeploymentStates.legacy(input.status, input.watch);
+    const cause =
+      input.cause ??
+      (input.reason ? { kind: 'step', origin: null, message: input.reason, at: null } : null);
+    return {
+      ...base,
+      word: DeployStateWords[base.state],
+      detail: base.substate ? (SubstateWords[base.substate] ?? base.substate.replaceAll('_', ' ')) : null,
+      tone: AttentionTones[base.attention],
+      outline: base.state === DeployState.NotApplied ? 'dashed' : base.state === DeployState.Unknown ? 'dotted' : 'solid',
+      cause: base.attention === Attention.None && base.state === DeployState.Succeeded ? null : cause,
+    };
+  },
+
+  /** The chip's accessible text: `Partial, partly rolled back: jobs did not become healthy`. */
+  label(reading: DeploymentStateReading): string {
+    const head = reading.detail ? `${reading.word}, ${reading.detail}` : reading.word;
+    return reading.cause?.message ? `${head}: ${reading.cause.message}` : head;
+  },
+
+  /** How many deployments are in each state, in {@link DeploymentStateOrder}, leaving out the states none is in. */
+  counts(inputs: readonly DeploymentStateInput[]): DeploymentStateCount[] {
+    const tally = new Map<DeployState, { count: number; attention: Attention }>();
     for (const input of inputs) {
-      const { state } = DeploymentStatusRules.of(input);
-      tally.set(state, (tally.get(state) ?? 0) + 1);
+      const reading = DeploymentStates.of(input);
+      const held = tally.get(reading.state);
+      // A state's tile takes the loudest attention among its deployments.
+      const louder = held && Rank[held.attention] >= Rank[reading.attention] ? held.attention : reading.attention;
+      tally.set(reading.state, { count: (held?.count ?? 0) + 1, attention: louder });
     }
-    return DeploymentStatusOrder.flatMap((state) => {
-      const count = tally.get(state) ?? 0;
-      return count ? [{ state, word: StatusWords[state], count }] : [];
+    return DeploymentStateOrder.flatMap((state) => {
+      const held = tally.get(state);
+      return held ? [{ state, word: DeployStateWords[state], attention: held.attention, count: held.count }] : [];
     });
   },
+
+  /** The words a service strip says on a phone: `2 of 3 updated`, `1 of 4 changed`, `3 restored`. */
+  stripSummary(services: readonly DeploymentServiceResult[] | null | undefined): string | null {
+    if (!services?.length) return null;
+    const total = services.length;
+    const count = (...results: ServiceResult[]) => services.filter((item) => results.includes(item.result)).length;
+    const failed = count(ServiceResult.Failed);
+    if (failed) return `${failed} of ${total} failed`;
+    const restored = count(ServiceResult.Restored);
+    if (restored) return `${restored} of ${total} restored`;
+    const live = count(ServiceResult.Waiting, ServiceResult.Starting);
+    if (live) return `${total - live} of ${total} done`;
+    const changed = count(ServiceResult.Updated, ServiceResult.New, ServiceResult.Affected);
+    return changed === total ? `${total} updated` : `${changed} of ${total} updated`;
+  },
+
+  /** One service's glyph label: `jobs: failed, where it started`. */
+  serviceLabel(service: DeploymentServiceResult): string {
+    return `${service.service}: ${ServiceResultWords[service.result]}${service.origin ? ', where it started' : ''}`;
+  },
+
+  /**
+   * What the environment runs because of a deployment, in one sentence: `prod now runs two releases`, `prod runs
+   * v0.9.0`, `prod runs v0.8.4 again`, `prod is unchanged`.
+   */
+  nowRuns(
+    reading: Pick<DeploymentStateReading, 'state'>,
+    environment: string | null,
+    release: string | null,
+    previous: string | null,
+  ): string {
+    const where = environment ?? 'The target';
+    switch (reading.state) {
+      case DeployState.InProgress:
+        return `${where} is changing to ${release ?? 'the new release'}`;
+      case DeployState.Succeeded:
+        return `${where} runs ${release ?? 'the new release'}`;
+      case DeployState.Degraded:
+        return `${where} runs ${release ?? 'the new release'}, not all of it healthy`;
+      case DeployState.RolledBack:
+        return `${where} runs ${previous ?? 'the previous release'} again`;
+      case DeployState.Partial:
+        return `${where} now runs two releases`;
+      case DeployState.Failed:
+        return `${where} is broken or in an unknown state`;
+      case DeployState.NotApplied:
+        return `${where} is unchanged`;
+      default:
+        return `${where}: no receipt from the target`;
+    }
+  },
+
+  /**
+   * A deployment's impact as a list: each origin, then the services it likely hurt indented under it (an effect only
+   * along a declared path), then any other service that is not fine. Empty when every service is fine.
+   */
+  impact(services: readonly DeploymentServiceResult[] | null | undefined, effects: readonly DeploymentEffect[]): ImpactLine[] {
+    if (!services?.length) return [];
+    const byName = new Map(services.map((item) => [item.service, item] as const));
+    const lines: ImpactLine[] = [];
+    const listed = new Set<string>();
+    for (const origin of services.filter((item) => item.origin)) {
+      lines.push({ service: origin.service, result: origin.result, role: 'origin', via: null, text: ServiceResultWords[origin.result] });
+      listed.add(origin.service);
+      for (const effect of effects.filter((item) => item.via === origin.service)) {
+        lines.push({
+          service: effect.service,
+          result: byName.get(effect.service)?.result ?? ServiceResult.Affected,
+          role: 'effect',
+          via: origin.service,
+          text: `${effect.finding}, likely via ${origin.service}`,
+        });
+        listed.add(effect.service);
+      }
+    }
+    for (const item of services) {
+      if (listed.has(item.service)) continue;
+      if (item.result === ServiceResult.Failed || item.result === ServiceResult.Affected || item.result === ServiceResult.NotReached || item.result === ServiceResult.Restored)
+        lines.push({ service: item.service, result: item.result, role: 'other', via: null, text: ServiceResultWords[item.result] });
+    }
+    return lines;
+  },
+
+  /** How many services run the release a deployment brought, as a pill's detail: `2/3 on 0.4.0`. */
+  onRelease(services: readonly DeploymentServiceResult[] | null | undefined): { on: number; total: number } | null {
+    if (!services?.length) return null;
+    return { on: services.filter((item) => ON_RELEASE.has(item.result)).length, total: services.length };
+  },
+
+  /**
+   * A rollout's steps cut where changes start: the checks before (snapshot, pull, dry run, drain), the changes from the
+   * first step that touches the services, and what follows once they run (sites, the dev check, housekeeping). A
+   * rollout that stopped before changes has none after the boundary.
+   */
+  sections(steps: readonly DeploymentStep[]): StepSections {
+    const start = steps.findIndex((step) => !BEFORE_CHANGES.has(step.name) && !step.name.startsWith('Drain') && !step.name.startsWith('Wait'));
+    if (start < 0) return { before: steps, changes: [], after: [] };
+    const tail = steps.slice(start);
+    const end = tail.findIndex((step) => AFTER_CHANGES.has(step.name));
+    return end < 0
+      ? { before: steps.slice(0, start), changes: tail, after: [] }
+      : { before: steps.slice(0, start), changes: tail.slice(0, end), after: tail.slice(end) };
+  },
+
+  /** The action that fits a state: Partial and Failed reconcile, Rolled back redeploys, Not applied retries. */
+  action(state: DeployState): StateAction {
+    return state === DeployState.Partial || state === DeployState.Failed
+      ? 'reconcile'
+      : state === DeployState.RolledBack
+        ? 'redeploy'
+        : state === DeployState.NotApplied
+          ? 'retry'
+          : null;
+  },
+
+  /** A cause's message as a sentence. */
+  causeText(cause: DeploymentStateCause | null): string | null {
+    return cause?.message ? sentence(cause.message) : null;
+  },
 } as const;
+
+/** Each attention's loudness, for the loudest of several. @internal */
+const Rank: Readonly<Record<Attention, number>> = { none: 0, muted: 0, info: 1, look: 2, act: 3 };

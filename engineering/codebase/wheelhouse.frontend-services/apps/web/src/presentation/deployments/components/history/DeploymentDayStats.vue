@@ -16,20 +16,21 @@ import { Rocket } from "lucide-vue-next";
 
 import { SkeletonState } from "@wow-two-beta/fe/presentation/feedback";
 
-import { DeploymentStatusRules } from "@/domain/deployments";
-import { statusClass, StatusIcons, statusIconClass } from "@/presentation/common/components";
+import { AttentionTones } from "@/domain/common";
+import { DeploymentStates } from "@/domain/deployments";
+import { deployStateClass, DeployStateIcons } from "@/presentation/common/components";
 
 /**
- * The chosen day at a glance, above its deployments: a compact tile for the day's total, then one per status that
- * occurred — succeeded, failed, degraded, interrupted, deploying, refused — each its icon and count in the same tones
- * as the status pills, its word in the title and for assistive technology; a status nobody reached takes no tile.
- * Tiles wrap, so a narrow day panel keeps every one.
+ * The chosen day at a glance, above its deployments: a compact tile for the day's total, then one per state that
+ * occurred — succeeded, degraded, rolled back, partial, failed, in progress, not applied, unknown — each its icon and
+ * count in the colour of the loudest attention among them, as the state chips are, its word in the title and for
+ * assistive technology; a state nobody reached takes no tile. Tiles wrap, so a narrow day panel keeps every one.
  */
 defineOptions({ name: "DeploymentDayStats" });
 const props = withDefaults(defineProps<DeploymentDayStatsProps>(), { hasMore: false });
 defineSlots<{}>();
 
-const counts = computed(() => (props.items ? DeploymentStatusRules.counts(props.items) : []));
+const counts = computed(() => (props.items ? DeploymentStates.counts(props.items) : []));
 const total = computed(() => props.items?.length ?? 0);
 const totalLabel = computed(() => `${total.value}${props.hasMore ? "+" : ""}`);
 </script>
@@ -51,18 +52,12 @@ const totalLabel = computed(() => `${total.value}${props.hasMore ? "+" : ""}`);
       v-for="count in counts"
       :key="count.state"
       class="inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs"
-      :class="statusClass(count.state)"
-      :title="`${count.count} ${count.word}`"
+      :class="deployStateClass({ state: count.state, tone: AttentionTones[count.attention] })"
+      :title="`${count.count} ${count.word.toLowerCase()}`"
     >
-      <component
-        :is="StatusIcons[count.state]"
-        :size="14"
-        aria-hidden="true"
-        class="shrink-0"
-        :class="statusIconClass(count.state)"
-      />
+      <component :is="DeployStateIcons[count.state]" :size="14" aria-hidden="true" class="shrink-0" />
       <span class="text-sm font-semibold tabular-nums">{{ count.count }}</span>
-      <span class="sr-only">{{ count.word }}</span>
+      <span class="sr-only">{{ count.word.toLowerCase() }}</span>
     </li>
   </ul>
 </template>

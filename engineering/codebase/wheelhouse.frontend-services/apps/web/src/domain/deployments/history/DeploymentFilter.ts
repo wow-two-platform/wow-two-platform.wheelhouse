@@ -1,12 +1,20 @@
 import { EntityKeys } from './EntitySelection';
 
-/** Which outcomes a deployment view shows. */
+/** Which deployments a view shows by the attention they need: all, those needing action, those worth a look, or the
+ * successes that need nothing. Deploys that changed nothing follow the viewer's one Show unchanged switch instead. */
 export const StatusFilter = {
   All: 'all',
+  NeedsAction: 'needs-action',
+  Look: 'look',
   Succeeded: 'succeeded',
-  Failed: 'failed',
 } as const;
 export type StatusFilter = (typeof StatusFilter)[keyof typeof StatusFilter];
+
+/** Reads a status filter from an address value; the old `failed` reads as needs-action, anything else as all. */
+export function readStatusFilter(value: string | null | undefined): StatusFilter {
+  if (value === 'failed') return StatusFilter.NeedsAction;
+  return (Object.values(StatusFilter) as string[]).includes(value ?? '') ? (value as StatusFilter) : StatusFilter.All;
+}
 
 /** The ranges a view offers in one click, ending now. */
 export const RangePreset = {
@@ -110,12 +118,13 @@ export const DeploymentFilters = {
 
   /**
    * The API's query parameters for a filter: repeated `workspace`, `product` and `service`, then `status` (left out
-   * for all, and when `withStatus` is false), then ISO `from` and `to` resolved at `now`.
+   * for all, and when `withStatus` is false), `notApplied` when the viewer shows the deploys that changed nothing, then
+   * ISO `from` and `to` resolved at `now`.
    */
   params(
     filter: DeploymentFilterState,
     now: Date,
-    options: { readonly withStatus?: boolean; readonly bounds?: { from: Date; to: Date } } = {},
+    options: { readonly withStatus?: boolean; readonly bounds?: { from: Date; to: Date }; readonly unchanged?: boolean } = {},
   ): Array<[string, string]> {
     const result: Array<[string, string]> = [];
     for (const key of filter.entities) {
@@ -126,6 +135,7 @@ export const DeploymentFilters = {
       else result.push(['service', `${entity.product}/${entity.service}`]);
     }
     if ((options.withStatus ?? true) && filter.status !== StatusFilter.All) result.push(['status', filter.status]);
+    if (options.unchanged) result.push(['notApplied', 'true']);
     const { from, to } = options.bounds ?? DeploymentFilters.resolve(filter.range, now);
     result.push(['from', from.toISOString()], ['to', to.toISOString()]);
     return result;
@@ -138,9 +148,12 @@ export const DeploymentFilters = {
     return `${format.format(new Date(range.from))} – ${format.format(new Date(range.to))}`;
   },
 
-  /** A stable text of a filter for cache keys: the preset, not its instants, so a key holds while time moves. */
-  key(filter: DeploymentFilterState): string {
+  /**
+   * A stable text of a filter for cache keys: the preset, not its instants, so a key holds while time moves; `unchanged`
+   * marks a read that includes the deploys that changed nothing.
+   */
+  key(filter: DeploymentFilterState, unchanged = false): string {
     const range = filter.range.kind === 'preset' ? filter.range.preset : `${filter.range.from}..${filter.range.to}`;
-    return `${[...filter.entities].sort().join(',')}|${filter.status}|${range}`;
+    return `${[...filter.entities].sort().join(',')}|${filter.status}|${range}${unchanged ? '|unchanged' : ''}`;
   },
 } as const;

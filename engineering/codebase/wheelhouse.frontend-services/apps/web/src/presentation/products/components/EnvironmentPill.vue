@@ -11,9 +11,11 @@ export interface EnvironmentPillProps {
 </script>
 <script setup lang="ts">
 import { computed } from "vue";
+import { Clock, Eye, X } from "lucide-vue-next";
 import { RelativeTime } from "@wow-two-beta/fe/presentation/display";
 import { SkeletonState } from "@wow-two-beta/fe/presentation/feedback";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@wow-two-beta/fe/presentation/overlays";
+import { DeployStateWords, SubstateWords } from "@/domain/common";
 import { PillState, PillStateWords } from "@/domain/portfolio";
 import { statusClass, StatusIcons, statusIconClass } from "@/presentation/common/components";
 
@@ -21,9 +23,11 @@ import { statusClass, StatusIcons, statusIconClass } from "@/presentation/common
  * An outlined pill per environment: a status icon, the environment's name, then its serving version when calm or its
  * state word when not; "not deployed" is dashed and names nothing more. Every state differs by icon shape and the
  * non-calm ones by a word, so colour is never the only signal; states, words, tones and icons are the console's status
- * vocabulary, shared with every deployment's pill. Hovering or focusing it opens its details: the cause of a degraded
- * or failed state (`rolled back to v1.2.0`), the release serving, and the latest rollout's release, status, time and
- * actor.
+ * vocabulary, shared with every deployment's pill. A pill shows the environment, not the attempt: a mix of releases
+ * reads `mixed` (`2/3 on 0.4.0`), and one corner marker at most says more — a cross when the last attempt changed
+ * nothing but needs a look, a clock while a deploy waits, an eye while the serving release is watched. Hovering or
+ * focusing it opens its details: the cause of a degraded, mixed or failed state (`rolled back to v1.2.0`), the release
+ * serving, and the latest rollout's release, state, time and actor.
  */
 defineOptions({ name: "EnvironmentPill" });
 const props = withDefaults(defineProps<EnvironmentPillProps>(), { environment: "" });
@@ -34,7 +38,8 @@ const label = computed(() => {
   const pill = props.pill;
   if (!pill) return "";
   const state = pill.state === PillState.Degraded && pill.cause ? `${word.value}, ${pill.cause}` : word.value;
-  return pill.release && pill.state !== PillState.None ? `${pill.environment}: ${state} · ${pill.release}` : `${pill.environment}: ${state}`;
+  const base = pill.release && pill.state !== PillState.None ? `${pill.environment}: ${state} · ${pill.release}` : `${pill.environment}: ${state}`;
+  return marker.value ? `${base}; ${marker.value.words}` : base;
 });
 /** The line that explains a calm or empty state in the details. @internal */
 const note = computed(() => {
@@ -49,6 +54,24 @@ const note = computed(() => {
   if (pill.cause) return pill.cause.charAt(0).toUpperCase() + pill.cause.slice(1);
   return null;
 });
+/** The corner marker's icon, colour and words. @internal */
+const marker = computed(() => {
+  switch (props.pill?.marker) {
+    case "attempt":
+      return { icon: X, tone: "border-warning/60 bg-warning-soft", glyph: "text-warning-soft-foreground!", words: "the last attempt changed nothing and needs a look" };
+    case "waiting":
+      return { icon: Clock, tone: "border-info/50 bg-info-soft", glyph: "text-info-soft-foreground!", words: "a deploy is waiting" };
+    case "watching":
+      return { icon: Eye, tone: "border-info/50 bg-info-soft", glyph: "text-info-soft-foreground!", words: "being watched after its deploy" };
+    default:
+      return null;
+  }
+});
+/** A rollout's state in words: `Partial · partly rolled back`. @internal */
+function stateWords(deploy: { state: keyof typeof DeployStateWords; substate: string | null }): string {
+  const sub = deploy.substate ? (SubstateWords[deploy.substate] ?? deploy.substate.replaceAll("_", " ")) : null;
+  return sub ? `${DeployStateWords[deploy.state]} · ${sub}` : DeployStateWords[deploy.state];
+}
 const showsLatest = computed(
   () => props.pill?.lastDeploy && props.pill.state !== PillState.Ci && props.pill.lastDeploy.id !== props.pill.running?.id,
 );
@@ -84,6 +107,12 @@ const showsLatest = computed(
           class="min-w-0 truncate text-muted-foreground tabular-nums"
           >{{ props.pill.detail }}</span
         >
+        <span
+          v-if="marker"
+          :class="['absolute -top-1.5 -right-1.5 flex size-3.5 items-center justify-center rounded-full border', marker.tone]"
+          aria-hidden="true"
+          ><component :is="marker.icon" :size="9" :stroke-width="3" :class="marker.glyph"
+        /></span>
       </span>
     </HoverCardTrigger>
     <HoverCardContent class="w-72 p-3 text-xs">
@@ -108,7 +137,7 @@ const showsLatest = computed(
           <dt class="text-muted-foreground">Latest</dt>
           <dd class="min-w-0">
             <span class="font-medium tabular-nums">{{ props.pill.lastDeploy.release ?? "Build" }}</span>
-            · {{ props.pill.lastDeploy.status.replaceAll("_", " ") }}
+            · {{ stateWords(props.pill.lastDeploy) }}
             · <RelativeTime :value="props.pill.lastDeploy.submittedAt" />
             <template v-if="props.pill.lastDeploy.actor"> · {{ props.pill.lastDeploy.actor }}</template>
           </dd>
@@ -117,7 +146,17 @@ const showsLatest = computed(
             <dd class="line-clamp-3">{{ props.pill.lastDeploy.reason }}</dd>
           </template>
         </template>
-        <template v-else-if="props.pill.running?.actor">
+        <template v-if="props.pill.marker === 'attempt' && props.pill.lastAttempt">
+          <dt class="text-muted-foreground">Last try</dt>
+          <dd class="min-w-0">
+            <span class="font-medium tabular-nums">{{ props.pill.lastAttempt.release ?? "Build" }}</span>
+            · {{ stateWords(props.pill.lastAttempt) }} · <RelativeTime :value="props.pill.lastAttempt.submittedAt" />
+            <span v-if="props.pill.lastAttempt.reason" class="mt-0.5 line-clamp-2 block text-muted-foreground">{{
+              props.pill.lastAttempt.reason
+            }}</span>
+          </dd>
+        </template>
+        <template v-if="!showsLatest && props.pill.running?.actor">
           <dt class="text-muted-foreground">By</dt>
           <dd class="truncate">{{ props.pill.running.actor }}</dd>
         </template>

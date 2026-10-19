@@ -21,7 +21,7 @@ import DeploymentFilterBar from "./DeploymentFilterBar.vue";
 /** What the filter's info button explains: its reach, and what the outcome choice changes. @internal */
 const Sections: readonly InfoSection[] = [
   { key: "reach", title: "What it filters" },
-  { key: "outcome", title: "Outcome" },
+  { key: "outcome", title: "Status" },
 ];
 
 /**
@@ -52,8 +52,12 @@ const emit = defineEmits<{ change: [filter: Partial<Filter>] }>();
             </p>
           </template>
           <template #outcome>
-            <p>Succeeded or Failed narrows the calendar and the list to that outcome. The measures count every outcome.</p>
+            <p>
+              Needs action (partial, failed), Look (degraded, rolled back) or Succeeded narrows the calendar and the list
+              to deployments needing that much attention. The measures count every state.
+            </p>
           </template>
+
         </InfoPopover>
       </div>
       <DeploymentFilterBar :filter="props.filter" :tree="props.tree" is-single-row @change="emit('change', $event)" />

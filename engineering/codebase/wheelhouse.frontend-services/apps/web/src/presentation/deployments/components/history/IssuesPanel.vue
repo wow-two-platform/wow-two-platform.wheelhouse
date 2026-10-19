@@ -25,9 +25,11 @@ import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge, RelativeTime } from "@wow-two-beta/fe/presentation/display";
 
 import { ConsolePaths } from "@/application/navigation";
-import { DeploymentIssueKind, DeploymentIssues } from "@/domain/deployments";
+import { Attention } from "@/domain/common";
+import { DeploymentIssueKind, DeploymentIssues, DeploymentStates } from "@/domain/deployments";
 import { Panel } from "@/presentation/common/components";
 
+import DeploymentStateChip from "../DeploymentStateChip.vue";
 import FrozenBadge from "../automation/FrozenBadge.vue";
 
 /**
@@ -51,11 +53,11 @@ function pathOf(issue: DeploymentIssue): string {
 }
 
 /**
- * The issue's tone in the console's status vocabulary: a roll back and a regression after the deploy are degraded
- * (amber); a failure, a failed roll back, an interruption and a stuck rollout are red. @internal
+ * The issue's tone by the attention its deployment needs: worth a look (a roll back, a regression, a failed check) is
+ * amber; needing action (partial, failed) and a stuck rollout are red. @internal
  */
 function toneOf(issue: DeploymentIssue): string {
-  return issue.kind === DeploymentIssueKind.RolledBack || issue.kind === DeploymentIssueKind.Degraded
+  return issue.kind !== DeploymentIssueKind.Stuck && issue.deployment.attention === Attention.Look
     ? "text-warning"
     : "text-destructive";
 }
@@ -97,7 +99,10 @@ function describe(issue: DeploymentIssue): string {
             <span class="font-mono text-xs">{{ issue.deployment.release ?? issue.deployment.bundleId ?? "—" }}</span>
             <FrozenBadge :product="issue.deployment.product" :environment="issue.deployment.environment" />
           </p>
-          <p class="mt-1 text-sm">
+          <div v-if="issue.kind !== DeploymentIssueKind.Stuck" class="mt-1.5 text-sm">
+            <DeploymentStateChip :reading="DeploymentStates.of(issue.deployment)" has-cause />
+          </div>
+          <p v-else class="mt-1 text-sm">
             <span :class="toneOf(issue)">{{
               DeploymentIssues.headline(issue)
             }}</span>

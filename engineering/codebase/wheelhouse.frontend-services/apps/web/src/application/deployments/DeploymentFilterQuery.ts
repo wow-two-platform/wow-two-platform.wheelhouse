@@ -6,6 +6,7 @@ import {
   EntitySelection,
   RangePresets,
   StatusFilter,
+  readStatusFilter,
   type DeploymentFilterState,
   type DeploymentRange,
 } from '@/domain/deployments';
@@ -40,7 +41,7 @@ function first(value: unknown): string | null {
 
 /**
  * Reads a deployments view from a route query: repeated `workspace`, `product` and `service` (`product/service`),
- * `status` (`succeeded` or `failed`), a `range` preset or custom `from` and `to` (local `YYYY-MM-DDTHH:mm`), `view`
+ * `status` (`needs-action`, `look` or `succeeded`; the old `failed` reads as needs-action), a `range` preset or custom `from` and `to` (local `YYYY-MM-DDTHH:mm`), `view`
  * (`list`) and the expanded `day`. A malformed value falls back to its default rather than failing the page.
  */
 export function readDeploymentQuery(query: Readonly<Record<string, unknown>>): DeploymentViewState {
@@ -49,8 +50,7 @@ export function readDeploymentQuery(query: Readonly<Record<string, unknown>>): D
     ...all(query['product']).map(EntityKeys.product),
     ...all(query['service']).map((value) => `s:${value}`),
   ]);
-  const statusText = first(query['status']);
-  const status = statusText === StatusFilter.Succeeded || statusText === StatusFilter.Failed ? statusText : StatusFilter.All;
+  const status = readStatusFilter(first(query['status']));
   const from = first(query['from']);
   const to = first(query['to']);
   const preset = RangePresets.find((item) => item.value === first(query['range']))?.value;

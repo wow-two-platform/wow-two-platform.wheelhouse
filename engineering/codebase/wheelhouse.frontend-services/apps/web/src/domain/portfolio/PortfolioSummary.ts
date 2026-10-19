@@ -1,3 +1,5 @@
+import type { Attention, DeployState } from '@/domain/common/StatusVocabulary';
+
 /** What a rollout's status amounts to, as the host reports it. */
 export const RolloutOutcome = {
   Succeeded: 'succeeded',
@@ -21,17 +23,28 @@ export interface PortfolioDeploy {
   completedAt: string | null;
   /** Why it failed, display-safe. */
   reason: string | null;
+  /** What the environment runs because of it, in the status taxonomy. */
+  state: DeployState;
+  substate: string | null;
+  attention: Attention;
+  /** How many of its services run the release it brought; null when the target did not report its services. */
+  servicesOnRelease: number | null;
+  serviceCount: number | null;
+  /** Its watch window's status after a success, such as `watching`. */
+  watch: string | null;
 }
 
 /** One environment of a product in the portfolio summary. */
 export interface PortfolioEnvironment {
   environment: string;
-  /** The newest rollout the runner accepted, whatever its outcome. */
+  /** The newest rollout that changed or tried to change the environment, whatever its outcome. */
   lastDeploy: PortfolioDeploy | null;
   /** The newest rollout that succeeded, so the release it serves. */
   running: PortfolioDeploy | null;
   /** Finished rollouts per week, aligned with the summary's weeks. */
   weekly: number[];
+  /** A newer deploy that changed nothing but needs a look (a failed check); it marks the pill's corner. */
+  lastAttempt: PortfolioDeploy | null;
 }
 
 /** One product's deployments over the summary's weeks. */

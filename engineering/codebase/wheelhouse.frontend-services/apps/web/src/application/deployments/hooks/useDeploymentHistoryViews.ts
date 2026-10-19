@@ -1,5 +1,6 @@
 import { computed, toValue, watch, type MaybeRefOrGetter } from "vue";
 
+import { useShowUnchanged } from "@/application/preferences";
 import { useAppInfiniteQuery, useAppQuery, useInvalidate } from "@/bootstrap/query";
 import {
   DeploymentFilters,
@@ -33,15 +34,15 @@ export function useDeploymentPages(
 ) {
   const limit = options.limit ?? 25;
   const day = () => toValue(options.day ?? null);
+  const unchanged = useShowUnchanged();
   return useAppInfiniteQuery<DeploymentItem, DeploymentPage>({
-    key: () => DeploymentKeys.historyPage(`${DeploymentFilters.key(toValue(filter))}|${day() ?? ""}`, limit),
+    key: () => DeploymentKeys.historyPage(`${DeploymentFilters.key(toValue(filter), unchanged.value)}|${day() ?? ""}`, limit),
     queryFn: ({ pageParam, signal }) => {
       const date = day();
-      const params = DeploymentFilters.params(
-        toValue(filter),
-        new Date(),
-        date ? { bounds: DeploymentFilters.dayBounds(date) } : {},
-      );
+      const params = DeploymentFilters.params(toValue(filter), new Date(), {
+        unchanged: unchanged.value,
+        ...(date ? { bounds: DeploymentFilters.dayBounds(date) } : {}),
+      });
       return deploymentHistoryApi.listPage(params, typeof pageParam === "string" ? pageParam : null, limit, signal);
     },
     initialPageParam: null,
@@ -51,23 +52,32 @@ export function useDeploymentPages(
   });
 }
 
-/** Finished rollouts per local day over the filter's range, in the owner's time zone. */
+/** Finished rollouts per local day over the filter's range, in the owner's time zone; the deploys that changed nothing
+ * count beside them while the viewer shows them. */
 export function useDeploymentActivity(filter: MaybeRefOrGetter<DeploymentFilterState>, enabled: MaybeRefOrGetter<boolean> = true) {
   const tz = ownerTimeZone();
+  const unchanged = useShowUnchanged();
   return useAppQuery({
-    key: () => DeploymentKeys.activity(DeploymentFilters.key(toValue(filter)), tz),
-    queryFn: ({ signal }) => deploymentHistoryApi.getActivity(DeploymentFilters.params(toValue(filter), new Date()), tz, signal),
+    key: () => DeploymentKeys.activity(DeploymentFilters.key(toValue(filter), unchanged.value), tz),
+    queryFn: ({ signal }) =>
+      deploymentHistoryApi.getActivity(DeploymentFilters.params(toValue(filter), new Date(), { unchanged: unchanged.value }), tz, signal),
     enabled: () => toValue(enabled),
     keepPreviousData: true,
   });
 }
 
-/** The filter's measures over its range beside the range before it; the status filter does not apply. */
+/** The filter's measures over its range beside the range before it; the status filter does not apply, and the deploys
+ * that changed nothing count only while the viewer shows them. */
 export function useDeploymentRangeStats(filter: MaybeRefOrGetter<DeploymentFilterState>) {
   const keyed = () => ({ ...toValue(filter), status: "all" as const });
+  const unchanged = useShowUnchanged();
   return useAppQuery({
-    key: () => DeploymentKeys.rangeStats(DeploymentFilters.key(keyed())),
-    queryFn: ({ signal }) => deploymentHistoryApi.getStats(DeploymentFilters.params(keyed(), new Date(), { withStatus: false }), signal),
+    key: () => DeploymentKeys.rangeStats(DeploymentFilters.key(keyed(), unchanged.value)),
+    queryFn: ({ signal }) =>
+      deploymentHistoryApi.getStats(
+        DeploymentFilters.params(keyed(), new Date(), { withStatus: false, unchanged: unchanged.value }),
+        signal,
+      ),
     keepPreviousData: true,
   });
 }

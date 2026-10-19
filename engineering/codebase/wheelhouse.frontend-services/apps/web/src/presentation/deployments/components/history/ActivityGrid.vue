@@ -1,12 +1,11 @@
 <script lang="ts">
-import type { DeploymentActivity, StatusFilter } from "@/domain/deployments";
+import type { DeploymentActivity } from "@/domain/deployments";
 
 /** Defines the deployment activity calendar. */
 export interface ActivityGridProps {
-  /** Finished rollouts per local day over the range; undefined until the first read, which draws an empty range. */
+  /** Applied, finished rollouts per local day over the range, by attention; undefined until the first read, which draws
+   * an empty range. The status filter already narrowed them. */
   readonly activity: DeploymentActivity | undefined;
-  /** The status filter, which decides how a day is coloured. */
-  readonly status: StatusFilter;
   /** The day expanded below the calendar, `YYYY-MM-DD`. */
   readonly selected: string | null;
   /** A rollout runs now: today's mark pulses. */
@@ -24,9 +23,10 @@ import { HintPlacement } from "./HintPlacement";
 
 /**
  * A GitHub-style calendar of deployments: week columns over weekday rows, month labels above, in 20px day cells (22px
- * on a phone, which scrolls it sideways) that take only the width they need. A day is green when every rollout
- * succeeded, red when every one failed, amber when both; four steps of fill follow the count (1, 2–3, 4–6, 7+). Failed
- * and mixed days also carry an inner mark, and every day names its date and counts. Today and the chosen day differ in
+ * on a phone, which scrolls it sideways) that take only the width they need. A day takes the loudest attention of its
+ * applied, finished rollouts: green when none needs anything, amber with a half-dot when one is worth a look, red with
+ * a cross when one needs action; four steps of fill follow the count (1, 2–3, 4–6, 7+). A deploy that changed nothing
+ * never colours a day, and every day names its date and counts. Today and the chosen day differ in
  * more than thickness: today wears a dashed ring in a muted tone, pulsing while a rollout runs (still under reduced
  * motion); the chosen day a solid primary ring set off from the cell; chosen today keeps the solid ring and adds a small
  * today dot. Arrow keys move between days; a day toggles its list. The shared day tooltip is drawn in the top layer and
@@ -48,11 +48,11 @@ const tip = ref<HTMLElement | null>(null);
 
 const calendar = computed(() => {
   const activity = props.activity;
-  if (activity) return ActivityCalendar.build(activity.from, activity.to, activity.days, props.status);
+  if (activity) return ActivityCalendar.build(activity.from, activity.to, activity.days);
   const end = new Date();
   const start = new Date(end);
   start.setMonth(start.getMonth() - 6);
-  return ActivityCalendar.build(DeploymentFilters.localDate(start), DeploymentFilters.localDate(end), [], props.status);
+  return ActivityCalendar.build(DeploymentFilters.localDate(start), DeploymentFilters.localDate(end), []);
 });
 const cells = computed(() => calendar.value.weeks.flatMap((week) => week.cells.filter((cell): cell is CalendarCell => cell !== null)));
 const first = computed(() => cells.value[0]?.date ?? today);
@@ -72,10 +72,10 @@ function fill(cell: CalendarCell): string {
  */
 function markColour(cell: CalendarCell): string {
   const warning = cell.tone === "warning";
-  if (cell.level >= 3) return warning ? "bg-warning-foreground/90" : "bg-destructive-foreground/90";
+  if (cell.level >= 3) return warning ? "text-warning-foreground/90" : "text-destructive-foreground/90";
   if (cell.level === 2)
-    return warning ? "bg-foreground/65 dark:bg-warning-foreground/90" : "bg-foreground/65 dark:bg-destructive-foreground/90";
-  return "bg-foreground/65";
+    return warning ? "text-foreground/65 dark:text-warning-foreground/90" : "text-foreground/65 dark:text-destructive-foreground/90";
+  return "text-foreground/65";
 }
 
 /** Keeps the newest weeks in view: on a phone the calendar scrolls sideways and opens at today. */
@@ -204,8 +204,13 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
               @focus="show($event, cell)"
               @blur="hide"
             >
-              <span v-if="cell.mark === 'failed'" :class="['size-1.5 rounded-full', markColour(cell)]" aria-hidden="true" />
-              <span v-else-if="cell.mark === 'mixed'" :class="['h-0.5 w-2 rounded-full', markColour(cell)]" aria-hidden="true" />
+              <svg v-if="cell.mark === 'cross'" viewBox="0 0 8 8" :class="['size-2', markColour(cell)]" aria-hidden="true">
+                <path d="M1.5 1.5l5 5M6.5 1.5l-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+              <svg v-else-if="cell.mark === 'half'" viewBox="0 0 8 8" :class="['size-2', markColour(cell)]" aria-hidden="true">
+                <circle cx="4" cy="4" r="3" fill="none" stroke="currentColor" stroke-width="1.2" />
+                <path d="M4 1a3 3 0 0 1 0 6z" fill="currentColor" />
+              </svg>
               <template v-if="cell.date === today">
                 <span
                   v-if="props.selected === cell.date"

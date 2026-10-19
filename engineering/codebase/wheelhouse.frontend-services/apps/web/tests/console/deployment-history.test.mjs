@@ -6,7 +6,7 @@ import { bundleModule } from "./BundleModule.mjs";
 // The real rules: the activity calendar, the entity picker's selection model, the filter's address round trip and the
 // history wire decoding.
 const history = await bundleModule(`
-  export { ActivityCalendar, EntitySelection, EntityKeys, DeploymentFilters, StatusFilter, RangePreset, DeploymentIssues, DeploymentStatusRules } from './src/domain/deployments';
+  export { ActivityCalendar, EntitySelection, EntityKeys, DeploymentFilters, StatusFilter, RangePreset, DeploymentIssues, DeploymentStates } from './src/domain/deployments';
   export { readDeploymentQuery, writeDeploymentQuery, mergeDeploymentQuery, buildEntityTree } from './src/application/deployments';
   export { DeploymentItemSchema, DeploymentDetailSchema, DeploymentIssueSchema, DeploymentActivitySchema } from './src/integration/deployments/historySchemas';
   export { scopeOf } from './src/application/navigation/Scope';
@@ -19,36 +19,38 @@ test("a day's fill steps up at 1, 2–3, 4–6 and 7+ rollouts", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 6, 7, 40].map(ActivityCalendar.level), [0, 1, 2, 2, 3, 3, 4, 4]);
 });
 
-test("a day is green when all succeeded, red when all failed and amber when both", () => {
+const day = (calm, look, act, notApplied = 0) => ({ succeeded: calm + look, failed: act, calm, look, act, notApplied });
+
+test("a day takes the loudest attention of its applied rollouts: green, amber with a half-dot, red with a cross", () => {
   assert.equal(ActivityCalendar.tone(undefined), "empty");
-  assert.equal(ActivityCalendar.tone({ succeeded: 0, failed: 0 }), "empty");
-  assert.equal(ActivityCalendar.tone({ succeeded: 3, failed: 0 }), "success");
-  assert.equal(ActivityCalendar.tone({ succeeded: 0, failed: 2 }), "danger");
-  assert.equal(ActivityCalendar.tone({ succeeded: 3, failed: 1 }), "warning");
-  // Failed and mixed days carry a mark, so colour is never the only signal.
-  assert.deepEqual(["empty", "success", "danger", "warning"].map(ActivityCalendar.mark), ["none", "none", "failed", "mixed"]);
+  assert.equal(ActivityCalendar.tone(day(0, 0, 0)), "empty");
+  assert.equal(ActivityCalendar.tone(day(3, 0, 0)), "success");
+  assert.equal(ActivityCalendar.tone(day(3, 1, 0)), "warning");
+  assert.equal(ActivityCalendar.tone(day(3, 1, 1)), "danger");
+  // A deploy that changed nothing never colours a day.
+  assert.equal(ActivityCalendar.tone(day(0, 0, 0, 4)), "empty");
+  assert.equal(ActivityCalendar.count(day(3, 1, 1, 4)), 5);
+  // Shape marks, so colour is never the only signal.
+  assert.deepEqual(["empty", "success", "danger", "warning"].map(ActivityCalendar.mark), ["none", "none", "cross", "half"]);
 });
 
-test("with the Failed filter on, only failures colour a day, on the red scale", () => {
-  const mixed = { succeeded: 5, failed: 1 };
-  assert.equal(ActivityCalendar.tone(mixed, "failed"), "danger");
-  assert.equal(ActivityCalendar.count(mixed, "failed"), 1);
-  assert.equal(ActivityCalendar.tone({ succeeded: 5, failed: 0 }, "failed"), "empty");
-  assert.equal(ActivityCalendar.tone(mixed, "succeeded"), "success");
-  assert.equal(ActivityCalendar.count(mixed), 6);
+test("an answer from before the taxonomy colours a failure red and a success green", () => {
+  assert.equal(ActivityCalendar.tone({ succeeded: 5, failed: 1 }), "danger");
+  assert.equal(ActivityCalendar.tone({ succeeded: 5, failed: 0 }), "success");
+  assert.equal(ActivityCalendar.count({ succeeded: 5, failed: 1 }), 6);
 });
 
 test("every day names its date and counts", () => {
-  assert.match(ActivityCalendar.label("2026-10-14", { succeeded: 3, failed: 1 }), /2026: 3 succeeded · 1 failed$/);
+  assert.match(ActivityCalendar.label("2026-10-14", day(3, 1, 1, 2)),
+    /2026: 3 succeeded · 1 needs a look · 1 needs action · 2 changed nothing$/);
   assert.match(ActivityCalendar.label("2026-10-14", undefined), /no deployments$/);
-  assert.match(ActivityCalendar.label("2026-10-14", { succeeded: 3, failed: 1 }, "failed"), /: 1 failed$/);
 });
 
 test("the calendar lays weeks out as Monday-first columns with the range's edges left empty", () => {
   // 2026-10-01 is a Thursday; 2026-10-14 a Wednesday.
   const calendar = ActivityCalendar.build("2026-10-01", "2026-10-14", [
-    { date: "2026-10-04", succeeded: 1, failed: 1 },
-    { date: "2026-10-14", succeeded: 0, failed: 7 },
+    { date: "2026-10-04", ...day(1, 1, 0) },
+    { date: "2026-10-14", ...day(0, 0, 7) },
   ]);
   assert.equal(calendar.weeks.length, 3);
   assert.deepEqual(calendar.weeks[0].cells.map((cell) => cell?.date ?? null), [
@@ -56,9 +58,9 @@ test("the calendar lays weeks out as Monday-first columns with the range's edges
   ]);
   assert.equal(calendar.weeks[0].start, "2026-09-28");
   const sunday = calendar.weeks[0].cells[6];
-  assert.deepEqual([sunday.tone, sunday.level, sunday.mark], ["warning", 2, "mixed"]);
+  assert.deepEqual([sunday.tone, sunday.level, sunday.mark], ["warning", 2, "half"]);
   const last = calendar.weeks[2].cells.filter(Boolean).at(-1);
-  assert.deepEqual([last.date, last.tone, last.level, last.mark], ["2026-10-14", "danger", 4, "failed"]);
+  assert.deepEqual([last.date, last.tone, last.level, last.mark], ["2026-10-14", "danger", 4, "cross"]);
   assert.equal(calendar.weeks[2].cells[3], null);
   assert.equal(calendar.weekdays.length, 7);
   assert.equal(calendar.months[0].column, 0);
@@ -131,11 +133,14 @@ test("entity keys refuse anything but slugs and one product/service pair", () =>
 
 test("the address round-trips entities, status, a preset or custom range, the view and the day", () => {
   const query = {
-    workspace: "ocharo", service: ["foreverpin/web", "pose-coach/api"], status: "failed", range: "30d", view: "list", day: "2026-10-04",
+    workspace: "ocharo", service: ["foreverpin/web", "pose-coach/api"], status: "needs-action", range: "30d", view: "list", day: "2026-10-04",
   };
   const state = history.readDeploymentQuery(query);
   assert.deepEqual(state.filter.entities, ["w:ocharo", "s:foreverpin/web", "s:pose-coach/api"]);
-  assert.equal(state.filter.status, "failed");
+  assert.equal(state.filter.status, "needs-action");
+  // The old address's failed reads as needs action; look round-trips.
+  assert.equal(history.readDeploymentQuery({ status: "failed" }).filter.status, "needs-action");
+  assert.equal(history.readDeploymentQuery({ status: "look" }).filter.status, "look");
   assert.deepEqual(state.filter.range, { kind: "preset", preset: "30d" });
   assert.deepEqual([state.view, state.day], ["list", "2026-10-04"]);
   assert.deepEqual(history.writeDeploymentQuery(state), query);
@@ -168,11 +173,14 @@ test("merging the view into an address keeps keys the view does not own", () => 
 
 test("the API parameters repeat entities, leave out all and resolve the range at now", () => {
   const now = new Date("2026-10-17T12:00:00Z");
-  const filter = { entities: ["w:ocharo", "p:foreverpin", "s:pose-coach/api"], status: "failed", range: { kind: "preset", preset: "24h" } };
+  const filter = { entities: ["w:ocharo", "p:foreverpin", "s:pose-coach/api"], status: "needs-action", range: { kind: "preset", preset: "24h" } };
   assert.deepEqual(DeploymentFilters.params(filter, now), [
-    ["workspace", "ocharo"], ["product", "foreverpin"], ["service", "pose-coach/api"], ["status", "failed"],
+    ["workspace", "ocharo"], ["product", "foreverpin"], ["service", "pose-coach/api"], ["status", "needs-action"],
     ["from", "2026-10-16T12:00:00.000Z"], ["to", "2026-10-17T12:00:00.000Z"],
   ]);
+  // The viewer's Show unchanged toggle asks for the deploys that changed nothing, and keys its own cache entry.
+  assert.ok(DeploymentFilters.params(filter, now, { unchanged: true }).some(([key, value]) => key === "notApplied" && value === "true"));
+  assert.notEqual(DeploymentFilters.key(filter, true), DeploymentFilters.key(filter));
   const withoutStatus = DeploymentFilters.params({ ...filter, status: "all" }, now, { withStatus: false });
   assert.ok(!withoutStatus.some(([key]) => key === "status"));
   const halfYear = DeploymentFilters.resolve({ kind: "preset", preset: "6m" }, now);
@@ -243,35 +251,92 @@ test("an older activity answer without busiest products still decodes", () => {
   assert.deepEqual(activity.products, []);
 });
 
-test("a deployment's status reads in the console's vocabulary: a roll back and a watched regression are degraded", () => {
-  const { DeploymentStatusRules } = history;
-  const of = (fields) => DeploymentStatusRules.of({ status: "succeeded", ...fields });
-  assert.deepEqual(of({}), { state: "succeeded", word: "succeeded", cause: null });
-  assert.deepEqual(of({ status: "rolled_back", reason: "health check failed" }), {
-    state: "degraded", word: "degraded", cause: "rolled back to the previous release · health check failed",
+test("a deployment reads as the API's state, coloured by attention; dashed when it changed nothing", () => {
+  const { DeploymentStates } = history;
+  const partial = DeploymentStates.of({
+    status: "rollback_failed", state: "partial", substate: "partly_rolled_back", attention: "act",
+    cause: { kind: "service", origin: "jobs", message: "jobs did not become healthy", at: null },
   });
-  assert.equal(of({ status: "rolled_back", restored: "v1.2.0" }).cause, "rolled back to v1.2.0");
-  assert.deepEqual(of({ watch: { status: "degraded", findings: ["api restarted 3 times"] } }), {
-    state: "degraded", word: "degraded", cause: "regressed after the deploy: api restarted 3 times",
-  });
-  assert.equal(of({ watch: { status: "passed", findings: [] } }).state, "succeeded");
-  assert.deepEqual(of({ status: "failed", reason: "image pull failed" }), { state: "failed", word: "failed", cause: "image pull failed" });
-  assert.deepEqual(of({ status: "rollback_failed" }), { state: "failed", word: "failed", cause: "restoring the previous release failed too" });
-  assert.deepEqual(of({ status: "interrupted" }), { state: "interrupted", word: "interrupted", cause: "stopped mid-way" });
-  assert.equal(of({ status: "rejected" }).state, "refused");
-  for (const status of ["submitting", "queued", "running"]) assert.equal(of({ status }).state, "deploying");
-  assert.equal(of({ status: "unknown" }).state, "unknown");
+  assert.deepEqual([partial.word, partial.detail, partial.tone, partial.outline], ["Partial", "partly rolled back", "danger", "solid"]);
+  assert.equal(DeploymentStates.label(partial), "Partial, partly rolled back: jobs did not become healthy");
+  const checkFailed = DeploymentStates.of({ status: "failed", state: "not_applied", substate: "check_failed", attention: "look" });
+  assert.deepEqual([checkFailed.word, checkFailed.tone, checkFailed.outline], ["Not applied", "warning", "dashed"]);
+  const superseded = DeploymentStates.of({ status: "rejected", state: "not_applied", substate: "superseded", attention: "none" });
+  assert.equal(superseded.tone, "calm", "a superseded deploy needs nothing, so it stays neutral");
+  assert.equal(DeploymentStates.of({ status: "unknown", state: "unknown", attention: "muted" }).outline, "dotted");
 });
 
-test("a chosen day counts only the statuses that occurred, in one order from calm to still running", () => {
-  const { DeploymentStatusRules } = history;
-  const counts = DeploymentStatusRules.counts(
-    ["running", "rejected", "succeeded", "rolled_back", "failed", "succeeded", "interrupted"].map((status) => ({ status })),
-  );
-  assert.deepEqual(counts.map((count) => `${count.count} ${count.word}`), [
-    "2 succeeded", "1 failed", "1 degraded", "1 interrupted", "1 deploying", "1 refused",
+test("a read without a state takes its runner status the old way", () => {
+  const { DeploymentStates } = history;
+  const legacy = (status, watch) => {
+    const reading = DeploymentStates.of({ status, watch });
+    return `${reading.state}/${reading.attention}`;
+  };
+  assert.equal(legacy("succeeded"), "succeeded/none");
+  assert.equal(legacy("succeeded", { status: "degraded", findings: [] }), "degraded/look");
+  assert.equal(legacy("rolled_back"), "rolled_back/look");
+  assert.equal(legacy("rollback_failed"), "failed/act");
+  assert.equal(legacy("interrupted"), "failed/act");
+  assert.equal(legacy("rejected"), "not_applied/none");
+  for (const status of ["submitting", "queued", "running"]) assert.equal(legacy(status), "in_progress/info");
+  assert.equal(legacy("unknown"), "unknown/muted");
+});
+
+test("a chosen day counts only the states that occurred, calm to urgent, then the rest, each at its loudest", () => {
+  const { DeploymentStates } = history;
+  const counts = DeploymentStates.counts([
+    { status: "running" }, { status: "rejected" }, { status: "succeeded" }, { status: "rolled_back" }, { status: "failed" },
+    { status: "succeeded" }, { status: "failed", state: "not_applied", substate: "check_failed", attention: "look" },
   ]);
-  assert.deepEqual(DeploymentStatusRules.counts([]), []);
+  assert.deepEqual(counts.map((count) => `${count.count} ${count.word} ${count.attention}`), [
+    "2 Succeeded none", "1 Rolled back look", "1 Failed act", "1 In progress info", "2 Not applied look",
+  ]);
+  assert.deepEqual(DeploymentStates.counts([]), []);
+});
+
+test("a deployment's services say how each ended, in words on a phone, and list its impact origin first", () => {
+  const { DeploymentStates } = history;
+  const service = (name, result, origin = false) => ({ service: name, result, origin, from: null, to: null, health: null });
+  const partial = [service("desk", "restored"), service("jobs", "failed", true), service("image-worker", "affected")];
+  assert.equal(DeploymentStates.stripSummary(partial), "1 of 3 failed");
+  assert.equal(DeploymentStates.stripSummary([service("api", "updated"), service("web", "unchanged")]), "1 of 2 updated");
+  assert.equal(DeploymentStates.stripSummary(null), null);
+  const impact = DeploymentStates.impact(partial, [{ service: "image-worker", finding: "restarting", via: "jobs", at: null }]);
+  assert.deepEqual(impact.map((line) => `${line.role}:${line.service}`), ["origin:jobs", "effect:image-worker", "other:desk"]);
+  assert.equal(impact[1].text, "restarting, likely via jobs");
+  assert.deepEqual(DeploymentStates.onRelease(partial), { on: 0, total: 3 });
+});
+
+test("the steps split where changes start, and each state offers the action that fits it", () => {
+  const { DeploymentStates } = history;
+  const steps = ["Check target", "Snapshot data", "Pull images", "Start desk", "Start jobs", "Roll back to v0.8.4", "Publish sites"]
+    .map((name) => ({ name, status: "succeeded" }));
+  const sections = DeploymentStates.sections(steps);
+  assert.deepEqual(
+    [sections.before.length, sections.changes.map((step) => step.name), sections.after.map((step) => step.name)],
+    [3, ["Start desk", "Start jobs", "Roll back to v0.8.4"], ["Publish sites"]],
+  );
+  assert.deepEqual(DeploymentStates.sections(steps.slice(0, 2)).changes, [], "a rollout that stopped before changes has none");
+  assert.deepEqual(["partial", "failed", "rolled_back", "not_applied", "succeeded"].map(DeploymentStates.action),
+    ["reconcile", "reconcile", "redeploy", "retry", null]);
+  assert.equal(DeploymentStates.nowRuns({ state: "partial" }, "prod", "v0.9.0", "v0.8.4"), "prod now runs two releases");
+  assert.equal(DeploymentStates.nowRuns({ state: "rolled_back" }, "prod", "v0.9.0", "v0.8.4"), "prod runs v0.8.4 again");
+});
+
+test("history items decode the state, and an older item without one reads its runner status", () => {
+  const item = history.DeploymentItemSchema.parse({
+    id: "x", status: "rollback_failed", outcome: "failed", submittedAt: "2026-10-01T10:00:00Z", state: "partial",
+    substate: "partly_rolled_back", attention: "act",
+    services: [{ service: "jobs", result: "failed", origin: true }, { service: "desk", result: "teleported" }],
+    watch: null,
+  });
+  assert.deepEqual([item.state, item.substate, item.attention], ["partial", "partly_rolled_back", "act"]);
+  assert.deepEqual(item.services.map((service) => `${service.service}:${service.result}:${service.origin}`), ["jobs:failed:true", "desk:unknown:false"]);
+  const old = history.DeploymentItemSchema.parse({
+    id: "y", status: "succeeded", outcome: "succeeded", submittedAt: "2026-10-01T10:00:00Z",
+    watch: { status: "superseded", findings: [] },
+  });
+  assert.deepEqual([old.state, old.substate, old.attention, old.watch.status], ["succeeded", "replaced", "none", "replaced"]);
 });
 
 test("the day tooltip sits above its cell, flips below at the top edge and slides inside the screen's sides", () => {

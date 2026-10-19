@@ -1,4 +1,5 @@
-import { StatusState, StatusWords } from '@/domain/common/StatusVocabulary';
+import { Attention, DeployState, StatusState, StatusWords } from '@/domain/common/StatusVocabulary';
+import { DeploymentStates } from '@/domain/deployments/DeploymentStatus';
 import { EnvironmentHealth, type EnvironmentReading } from '@/domain/overview/EnvironmentHealth';
 import { ProductDeploy } from '@/domain/products/Product';
 import { RolloutOutcome, type PortfolioDeploy, type PortfolioEnvironment } from './PortfolioSummary';
@@ -15,8 +16,10 @@ export const PillState = {
   Deploying: StatusState.Deploying,
   /** Unreachable, failing, or its latest rollout failed with no success since. */
   Failed: StatusState.Failed,
-  /** Serving, but not as intended: its latest rollout rolled back, or restarts or host pressure. */
+  /** Serving, but not as intended: its latest rollout rolled back or regressed, or restarts or host pressure. */
   Degraded: StatusState.Degraded,
+  /** Serving a mix of releases: its latest rollout stopped part-way or restored only some services. */
+  Mixed: StatusState.Mixed,
   /** No target, or a target with nothing deployed: one state. */
   None: StatusState.None,
   /** Deployed by its own CI rather than by Wheelhouse, as Wheelhouse itself is. */
@@ -31,6 +34,13 @@ export const PillStateWords: Readonly<Record<PillState, string>> = StatusWords;
 
 /** The cause a degraded pill names when the vitals say no more. @internal */
 const StrainCause = 'restarts or host pressure';
+
+/**
+ * The one corner marker a pill may wear, by priority: the last attempt changed nothing but needs a look (`attempt`, a
+ * cross) › a deploy is scheduled or waiting (`waiting`, a clock) › the serving release is being watched (`watching`, an
+ * eye). Refused, cancelled and superseded deploys never mark a pill.
+ */
+export type PillMarker = 'attempt' | 'waiting' | 'watching';
 
 /** One environment's pill: its state, what it shows and what its details say. */
 export interface EnvironmentPill {
@@ -48,6 +58,10 @@ export interface EnvironmentPill {
   readonly running: PortfolioDeploy | null;
   /** Whether the product has a target in the environment; "not deployed" covers both cases on the pill. */
   readonly hasTarget: boolean;
+  /** The corner marker, when one applies. */
+  readonly marker: PillMarker | null;
+  /** The newer deploy that changed nothing but needs a look, which the `attempt` marker points at. */
+  readonly lastAttempt: PortfolioDeploy | null;
 }
 
 /** What a pill is read from; a read still loading is undefined. */
@@ -60,6 +74,8 @@ export interface PillInput {
   readonly ci?: { readonly version: string | null } | null;
   /** The release the target reports running, when the vitals carry one. */
   readonly reportedRelease?: string | null;
+  /** Whether a deploy waits for the target: queued or scheduled. */
+  readonly waiting?: boolean;
 }
 
 /** What decides whether a product's pills read CI. */
@@ -91,29 +107,57 @@ export const EnvironmentPillRules = {
       ? { version: product.console?.environment === environment ? product.console.version : null }
       : null,
   of: (input: PillInput): EnvironmentPill => {
-    const lastDeploy = input.summary?.lastDeploy ?? null;
-    const running = input.summary?.running ?? null;
+    const lastDeploy = withState(input.summary?.lastDeploy ?? null);
+    const running = withState(input.summary?.running ?? null);
+    const lastAttempt = withState(input.summary?.lastAttempt ?? null);
     const release = running?.release ?? input.reportedRelease ?? null;
     const health = input.reading?.health;
     const hasTarget = health !== undefined && health !== EnvironmentHealth.Missing;
+    const marker: PillMarker | null =
+      lastAttempt?.attention === Attention.Look
+        ? 'attempt'
+        : input.waiting
+          ? 'waiting'
+          : running?.watch === 'watching' && running.id === lastDeploy?.id
+            ? 'watching'
+            : null;
     const pill = (state: PillState, detail: string | null = PillStateWords[state], cause: string | null = null): EnvironmentPill => ({
-      environment: input.environment, state, detail, cause, release, lastDeploy, running, hasTarget,
+      environment: input.environment, state, detail, cause, release, lastDeploy, running, hasTarget, marker, lastAttempt,
     });
 
-    if (input.ci) return { ...pill(PillState.Ci, shortRelease(input.ci.version)), release: input.ci.version };
+    if (input.ci) return { ...pill(PillState.Ci, shortRelease(input.ci.version)), release: input.ci.version, marker: null };
     if (health === EnvironmentHealth.Missing) return pill(PillState.None, null);
-    if (lastDeploy?.outcome === RolloutOutcome.Pending) return pill(PillState.Deploying);
+    if (lastDeploy?.outcome === RolloutOutcome.Pending || lastDeploy?.state === DeployState.InProgress) return pill(PillState.Deploying);
     if (health === EnvironmentHealth.Failing) return pill(PillState.Failed);
-    if (lastDeploy?.outcome === RolloutOutcome.Failed && !supersedes(running, lastDeploy))
-      return lastDeploy.status === 'rolled_back'
-        ? pill(PillState.Degraded, undefined, release ? `rolled back to ${release}` : 'rolled back to the previous release')
-        : pill(PillState.Failed, undefined, lastDeploy.reason);
+    if (lastDeploy && !supersedes(running, lastDeploy)) {
+      if (lastDeploy.state === DeployState.RolledBack)
+        return pill(PillState.Degraded, undefined, release ? `rolled back to ${release}` : 'rolled back to the previous release');
+      if (lastDeploy.state === DeployState.Partial)
+        return pill(PillState.Mixed, mixedDetail(lastDeploy), lastDeploy.reason ?? 'the environment runs two releases');
+      if (lastDeploy.state === DeployState.Failed) return pill(PillState.Failed, undefined, lastDeploy.reason);
+    }
+    if (lastDeploy?.state === DeployState.Degraded && lastDeploy.id === running?.id)
+      return pill(PillState.Degraded, shortRelease(release), lastDeploy.reason ?? 'regressed after the deploy');
     if (health === EnvironmentHealth.Warning) return pill(PillState.Degraded, undefined, StrainCause);
     if (health === EnvironmentHealth.Idle) return pill(PillState.None, null);
     if (health === EnvironmentHealth.Unknown || health === undefined) return pill(PillState.Unknown);
     return pill(PillState.Healthy, shortRelease(release));
   },
 } as const;
+
+/** A rollout with its state, read from its runner status when the read carries none. @internal */
+function withState(deploy: PortfolioDeploy | null): PortfolioDeploy | null {
+  if (!deploy || (deploy.state && deploy.attention)) return deploy;
+  return { ...deploy, ...DeploymentStates.legacy(deploy.status), servicesOnRelease: deploy.servicesOnRelease ?? null,
+    serviceCount: deploy.serviceCount ?? null, watch: deploy.watch ?? null };
+}
+
+/** A mixed pill's detail: `2/3 on 0.4.0` when the target reported its services, else the word. @internal */
+function mixedDetail(deploy: PortfolioDeploy): string {
+  return deploy.servicesOnRelease !== null && deploy.serviceCount
+    ? `${deploy.servicesOnRelease}/${deploy.serviceCount} on ${shortRelease(deploy.release) ?? 'the new release'}`
+    : PillStateWords[PillState.Mixed];
+}
 
 /** Whether a success came after the failure, so the failure no longer stands. @internal */
 function supersedes(success: PortfolioDeploy | null, failure: PortfolioDeploy): boolean {

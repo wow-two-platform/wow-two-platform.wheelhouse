@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
-import { AlertTriangle, ArrowRight, ExternalLink, FileText, RotateCcw, Undo2, Wrench } from "lucide-vue-next";
+import { ArrowRight, Crosshair, ExternalLink, FileText, RotateCcw, TriangleAlert, Undo2, Wrench } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge, DescriptionGroup, RelativeTime } from "@wow-two-beta/fe/presentation/display";
@@ -9,25 +9,29 @@ import { Alert, DataRegion } from "@wow-two-beta/fe/presentation/feedback";
 import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
 
 import { useDeploymentDetail, useDeploymentOutcome, useDeploymentTargets, useTargetState } from "@/application/deployments";
-import { ConsolePaths } from "@/application/navigation";
+import { ConsolePaths, productLocation } from "@/application/navigation";
 import { useProducts } from "@/application/products";
 import { useRefresh } from "@/bootstrap/query";
-import { Measures } from "@/domain/common";
-import { DeploymentExtensions, DeploymentOutcome, DeploymentStatusRules, ServiceRollouts, TargetCondition } from "@/domain/deployments";
-import { InfoPopover, Panel, RefreshButton } from "@/presentation/common/components";
+import { Attention, ChangeReasonWords, DeployState, Measures, ServiceResult, ServiceResultTones, ServiceResultWords } from "@/domain/common";
+import { DeploymentOutcome, DeploymentStates, ServiceRollouts, TargetCondition } from "@/domain/deployments";
+import { InfoPopover, Panel, RefreshButton, ServiceResultIcons } from "@/presentation/common/components";
 import { ProductIcon } from "@/presentation/products";
 
 import DeployModal from "../components/DeployModal.vue";
+import DeploymentStateChip from "../components/DeploymentStateChip.vue";
 import DeploymentSteps from "../components/DeploymentSteps.vue";
-import DeploymentStatusPill from "../components/DeploymentStatusPill.vue";
+import ImpactList from "../components/ImpactList.vue";
 import ReconcileModal from "../components/ReconcileModal.vue";
 import ServiceLogsModal from "../components/ServiceLogsModal.vue";
 import { useDeployModal } from "../hooks/useDeployModal";
 
 /**
- * One deployment on its own page: what went where and how, its rollout steps, each service from and to, the sites it
- * published and what needs a look; with redeploy, roll back, reconcile and log actions. A live rollout's steps follow
- * the target every three seconds; a finished one reads only the control plane's records.
+ * One deployment on its own page, in the order the status design reads it: the state chip, then what the environment
+ * runs now with each service's glyph, then the cause and what else it likely hurt, the actions that fit the state
+ * (Partial and Failed reconcile, Rolled back redeploys, Not applied retries), the rollout steps split where changes
+ * start, and each service from and to with how it ended and how it is now. Beside them, the impact as a list with the
+ * service map one tap away, the sites, the snapshot and the links. A live rollout's steps follow the target every three
+ * seconds; a finished one reads only the control plane's records.
  */
 defineOptions({ name: "DeploymentDetailPage" });
 const route = useRoute();
@@ -57,25 +61,71 @@ const targetExists = computed(() => Boolean(targets.data.value?.some((item) => i
 /** A live rollout's steps as the target reports them now; a finished one's from the record. */
 const steps = computed(() => (isLive.value && outcome.data.value?.steps?.length ? outcome.data.value.steps : (detail.data.value?.steps ?? [])));
 const status = computed(() => (isLive.value ? (outcome.data.value?.status ?? deployment.value?.status) : deployment.value?.status));
+/** The deployment in the taxonomy; a live one that finished since the read reads its new status until the next read. */
+const reading = computed(() => {
+  const item = deployment.value;
+  if (!item || !status.value) return null;
+  return DeploymentStates.of(status.value === item.status ? item : { status: status.value, reason: item.reason });
+});
 const services = computed(() => detail.data.value?.services ?? null);
-/** How the rollout treated each service — kept running, replaced in its wave, failed, not started, rolled back. */
-const outcomes = computed(
-  () => new Map((services.value ?? []).map((item) => [item.service, ServiceRollouts.outcome(detail.data.value?.serviceRollout, item.service)])),
-);
 /** The release a roll back restored: the target's previous success. */
 const restored = computed(() => detail.data.value?.previous?.release ?? null);
-/** The failure alert's tone and title: a roll back is degraded (amber) and names what it restored. */
-const failure = computed(() => {
-  const item = deployment.value;
-  if (!item) return null;
-  const reading = DeploymentStatusRules.of({ status: item.status, restored: restored.value });
-  const cause = reading.cause ?? DeploymentExtensions.label(item.status);
-  return {
-    severity: reading.state === "degraded" ? ("warning" as const) : ("danger" as const),
-    title: cause.charAt(0).toUpperCase() + cause.slice(1),
-  };
+/** "prod now runs two releases": what the environment runs because of this deployment. */
+const nowRuns = computed(() =>
+  reading.value && deployment.value
+    ? DeploymentStates.nowRuns(reading.value, deployment.value.environment, deployment.value.release, restored.value)
+    : "",
+);
+/** Each service with its versions and how it ended: the API's per-service results first, in rollout order. */
+const serviceRows = computed(() => {
+  const results = deployment.value?.services ?? [];
+  const changes = services.value ?? [];
+  const names = [...results.map((item) => item.service), ...changes.map((item) => item.service).filter((name) => !results.some((item) => item.service === name))];
+  return names.map((name) => {
+    const result = results.find((item) => item.service === name) ?? null;
+    const change = changes.find((item) => item.service === name) ?? null;
+    return {
+      service: name,
+      from: result?.from ?? change?.from ?? null,
+      to: result?.to ?? change?.to ?? null,
+      changed: change?.changed ?? (result ? result.result !== ServiceResult.Unchanged : false),
+      result,
+      legacy: result ? null : ServiceRollouts.outcome(detail.data.value?.serviceRollout, name),
+    };
+  });
 });
-const logServices = computed(() => (services.value ?? []).filter((item) => item.to !== null).map((item) => item.service));
+const impact = computed(() => DeploymentStates.impact(deployment.value?.services, deployment.value?.effects ?? []));
+/** The service map on the product's page, opened on the origin in this deployment's environment. */
+const mapLocation = computed(() => {
+  const item = deployment.value;
+  if (!item?.product) return null;
+  const origin = item.services?.find((service) => service.origin)?.service ?? item.cause?.origin ?? null;
+  return productLocation(item.product, { env: item.environment, ...(origin ? { inspect: "service", item: origin } : {}) });
+});
+/** The services the roll back restored, and those it could not. */
+const rollback = computed(() => {
+  const results = deployment.value?.services ?? [];
+  const back = results.filter((item) => item.result === ServiceResult.Restored).map((item) => item.service);
+  const stuck = results.filter((item) => item.result === ServiceResult.Failed).map((item) => item.service);
+  return back.length ? { back, stuck } : null;
+});
+/** The cause card's tone: red when it needs action, amber when it is worth a look, quiet otherwise. */
+const causeTone = computed(() =>
+  reading.value?.attention === Attention.Act
+    ? "border-destructive/40 bg-destructive-soft/60"
+    : reading.value?.attention === Attention.Look
+      ? "border-warning/45 bg-warning-soft/60"
+      : "border-border bg-muted/40",
+);
+const hasCauseSection = computed(
+  () =>
+    Boolean(reading.value?.cause?.message) &&
+    reading.value?.state !== DeployState.InProgress &&
+    reading.value?.state !== DeployState.Succeeded,
+);
+/** The action that fits the state: reconcile, redeploy, retry. */
+const fitting = computed(() => (reading.value ? DeploymentStates.action(reading.value.state) : null));
+const logServices = computed(() => serviceRows.value.filter((item) => item.to !== null).map((item) => item.service));
 const needsReconciliation = computed(
   () => state.data.value?.condition === TargetCondition.NeedsReconciliation && state.data.value.active !== null,
 );
@@ -84,11 +134,10 @@ const facts = computed(() => {
   if (!item) return [];
   return [
     { label: "Target", value: item.targetId ?? "—" },
+    { label: "Previous success", value: detail.data.value?.previous?.release ?? "—" },
     { label: "Actor", value: item.actor ?? "—" },
     ...(item.deployReason ? [{ label: "Reason", value: item.deployReason }] : []),
     { label: "Submitted", value: Measures.moment(item.submittedAt) },
-    { label: "Started", value: Measures.moment(item.startedAt) },
-    { label: "Completed", value: Measures.moment(item.completedAt) },
     { label: "Duration", value: item.durationSeconds !== null ? Measures.duration(item.durationSeconds) : isLive.value ? "running" : "—" },
     { label: "Commit", value: item.sourceCommit ? item.sourceCommit.slice(0, 12) : "—" },
     { label: "Kind", value: item.kind === "candidate" ? `commit build${item.branch ? ` · ${item.branch}` : ""}` : (item.kind ?? "—") },
@@ -97,6 +146,16 @@ const facts = computed(() => {
 const refresh = useRefresh(() =>
   Promise.all([detail.refetch(), state.refetch(), ...(isLive.value ? [outcome.refetch()] : [])]),
 );
+
+/** A glyph's colour by its result's tone. @internal */
+const ToneText: Readonly<Record<string, string>> = {
+  calm: "text-success",
+  info: "text-info",
+  warning: "text-warning",
+  danger: "text-destructive",
+  quiet: "text-muted-foreground",
+  empty: "text-subtle-foreground",
+};
 
 function redeploy(): void {
   const item = deployment.value;
@@ -116,11 +175,12 @@ function rollBack(): void {
       <RefreshButton size="md" icon-only :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
       <Button
         v-if="deployment?.bundleId && targetExists"
-        variant="outline"
-        tone="neutral"
-        :aria-label="`Redeploy ${deployment.release ?? deployment.bundleId}`"
+        :variant="fitting === 'redeploy' || fitting === 'retry' ? 'solid' : 'outline'"
+        :tone="fitting === 'redeploy' || fitting === 'retry' ? 'primary' : 'neutral'"
+        :aria-label="`${fitting === 'retry' ? 'Retry' : 'Redeploy'} ${deployment.release ?? deployment.bundleId}`"
         @click="redeploy"
-        ><template #leading><RotateCcw :size="16" /></template><span class="hidden sm:inline">Redeploy</span></Button
+        ><template #leading><RotateCcw :size="16" /></template
+        ><span class="hidden sm:inline">{{ fitting === "retry" ? "Retry" : "Redeploy" }}</span></Button
       >
       <Button
         v-if="detail.data.value?.rollback && targetExists"
@@ -177,48 +237,58 @@ function rollBack(): void {
               </span>
             </template>
             <div class="flex min-w-0 flex-col gap-4">
-              <div class="flex flex-wrap items-center gap-3">
-                <DeploymentStatusPill
-                  v-if="status"
-                  :status="status"
-                  :watch="deployment?.watch"
-                  :restored="restored"
-                  :has-cause="false"
-                />
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <DeploymentStateChip v-if="reading" :reading="reading" />
                 <span v-if="deployment" class="text-sm text-muted-foreground">
-                  submitted <RelativeTime :value="deployment.submittedAt" /> by {{ deployment.actor ?? "someone" }}
+                  <template v-if="deployment.startedAt"
+                    >changes started {{ Measures.moment(deployment.startedAt)
+                    }}<template v-if="deployment.completedAt"> · stopped {{ Measures.moment(deployment.completedAt) }}</template></template
+                  ><template v-else>submitted <RelativeTime :value="deployment.submittedAt" /></template>
+                  by {{ deployment.actor ?? "someone" }}
                 </span>
               </div>
-              <Alert
-                v-if="deployment?.reason && failure && deployment.outcome !== DeploymentOutcome.Succeeded"
-                :severity="failure.severity"
-                :title="failure.title"
-                :description="deployment.reason"
-              />
-              <Alert
-                v-if="deployment?.watch?.status === 'degraded'"
-                severity="warning"
-                title="Regressed after the deploy"
-                :description="deployment.watch.findings.join('; ')"
-              />
-              <p v-else-if="deployment?.watch" class="text-sm text-muted-foreground">
+              <div
+                v-if="reading"
+                :class="[
+                  'flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-3 py-2.5 text-sm',
+                  reading.attention === Attention.Act
+                    ? 'border-destructive/30 bg-destructive-soft/50'
+                    : reading.attention === Attention.Look
+                      ? 'border-warning/35 bg-warning-soft/50'
+                      : 'border-border bg-muted/40',
+                ]"
+                aria-label="What the environment runs now"
+              >
+                <span class="font-semibold">{{ nowRuns }}</span>
+                <ul v-if="deployment?.services?.length" class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <li v-for="service in deployment.services" :key="service.service" class="inline-flex items-center gap-1.5 text-xs">
+                    <span
+                      :class="[
+                        'inline-flex size-5 items-center justify-center rounded-full',
+                        ToneText[ServiceResultTones[service.result]],
+                        service.origin ? 'ring-2 ring-destructive/60' : '',
+                      ]"
+                      ><component :is="ServiceResultIcons[service.result]" :size="14" aria-hidden="true"
+                    /></span>
+                    <span class="font-mono">{{ service.service }}</span>
+                    <span v-if="service.result === ServiceResult.Restored ? service.from : service.to" class="font-mono text-muted-foreground">{{
+                      service.result === ServiceResult.Restored ? service.from : service.to
+                    }}</span>
+                    <span class="text-muted-foreground">{{ ServiceResultWords[service.result] }}</span>
+                  </li>
+                </ul>
+              </div>
+              <p v-if="deployment?.watch && reading?.state === DeployState.Succeeded" class="text-sm text-muted-foreground">
                 {{
                   deployment.watch.status === "watching"
                     ? "Watching its containers and sites once a minute until the window closes."
                     : deployment.watch.status === "passed"
                       ? `Watched after the deploy: ${deployment.watch.checks ?? 0} looks found nothing wrong.`
-                      : deployment.watch.status === "superseded"
+                      : deployment.watch.status === "replaced"
                         ? "Another rollout replaced it during its watch."
                         : "Its watch could not read the target."
                 }}
               </p>
-              <Alert
-                v-for="warning in deployment?.warnings ?? []"
-                :key="warning"
-                severity="warning"
-                title="Needs a look"
-                :description="warning"
-              />
               <Alert
                 v-if="needsReconciliation"
                 severity="warning"
@@ -228,66 +298,167 @@ function rollBack(): void {
               <DescriptionGroup layout="stacked" density="md" class="grid grid-cols-2 gap-x-6 sm:grid-cols-4 [&_dt]:text-xs" :items="facts" />
             </div>
           </Panel>
+          <!-- On a phone the impact list stands in for the service map, right under what the environment runs. -->
+          <Panel v-if="impact.length" title="Impact" class="lg:hidden">
+            <ImpactList :lines="impact" :map="mapLocation" />
+          </Panel>
+          <Panel v-if="hasCauseSection" title="Cause and effects">
+            <template #info>
+              <InfoPopover title="Cause and effects">
+                <p>
+                  The origin is the earliest failing signal: a step that names the service, the first health failure, or a
+                  platform need down. An effect is a service that turned unhealthy after the origin and declares a path to
+                  it (its startup order or a shared platform need) — inferred from the declaration, never an observed call.
+                  Without a declared path, each failing service is an origin of its own.
+                </p>
+              </InfoPopover>
+            </template>
+            <ul class="flex flex-col gap-3">
+              <li :class="['flex items-start gap-3 rounded-xl border p-3', causeTone]">
+                <Crosshair :size="18" aria-hidden="true" class="mt-0.5 shrink-0 text-destructive-soft-foreground" />
+                <span class="min-w-0">
+                  <span class="block font-semibold"
+                    >Origin · {{ reading?.cause?.origin ?? reading?.cause?.kind ?? "the rollout" }}</span
+                  >
+                  <span class="block text-sm break-words text-muted-foreground">{{ DeploymentStates.causeText(reading?.cause ?? null) }}</span>
+                  <span v-if="deployment?.watch?.findings.length && reading?.substate !== 'at_deploy'" class="mt-1 block text-xs text-muted-foreground">{{
+                    deployment.watch.findings.join("; ")
+                  }}</span>
+                </span>
+              </li>
+              <li
+                v-for="effect in deployment?.effects ?? []"
+                :key="effect.service"
+                class="flex items-start gap-3 rounded-xl border border-warning/45 bg-warning-soft/60 p-3"
+              >
+                <TriangleAlert :size="18" aria-hidden="true" class="mt-0.5 shrink-0 text-warning-soft-foreground" />
+                <span class="min-w-0">
+                  <span class="block font-semibold">Effect · {{ effect.service }} {{ effect.finding }}</span>
+                  <span class="block text-sm text-muted-foreground"
+                    >Likely via {{ effect.via }} — a declared path, not an observed call.</span
+                  >
+                </span>
+              </li>
+              <li v-if="rollback" :class="['flex items-start gap-3 rounded-xl border p-3', rollback.stuck.length ? 'border-destructive/40 bg-destructive-soft/60' : 'border-warning/45 bg-warning-soft/60']">
+                <Undo2 :size="18" aria-hidden="true" class="mt-0.5 shrink-0" />
+                <span class="min-w-0">
+                  <span class="block font-semibold"
+                    >Roll back · {{ rollback.back.join(", ") }} restored<template v-if="rollback.stuck.length"
+                      >, {{ rollback.stuck.join(", ") }} could not be</template
+                    ></span
+                  >
+                  <span class="block text-sm text-muted-foreground">{{
+                    rollback.stuck.length
+                      ? "Reconcile the target, then deploy a fix forward or restore the snapshot."
+                      : `Back on ${restored ?? "the previous release"}.`
+                  }}</span>
+                </span>
+              </li>
+              <li
+                v-for="warning in reading?.substate === 'at_deploy' ? (deployment?.warnings.slice(1) ?? []) : []"
+                :key="warning"
+                class="flex items-start gap-3 rounded-xl border border-warning/45 bg-warning-soft/60 p-3 text-sm"
+              >
+                <TriangleAlert :size="18" aria-hidden="true" class="mt-0.5 shrink-0 text-warning-soft-foreground" />{{ warning }}
+              </li>
+            </ul>
+          </Panel>
           <Panel title="Rollout steps" v-bind="isLive ? { description: 'Following the target live.' } : {}">
-            <DeploymentSteps v-if="steps.length" :steps="steps" />
+            <DeploymentSteps v-if="steps.length" :steps="steps" is-sectioned />
             <p v-else class="text-sm text-muted-foreground">
               {{
                 detail.data.value?.observed === false
-                  ? "The target's report of this rollout is not on this control plane."
+                  ? reading?.state === DeployState.NotApplied
+                    ? "It never reached the target, so the target recorded no steps."
+                    : "The target's report of this rollout is not on this control plane."
                   : isLive
                     ? "Waiting for the target to start the rollout."
                     : "The target recorded no steps: the runner refused the release before it started."
               }}
             </p>
           </Panel>
-          <Panel
-            title="Services"
-            :description="detail.data.value?.previous ? `Against ${detail.data.value.previous.release ?? 'the previous success'} on this target.` : 'The first rollout this control plane saw on this target.'"
-          >
-            <p v-if="services === null" class="text-sm text-muted-foreground">
-              This control plane no longer holds the release's bundle, so its services are unknown.
+          <Panel title="Services">
+            <template #info>
+              <InfoPopover title="Services">
+                <p>
+                  Each service against {{ detail.data.value?.previous?.release ?? "what the target ran before" }}: its
+                  versions from and to (and back, when restored), how it ended in this deploy, and how the target last
+                  reported it. The ringed result is where the trouble started.
+                </p>
+              </InfoPopover>
+            </template>
+            <p v-if="!serviceRows.length" class="text-sm text-muted-foreground">
+              {{
+                reading?.state === DeployState.NotApplied
+                  ? "It changed no service."
+                  : "This control plane no longer holds the release's bundle, so its services are unknown."
+              }}
             </p>
-            <ul v-else class="flex flex-col divide-y divide-border">
-              <li v-for="service in services" :key="service.service" class="flex flex-wrap items-center justify-between gap-3 py-2.5">
-                <span class="flex min-w-0 flex-wrap items-center gap-2">
-                  <span class="font-mono text-sm font-medium">{{ service.service }}</span>
-                  <Badge v-if="!service.changed" variant="neutral">unchanged</Badge>
-                  <Badge v-else-if="service.from === null" variant="success">new</Badge>
-                  <Badge v-else-if="service.to === null" variant="warning">removed</Badge>
-                  <Badge v-else variant="info">changed</Badge>
-                  <Badge
-                    v-if="outcomes.get(service.service)"
-                    :variant="outcomes.get(service.service)!.tone"
-                    :title="outcomes.get(service.service)!.wave ? `Started in wave ${outcomes.get(service.service)!.wave}` : undefined"
-                    >{{ outcomes.get(service.service)!.label
-                    }}<template v-if="outcomes.get(service.service)!.wave"> · wave {{ outcomes.get(service.service)!.wave }}</template></Badge
-                  >
-                </span>
-                <span class="flex items-center gap-2">
-                  <span class="flex items-center gap-1.5 font-mono text-xs">
-                    <span :class="service.changed ? 'text-muted-foreground line-through decoration-muted-foreground/50' : ''">{{
-                      service.from ?? "—"
+            <ul v-else class="flex flex-col divide-y divide-border" aria-label="Services">
+              <li
+                v-for="row in serviceRows"
+                :key="row.service"
+                class="grid grid-cols-1 items-center gap-x-4 gap-y-1.5 py-2.5 md:grid-cols-[minmax(6rem,0.8fr)_minmax(12rem,1.4fr)_minmax(9rem,1.4fr)_minmax(5rem,0.8fr)_auto]"
+              >
+                <span class="font-mono text-sm font-medium">{{ row.service }}</span>
+                <span class="flex flex-wrap items-center gap-1.5 font-mono text-xs">
+                  <template v-if="!row.changed">{{ row.from ?? row.to ?? "—" }} <span class="font-sans text-muted-foreground">(unchanged)</span></template>
+                  <template v-else>
+                    <span :class="row.result?.result === ServiceResult.Restored ? '' : 'text-muted-foreground line-through decoration-muted-foreground/50'">{{
+                      row.from ?? "new"
                     }}</span>
-                    <template v-if="service.changed"
-                      ><ArrowRight :size="12" aria-label="to" /><span class="font-medium">{{ service.to ?? "—" }}</span></template
+                    <ArrowRight :size="12" aria-label="to" />
+                    <span class="font-medium">{{ row.to ?? "removed" }}</span>
+                    <template v-if="row.result?.result === ServiceResult.Restored"
+                      ><ArrowRight :size="12" aria-label="back to" /><span class="font-medium">{{ row.from ?? "—" }}</span></template
                     >
-                  </span>
-                  <Button
-                    v-if="service.to !== null && deployment?.targetId && targetExists"
-                    variant="ghost"
-                    tone="neutral"
-                    size="sm"
-                    class="min-h-11 md:min-h-8"
-                    :aria-label="`Read ${service.service} logs`"
-                    @click="logsService = service.service"
-                    ><template #leading><FileText :size="14" /></template><span class="hidden sm:inline">Logs</span></Button
-                  >
+                  </template>
                 </span>
+                <span class="flex min-w-0 items-center gap-1.5 text-sm">
+                  <template v-if="row.result">
+                    <span
+                      :class="[
+                        'inline-flex size-5 shrink-0 items-center justify-center rounded-full',
+                        ToneText[ServiceResultTones[row.result.result]],
+                        row.result.origin ? 'ring-2 ring-destructive/60' : '',
+                      ]"
+                      ><component :is="ServiceResultIcons[row.result.result]" :size="14" aria-hidden="true"
+                    /></span>
+                    <span>{{ ServiceResultWords[row.result.result] }}<template v-if="row.result.origin"> · origin</template></span>
+                    <span v-if="row.result.reason" class="text-xs text-muted-foreground"
+                      >· {{ ChangeReasonWords[row.result.reason] ?? row.result.reason }}</span
+                    >
+                  </template>
+                  <Badge v-else-if="row.legacy" :variant="row.legacy.tone">{{ row.legacy.label }}</Badge>
+                  <span v-else class="text-muted-foreground">{{ row.changed ? "changed" : "kept running" }}</span>
+                </span>
+                <span class="text-xs text-muted-foreground">{{ row.result?.health ?? "—" }}</span>
+                <Button
+                  v-if="row.to !== null && deployment?.targetId && targetExists"
+                  variant="ghost"
+                  tone="neutral"
+                  size="sm"
+                  class="min-h-11 justify-self-start md:min-h-8"
+                  :aria-label="`Read ${row.service} logs`"
+                  @click="logsService = row.service"
+                  ><template #leading><FileText :size="14" /></template><span class="hidden sm:inline">Logs</span></Button
+                >
               </li>
             </ul>
           </Panel>
         </div>
         <div class="flex min-w-0 flex-col gap-6">
+          <Panel v-if="impact.length" title="Impact" class="max-lg:hidden">
+            <template #info>
+              <InfoPopover title="Impact">
+                <p>
+                  Where the trouble started, then the services it likely hurt along a declared path, then any other service
+                  not fine. Open the map to see them on the product's service map.
+                </p>
+              </InfoPopover>
+            </template>
+            <ImpactList :lines="impact" :map="mapLocation" />
+          </Panel>
           <Panel title="Sites">
             <template #info>
               <InfoPopover title="Sites">
@@ -314,7 +485,7 @@ function rollBack(): void {
                   ><span class="truncate">{{ site.url }}</span><ExternalLink :size="12" class="shrink-0" aria-hidden="true"
                 /></a>
                 <span v-if="site.probe && !site.probe.ok && site.probe.detail" class="mt-1 flex items-start gap-1 text-xs text-warning"
-                  ><AlertTriangle :size="12" class="mt-0.5 shrink-0" aria-hidden="true" />{{ site.probe.detail }}</span
+                  ><TriangleAlert :size="12" class="mt-0.5 shrink-0" aria-hidden="true" />{{ site.probe.detail }}</span
                 >
               </li>
             </ul>

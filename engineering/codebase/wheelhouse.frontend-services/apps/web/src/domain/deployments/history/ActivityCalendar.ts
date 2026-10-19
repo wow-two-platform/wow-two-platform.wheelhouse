@@ -1,14 +1,16 @@
-import { StatusFilter } from './DeploymentFilter';
 import type { ActivityDay } from './models/DeploymentActivity';
 
-/** What a day's cell says: no rollout, all succeeded, all failed, or both. */
+/** What a day's cell says: no applied rollout, or the loudest attention among its applied, finished ones. */
 export type CellTone = 'empty' | 'success' | 'danger' | 'warning';
 
 /** How strongly a cell is filled: 0 for none, then 1, 2–3, 4–6 and 7+ rollouts. */
 export type CellLevel = 0 | 1 | 2 | 3 | 4;
 
-/** The inner mark a cell carries, so colour is never the only signal: failed days and mixed days have one. */
-export type CellMark = 'none' | 'failed' | 'mixed';
+/** The inner mark a cell carries, so colour is never the only signal: a half-dot for a look, a cross for action. */
+export type CellMark = 'none' | 'half' | 'cross';
+
+/** The counts a day is coloured by; an older answer carries only succeeded and failed. */
+export type DayCounts = Pick<ActivityDay, 'succeeded' | 'failed'> & Partial<Pick<ActivityDay, 'calm' | 'look' | 'act' | 'notApplied'>>;
 
 /** One day of the calendar. */
 export interface CalendarCell {
@@ -16,8 +18,10 @@ export interface CalendarCell {
   readonly date: string;
   /** 0 for the column's first weekday. */
   readonly row: number;
-  readonly succeeded: number;
-  readonly failed: number;
+  /** Applied, finished rollouts that day. */
+  readonly applied: number;
+  /** Deploys that changed nothing that day, when the viewer shows them; they never colour it. */
+  readonly notApplied: number;
   readonly tone: CellTone;
   readonly level: CellLevel;
   readonly mark: CellMark;
@@ -61,41 +65,50 @@ function iso(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** Pure rules of the deployment activity calendar: colour, intensity, marks, labels and layout. */
+/**
+ * Pure rules of the deployment activity calendar: colour, intensity, marks, labels and layout. A day takes the loudest
+ * attention of its applied, finished rollouts; a deploy that changed nothing never colours it.
+ */
 export const ActivityCalendar = {
   /** The fill step for a count: 1, 2–3, 4–6, 7+. */
   level(count: number): CellLevel {
     return count <= 0 ? 0 : count === 1 ? 1 : count <= 3 ? 2 : count <= 6 ? 3 : 4;
   },
 
-  /**
-   * A day's colour under the status filter: all failed red, all succeeded green, both amber. With Failed on, only
-   * failures colour a day (red scale); with Succeeded on, only successes.
-   */
-  tone(day: Pick<ActivityDay, 'succeeded' | 'failed'> | undefined, status: StatusFilter = StatusFilter.All): CellTone {
-    const succeeded = status === StatusFilter.Failed ? 0 : (day?.succeeded ?? 0);
-    const failed = status === StatusFilter.Succeeded ? 0 : (day?.failed ?? 0);
-    if (succeeded > 0 && failed > 0) return 'warning';
-    if (failed > 0) return 'danger';
-    return succeeded > 0 ? 'success' : 'empty';
+  /** A day's counts by attention: the applied rollouts that need nothing, a look or action. */
+  attention(day: DayCounts | undefined): { calm: number; look: number; act: number } {
+    if (!day) return { calm: 0, look: 0, act: 0 };
+    // An answer from before the status taxonomy counts outcomes only: a failure needs action.
+    if (day.calm === undefined && day.look === undefined && day.act === undefined)
+      return { calm: day.succeeded, look: 0, act: day.failed };
+    return { calm: day.calm ?? 0, look: day.look ?? 0, act: day.act ?? 0 };
   },
 
-  /** The count a day's fill reflects under the status filter. */
-  count(day: Pick<ActivityDay, 'succeeded' | 'failed'> | undefined, status: StatusFilter = StatusFilter.All): number {
-    if (!day) return 0;
-    return status === StatusFilter.Failed ? day.failed : status === StatusFilter.Succeeded ? day.succeeded : day.succeeded + day.failed;
+  /** A day's colour: the loudest attention among its applied, finished rollouts — green, amber or red. */
+  tone(day: DayCounts | undefined): CellTone {
+    const { calm, look, act } = ActivityCalendar.attention(day);
+    return act > 0 ? 'danger' : look > 0 ? 'warning' : calm > 0 ? 'success' : 'empty';
   },
 
-  /** The inner mark of a tone. */
+  /** The count a day's fill reflects: its applied, finished rollouts. */
+  count(day: DayCounts | undefined): number {
+    const { calm, look, act } = ActivityCalendar.attention(day);
+    return calm + look + act;
+  },
+
+  /** The inner mark of a tone: a half-dot for amber, a cross for red. */
   mark(tone: CellTone): CellMark {
-    return tone === 'danger' ? 'failed' : tone === 'warning' ? 'mixed' : 'none';
+    return tone === 'danger' ? 'cross' : tone === 'warning' ? 'half' : 'none';
   },
 
-  /** A day's tooltip: `Tue, Oct 14, 2026: 3 succeeded · 1 failed`, or `no deployments`. */
-  label(date: string, day: Pick<ActivityDay, 'succeeded' | 'failed'> | undefined, status: StatusFilter = StatusFilter.All): string {
+  /** A day's tooltip: `Tue, Oct 14, 2026: 3 need nothing · 1 needs action · 2 changed nothing`, or `no deployments`. */
+  label(date: string, day: DayCounts | undefined): string {
+    const { calm, look, act } = ActivityCalendar.attention(day);
     const parts: string[] = [];
-    if (status !== StatusFilter.Failed && day?.succeeded) parts.push(`${day.succeeded} succeeded`);
-    if (status !== StatusFilter.Succeeded && day?.failed) parts.push(`${day.failed} failed`);
+    if (calm) parts.push(`${calm} succeeded`);
+    if (look) parts.push(`${look} ${look === 1 ? 'needs' : 'need'} a look`);
+    if (act) parts.push(`${act} ${act === 1 ? 'needs' : 'need'} action`);
+    if (day?.notApplied) parts.push(`${day.notApplied} changed nothing`);
     return `${LONG_DATE.format(utc(date))}: ${parts.length ? parts.join(' · ') : 'no deployments'}`;
   },
 
@@ -103,13 +116,7 @@ export const ActivityCalendar = {
    * Lays a range out as week columns over weekday rows, `weekStart` 1 for Monday. Days outside the range are null, so
    * the first and last columns can be partial; a month label sits over the first column holding its first day.
    */
-  build(
-    from: string,
-    to: string,
-    days: readonly ActivityDay[],
-    status: StatusFilter = StatusFilter.All,
-    weekStart: 0 | 1 = 1,
-  ): Calendar {
+  build(from: string, to: string, days: ReadonlyArray<DayCounts & { readonly date: string }>, weekStart: 0 | 1 = 1): Calendar {
     const byDate = new Map(days.map((day) => [day.date, day]));
     const first = utc(from);
     const last = utc(to);
@@ -129,16 +136,16 @@ export const ActivityCalendar = {
         if (cursor.getUTCDate() === 1 || (months.length === 0 && column === 0 && row === offset))
           if (!months.some((month) => month.column === column)) months.push({ label: MONTH.format(cursor), column });
         const day = byDate.get(date);
-        const tone = ActivityCalendar.tone(day, status);
+        const tone = ActivityCalendar.tone(day);
         cells.push({
           date,
           row,
-          succeeded: day?.succeeded ?? 0,
-          failed: day?.failed ?? 0,
+          applied: ActivityCalendar.count(day),
+          notApplied: day?.notApplied ?? 0,
           tone,
-          level: tone === 'empty' ? 0 : ActivityCalendar.level(ActivityCalendar.count(day, status)),
+          level: tone === 'empty' ? 0 : ActivityCalendar.level(ActivityCalendar.count(day)),
           mark: ActivityCalendar.mark(tone),
-          label: ActivityCalendar.label(date, day, status),
+          label: ActivityCalendar.label(date, day),
         });
       }
       weeks.push({ start: weekStartDate, cells });

@@ -17,8 +17,9 @@ const sections: InfoSection[] = [
 ];
 
 /** A sample pill of each state, for the legend. @internal */
-const sample = (state: Pill["state"], environment: string, detail: string | null): Pill => ({
+const sample = (state: Pill["state"], environment: string, detail: string | null, marker: Pill["marker"] = null): Pill => ({
   environment, state, detail, cause: null, release: null, lastDeploy: null, running: null, hasTarget: state !== PillState.None,
+  marker, lastAttempt: null,
 });
 const legend: { pill: Pill; text: string }[] = [
   { pill: sample(PillState.Healthy, "prod", "1.2.0"), text: "Serving that version; only the check is green." },
@@ -28,7 +29,16 @@ const legend: { pill: Pill; text: string }[] = [
     pill: sample(PillState.Degraded, "prod", PillStateWords.degraded),
     text: "Serving, but rolled back to the previous release, or restarting or under host pressure; its details name the cause.",
   },
+  {
+    pill: sample(PillState.Mixed, "prod", "2/3 on 0.9.0"),
+    text: "Serving a mix of releases: the latest rollout stopped part-way or restored only some services; reconcile it.",
+  },
   { pill: sample(PillState.None, "prod", null), text: "No target, or nothing deployed yet." },
+  {
+    pill: sample(PillState.Healthy, "prod", "0.7.1", "attempt"),
+    text: "A cross in the corner: the last attempt changed nothing but needs a look, such as a failed check.",
+  },
+  { pill: sample(PillState.Healthy, "dev", "1.8.0", "watching"), text: "An eye: the release is being watched after its deploy." },
   { pill: sample(PillState.Ci, "prod", "0.4.3"), text: "Deployed by its own CI, as Wheelhouse is." },
 ];
 </script>
@@ -37,7 +47,7 @@ const legend: { pill: Pill; text: string }[] = [
     <template #pills>
       <p>Point at a pill for the release serving and the latest rollout: when, by whom and why it failed.</p>
       <ul class="mt-2.5 flex flex-col gap-2" aria-label="Pill states">
-        <li v-for="item in legend" :key="item.pill.state" class="flex items-start gap-2.5">
+        <li v-for="item in legend" :key="`${item.pill.state}-${item.pill.marker}`" class="flex items-start gap-2.5">
           <span class="w-36 shrink-0"><EnvironmentPill :pill="item.pill" /></span
           ><span class="pt-0.5 text-xs text-muted-foreground">{{ item.text }}</span>
         </li>

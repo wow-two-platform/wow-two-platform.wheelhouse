@@ -6,6 +6,16 @@ export interface ServiceRolloutService {
   /** `unchanged`, `pending`, `updated`, `failed`, `not_started` or `rolled_back`. */
   readonly outcome: string;
   readonly dependsOn: readonly string[];
+  /** The version it ran before, when the runner recorded it. */
+  readonly from?: string | null;
+  /** The version the release brought, when the runner recorded it. */
+  readonly to?: string | null;
+  /** Why it changed: `image`, `settings` or `added`. */
+  readonly reason?: string | null;
+  /** Its health when it settled. */
+  readonly health?: string | null;
+  /** When it settled. */
+  readonly at?: string | null;
 }
 
 /** How a rollout treated each service: what changed, the dependency waves it started them in and how each ended. */

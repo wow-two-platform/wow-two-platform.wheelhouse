@@ -1,9 +1,18 @@
-/** One local day's finished rollouts. */
+/** One local day's deployments: the finished ones that changed the environment, by the attention they need. */
 export interface ActivityDay {
   /** `YYYY-MM-DD` in the owner's time zone. */
   date: string;
+  /** The old outcome counts, kept one release. */
   succeeded: number;
   failed: number;
+  /** Applied rollouts that need nothing. */
+  calm: number;
+  /** Applied rollouts worth a look. */
+  look: number;
+  /** Applied rollouts that need action. */
+  act: number;
+  /** Deploys that changed nothing, counted when the viewer shows them; they never colour a day. */
+  notApplied: number;
 }
 
 /** One product's finished rollouts over the range. */

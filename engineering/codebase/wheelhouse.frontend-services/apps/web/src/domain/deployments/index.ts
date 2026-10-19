@@ -14,11 +14,14 @@ export type { RolloutRecord, TargetState } from './models/TargetState';
 export type { TargetCheck, TargetCheckItem } from './models/TargetCheck';
 export { DeploymentExtensions, type IndicatorTone, type ReleaseDrift, type StatusVariant } from './DeploymentExtensions';
 export {
-  DeploymentStatusOrder,
-  DeploymentStatusRules,
-  type DeploymentStatusCount,
-  type DeploymentStatusInput,
-  type DeploymentStatusReading,
+  DeploymentStateOrder,
+  DeploymentStates,
+  type DeploymentStateCount,
+  type DeploymentStateInput,
+  type DeploymentStateReading,
+  type ImpactLine,
+  type StateAction,
+  type StepSections,
 } from './DeploymentStatus';
 export type { DailyDeploys, DeploymentMeasures, DeploymentStats, TargetDeployStats } from './models/DeploymentStats';
 export {

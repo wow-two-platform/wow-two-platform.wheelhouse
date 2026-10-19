@@ -60,6 +60,29 @@ test("a live rollout is deploying, a failure with no success since is failed, an
   assert.equal(pillOf("healthy", { lastDeploy: deploy({ outcome: "failed", status: "failed" }), running: later }).state, "healthy");
 });
 
+test("a partial rollout reads mixed with how many services run the new release, and one corner marker at most", () => {
+  const running = deploy({ id: "ok", release: "v0.8.4", submittedAt: "2026-10-01T10:00:00+00:00" });
+  const partial = deploy({
+    id: "p", release: "v0.9.0", status: "rollback_failed", outcome: "failed", state: "partial", substate: "partly_rolled_back",
+    attention: "act", servicesOnRelease: 2, serviceCount: 3, watch: null, reason: "jobs did not become healthy",
+  });
+  const mixed = pillOf("healthy", { lastDeploy: partial, running });
+  assert.deepEqual([mixed.state, mixed.detail, mixed.cause], ["mixed", "2/3 on 0.9.0", "jobs did not become healthy"]);
+  assert.equal(pillOf("healthy", { lastDeploy: { ...partial, servicesOnRelease: null, serviceCount: null }, running }).detail, "mixed");
+
+  // A newer attempt that changed nothing but needs a look marks the corner; a refusal never does.
+  const served = deploy({ state: "succeeded", attention: "none", substate: "passed", watch: "passed" });
+  const checkFailed = deploy({ id: "c", status: "failed", outcome: "failed", state: "not_applied", substate: "check_failed", attention: "look" });
+  assert.equal(pillOf("healthy", { lastDeploy: served, running: served, lastAttempt: checkFailed }).marker, "attempt");
+  assert.equal(pillOf("healthy", { lastDeploy: served, running: served, lastAttempt: null }).marker, null);
+  // A release in its watch window wears the eye; a waiting deploy the clock, which outranks it.
+  const watched = deploy({ state: "succeeded", attention: "none", substate: "watching", watch: "watching" });
+  assert.equal(pillOf("healthy", { lastDeploy: watched, running: watched }).marker, "watching");
+  assert.equal(pillOf("healthy", { lastDeploy: watched, running: watched }, { waiting: true }).marker, "waiting");
+  const stillHealthy = pillOf("healthy", { lastDeploy: served, running: served, lastAttempt: checkFailed });
+  assert.equal(stillHealthy.state, "healthy", "the pill shows the environment, not the attempt");
+});
+
 test("vitals decide failing, degraded and unread; a host that cannot be read outranks a calm rollout", () => {
   assert.equal(pillOf("failing", { lastDeploy: deploy(), running: deploy() }).state, "failed");
   const strained = pillOf("warning", { lastDeploy: deploy(), running: deploy() });

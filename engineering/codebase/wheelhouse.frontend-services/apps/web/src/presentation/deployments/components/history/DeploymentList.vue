@@ -38,15 +38,18 @@ import {
 import { useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
 
 import { ConsolePaths } from "@/application/navigation";
-import { Measures } from "@/domain/common";
-import { DeploymentOutcome } from "@/domain/deployments";
+import { DeployState, Measures } from "@/domain/common";
+import { DeploymentOutcome, DeploymentStates } from "@/domain/deployments";
 
-import DeploymentStatusPill from "../DeploymentStatusPill.vue";
+import DeploymentStateChip from "../DeploymentStateChip.vue";
+import ServiceStrip from "../ServiceStrip.vue";
 
 /**
- * Lists deployments with what changed and how it went; a row opens the deployment's own page. Below `md` the SDK
- * table stacks each row into a labelled card; the `rows` layout says the same in one compact row each, for a narrow
- * column. Older deployments load a page at a time.
+ * Lists deployments with how each went and what it changed; a row opens the deployment's own page. Each row carries
+ * the state chip with its cause beneath it, and the service strip — one glyph per service in rollout order, the origin
+ * ringed, in words on a phone. A deploy that changed nothing shows dimmed. Below `md` the SDK table stacks each row
+ * into a labelled card; the `rows` layout says the same in one compact row each, for a narrow column. Older
+ * deployments load a page at a time.
  */
 defineOptions({ name: "DeploymentList" });
 const props = withDefaults(defineProps<DeploymentListProps>(), {
@@ -59,8 +62,15 @@ const emit = defineEmits<{ more: [] }>();
 const router = useRouter();
 const rows = useSkeletonItems(() => props.items, 5);
 
+/** A deployment's chip reading. @internal */
+const readingOf = (item: DeploymentItem) => DeploymentStates.of(item);
+
+/** Whether a deployment changed nothing, so its row reads dimmed. @internal */
+const isUnchanged = (item: DeploymentItem | undefined) => item?.state === DeployState.NotApplied;
+
+/** The changed services in words, for a deployment whose target reported no per-service results. @internal */
 function changed(item: DeploymentItem): string {
-  if (item.changedServices === null) return "unknown";
+  if (item.changedServices === null) return "—";
   return item.changedServices.length ? item.changedServices.join(", ") : "none";
 }
 
@@ -94,7 +104,10 @@ function open(item: DeploymentItem | undefined, event: MouseEvent): void {
         <RouterLink
           v-if="item"
           :to="pathOf(item)"
-          class="-mx-2 flex min-h-11 min-w-0 flex-col gap-1 rounded-lg px-2 py-2.5 hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-primary"
+          :class="[
+            '-mx-2 flex min-h-11 min-w-0 flex-col gap-1 rounded-lg px-2 py-2.5 hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-primary',
+            isUnchanged(item) ? 'opacity-70' : '',
+          ]"
           :aria-label="`Deployment of ${item.release ?? item.bundleId ?? 'an unknown release'} to ${item.targetId ?? 'a removed target'}`"
         >
           <span class="flex min-w-0 items-center justify-between gap-3">
@@ -105,16 +118,14 @@ function open(item: DeploymentItem | undefined, event: MouseEvent): void {
             </span>
             <span class="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{{ durationOf(item) }}</span>
           </span>
-          <span class="min-w-0 text-sm">
-            <DeploymentStatusPill :status="item.status" :reason="item.reason" :watch="item.watch" />
-            <span v-if="item.warnings.length && item.outcome === DeploymentOutcome.Succeeded" class="mt-0.5 block text-xs text-warning">
-              {{ item.warnings.length }} {{ item.warnings.length === 1 ? "warning" : "warnings" }}
-            </span>
+          <span class="flex min-w-0 items-start justify-between gap-2 text-sm">
+            <DeploymentStateChip :reading="readingOf(item)" has-cause />
+            <ServiceStrip v-if="item.services" :services="item.services" class="shrink-0 pt-0.5" />
           </span>
           <span class="truncate text-xs text-muted-foreground">
             <template v-if="!props.isProductHidden">{{ productOf(item) }} · </template
             ><RelativeTime :value="item.startedAt ?? item.submittedAt" /> · {{ item.actor ?? "—" }}<template
-              v-if="item.changedServices?.length"
+              v-if="!item.services && item.changedServices?.length"
             >
               · <span class="font-mono">{{ item.changedServices.join(", ") }}</span></template
             >
@@ -129,7 +140,7 @@ function open(item: DeploymentItem | undefined, event: MouseEvent): void {
           <TableHeaderCell>Release</TableHeaderCell>
           <TableHeaderCell v-if="!props.isProductHidden">Product</TableHeaderCell>
           <TableHeaderCell>Environment</TableHeaderCell>
-          <TableHeaderCell>Services changed</TableHeaderCell>
+          <TableHeaderCell>Services</TableHeaderCell>
           <TableHeaderCell>Status</TableHeaderCell>
           <TableHeaderCell>Started</TableHeaderCell>
           <TableHeaderCell>Duration</TableHeaderCell>
@@ -140,7 +151,7 @@ function open(item: DeploymentItem | undefined, event: MouseEvent): void {
         <TableRow
           v-for="(item, index) in rows"
           :key="item?.id ?? `placeholder-${index}`"
-          class="cursor-pointer"
+          :class="['cursor-pointer', isUnchanged(item) ? 'opacity-70' : '']"
           @click="open(item, $event)"
         >
           <TableCell>
@@ -163,14 +174,14 @@ function open(item: DeploymentItem | undefined, event: MouseEvent): void {
             }}</Badge>
           </TableCell>
           <TableCell class="font-mono text-xs">
-            <span v-if="item" :class="item.changedServices === null ? 'text-muted-foreground' : ''">{{ changed(item) }}</span>
+            <template v-if="item">
+              <ServiceStrip v-if="item.services" :services="item.services" />
+              <span v-else :class="item.changedServices === null ? 'text-muted-foreground' : ''">{{ changed(item) }}</span>
+            </template>
           </TableCell>
           <TableCell>
-            <span v-if="item" class="block min-w-0">
-              <DeploymentStatusPill :status="item.status" :reason="item.reason" :watch="item.watch" />
-              <span v-if="item.warnings.length && item.outcome === DeploymentOutcome.Succeeded" class="mt-1 block text-xs text-warning">
-                {{ item.warnings.length }} {{ item.warnings.length === 1 ? "warning" : "warnings" }}
-              </span>
+            <span v-if="item" class="block max-w-sm min-w-0">
+              <DeploymentStateChip :reading="readingOf(item)" has-cause />
             </span>
           </TableCell>
           <TableCell class="whitespace-nowrap text-xs text-muted-foreground">

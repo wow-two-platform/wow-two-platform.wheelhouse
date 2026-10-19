@@ -1,7 +1,10 @@
 export {
   DeploymentOutcome,
   type CurrentStep,
+  type DeploymentStateCause,
+  type DeploymentEffect,
   type DeploymentItem,
+  type DeploymentServiceResult,
   type DeploymentWatch,
 } from './models/DeploymentItem';
 export type { DeploymentPage } from './models/DeploymentPage';
@@ -20,6 +23,7 @@ export {
   RangePreset,
   RangePresets,
   StatusFilter,
+  readStatusFilter,
   type DeploymentFilterState,
   type DeploymentRange,
 } from './DeploymentFilter';
@@ -43,5 +47,6 @@ export {
   type CellLevel,
   type CellMark,
   type CellTone,
+  type DayCounts,
 } from './ActivityCalendar';
 export { ServiceRollouts, type ServiceOutcomeReading, type ServiceRollout, type ServiceRolloutService } from './ServiceRollout';

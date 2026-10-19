@@ -12,6 +12,12 @@ export interface RangeMeasures {
   medianRolloutSeconds: number | null;
   /** Median time from a target's failure to its next success. */
   medianRecoverySeconds: number | null;
+  /** Deploys that changed nothing, counted when the viewer shows them. */
+  notApplied: number;
+  /** Deploys worth a look. */
+  look: number;
+  /** Deploys that need action. */
+  act: number;
 }
 
 /** A range's measures beside the same measures for the range of equal length before it. */

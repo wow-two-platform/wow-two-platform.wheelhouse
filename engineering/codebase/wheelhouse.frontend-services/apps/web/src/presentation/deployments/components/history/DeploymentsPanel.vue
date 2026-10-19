@@ -23,6 +23,7 @@ import {
   DeploymentView,
   useDeploymentActivity,
   useDeploymentPages,
+  useDeploymentRangeStats,
   useRunningDeployments,
 } from "@/application/deployments";
 import { usePortfolio } from "@/application/portfolio";
@@ -37,6 +38,7 @@ import DeploymentList from "./DeploymentList.vue";
 import DeploymentStatusLegend from "./DeploymentStatusLegend.vue";
 import DeploymentsInfo from "./DeploymentsInfo.vue";
 import RangeStatsTiles from "./RangeStatsTiles.vue";
+import UnchangedToggle from "./UnchangedToggle.vue";
 
 /** The day panel's narrowest width beside the calendar, with the gap before it: 18rem + 1.5rem. @internal */
 const SidePanelRoom = 312;
@@ -71,6 +73,9 @@ const dayList = useDeploymentPages(route.filter, {
   enabled: () => isGrid.value && route.day.value !== null,
 });
 const running = useRunningDeployments(() => route.filter.value.entities);
+/** The measures' read, shared with the tiles: it counts the deploys that changed nothing, which the toggle carries. */
+const stats = useDeploymentRangeStats(route.filter);
+const unchangedCount = computed(() => stats.data.value?.current.notApplied ?? null);
 const isLive = computed(() => (running.data.value?.length ?? 0) > 0);
 const refresh = useRefresh(() =>
   Promise.all(isGrid.value ? [activity.refetch(), ...(route.day.value ? [dayList.refetch()] : [])] : [list.refetch()]),
@@ -114,6 +119,7 @@ function setView(value: unknown): void {
       <DeploymentsInfo :status="route.filter.value.status" :is-grid="isGrid" />
     </template>
     <template #actions>
+      <UnchangedToggle :count="unchangedCount" />
       <ToggleGroup variant="segmented" aria-label="View" :model-value="route.view.value" @update:model-value="setView">
         <ToggleInput :value="DeploymentView.Grid" size="sm" class="max-md:min-h-9">
           <CalendarDays :size="14" aria-hidden="true" /><span class="ml-1">Grid</span>
@@ -149,7 +155,6 @@ function setView(value: unknown): void {
           >
             <ActivityGrid
               :activity="activity.data.value"
-              :status="route.filter.value.status"
               :selected="route.day.value"
               :is-live="isLive"
               @select="route.setDay"
@@ -170,8 +175,8 @@ function setView(value: unknown): void {
               <h3 class="text-sm font-semibold">{{ dayTitle }}</h3>
               <InfoPopover title="The day's statuses">
                 <p class="mb-2.5">
-                  A tile counts each status the day's deployments reached, first the total; a status nobody reached
-                  takes no tile. Each row below carries its status and, where there is one, the cause.
+                  A tile counts each state the day's deployments reached, first the total; a state nobody reached takes
+                  no tile. Each row below carries its state chip, its cause and its services.
                 </p>
                 <DeploymentStatusLegend />
               </InfoPopover>
@@ -218,7 +223,7 @@ function setView(value: unknown): void {
         :has-data="!list.loading.value"
         :is-empty="!list.loading.value && !list.items.value.length"
         empty-title="No deployments match"
-        empty-description="Widen the range, choose all outcomes, or clear the products and services."
+        empty-description="Widen the range, choose All, or clear the products and services."
         loading-label="Loading deployments"
       >
         <DeploymentList

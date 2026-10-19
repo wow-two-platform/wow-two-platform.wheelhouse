@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { DeploymentIssueKind, DeploymentOutcome, JobStatus, StepStatus } from '@/domain/deployments';
+import { Attention, DeployState, ServiceResult } from '@/domain/common';
+import { DeploymentIssueKind, DeploymentOutcome, DeploymentStates, JobStatus, StepStatus } from '@/domain/deployments';
 
 const nullableText = z.string().nullable();
 // Site links open in the owner's browser, so only http(s) addresses survive decoding.
@@ -12,7 +13,37 @@ const CurrentStepSchema = z.object({
   index: z.number().int().nullable().optional(),
 });
 
-export const DeploymentItemSchema = z.object({
+/** A watch window's status; `superseded` is the word older records carry for `replaced`. */
+const WatchStatusSchema = z
+  .enum(['watching', 'passed', 'degraded', 'replaced', 'superseded', 'unverified'])
+  .catch('unverified')
+  .transform((value) => (value === 'superseded' ? 'replaced' : value));
+
+const CauseSchema = z.object({
+  kind: z.string(),
+  origin: nullableText.default(null),
+  message: nullableText.default(null),
+  at: nullableText.default(null),
+});
+
+const EffectSchema = z.object({
+  service: z.string(),
+  finding: z.string(),
+  via: z.string(),
+  at: nullableText.default(null),
+});
+
+const ServiceResultSchema = z.object({
+  service: z.string(),
+  result: z.enum(ServiceResult).catch(ServiceResult.Unknown),
+  origin: z.boolean().default(false),
+  from: nullableText.default(null),
+  to: nullableText.default(null),
+  health: nullableText.default(null),
+  reason: nullableText.default(null),
+});
+
+const DeploymentItemFields = z.object({
   id: z.string(),
   targetId: nullableText.default(null),
   environment: nullableText.default(null),
@@ -27,6 +58,12 @@ export const DeploymentItemSchema = z.object({
   deployReason: nullableText.default(null),
   status: z.enum(JobStatus).catch(JobStatus.Unknown),
   outcome: z.enum(DeploymentOutcome).catch(DeploymentOutcome.Unknown),
+  state: z.enum(DeployState).optional().catch(undefined),
+  substate: nullableText.optional().catch(undefined),
+  attention: z.enum(Attention).optional().catch(undefined),
+  cause: CauseSchema.nullable().default(null).catch(null),
+  effects: z.array(EffectSchema).default([]).catch([]),
+  services: z.array(ServiceResultSchema).nullable().default(null).catch(null),
   reason: nullableText.default(null),
   warnings: z.array(z.string()).default([]),
   submittedAt: z.string(),
@@ -37,7 +74,7 @@ export const DeploymentItemSchema = z.object({
   currentStep: CurrentStepSchema.nullable().default(null),
   watch: z
     .object({
-      status: z.enum(['watching', 'passed', 'degraded', 'superseded', 'unverified']).catch('unverified'),
+      status: WatchStatusSchema,
       until: nullableText.default(null),
       checks: z.number().int().nullable().default(null),
       findings: z.array(z.string()).default([]),
@@ -46,6 +83,18 @@ export const DeploymentItemSchema = z.object({
     })
     .nullable()
     .default(null),
+});
+
+/** A deployment as lists read it; an answer from before the status taxonomy reads its state from the runner status. */
+export const DeploymentItemSchema = DeploymentItemFields.transform((item) => {
+  const known = item.state !== undefined && item.attention !== undefined;
+  const legacy = known ? null : DeploymentStates.legacy(item.status, item.watch);
+  return {
+    ...item,
+    state: legacy?.state ?? item.state!,
+    substate: legacy ? legacy.substate : (item.substate ?? null),
+    attention: legacy?.attention ?? item.attention!,
+  };
 });
 
 export const DeploymentPageSchema = z.object({
@@ -57,7 +106,25 @@ export const DeploymentActivitySchema = z.object({
   from: z.string(),
   to: z.string(),
   timeZone: z.string(),
-  days: z.array(z.object({ date: z.string(), succeeded: z.number().int(), failed: z.number().int() })),
+  days: z.array(
+    z
+      .object({
+        date: z.string(),
+        succeeded: z.number().int(),
+        failed: z.number().int(),
+        calm: z.number().int().optional(),
+        look: z.number().int().optional(),
+        act: z.number().int().optional(),
+        notApplied: z.number().int().default(0),
+      })
+      // An answer from before the status taxonomy: a success needed nothing, a failure needs action.
+      .transform((day) => ({
+        ...day,
+        calm: day.calm ?? day.succeeded,
+        look: day.look ?? 0,
+        act: day.act ?? day.failed,
+      })),
+  ),
   products: z.array(z.object({ product: z.string(), succeeded: z.number().int(), failed: z.number().int() })).default([]),
 });
 
@@ -72,6 +139,9 @@ const RangeMeasuresSchema = z.object({
   successRate: z.number().nullable(),
   medianRolloutSeconds: z.number().nullable(),
   medianRecoverySeconds: z.number().nullable(),
+  notApplied: z.number().default(0),
+  look: z.number().default(0),
+  act: z.number().default(0),
 });
 
 export const DeploymentRangeStatsSchema = z.object({
@@ -181,7 +251,19 @@ export const DeploymentDetailSchema = z.object({
       waves: z.array(z.array(z.string())).default([]),
       removed: z.array(z.string()).default([]),
       services: z
-        .array(z.object({ name: z.string(), change: z.string(), outcome: z.string(), dependsOn: z.array(z.string()).default([]) }))
+        .array(
+          z.object({
+            name: z.string(),
+            change: z.string(),
+            outcome: z.string(),
+            dependsOn: z.array(z.string()).default([]),
+            from: nullableText.optional(),
+            to: nullableText.optional(),
+            reason: nullableText.optional(),
+            health: nullableText.optional(),
+            at: nullableText.optional(),
+          }),
+        )
         .default([]),
     })
     .nullable()

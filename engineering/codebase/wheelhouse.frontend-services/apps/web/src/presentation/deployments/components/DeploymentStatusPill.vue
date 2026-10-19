@@ -1,16 +1,20 @@
 <script lang="ts">
-import type { DeploymentWatch, JobStatus } from "@/domain/deployments";
+import type { Attention, DeployState } from "@/domain/common";
+import type { DeploymentStateCause, DeploymentWatch, JobStatus } from "@/domain/deployments";
 
-/** Defines a deployment's status pill: what `DeploymentStatusRules` reads, and whether the cause is written out. */
+/** Defines a deployment's status pill: what `DeploymentStates` reads, and whether the cause is written out. */
 export interface DeploymentStatusPillProps {
   readonly status: JobStatus;
-  /** The display-safe explanation of its outcome. */
+  /** The state the API read; without it the runner status is read the old way. */
+  readonly state?: DeployState | null | undefined;
+  readonly substate?: string | null | undefined;
+  readonly attention?: Attention | null | undefined;
+  readonly cause?: DeploymentStateCause | null | undefined;
+  /** The display-safe explanation of its outcome, the cause when the API names none. */
   readonly reason?: string | null | undefined;
   /** The watch after a successful rollout: a regression turns the success degraded. */
   readonly watch?: Pick<DeploymentWatch, "status" | "findings"> | null | undefined;
-  /** The release a roll back restored, when known. */
-  readonly restored?: string | null | undefined;
-  /** Writes the cause after the pill — `rolled back to the previous release`, a failure's reason. Default `true`. */
+  /** Writes the cause under the chip. Default `true`. */
   readonly hasCause?: boolean;
 }
 </script>
@@ -18,27 +22,21 @@ export interface DeploymentStatusPillProps {
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { DeploymentStatusRules } from "@/domain/deployments";
-import { StatusPill } from "@/presentation/common/components";
+import { DeploymentStates } from "@/domain/deployments";
+
+import DeploymentStateChip from "./DeploymentStateChip.vue";
 
 /**
- * A deployment's status as the console's status pill — the same icons, tones and words as an environment's pill — and
- * its cause after it: a roll back reads `degraded`, then `rolled back to the previous release`. Without the written
- * cause, the pill's title and its assistive name still carry it.
+ * A deployment's state chip from its fields: the API's state where it carries one, else its runner status — a runner
+ * job, the deploy dialog's follow-up — read the old way. The same chip as every deployment list.
  */
 defineOptions({ name: "DeploymentStatusPill" });
 const props = withDefaults(defineProps<DeploymentStatusPillProps>(), { hasCause: true });
 defineSlots<{}>();
 
-const reading = computed(() => DeploymentStatusRules.of(props));
+const reading = computed(() => DeploymentStates.of(props));
 </script>
 
 <template>
-  <span class="inline-flex max-w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-    <StatusPill :state="reading.state" :label="reading.word" :title="reading.cause ?? undefined" />
-    <span v-if="reading.cause && props.hasCause" class="min-w-0 text-xs break-words text-muted-foreground">{{
-      reading.cause
-    }}</span>
-    <span v-else-if="reading.cause" class="sr-only">: {{ reading.cause }}</span>
-  </span>
+  <DeploymentStateChip :reading="reading" :has-cause="props.hasCause" />
 </template>

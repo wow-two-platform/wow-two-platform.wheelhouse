@@ -26,8 +26,9 @@ import DateRangeFilter from "./DateRangeFilter.vue";
 import EntityPicker from "./EntityPicker.vue";
 
 /**
- * One filter for both views and the measures: which workspaces, products and services, which outcomes, and when.
- * Picked entities show as chips that each remove themselves.
+ * One filter for both views and the measures: which workspaces, products and services, which deployments by the
+ * attention they need, and when. Picked entities show as chips that each remove themselves. The deploys that changed
+ * nothing follow the viewer's own toggle in the deployments panel, not this filter.
  */
 defineOptions({ name: "DeploymentFilterBar" });
 const props = withDefaults(defineProps<DeploymentFilterBarProps>(), { isEntityLocked: false, isSingleRow: false });
@@ -35,15 +36,16 @@ const emit = defineEmits<{ change: [filter: Partial<Filter>] }>();
 
 const statuses = [
   { value: StatusFilter.All, label: "All" },
+  { value: StatusFilter.NeedsAction, label: "Needs action" },
+  { value: StatusFilter.Look, label: "Look" },
   { value: StatusFilter.Succeeded, label: "Succeeded" },
-  { value: StatusFilter.Failed, label: "Failed" },
 ] as const;
 const chips = computed(() => (props.isEntityLocked ? [] : EntitySelection.chips(props.tree, props.filter.entities)));
 
 /** Picks a status; pressing the active segment clears the group's value and keeps the status. @internal */
 function setStatus(value: unknown): void {
-  if (value === StatusFilter.All || value === StatusFilter.Succeeded || value === StatusFilter.Failed)
-    emit("change", { status: value });
+  const match = statuses.find((status) => status.value === value);
+  if (match) emit("change", { status: match.value });
 }
 
 function remove(key: string): void {
@@ -70,7 +72,7 @@ function remove(key: string): void {
       />
       <ToggleGroup
         variant="segmented"
-        aria-label="Outcome"
+        aria-label="Status"
         :model-value="props.filter.status"
         @update:model-value="setStatus"
       >

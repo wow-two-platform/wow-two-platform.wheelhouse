@@ -1,7 +1,8 @@
+import type { Attention, DeployState, ServiceResult } from '@/domain/common/StatusVocabulary';
 import type { JobStatus } from '../../enums/JobStatus';
 import type { ReleaseKind } from '../../models/ReleaseArtifact';
 
-/** What a deployment status amounts to: refusals changed nothing, pending ones are still changing. */
+/** What a deployment status amounted to before the status taxonomy; kept one release beside the state. */
 export const DeploymentOutcome = {
   Succeeded: 'succeeded',
   Failed: 'failed',
@@ -22,13 +23,46 @@ export interface CurrentStep {
 
 /** The watch window after a successful rollout: its containers and sites looked at once a minute. */
 export interface DeploymentWatch {
-  status: 'watching' | 'passed' | 'degraded' | 'superseded' | 'unverified';
+  /** `replaced`: another rollout ended the window. */
+  status: 'watching' | 'passed' | 'degraded' | 'replaced' | 'unverified';
   until: string | null;
   checks: number | null;
   /** What regressed: a container that stopped, turned unhealthy or restarted, or a site gone silent. */
   findings: string[];
   degradedAt: string | null;
   completedAt: string | null;
+}
+
+/** Why a deployment ended in its state, with where it started. */
+export interface DeploymentStateCause {
+  /** `service`, `step`, `gate`, `freeze`, `validation`, `platform`, `busy`, `runner` or `operator`. */
+  kind: string;
+  /** A service's key or a step's name; null when nothing narrower is known. */
+  origin: string | null;
+  message: string | null;
+  at: string | null;
+}
+
+/** A service the origin likely hurt, along a declared path; inferred, never an observed call. */
+export interface DeploymentEffect {
+  service: string;
+  finding: string;
+  /** The origin it declares it depends on. */
+  via: string;
+  at: string | null;
+}
+
+/** How one service ended in a deployment. */
+export interface DeploymentServiceResult {
+  service: string;
+  result: ServiceResult;
+  /** Whether the deployment's trouble started here. */
+  origin: boolean;
+  from: string | null;
+  to: string | null;
+  health: string | null;
+  /** Why it changed: `added`, `image`, `definition` (memory, health check, mounts) or `settings`; null when unchanged. */
+  reason: string | null;
 }
 
 /** One deployment as lists show it: what went where, how it went and what it changed. */
@@ -50,6 +84,16 @@ export interface DeploymentItem {
   deployReason: string | null;
   status: JobStatus;
   outcome: DeploymentOutcome;
+  /** What the environment runs because of it. */
+  state: DeployState;
+  /** Which way it got there, such as `partly_rolled_back`. */
+  substate: string | null;
+  /** How much attention it needs; its colour follows this. */
+  attention: Attention;
+  cause: DeploymentStateCause | null;
+  effects: DeploymentEffect[];
+  /** Each service's result in rollout order; null when the target did not report them. */
+  services: DeploymentServiceResult[] | null;
   reason: string | null;
   warnings: string[];
   submittedAt: string;

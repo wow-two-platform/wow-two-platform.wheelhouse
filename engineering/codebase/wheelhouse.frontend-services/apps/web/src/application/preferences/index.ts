@@ -9,6 +9,7 @@ export const PreferenceKeys = {
   collapsedGroups: "wheelhouse.products-collapsed-workspaces",
   productsView: "wheelhouse.products-view",
   lastProduct: "wheelhouse.last-product",
+  showUnchanged: "wheelhouse.show-unchanged",
 } as const;
 
 /** Reads a remembered value; storage that is blocked or full reads as nothing remembered. @internal */
@@ -64,6 +65,21 @@ const collapsedGroups = preference<string[]>(
   },
   (value) => JSON.stringify(value),
 );
+
+const showUnchanged = preference(
+  PreferenceKeys.showUnchanged,
+  (raw) => raw === "true",
+  (value) => String(value),
+);
+
+/**
+ * Whether deploys that changed nothing — refused, replaced in the queue, cancelled, a failed check before changes —
+ * show in the deployment lists, the calendar, its day panel and the product tabs, and count in the measures: the one
+ * "Show unchanged deploys" switch, off by default.
+ */
+export function useShowUnchanged(): Ref<boolean> {
+  return showUnchanged;
+}
 
 /** Whether inactive products and services show everywhere — the one "Show inactive" switch. */
 export function useShowInactive(): Ref<boolean> {

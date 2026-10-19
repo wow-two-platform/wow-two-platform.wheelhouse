@@ -5,4 +5,14 @@ export { default as DeleteConfirm, type DeleteConfirmProps } from './DeleteConfi
 export { default as InfoPopover, type InfoPopoverProps } from './InfoPopover.vue';
 export { default as InfoPopoverContent, type InfoPopoverContentProps, type InfoSection } from './InfoPopoverContent.vue';
 export { default as StatusPill, type StatusPillProps } from './StatusPill.vue';
-export { StatusIcons, StatusToneClass, statusClass, statusIconClass } from './StatusStyles';
+export {
+  CauseIcons,
+  DeployStateIcons,
+  ServiceResultIcons,
+  StatusIcons,
+  StatusToneClass,
+  deployStateClass,
+  deployStateIcon,
+  statusClass,
+  statusIconClass,
+} from './StatusStyles';
