@@ -4,6 +4,8 @@ export { StepStatus } from './enums/StepStatus';
 export type { DeploymentStep } from './models/DeploymentStep';
 export type { DeploymentJob } from './models/DeploymentJob';
 export type { DeploymentTarget } from './models/DeploymentTarget';
+export type { SelfDeployment, SelfDeploymentRun } from './models/SelfDeployment';
+export { SelfDeployRules, SelfProduct, type SelfNotice, type SelfNoticeTone } from './SelfDeployRules';
 export type { ReleaseArtifact, ReleaseKind } from './models/ReleaseArtifact';
 export type { PublishedSite, SiteProbe } from './models/PublishedSite';
 export type { ServiceVersion } from './models/ServiceVersion';

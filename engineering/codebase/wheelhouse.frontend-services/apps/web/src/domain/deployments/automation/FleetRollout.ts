@@ -1,4 +1,5 @@
 import type { DeploymentPromotion } from '../history/models/DeploymentPromotion';
+import { SelfDeployRules } from '../SelfDeployRules';
 
 /** Where a fleet rollout stands. */
 export const FleetStatus = { Running: 'running', Succeeded: 'succeeded', Failed: 'failed', Cancelled: 'cancelled' } as const;
@@ -119,13 +120,17 @@ export const FleetRollouts = {
     }
   },
 
-  /** The releases Ready to promote a fleet takes, in the order the panel lists them; held or unknown ones are left out. */
+  /** The releases Ready to promote a fleet takes, in the order the panel lists them; held or unknown ones are left
+   *  out, and so is Wheelhouse itself, which is promoted on its own since its console restarts. */
   selection(
     offers: readonly DeploymentPromotion[] | undefined,
     chosen: ReadonlySet<string>,
     held: ReadonlySet<string> = new Set(),
   ): DeploymentPromotion[] {
-    return (offers ?? []).filter((offer) => chosen.has(FleetRollouts.key(offer)) && !held.has(offer.prodTargetId)).slice(0, FleetMaxItems);
+    return (offers ?? [])
+      .filter((offer) => chosen.has(FleetRollouts.key(offer)) && !held.has(offer.prodTargetId)
+        && !SelfDeployRules.isSelfProduct(offer.product))
+      .slice(0, FleetMaxItems);
   },
 
   /** The key a Ready to promote row is selected by. */

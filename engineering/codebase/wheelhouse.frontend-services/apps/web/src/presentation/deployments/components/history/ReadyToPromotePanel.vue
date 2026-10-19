@@ -25,7 +25,7 @@ import { DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feed
 import { CheckboxInput } from "@wow-two-beta/fe/presentation/forms";
 
 import { ConsolePaths } from "@/application/navigation";
-import { FleetMaxItems, FleetRollouts, rollbackRisks } from "@/domain/deployments";
+import { FleetMaxItems, FleetRollouts, SelfDeployRules, rollbackRisks } from "@/domain/deployments";
 import { InfoPopover, Panel } from "@/presentation/common/components";
 
 import DevCheckPill from "../automation/DevCheckPill.vue";
@@ -49,7 +49,10 @@ const rows = useSkeletonItems(() => props.items, 2);
 /** The chosen rows, by target and release; a row that leaves the list leaves the choice. */
 const chosen = ref<ReadonlySet<string>>(new Set());
 const held = computed(() => props.heldTargets ?? new Set<string>());
-const free = computed(() => (props.items ?? []).filter((item) => !held.value.has(item.prodTargetId)));
+/** The rows a fleet may take: not held by a running one, and never Wheelhouse itself, which is promoted on its own. */
+const free = computed(() =>
+  (props.items ?? []).filter((item) => !held.value.has(item.prodTargetId) && !SelfDeployRules.isSelfProduct(item.product)),
+);
 const selection = computed(() => FleetRollouts.selection(props.items, chosen.value, held.value));
 const allChosen = computed(() => free.value.length > 0 && selection.value.length === Math.min(free.value.length, FleetMaxItems));
 watch(
@@ -109,7 +112,7 @@ function name(item: DeploymentPromotion): string {
         >
           <div class="flex min-w-0 items-start gap-3">
           <label
-            v-if="item && free.length > 1"
+            v-if="item && free.length > 1 && !SelfDeployRules.isSelfProduct(item.product)"
             class="-m-2 flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center p-2 md:min-h-0 md:min-w-0"
           >
             <CheckboxInput

@@ -34,6 +34,7 @@ import {
   PhoneNav,
   ProfileMenu,
   ScopeBar,
+  SelfDeploymentNotice,
 } from '@/presentation/shell';
 
 /** The tablet's drawer loads the first time it opens; desktops and phones never need it. @internal */
@@ -189,6 +190,8 @@ watch(isDesktop, (desktop) => {
     <AppShellMain ref="main">
       <!-- The widening gutter: 1rem on phones, 1.5rem on tablets and small desktops, 2rem from `xl`. -->
       <AppShellContent gutter="lg" max-width="2xl" class="lg:px-6 xl:px-8">
+        <!-- After a self-promotion: how the rollout that started this console ended. -->
+        <SelfDeploymentNotice />
         <slot />
       </AppShellContent>
     </AppShellMain>

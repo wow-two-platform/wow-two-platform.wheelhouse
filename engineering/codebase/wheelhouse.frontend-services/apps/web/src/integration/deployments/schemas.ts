@@ -55,6 +55,26 @@ export const DeploymentTargetSchema = z.object({
   acceptsCandidates: z.boolean().default(false),
   needsConfirmation: z.boolean().default(false),
   requiresDevPass: z.boolean().default(false),
+  self: z.boolean().default(false),
+});
+export const SelfDeploymentRunSchema = z.object({
+  id: z.string(),
+  release: z.string().nullable(),
+  previousRelease: z.string().nullable(),
+  status: z.string(),
+  outcome: z.string(),
+  actor: z.string().nullable(),
+  reason: z.string().nullable(),
+  failure: z.string().nullable(),
+  submittedAt: z.string(),
+  completedAt: z.string().nullable(),
+  beforeBoot: z.boolean(),
+});
+export const SelfDeploymentSchema = z.object({
+  environment: z.string(),
+  target: z.string().nullable(),
+  bootedAt: z.string(),
+  latest: SelfDeploymentRunSchema.nullable(),
 });
 const releaseKind = z.enum(["release", "candidate"]);
 export const ReleaseArtifactSchema = z.object({

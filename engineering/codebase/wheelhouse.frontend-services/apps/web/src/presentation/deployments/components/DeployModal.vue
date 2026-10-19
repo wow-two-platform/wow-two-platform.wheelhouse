@@ -58,10 +58,12 @@ import {
   useTargetCheck,
   useTargetState,
 } from "@/application/deployments";
+import { useApiConnection } from "@/application/system";
 import {
   DeployFreezes,
   DeploySettingsRules,
   JobStatus,
+  SelfDeployRules,
   rollbackRisks,
   type DeploymentTarget,
   type ReleaseArtifact,
@@ -108,6 +110,15 @@ const available = computed(() =>
 );
 const typed = ref("");
 const skipDev = ref(false);
+const system = useApiConnection();
+/** Wheelhouse's own prod: promoted only with its ID typed and a reason (decision 64). */
+const selfProd = computed(() => SelfDeployRules.isSelfProd(selectedTarget.value));
+/** The deploy replaces the console this dialog runs in: it goes away for a minute and comes back. */
+const replacesConsole = computed(() =>
+  SelfDeployRules.replacesConsole(selectedTarget.value, system.environment.value),
+);
+/** The release preselected for a prod target: the newest one that passed dev. */
+const preselected = ref<string | null>(null);
 const branch = ref("main");
 const requested = ref<string | null>(null);
 const buildProduct = () =>
@@ -127,11 +138,13 @@ const confirmed = computed(
   () => !typedNeeded.value || typed.value === target.value,
 );
 const typedLabel = computed(() =>
-  selectedTarget.value?.needsConfirmation && skipDev.value
-    ? `Type ${target.value} to confirm`
-    : selectedTarget.value?.needsConfirmation
-      ? `Type ${target.value} to deploy prod to the local server`
-      : `Type ${target.value} to deploy without a dev pass`,
+  selfProd.value
+    ? `Type ${target.value} to promote Wheelhouse prod`
+    : selectedTarget.value?.needsConfirmation && skipDev.value
+      ? `Type ${target.value} to confirm`
+      : selectedTarget.value?.needsConfirmation
+        ? `Type ${target.value} to deploy prod to the local server`
+        : `Type ${target.value} to deploy without a dev pass`,
 );
 /** The freeze holding the chosen target: a deploy needs an override with a reason. */
 const freeze = useCoveringFreeze(
@@ -144,12 +157,14 @@ const isProd = computed(() => selectedTarget.value?.environment === "prod");
 /** A reason is asked for on prod and wherever a freeze holds the target; it is required to override a freeze or to skip
  *  the dev pass. */
 const asksReason = computed(() => isProd.value || Boolean(freeze.value));
-const reasonNeeded = computed(() => (Boolean(freeze.value) && overrideFreeze.value) || skipDev.value);
+const reasonNeeded = computed(
+  () => (Boolean(freeze.value) && overrideFreeze.value) || skipDev.value || selfProd.value,
+);
 /** What the release declares that a prod deploy should weigh, read when the prod confirm step opens. */
 const facts = useReleaseFacts(() => (step.value === "confirm" && isProd.value ? release.value : null));
 const risks = computed(() => rollbackRisks(facts.data.value));
-/** The dev-proven offer this prod deploy takes, when it is one: it carries the release's dev check. */
-const promotions = useDeploymentPromotions([], () => step.value === "confirm" && isProd.value);
+/** The dev-proven offers: one preselects a prod target's release, and the confirm step shows its dev check. */
+const promotions = useDeploymentPromotions([], () => isProd.value);
 const offer = computed(() =>
   promotions.data.value?.find((item) => item.prodTargetId === target.value && item.bundleId === release.value),
 );
@@ -213,6 +228,7 @@ watch(
     overrideFreeze.value = false;
     reason.value = "";
     requested.value = null;
+    preselected.value = null;
     entered.value = {};
     secretKinds.value = {};
     check.reset();
@@ -234,6 +250,20 @@ watch([target, release], () => {
   secretKinds.value = {};
   check.reset();
 });
+
+/** A prod target starts on the newest release that passed dev, as Ready to promote offers it; the owner may pick an
+ *  older one to roll back. A selection the dialog opened with is kept. */
+watch(
+  [selectedTarget, () => promotions.data.value, available],
+  () => {
+    if (step.value !== "choose" || release.value) return;
+    const offered = SelfDeployRules.preselected(promotions.data.value, selectedTarget.value, available.value);
+    if (!offered) return;
+    release.value = offered;
+    preselected.value = offered;
+  },
+  { immediate: true },
+);
 
 /** Reads the verified release's sites once the rollout succeeds, so the dialog can open them. */
 watch(settled, (value) => {
@@ -402,7 +432,9 @@ function close(open: boolean): void {
               :helper="
                 target && !available.length
                   ? 'No published release is available yet.'
-                  : ''
+                  : release && release === preselected
+                    ? 'The newest release that passed dev; pick an older one to roll back.'
+                    : ''
               "
             >
               <SelectPicker
@@ -634,7 +666,13 @@ function close(open: boolean): void {
             :description="failureReason(saveSettings.error.value)"
           />
           <Alert
-            v-if="facts.data.value?.rollbackCompatible === false"
+            v-if="selectedTarget?.self"
+            severity="warning"
+            :title="replacesConsole ? 'This replaces the console you are using' : 'This replaces a Wheelhouse console'"
+            description="The console goes offline for about a minute while the host runner swaps it; products keep serving. This dialog reconnects and shows the outcome. A new console that fails its health or site check rolls back to the release running now."
+          />
+          <Alert
+            v-if="facts.data.value?.rollbackCompatible === false && !selectedTarget?.self"
             severity="warning"
             title="Can't roll back automatically"
             description="This release does not declare that the previous images run on its schema. If the rollout fails after replacing containers, the target stays on it until you recover it by hand."
@@ -672,7 +710,7 @@ function close(open: boolean): void {
           <Field
             v-if="asksReason"
             label="Reason"
-            :helper="reasonNeeded ? 'Required to override a freeze or skip the dev pass; kept on the deployment and in the audit trail' : 'Optional; kept on the deployment and in the audit trail'"
+            :helper="selfProd ? 'Required to promote Wheelhouse prod; kept on the deployment and in the audit trail' : reasonNeeded ? 'Required to override a freeze or skip the dev pass; kept on the deployment and in the audit trail' : 'Optional; kept on the deployment and in the audit trail'"
           >
             <TextInput
               v-model="reason"
@@ -777,7 +815,13 @@ function close(open: boolean): void {
             description="The target stays locked until the owner inspects and reconciles it."
           />
           <Alert
-            v-if="outcome.error.value"
+            v-if="outcome.error.value && replacesConsole"
+            severity="info"
+            title="Wheelhouse is restarting"
+            description="The host runner is replacing this console. This dialog keeps asking and shows the outcome once the new console answers; reloading the page works too."
+          />
+          <Alert
+            v-else-if="outcome.error.value"
             severity="warning"
             title="Outcome unavailable"
             :description="outcome.error.value.message"

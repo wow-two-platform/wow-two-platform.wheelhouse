@@ -6,6 +6,7 @@ import type {
   DeploymentStats,
   DeploymentTarget,
   ReleaseArtifact,
+  SelfDeployment,
   ServiceLogs,
   TargetCheck,
   TargetState,
@@ -18,6 +19,7 @@ import {
   DeploymentStatsSchema,
   DeploymentTargetSchema,
   ReleaseArtifactSchema,
+  SelfDeploymentSchema,
   ServiceLogsSchema,
   TargetCheckSchema,
   TargetStateSchema,
@@ -75,6 +77,10 @@ export const deploymentsApi = {
       ServiceLogsSchema,
       { signal },
     ),
+
+  /** This console's own newest rollout, read back from the host's journal. */
+  getSelfDeployment: (signal?: AbortSignal) =>
+    requestData<SelfDeployment>("/api/self-deployment", SelfDeploymentSchema, { signal }),
 
   getOutcome: (id: string, signal?: AbortSignal) =>
     requestData<DeploymentJob>(

@@ -5,3 +5,4 @@ export { default as ConsoleNav, type ConsoleNavProps } from './components/Consol
 export { default as PhoneNav } from './components/PhoneNav.vue';
 export { default as ProfileMenu } from './components/ProfileMenu.vue';
 export { default as ScopeBar, type ScopeBarProps } from './components/ScopeBar.vue';
+export { default as SelfDeploymentNotice } from './components/SelfDeploymentNotice.vue';

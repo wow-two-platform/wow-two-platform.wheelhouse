@@ -10,6 +10,7 @@ export const PreferenceKeys = {
   productsView: "wheelhouse.products-view",
   lastProduct: "wheelhouse.last-product",
   showAllAttempts: "wheelhouse.show-all-attempts",
+  dismissedSelfNotices: "wheelhouse.self-deploy-dismissed",
 } as const;
 
 /** Reads a remembered value; storage that is blocked or full reads as nothing remembered. @internal */
@@ -154,4 +155,22 @@ const lastProduct = preference<LastProduct | null>(
 /** The product page last opened; null before any, or after it was forgotten. */
 export function useLastProduct(): Ref<LastProduct | null> {
   return lastProduct;
+}
+
+const dismissedSelfNotices = preference<string[]>(
+  PreferenceKeys.dismissedSelfNotices,
+  (raw) => {
+    try {
+      const value: unknown = JSON.parse(raw ?? "[]");
+      return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").slice(-20) : [];
+    } catch {
+      return [];
+    }
+  },
+  (value) => JSON.stringify(value.slice(-20)),
+);
+
+/** The self-rollouts whose notice the owner dismissed, by deployment id; the twenty newest are kept. */
+export function useDismissedSelfNotices(): Ref<string[]> {
+  return dismissedSelfNotices;
 }

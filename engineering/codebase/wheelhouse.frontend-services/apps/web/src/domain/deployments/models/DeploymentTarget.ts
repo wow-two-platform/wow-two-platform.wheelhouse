@@ -12,4 +12,6 @@ export interface DeploymentTarget {
   needsConfirmation: boolean;
   /** Prod takes a release only after it succeeded on dev; typing the target ID skips the pass. */
   requiresDevPass: boolean;
+  /** Runs Wheelhouse itself: never in a fleet; its prod is promoted by the owner alone (decision 64). */
+  self: boolean;
 }
