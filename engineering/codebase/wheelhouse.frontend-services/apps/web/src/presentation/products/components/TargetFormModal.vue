@@ -150,7 +150,7 @@ async function remove(): Promise<void> {
           <RowsField
             :form="form"
             name="settings"
-            label="Settings files"
+            label="Host settings files (optional)"
             add-label="Add service"
             :blank="{ service: '', path: '' }"
             :columns="[
