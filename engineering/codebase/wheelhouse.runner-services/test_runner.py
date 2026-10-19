@@ -38,6 +38,12 @@ class FakeDocker:
         if self.fail == release:
             raise RuntimeError("password=DO_NOT_LOG")
 
+    def up_services(self, bundle, services):
+        release = runner.read_json(Path(bundle) / "release.json")["release"]
+        self.events.append("up:" + release + "[" + ",".join(services) + "]")
+        if self.fail in services:
+            raise runner.CommandFailed("compose up failed (exit 1); inspect target containers privately")
+
     def verify(self, bundle, manifest):
         self.events.append("verify:" + manifest["release"])
 
@@ -737,6 +743,117 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual("rolled_back", result["status"])
         self.assertEqual("dev", runner.read_json(prior / runner.ENVIRONMENT_OVERRIDE)["services"]["api"]["environment"]
                          ["DEPLOY_ENVIRONMENT"])
+
+    def stack(self, release, images, depends=None):
+        """A release of db, api (needs db), web (needs api) and an independent worker, each on its own image."""
+        depends = {"api": ["db"], "web": ["api"]} if depends is None else depends
+        self.manifest["release"] = release
+        self.manifest["images"] = {}
+        self.compose = {"services": {}}
+        for name in ("db", "api", "web", "worker"):
+            image = "ghcr.io/owner/" + name + "@sha256:" + images.get(name, "a") * 64
+            self.manifest["images"][name] = image
+            service = {"image": image, "platform": "linux/amd64",
+                       "healthcheck": {"test": ["CMD", "curl", "-f", "http://localhost/health"]}}
+            if depends.get(name):
+                service["depends_on"] = {other: {"condition": "service_healthy"} for other in depends[name]}
+            self.compose["services"][name] = service
+        self.save()
+
+    def outcomes(self, result):
+        return {service["name"]: (service["change"], service["outcome"]) for service in result["serviceRollout"]["services"]}
+
+    def test_a_first_rollout_starts_its_services_in_dependency_waves(self):
+        self.stack("v1", {})
+        result = self.apply()
+        self.assertEqual("succeeded", result["status"])
+        self.assertEqual([["db", "worker"], ["api"], ["web"]], result["serviceRollout"]["waves"])
+        self.assertEqual(["preflight", "pull", "up:v1[db,worker]", "up:v1[api]", "up:v1[web]", "up:v1", "verify:v1"],
+                         FakeDocker.events)
+        self.assertEqual({"db": ("added", "updated"), "api": ("added", "updated"), "web": ("added", "updated"),
+                          "worker": ("added", "updated")}, self.outcomes(result))
+        names = [step["name"] for step in result["steps"]]
+        self.assertEqual(["Start db, worker", "Start api", "Start web", "Start containers"], names[2:6])
+
+    def test_a_redeploy_starts_only_the_services_whose_definition_changed(self):
+        self.stack("v1", {})
+        self.apply()
+        FakeDocker.events = []
+        self.stack("v2", {"api": "b"})
+        result = self.apply()
+        self.assertEqual("succeeded", result["status"])
+        self.assertEqual([["api"]], result["serviceRollout"]["waves"])
+        self.assertEqual(["preflight", "pull", "up:v2[api]", "up:v2", "verify:v2"], FakeDocker.events)
+        self.assertEqual({"db": ("unchanged", "unchanged"), "api": ("updated", "updated"),
+                          "web": ("unchanged", "unchanged"), "worker": ("unchanged", "unchanged")}, self.outcomes(result))
+        step = next(step for step in result["steps"] if step["name"] == "Start containers")
+        self.assertEqual("1 of 4 services changed; 3 kept running", step["detail"])
+
+    def test_a_failing_service_blocks_its_dependents_and_the_roll_back_restores_what_changed(self):
+        self.manifest["rollbackCompatible"] = True
+        self.stack("v1", {})
+        self.apply()
+        FakeDocker.events = []
+        self.manifest["rollbackCompatible"] = True
+        self.stack("v2", {"db": "b", "web": "b", "worker": "b"})
+        FakeDocker.fail = "db"
+        result = self.apply()
+        self.assertEqual("rolled_back", result["status"])
+        self.assertEqual(["preflight", "pull", "up:v2[db,worker]", "pull", "up:v1", "verify:v1"], FakeDocker.events)
+        self.assertEqual({"db": ("updated", "rolled_back"), "api": ("unchanged", "unchanged"),
+                          "web": ("updated", "not_started"), "worker": ("updated", "rolled_back")}, self.outcomes(result))
+
+    def test_a_failure_without_roll_back_names_the_failed_and_unstarted_services(self):
+        self.stack("v1", {})
+        self.apply()
+        self.stack("v2", {"api": "b", "web": "b"})
+        FakeDocker.fail = "api"
+        result = self.apply()
+        self.assertEqual("failed", result["status"])
+        self.assertEqual({"db": ("unchanged", "unchanged"), "api": ("updated", "failed"),
+                          "web": ("updated", "not_started"), "worker": ("unchanged", "unchanged")}, self.outcomes(result))
+
+    def test_a_redeploy_with_every_service_changed_and_no_order_is_one_compose_up(self):
+        self.stack("v1", {}, depends={})
+        self.apply()
+        FakeDocker.events = []
+        self.stack("v2", {"db": "b", "api": "b", "web": "b", "worker": "b"}, depends={})
+        result = self.apply()
+        self.assertFalse(result["serviceRollout"]["staged"])
+        self.assertEqual(["preflight", "pull", "up:v2", "verify:v2"], FakeDocker.events)
+
+    def test_changed_settings_paths_or_variables_change_every_service(self):
+        self.stack("v1", {})
+        self.apply()
+        self.stack("v2", {})
+        self.target["variables"] = {"PLATFORM_NETWORK": "platform-2"}
+        result = self.apply()
+        self.assertEqual({"updated"}, {change for change, _ in self.outcomes(result).values()})
+
+    def test_a_rollout_refuses_dependencies_on_unknown_services_or_in_a_cycle_before_docker(self):
+        for depends, refusal in (({"api": ["cache"]}, "Dependencies name an unknown service"),
+                                 ({"api": ["web"], "web": ["api"]}, "cycle"),
+                                 ({"api": ["api"]}, "unknown service")):
+            with self.subTest(depends=depends):
+                FakeDocker.events = []
+                self.stack("v1", {}, depends=depends)
+                with self.assertRaisesRegex(ValueError, refusal):
+                    self.apply()
+                self.assertNotIn("pull", FakeDocker.events)
+
+    def test_a_targeted_start_names_its_services_and_never_their_dependencies(self):
+        calls = []
+
+        class RecordingDocker(runner.Docker):
+            def execute(self, arguments, step, timeout=600):
+                calls.append(arguments)
+                return ""
+
+        RecordingDocker(self.target, {}).up_services(self.bundle, ["api"])
+        self.assertEqual(["up", "--detach", "--wait", "--wait-timeout", "120", "--no-deps", "--pull", "never", "api"],
+                         calls[-1][10:])
+        with self.assertRaisesRegex(ValueError, "Invalid services"):
+            RecordingDocker(self.target, {}).up_services(self.bundle, [])
 
     def test_logs_read_one_service_bounded_and_refuse_a_missing_container(self):
         class LogDocker:

@@ -44,3 +44,4 @@ export {
   type CellMark,
   type CellTone,
 } from './ActivityCalendar';
+export { ServiceRollouts, type ServiceOutcomeReading, type ServiceRollout, type ServiceRolloutService } from './ServiceRollout';

@@ -84,9 +84,13 @@ class HistoryTests(unittest.TestCase):
                           {"status": "succeeded", "completedAt": "2026-10-04T10:02:00+00:00",
                            "steps": [{"name": "Probe sites", "status": "warning"}],
                            "sites": [{"name": "app", "url": "https://dev.pilot.example", "probe": {"ok": False}}],
-                           "warnings": ["Site app did not answer through the ingress"], "remote": "/srv/x"})
+                           "warnings": ["Site app did not answer through the ingress"], "remote": "/srv/x",
+                           "serviceRollout": {"staged": True, "waves": [["api"]], "removed": [],
+                                              "services": [{"name": "api", "change": "updated", "outcome": "updated",
+                                                            "dependsOn": []}]}})
         result = history.observation(self.root, job, transport.observed_outcome)
         self.assertEqual("succeeded", result["status"])
+        self.assertEqual([["api"]], result["serviceRollout"]["waves"])
         self.assertEqual("warning", result["steps"][0]["status"])
         self.assertEqual("app", result["sites"][0]["name"])
         self.assertEqual(1, len(result["warnings"]))

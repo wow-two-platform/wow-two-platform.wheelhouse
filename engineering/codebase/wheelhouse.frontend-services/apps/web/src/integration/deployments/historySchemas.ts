@@ -162,4 +162,15 @@ export const DeploymentDetailSchema = z.object({
     })
     .nullable()
     .default(null),
+  serviceRollout: z
+    .object({
+      staged: z.boolean().default(false),
+      waves: z.array(z.array(z.string())).default([]),
+      removed: z.array(z.string()).default([]),
+      services: z
+        .array(z.object({ name: z.string(), change: z.string(), outcome: z.string(), dependsOn: z.array(z.string()).default([]) }))
+        .default([]),
+    })
+    .nullable()
+    .default(null),
 });

@@ -38,7 +38,8 @@ public sealed class DeploymentDetailQueryHandler(DeploymentHistoryService histor
             observed?.Sites ?? [],
             observed?.ReconciledBy,
             observed is not null,
-            observed?.Snapshot));
+            observed?.Snapshot,
+            observed?.ServiceRollout));
     }
 
     /// <summary>Whether a roll back to the previous release applies: this rollout is what its target runs, its release

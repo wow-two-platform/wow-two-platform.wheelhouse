@@ -71,6 +71,7 @@ public sealed partial class RunnerDeploymentRecords(
             Warnings = Each(document, "warnings", item => item.ValueKind == JsonValueKind.String ? item.GetString() : null),
             ReconciledBy = Text(document, "reconciledBy"),
             Snapshot = ParseSnapshot(document),
+            ServiceRollout = ParseServiceRollout(document),
         };
         return AppResult<DeploymentObservation>.Ok(observation);
     }
@@ -141,6 +142,32 @@ public sealed partial class RunnerDeploymentRecords(
                 Each(snapshot, "restore", item => item.ValueKind == JsonValueKind.String ? item.GetString() : null) ?? []);
         }
         catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Reads how a rollout treated each service; null when absent or malformed. @internal</summary>
+    private static ServiceRolloutDto? ParseServiceRollout(JsonElement document)
+    {
+        if (document.ValueKind != JsonValueKind.Object || !document.TryGetProperty("serviceRollout", out var rollout)
+            || rollout.ValueKind != JsonValueKind.Object)
+            return null;
+        try
+        {
+            var services = Each(rollout, "services", item =>
+                Text(item, "name") is { } name && Text(item, "change") is { } change && Text(item, "outcome") is { } outcome
+                    ? new ServiceRolloutItemDto(name, change, outcome,
+                        Each(item, "dependsOn", other => other.ValueKind == JsonValueKind.String ? other.GetString() : null) ?? [])
+                    : null) ?? [];
+            var waves = Each(rollout, "waves", wave => wave.ValueKind == JsonValueKind.Array
+                ? (IReadOnlyList<string>)[.. wave.EnumerateArray().Where(name => name.ValueKind == JsonValueKind.String).Select(name => name.GetString()!)]
+                : null) ?? [];
+            var removed = Each(rollout, "removed", name => name.ValueKind == JsonValueKind.String ? name.GetString() : null) ?? [];
+            return new ServiceRolloutDto(
+                rollout.TryGetProperty("staged", out var staged) && staged.ValueKind == JsonValueKind.True, waves, removed, services);
+        }
+        catch (InvalidOperationException)
         {
             return null;
         }

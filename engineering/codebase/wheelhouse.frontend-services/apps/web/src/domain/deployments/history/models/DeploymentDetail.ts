@@ -1,6 +1,7 @@
 import type { DeploymentStep } from '../../models/DeploymentStep';
 import type { SiteProbe } from '../../models/PublishedSite';
 import type { DeploymentItem } from './DeploymentItem';
+import type { ServiceRollout } from '../ServiceRollout';
 
 /** One service of a rollout against what its target ran before. */
 export interface ServiceChange {
@@ -55,4 +56,6 @@ export interface DeploymentDetail {
   observed: boolean;
   /** The restore point a prod rollout took; null when it took none. */
   snapshot: DeploymentSnapshot | null;
+  /** How the rollout treated each service; null when the target did not report it. */
+  serviceRollout: ServiceRollout | null;
 }

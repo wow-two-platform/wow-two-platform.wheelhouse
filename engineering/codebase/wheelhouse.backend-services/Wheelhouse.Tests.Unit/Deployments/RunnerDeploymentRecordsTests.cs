@@ -64,6 +64,24 @@ public sealed class RunnerDeploymentRecordsTests
         records[0].Services!["api"].Version.Should().Be("1.0.0");
     }
 
+    [Fact]
+    public async Task ObserveAsync_ShouldReadEachServicesChangeWaveAndOutcome()
+    {
+        var observed = await Records().ObserveAsync(Guid.Parse("00000000-0000-4000-8000-000000000001"), CancellationToken.None);
+        var rollout = observed.Should().BeOfType<AppResult<DeploymentObservation>.Success>().Subject.Data.ServiceRollout!;
+        rollout.Staged.Should().BeTrue();
+        rollout.Waves.Should().HaveCount(2);
+        rollout.Waves[0].Should().Equal("db");
+        rollout.Removed.Should().Equal("legacy");
+        rollout.Services.Select(service => (service.Name, service.Change, service.Outcome)).Should().Equal(
+            ("api", "updated", "failed"), ("db", "updated", "rolled_back"));
+        rollout.Services[0].DependsOn.Should().Equal("db");
+        // Malformed entries are left out; a report without the field has none.
+        _gateway.Observation = new { status = "succeeded" };
+        var plain = await Records().ObserveAsync(Guid.Parse("00000000-0000-4000-8000-000000000001"), CancellationToken.None);
+        plain.Should().BeOfType<AppResult<DeploymentObservation>.Success>().Subject.Data.ServiceRollout.Should().BeNull();
+    }
+
     /// <summary>Answers the history read with one good record and two malformed ones, counting reads.</summary>
     private sealed class CountingGateway : IDeploymentGateway
     {
@@ -71,8 +89,26 @@ public sealed class RunnerDeploymentRecordsTests
 
         public AppError? Failure { get; set; }
 
+        /// <summary>What the <c>observation</c> read answers.</summary>
+        public object Observation { get; set; } = new
+        {
+            status = "rolled_back",
+            serviceRollout = new
+            {
+                staged = true, waves = new[] { new[] { "db" }, new[] { "api" } }, removed = new[] { "legacy" },
+                services = new object[]
+                {
+                    new { name = "api", change = "updated", outcome = "failed", dependsOn = new[] { "db" } },
+                    new { name = "db", change = "updated", outcome = "rolled_back", dependsOn = Array.Empty<string>() },
+                    new { name = "broken" },
+                },
+            },
+        };
+
         public Task<AppResult<JsonElement>> ReadAsync(string resource, string? id, CancellationToken ct)
         {
+            if (resource == "observation")
+                return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(Observation)));
             Reads++;
             if (Failure is not null)
                 return Task.FromResult(AppResult<JsonElement>.Fail(Failure));

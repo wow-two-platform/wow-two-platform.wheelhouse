@@ -13,7 +13,7 @@ import { ConsolePaths } from "@/application/navigation";
 import { useProducts } from "@/application/products";
 import { useRefresh } from "@/bootstrap/query";
 import { Measures } from "@/domain/common";
-import { DeploymentExtensions, DeploymentOutcome, DeploymentStatusRules, TargetCondition } from "@/domain/deployments";
+import { DeploymentExtensions, DeploymentOutcome, DeploymentStatusRules, ServiceRollouts, TargetCondition } from "@/domain/deployments";
 import { InfoPopover, Panel, RefreshButton } from "@/presentation/common/components";
 import { ProductIcon } from "@/presentation/products";
 
@@ -58,6 +58,10 @@ const targetExists = computed(() => Boolean(targets.data.value?.some((item) => i
 const steps = computed(() => (isLive.value && outcome.data.value?.steps?.length ? outcome.data.value.steps : (detail.data.value?.steps ?? [])));
 const status = computed(() => (isLive.value ? (outcome.data.value?.status ?? deployment.value?.status) : deployment.value?.status));
 const services = computed(() => detail.data.value?.services ?? null);
+/** How the rollout treated each service — kept running, replaced in its wave, failed, not started, rolled back. */
+const outcomes = computed(
+  () => new Map((services.value ?? []).map((item) => [item.service, ServiceRollouts.outcome(detail.data.value?.serviceRollout, item.service)])),
+);
 /** The release a roll back restored: the target's previous success. */
 const restored = computed(() => detail.data.value?.previous?.release ?? null);
 /** The failure alert's tone and title: a roll back is degraded (amber) and names what it restored. */
@@ -251,6 +255,13 @@ function rollBack(): void {
                   <Badge v-else-if="service.from === null" variant="success">new</Badge>
                   <Badge v-else-if="service.to === null" variant="warning">removed</Badge>
                   <Badge v-else variant="info">changed</Badge>
+                  <Badge
+                    v-if="outcomes.get(service.service)"
+                    :variant="outcomes.get(service.service)!.tone"
+                    :title="outcomes.get(service.service)!.wave ? `Started in wave ${outcomes.get(service.service)!.wave}` : undefined"
+                    >{{ outcomes.get(service.service)!.label
+                    }}<template v-if="outcomes.get(service.service)!.wave"> · wave {{ outcomes.get(service.service)!.wave }}</template></Badge
+                  >
                 </span>
                 <span class="flex items-center gap-2">
                   <span class="flex items-center gap-1.5 font-mono text-xs">

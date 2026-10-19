@@ -17,4 +17,7 @@ public sealed record DeploymentObservation
 
     /// <summary>Gets the restore point a prod rollout took before it changed anything.</summary>
     public DeploymentSnapshotDto? Snapshot { get; init; }
+
+    /// <summary>Gets how the rollout treated each service; null for a rollout older than service-aware rollouts.</summary>
+    public ServiceRolloutDto? ServiceRollout { get; init; }
 }
