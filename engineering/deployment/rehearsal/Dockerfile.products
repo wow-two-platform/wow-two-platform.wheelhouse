@@ -1,0 +1,9 @@
+# syntax=docker/dockerfile:1
+# Disposable products host for local rehearsal: its own Docker daemon, so the products kit's fixed `platform` network
+# and /srv/wheelhouse stand apart from this machine's, as on a second VPS. Never a production image.
+FROM docker:29-dind
+RUN apk add --no-cache bash coreutils iproute2 openssh-keygen openssh-server openssh-sftp-server python3 shadow socat
+COPY products-entrypoint.sh /usr/local/bin/products-entrypoint
+RUN chmod 755 /usr/local/bin/products-entrypoint
+EXPOSE 22
+ENTRYPOINT ["/usr/local/bin/products-entrypoint"]

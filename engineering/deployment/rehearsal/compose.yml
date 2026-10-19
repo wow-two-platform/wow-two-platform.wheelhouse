@@ -129,6 +129,29 @@ services:
       interval: 2s
       retries: 30
     restart: unless-stopped
+  # A products host for `rehearse.py products`: its own Docker daemon (privileged, like any Docker-in-Docker), laid
+  # out by bootstrap-products.sh's own steps and driven over SSH at 127.0.0.1:2223, as Wheelhouse drives a second VPS.
+  products:
+    build:
+      context: .
+      dockerfile: Dockerfile.products
+    profiles: [products]
+    privileged: true
+    environment:
+      PRODUCTS_TAILNET_ADDRESS: 100.88.0.1
+    ports:
+      - "127.0.0.1:2223:22"
+    volumes:
+      - ../vps:/kit:ro
+      - ${REHEARSAL_STATE}/products/keys:/rehearsal-keys
+      - products-docker:/var/lib/docker
+      - products-root:/srv/wheelhouse
+    healthcheck:
+      test: ["CMD-SHELL", "docker info >/dev/null 2>&1 && pgrep sshd >/dev/null"]
+      interval: 2s
+      retries: 60
+    depends_on: [registry]
+    restart: unless-stopped
   # The database for Wheelhouse run from an IDE (appsettings.Local.json); loopback-only dev credentials.
   dev-db:
     image: postgres:16-alpine
@@ -156,3 +179,5 @@ volumes:
   console-db:
   console-keys:
   dev-db:
+  products-docker:
+  products-root:
