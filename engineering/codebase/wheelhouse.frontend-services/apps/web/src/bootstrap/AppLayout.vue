@@ -134,7 +134,7 @@ watch(isDesktop, (desktop) => {
       <div class="flex w-full min-w-0 items-stretch">
         <!-- From tablets up, the brand sits above the sidebar, as wide as it. -->
         <div
-          class="hidden shrink-0 items-center gap-2.5 overflow-hidden border-r border-(--wh-glass-edge) transition-[width] duration-200 ease-out motion-reduce:transition-none md:flex"
+          class="hidden shrink-0 items-center gap-3.5 overflow-hidden border-r border-(--wh-glass-edge) transition-[width] duration-200 ease-out motion-reduce:transition-none md:flex"
           :class="isRail ? 'justify-center' : 'px-4'"
           :style="{ width: sidebarWidth }"
         >
