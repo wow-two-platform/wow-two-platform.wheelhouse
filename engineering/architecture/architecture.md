@@ -5,7 +5,8 @@
 ## Runtime
 
 A .NET 10 host serves the private administration API and Vue workspace.
-PostgreSQL stores the inventory (products, servers, targets, vaults), integration keys, the audit trail and vitals;
+PostgreSQL stores the inventory (products, servers, targets, vaults), integration keys, the audit trail, vitals and the
+built-in Secrets Vault's encrypted secrets (schema `vault`);
 bespoke SQL migrations run on startup. GitHub cookie authentication and an owner allowlist protect administration; a scoped integration key reads
 the product catalog and nothing else. A deployed console (the runner sets `DEPLOY_ENVIRONMENT`) and Production require a
 nonempty owner allowlist.
@@ -45,7 +46,8 @@ flowchart LR
 | Persistence | PostgreSQL EF mapping, repositories and bespoke migration files |
 | API | Host wiring, authorization, request validation, controllers and SPA serving |
 | Python runner | Inventory snapshot reads, release discovery, bundle validation, SSH, rollout, checks and recovery |
-| Vault gateway | Administers inventory vaults over their management API; values are write-only |
+| Secrets Vault | The built-in module (schema `vault`): per-product data keys under a root key file, versioned encrypted secrets, the canary, imports |
+| Vault gateway | The standalone vaults' management API: the fallback for one release (`Vault:Mode` `external`) and the import source |
 
 Wheelhouse keeps business logic only: domain meaning, inventory and deployment use cases, version-resolution policy,
 store predicates and settings values. Host wiring, data, web contracts, identity, integration clients, UI building
@@ -124,7 +126,7 @@ own targets keep their hand-placed files), into `<root>/config/<product>-<enviro
 | Layer | Source |
 |---|---|
 | Host file | The file the target names for the service, if any: the pre-render settings, kept as a layer |
-| Wheelhouse | The environment's stored settings (`environment_settings`) and its vault secrets, read at deploy |
+| Wheelhouse | The environment's stored settings (`environment_settings`) and its built-in vault secrets, read at deploy |
 | Derived | `AllowedHosts` (the hosts of the sites the service serves, its platform name `<product>-<environment>-<service>`, any other host its host file listed, `localhost`), `Sites:<site>:Url` (the origin of every site the product publishes there), `Deployment:TrustedProxies` (the address of the host kit's `ingress` on the target's network) |
 | Database | A required connection key (`ConnectionStrings:<name>`, `<Section>:ConnectionString`) no other layer sets, from `config/<product>-<environment>/database.json` (`prepare.py --database`), for a service that needs PostgreSQL |
 
@@ -135,20 +137,39 @@ own targets keep their hand-placed files), into `<root>/config/<product>-<enviro
   the render is the rollout's first step, `Render settings`.
 - An identical render keeps the file; a changed one changes the service's settings fingerprint, so only that service
   restarts. A bind mount keeps the file a container started with until the container is recreated.
-- An environment's secrets live in the vault on its target's server, else the inventory's first vault (the control
-  host's), in namespace `<product>-<environment>`. A deploy mints a namespace token that expires in 10 minutes, reads
-  the enabled keys and revokes it; an unreachable vault holds the deploy rather than drop a secret.
-- `GET /api/deployments/targets/{target}/settings?release=` lists each service's keys with their source (`derived`,
-  `vault`, `stored`, `default`, `host`, `missing`, `unset`), whether each is required and secret (the release's
-  declaration, else a guess from the key's name), the vault namespace and whether it is the target's first deploy; key
-  names and non-secret values only. `PUT …/settings` (action `settings`) `{ values: [{ key, value, secret }] }` writes
-  secrets to the vault (creating the namespace) and settings to the store; derived keys are refused; audited as
-  `settings.save` by key, never by value.
+- An environment's secrets live in the built-in Secrets Vault ([below](#secrets-vault)), decrypted in process at the
+  render. A sealed vault holds a deploy that needs secrets rather than drop one; metadata still reads.
+- `GET /api/deployments/targets/{target}/settings[?release=]` (the release the target runs when none is named) lists
+  each service's keys with their source (`derived`, `vault`, `stored`, `default`, `host`, `missing`, `unset`), type,
+  whether each is required and secret (the release's declaration, else a guess from the key's name), a secret's
+  metadata (version, who, when, fingerprint, expiry), the keys no service declares (`extra`: owner-added keys and values
+  kept for undeclared keys), the keys changed since the target's last render (`unapplied`), a scheduled apply
+  (`pending`) and the vault's state. Key names, non-secret values and versions only.
+- `PUT …/settings` (action `settings`) `{ values: [{ key, value, secret, note?, expiry?, confirmPlain?, remove? }],
+  release? }` saves in one transaction: each value is checked against its declared type, a key that reads as a secret
+  (or is declared one) is refused as a plain setting unless `confirmPlain`, secrets become new vault versions, settings
+  go to the store, a key moving between the two leaves the other, and `remove` takes a value out of both. One value is
+  one field's save (the editors and the deploy dialog save field by field); several are a bulk edit that lands whole or
+  not at all. Audited as `settings.save` with key names and versions, never a value.
+- Products declare typed keys in `deploy.yml` (`settings.keys`: `text`, `number`, `boolean`, `choice` with values,
+  `url`, `cron`, `date` with a format, `email`; required or optional with a default for non-secrets; pipelines
+  `v0.10.0`). The bundle carries them as `settings.<service>.{optional, secrets, allowed, types}`, which the runner
+  validates and passes on with each key. Owners add keys per product in the console
+  (`PUT|DELETE /api/products/{product}/setting-keys/{key}`, typed the same way).
 - A deploy, the owner's or an automatic one, is refused while a required key has no source on a service without a host
-  file; the refusal is kept as a deploy that changed nothing. The deploy dialog lists those keys and, on a first deploy,
-  the release's optional ones with their defaults; it saves what the owner fills in, then deploys.
-- `release.json` may carry `settings` per service — `optional` keys with defaults, `secrets` and `allowed` values —
-  which the runner validates and the dialog offers; the generator does not write it yet.
+  file, an owner-added required key included; the refusal is kept as a deploy that changed nothing. The deploy dialog
+  lists those keys and, on a first deploy, the release's optional ones; each field saves as it is confirmed, so partial
+  progress survives closing the dialog, and a required key without a saved value holds the deploy.
+- Each submitted deploy records its render in `deployment_renders`: every key's kind with a secret's version and keyed
+  fingerprint or a setting's digest, never a value, and the keys changed against the render of the target's last
+  successful deploy. A deploy that changed settings and then failed, rolled back, regressed or failed its check shows
+  them on its detail page and in Issues as the likely cause (`settingsChanged`, `settingsSuspect`).
+- An edit applies by rendering again: `POST …/settings/apply` (action `settings`) `{ at?, reason?, confirm? }` deploys
+  the release the target runs now, as a recorded deploy whose reason starts `Settings apply`; the rollout recreates
+  only the services whose settings fingerprint changed (`--force-recreate --no-deps`). With `at` it is scheduled
+  instead (`settings_applies`, one per target, within 90 days; `DELETE` cancels), and the pass every
+  `Deployment:ApplySeconds` (60) submits it for the owner who scheduled it with the cause `settings_apply`, so a freeze
+  refuses it like any automatic deploy.
 - The target check weighs the keys Wheelhouse would send and names a required key no layer sets.
 
 ## Registry sign-in
@@ -615,15 +636,43 @@ contacts a target. `/api/system/status` also names the `environment` the console
 (`dev` or `prod`), else `prod` as Production and `dev` otherwise — so the Products page shows the console's own
 CI-deployed version there.
 
-## Secrets vaults
+## Secrets Vault
 
-Secrets Vault stays a separate service and repository; Wheelhouse is its central management console.
-The gateway resolves a vault id through the inventory, signs in with a mounted administrator credential,
-and forwards namespace, secret, state and token operations. The console never reads a secret value; only a deploy's
-render does, through a namespace token that lives 10 minutes at most and is revoked once read
-([settings at deploy](#settings-at-deploy)).
-Products keep reading secrets from their own vault on the private network, so an unavailable Wheelhouse
-cannot interrupt runtime reads. See the vault's own security analysis for the global-console trust boundary.
+Secrets Vault is Wheelhouse's built-in module (decisions 59–63; the standalone repository goes inactive). Products get
+secrets only from the deploy-time render; an edit applies by rendering again and restarting what changed.
+
+- **Keys.** One root key file (`Vault:KeyFile`, else `{Deployment:Root}/vault/root.key`): base64 of 256 bits, the
+  standalone vault's master-key form, root-only on the control host, never in the database. It wraps each product's
+  data key (AES-GCM, bound to the product), which encrypts that product's secret values, each bound to its product,
+  environment, key and version. The SDK's envelope cipher does both.
+- **Sealed.** A missing or malformed key file, or one that does not open the canary (a random value under a key of its
+  own, made on the vault's first write), seals the vault: metadata reads; values neither save nor render; deploys
+  that need them wait; the console and Issues say why. The file is read at each use, so placing it unseals without a
+  restart, and removing it seals.
+- **Versions.** Every change to a secret is a new version: who, when, an optional note, its origin (a restore, an
+  import) and a keyed fingerprint (an HMAC under a key derived from the product's data key: equal values show equal
+  fingerprints, a guess cannot be tested). A restore writes an earlier value as a new version. Removing a secret stops
+  it rendering and keeps its versions.
+- **Expiry.** An optional `expiresAt` per secret; Issues and the vault status warn at 30 and 7 days and flag lapsed
+  ones. A new value keeps the expiry unless the save names one.
+- **Write-only.** No endpoint returns a value: the console sees key names, versions, fingerprints and expiry. Values
+  leave the module only for a render, to the runner's stdin. Nothing logs a value, a key or a fingerprint.
+- **Surface.** `GET /api/vault` (state, key file path, counts), `GET /api/vault/issues`, `POST /api/vault/verify`
+  (decrypts everything: the restore proof), `POST /api/vault/import { vault }`, and per target
+  `GET …/secrets/{key}/versions`, `POST …/secrets/{key}/restore`, `PUT …/secrets/{key}/expiry`. Owner session only:
+  integration keys get 403, and MCP never reaches the module.
+- **Command line.** In the console's container: `dotnet Wheelhouse.Api.dll vault status | verify | import --from-vault
+  <slug> | import --from-db [--source-key-file <path>]` (the standalone database's connection string on stdin). JSON
+  counts, audited as `cli`.
+- **Import.** From a standalone vault's database (or a restore of its dump) under its master key — the root key file
+  by default, when the owner kept the same key — every version keeps its number, author and time; over a listed
+  vault's management API, each enabled secret's current value arrives as version 1 noting where it came from. Only
+  namespaces named `{product}-{environment}` of a known product import; each value is decrypted again before the
+  transaction commits, and any failure keeps nothing. A secret the vault already holds is skipped.
+- **Fallback.** `Vault:Mode` `external` (one release only) makes deploys and the settings save use the standalone
+  vaults again through the gateway: the inventory vault on the target's server, else the first, signing in with
+  `vaults/<vault>/password` and reading with a namespace token that lives 10 minutes. Versions, expiry and types stay
+  with the built-in mode.
 
 ## Workspace
 
@@ -646,7 +695,9 @@ runner withholds attribution when a rollout changes that state mid-read.
 Wheelhouse stays private through a tunnel or private network.
 Runtime secrets reach applications in rendered settings files, mounted read-only; cookie key volumes survive
 container replacement. The dashboard receives safe failure categories; raw runtime logs stay on the target.
-A database backup and the cookie and recovery keys must be recoverable without Wheelhouse.
+A database backup and the cookie and recovery keys must be recoverable without Wheelhouse. Wheelhouse's database
+backup holds the `vault` schema encrypted; the root key file is never in it: the owner keeps an offline copy apart,
+and a restore is proven by `vault verify` (the canary and every version decrypt).
 
 Executable commands, directory layouts and the VPS wiring checklist are in
 [deployment operations](../deployment/deployment.md).

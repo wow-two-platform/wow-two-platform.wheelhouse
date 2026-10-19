@@ -22,6 +22,7 @@ Every unbuilt item; top of each group = next. The active version is the newest f
 | Diagnostics | shipped v0.3 | Read-only target check; a service's recent logs on request |
 | Audit | shipped v0.3 | Every operator action in a hash-chained trail, shown with its verification |
 | Secrets console | shipped v0.3 | Namespaces, write-only secrets, product tokens, rotation hygiene; mounted runtime settings |
+| Built-in Secrets Vault | v0.5 | Per-product keys under a root key file, versions, expiry, typed and owner-added keys, one-transaction saves, apply now or later, failed-deploy hints, imports (Iteration 23) |
 | Operations | shipped v0.3 | Host and container vitals, 30-day trends and deployment metrics, release drift, one attention list |
 | Self-shipping | shipped v0.3 | CI on every push; releases through the shared pipeline |
 | Domains | planned | Registrar and DNS integrations, expiry tracking; site hosts per target exist |
@@ -68,11 +69,10 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Grant a product environment its vault token during deployment | feature | Mint, then write into the target settings; never displayed |
-| Render a target's settings from the vault at deploy time | feature | Mounted setting files today |
-| Vault consumer in the backend SDK | feature | Startup resolution, bounded timeout, fail-closed; unblocks ForeverPin adoption |
-| Scoped management credential for Wheelhouse | check | Vault-side change; replaces the shared administrator password |
-| Mint expiring product tokens | feature | The vault takes an expiry and rotates since its v0.3; the gateway still sends a name only |
+| Ability to rotate the vault's root key with a transactional rewrap | feature | 2026-10-19 merge analysis: unwrap every product key under the old root key, wrap under the new one, prove the canary, one transaction; the owner swaps the file after |
+| Ability to export audit checkpoints off the control host | feature | 2026-10-19 merge analysis: the hash chain is unkeyed, so a database administrator could rewrite it consistently; a periodic head off-host makes that visible |
+| Drop the vault inventory rows, password files and the `Vault:Mode` fallback | cleanup | v0.6, once every prod store is imported and verified (Iteration 23); a contract migration under decision 65 |
+| Ability for a product to fetch secrets at startup with its own token | feature | Parked (decision 60): the deploy-time render is the model; revisit for rotation-heavy secrets or hosts Wheelhouse does not deploy |
 | Ability to run a product locally with its dev settings and secrets | feature | User 2026-10-19: settings and secrets live only in Wheelhouse dev and prod, yet a local run needs them too; e.g. pull the dev values into the gitignored `appsettings.Machine.json` and user secrets, never into the repository |
 | Ability to share one setting or secret value across products | feature | User 2026-10-17: products declare their own keys; Wheelhouse links keys that hold the same value and must change together to one row; otherwise rows stay separate |
 
@@ -107,7 +107,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Products adopt the Target/Local settings names when they bump pipelines v0.7.0 and the be sdk | engineering | User 2026-10-19. A v0.7.0 bundle mounts `/app/appsettings.Target.json`; the be sdk's `AddApiDefaults` reads it, and a legacy `appsettings.Local.json` on a deployed host for one release window. Each drops its own `AddJsonFile("appsettings.Local.json")`, sets `LOCAL_SETTINGS=true` in its launch profile and ignores `appsettings.Target.json` in `.gitignore` and `.dockerignore`. ForeverPin (`ForeverPin.Api`, `ForeverPin.Redirect.Api`, README, `google-auth.md`); Haven (`Haven.Platform.Web` `EnvironmentAliasExtensions`, `compose.verification.yml` mount, development and verification docs); Secrets Vault (`SecretsVault.Api` `HostConfiguration`); home-atlas (ignore files only); Ocharo Studio and Desk (outside this workspace, unchecked); the product template (pre-rename kit `10.0.21-beta`, no settings loading) |
 | Run each app's migrations as a rollout step and show their state | feature | User decision 2026-10-14: apps own their SQL; the runner migrates with the new image between pull and start; prod waits for test. The app database's own migration journal stays the authority; Wheelhouse reads it at deploy and keeps what it saw in the job history, never a second table. Rollback scripts run only on a confirmed operator action |
 | Pull private GHCR images on targets | check | Public images need no token (Wheelhouse's console is public since 2026-10-09); private ones need a read-only pull token per target |
-| Secrets Vault adopts `deploy.yml` and the shared pipelines | feature | Audit 2026-10-19: no descriptor, so it can't deploy from a bundle, and settings rendered at deploy depend on it; be sdk 10.0.56, no CI tests |
 | Haven adopts `deploy.yml`, per-service versions and an edge health route | feature | Its Caddy edge has no health route; the runner requires one |
 | Show each service's version inside every product | feature | Haven shows its build version beside the logo; adopt across products |
 | Deploy a branch to its own temporary dev environment | feature | Topology point 17; from a code-owned template; later PR previews |
@@ -179,7 +178,6 @@ Leftovers of the v0.4 sweep. Items marked *decision* wait on the owner.
 
 | Item | Type | Notes |
 |---|---|---|
-| Extract the vault admin client → SDK | engineering | *decision*: SDK `Integrations` or a client package from the secrets-vault repo; `Infrastructure/Vaults/VaultGateway.cs`, session cache with one retry on 401, plus a fake |
 | Extract the audited-command trail → SDK | engineering | *decision*: marker, interceptor, EF chain store with lock, paging and verify; the SDK has the primitives only |
 | Extract a periodic scoped job → SDK | engineering | `VitalsSampler`, `DeploymentOutcomeFollower`: interval, 0 = off, log and continue; SDK `Jobs/Core` is empty |
 | Extract a bounded process runner → SDK | engineering | `DeploymentGateway.cs`: timeout, kill tree, scrubbed environment, JSON stdout |
@@ -219,5 +217,4 @@ Leftovers of the v0.4 sweep. Items marked *decision* wait on the owner.
 |---|---|
 | First VPS wiring inputs | Existing or new host, architecture, RAM/disk and cost; management and redirect domains; Google and Stripe callbacks; recovery targets and backup destination; private pilot or public launch |
 | Registrar | Settle before the Domains group |
-| One vault per environment or one per host with namespaces | Vault docs assume one per product environment |
 | Prod Wheelhouse as the source of truth | The VPS instance owns settings and secrets; dev pulls from it and drops its own additions; secret flow prod → dev needs a security analysis first |

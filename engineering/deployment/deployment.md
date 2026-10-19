@@ -316,7 +316,8 @@ Mount a protected persistent directory at `/data/deployments` containing:
 inventory.json            ← written by the API; never edit by hand
 ssh/<server-id>/identity
 ssh/<server-id>/known_hosts
-vaults/<vault-id>/password
+vault/root.key            ← the built-in vault's root key: root-only, kept out of backups (Secrets Vault below)
+vaults/<vault-id>/password ← a standalone vault's, until it is imported and retired
 github-app/private-key.pem ← the GitHub App key, optional (GitHub access below)
 providers/tailscale/oauth-client.json ← prod only: the Tailscale OAuth client (Tailscale below)
 providers/tailscale/policy/ ← the tailnet policy before Wheelhouse's last change, for one-click revert
@@ -361,7 +362,7 @@ A deployment account with Docker access can control the host; membership in the 
 
 Wheelhouse renders every service's settings file at each deploy
 ([settings at deploy](../architecture/architecture.md#settings-at-deploy)): `config/<product>-<environment>/<service>.target.json`,
-mode `0444` inside the mode-`0700` folder, from the environment's stored settings and vault secrets, what it derives
+mode `0444` inside the mode-`0700` folder, from the environment's stored settings and built-in vault secrets, what it derives
 (`AllowedHosts`, `Sites:<site>:Url`, `Deployment:TrustedProxies`) and the target's `database.json`. Nothing on the
 host is hand-edited: the deploy dialog asks for each required value no layer sets, and the deploy waits until it has
 one. A settings file a target still names is the render's bottom layer, so existing hosts keep working; to retire one,
@@ -536,7 +537,15 @@ every settings file and the target's lock state; each failure names the rule or 
 | `GET /api/deployments/vitals` | Every server's own host load, memory, disks and uptime, and every target's containers, read in parallel |
 | `GET /api/deployments/stats?days=30` | Outcomes, success rate, median rollout and recovery, deploys per UTC day (1–90 days) |
 | `GET /api/deployments/vitals/history?hours=24&target=` | Stored readings of the last 1–720 hours, oldest first: one target's, or every server's and target's |
-| `GET /api/vaults/{vault}/hygiene` | Secrets and product tokens due for rotation; metadata only |
+| `GET /api/vaults/{vault}/hygiene` | A standalone vault's secrets and product tokens due for rotation; metadata only |
+| `GET /api/deployments/targets/{target}/settings[?release=]` | The environment's keys, sources, types, secret metadata, unapplied keys and scheduled apply; never a secret's value |
+| `PUT /api/deployments/targets/{target}/settings` | Saves values in one transaction (action `settings`): one value per field, several as a bulk edit |
+| `POST`/`DELETE /api/deployments/targets/{target}/settings/apply` | Applies edited values now or at a set time, or cancels the schedule |
+| `GET /api/deployments/targets/{target}/secrets/{key}/versions` | A secret's versions: who, when, fingerprint, note; never a value |
+| `POST …/secrets/{key}/restore` · `PUT …/secrets/{key}/expiry` | Restores a version as the newest; sets or clears the expiry |
+| `PUT`/`DELETE /api/products/{product}/setting-keys/{key}` | Adds or removes a typed key the owner declares for every environment |
+| `GET /api/vault` · `GET /api/vault/issues` | The built-in vault's state, key file path and counts; sealed and expiring secrets |
+| `POST /api/vault/verify` · `POST /api/vault/import` | Decrypts everything (counts only); imports a listed standalone vault over its API |
 
 - A lost SSH response is an unknown outcome; inspect target state before retrying.
 - Cookie-authenticated cross-origin writes cannot supply the custom header without an allowed CORS preflight.
@@ -648,23 +657,74 @@ The overview flags: unreadable or locked targets, missing or unhealthy container
 (red over 90%), memory over 90%, load over 150% of CPUs, an unrecovered failed rollout, sealed vaults,
 active secrets older than 90 days, and tokens expired, expiring within 14 days or older than 180 days.
 
-## Secrets vaults
+## Secrets Vault
 
-Servers in the console declare each vault's slug, host and private management URL; the browser never chooses the URL,
-and the status list never shows it.
-Wheelhouse signs in with the administrator password at `<inventory>/vaults/<vault-id>/password`, a protected mount,
-and keeps the one-hour session in memory. The console writes values and never reads them back; a deploy reads its
-environment's secrets through a namespace token that expires in 10 minutes and is revoked once read.
-A minted product token is returned once, with `Cache-Control: no-store`, and only its metadata remains afterwards.
-Wheelhouse logs the operator, vault and change for every write; values and tokens never reach logs.
+Secrets live in Wheelhouse's built-in Secrets Vault ([architecture](../architecture/architecture.md#secrets-vault)):
+the `vault` schema of its own database, encrypted under a data key per product that one root key file wraps. Products
+get them only from the deploy-time render. Dev Wheelhouse keeps its own vault and key, with test values only.
 
-Reach a vault on Wheelhouse's own private network, or through an SSH tunnel when Wheelhouse runs on a workstation.
-Vault-side audit records show Wheelhouse's administrator identity; Wheelhouse's log names the human operator.
+### The root key file (owner, once per console)
+
+On the control host, as root, for the console the key unseals (`wheelhouse-prod`; `wheelhouse-dev` gets a key of its
+own). The console reads `/data/deployments/vault/root.key` unless `Vault:KeyFile` names another path; the deployments
+volume lives under `/var/lib/docker/volumes`, which only root reads.
+
+```sh
+sudo -i
+volume=$(docker volume inspect --format '{{.Mountpoint}}' wheelhouse-prod_deployments)
+install -d -m 0700 -o 1654 -g 1654 "$volume/vault"
+# Keep the standalone vault's master key (same key: its import needs no second key), or make a new one:
+openssl rand -base64 32 > "$volume/vault/root.key"          # or: cp <standalone master_key> "$volume/vault/root.key"
+chown 1654:1654 "$volume/vault/root.key" && chmod 0400 "$volume/vault/root.key"
+```
+
+- Copy the key offline at once (the owner's password manager, plus one printed or offline copy): a lost key makes
+  every secret unrecoverable. It never goes into a backup beside the database.
+- Without the file the vault is sealed: the console says so under Secrets and in Issues, metadata still reads, and a
+  deploy that needs secrets waits. Placing the file unseals it without a restart; a key from another vault reads as
+  `mismatch` and stays sealed.
+- Check it: Secrets → Built-in vault → *Check every secret decrypts*, or
+  `docker exec <console> dotnet Wheelhouse.Api.dll vault status`.
+
+### Importing the standalone vault
+
+Only stores holding real values are imported; rehearsal fixtures are re-seeded instead. Import, check, then retire.
+
+- **Over its API** (current values; each arrives as version 1 noting its old version): while the inventory still lists
+  the vault with its `vaults/<vault>/password`, Secrets → Built-in vault → *Import from <vault>*, or
+  `docker exec <console> dotnet Wheelhouse.Api.dll vault import --from-vault <vault>`.
+- **From its database** (every version, with its author and time, under the same master key): restore a dump of the
+  vault's database where the console can reach it, then pass its connection string on stdin, never as an argument:
+
+```sh
+docker exec -i <console> dotnet Wheelhouse.Api.dll vault import --from-db < connection.txt
+# a different master key than the root key file: add --source-key-file <path inside the container>
+```
+
+- Namespaces named `{product}-{environment}` of a product Wheelhouse knows are imported; others are listed and left
+  alone; a secret already in the built-in vault is skipped, so a second run is safe. Every value is decrypted again
+  before the import commits, and any failure keeps nothing. The output and the audit entry hold counts only.
+- Then: `vault verify` (or the console's check), deploy each environment once, and retire the standalone vault —
+  delete its rows under Servers, remove `vaults/<vault>/password`, stop its container, keep its dump and key 30 days.
+- `Vault:Mode` = `external` returns deploys and saves to the standalone vaults for one release, should the built-in
+  vault need to step back; versions, expiry and types stay with the built-in mode.
+
+### Backups and restore
+
+- Wheelhouse's own backup is its database: the `vault` schema rides along encrypted. The root key file is never in that
+  backup; it lives only in the deployments volume and the owner's offline copy. An off-host backup of the deployments
+  volume leaves `vault/` out.
+- A prod deploy's pre-deploy snapshot copies named volumes on the control host, the deployments volume included; those
+  snapshots stay in the deploy account's mode-`0700` folder and never leave the host.
+- After a restore: place the key file, then `vault verify`. It decrypts the canary — a random value made on the vault's
+  first write — and every version of every secret, and names any that fail; nothing passes on a database alone.
 
 ## Local server
 
 `engineering/deployment/rehearsal/` runs the local server: a disposable SSH target, a Traefik ingress, a registry,
-a product database and, when a `secrets-vault:local` image exists, a vault. It hosts ForeverPin's `dev` and `prod` at
+a product database and, when a `secrets-vault:local` image exists, a standalone vault to import from. The console and an
+IDE run write the rig's own built-in vault key (`state/inventory/vault/root.key`) on start and seed ForeverPin's test
+secrets into it (`catalog.py`'s `LOCAL_SECRETS`). It hosts ForeverPin's `dev` and `prod` at
 once. Dev is the default; prod deploys on demand. `WHEELHOUSE_REHEARSAL=1` exposes the local
 targets, vault and imported bundles; a deployed control plane never sets it.
 
@@ -838,6 +898,8 @@ Data relocation remains a separately planned copy/restore/cutover operation.
 ## Backups and launch gates
 
 Before public cutover, create an encrypted off-provider backup of product/control-plane databases, key volumes and required configuration.
+Wheelhouse's database backup carries its built-in vault encrypted; the vault's root key is kept apart and copied
+offline by the owner ([Secrets Vault](#secrets-vault)), and `vault verify` proves a restore.
 Hold decryption and recovery credentials outside the VPS. Record recovery time/data-loss targets and backup retention.
 Restore into an empty database and verify a real code resolves before accepting the backup path.
 

@@ -37,8 +37,9 @@ Backend layers: `Domain` (entities/enums) → `Application` (SDK mediator CQRS +
 Products · Servers · Deployments · Domains · Secrets. The **inventory** — products, servers, targets and vaults — lives
 in PostgreSQL and is edited in the console; the API exports it to `<runner root>/inventory.json` for the runner.
 Integrations read `/api/products` with scoped keys. Deployments use the independent runner and published artifact
-catalog, with history, live rollout steps, site probes, read-only checks, log reads and reconciliation. **Secrets** are
-administered in inventory vaults through the vault console (write-only values). Domains remain a scaffold model.
+catalog, with history, live rollout steps, site probes, read-only checks, log reads and reconciliation. **Secrets** live
+in the built-in Secrets Vault (schema `vault`, per-product keys under a root key file, versioned, write-only); products
+get them only from the deploy-time render, and the Settings and Secrets tabs edit them. Domains remain a scaffold model.
 Prod (never dev) also enrolls fresh servers with a one-time key, places a product's databases and private sites, and
 applies the tailnet policy after a reviewed diff, through the owner's Tailscale OAuth client; each is a runner job with
 live steps, audited at start and finish.
@@ -118,8 +119,8 @@ Auth/multi-tenant/billing (single-user — bind to Tailscale).
 ## Fleet and artifact policy
 
 Products, servers, targets and vaults are database rows edited in the console; the runner reads the exported
-`inventory.json` snapshot. Credentials stay owner-placed files (`ssh/<server>/`, `vaults/<vault>/password`, prod's
-`providers/tailscale/oauth-client.json`), never rows. Provider/environment choices use enums; no dynamic provider
+`inventory.json` snapshot. Credentials stay owner-placed files (`ssh/<server>/`, `vault/root.key`, a standalone vault's
+`vaults/<vault>/password` until it is imported, prod's `providers/tailscale/oauth-client.json`), never rows. Provider/environment choices use enums; no dynamic provider
 plugins. The local rig's fixtures stay in `catalog.py`/`fleet.py` and seed the database on the rig only. A product's release source is part of its row.
 Wheelhouse deploys published releases and per-commit builds; it starts a product's build workflow only for a commit
 that has no build, and never builds on a target host.
