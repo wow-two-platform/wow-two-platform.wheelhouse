@@ -28,6 +28,7 @@ import { ConsolePaths } from "@/application/navigation";
 import { FleetMaxItems, FleetRollouts, rollbackRisks } from "@/domain/deployments";
 import { InfoPopover, Panel } from "@/presentation/common/components";
 
+import DevCheckPill from "../automation/DevCheckPill.vue";
 import FrozenBadge from "../automation/FrozenBadge.vue";
 import ReleaseChangelog from "../automation/ReleaseChangelog.vue";
 
@@ -83,6 +84,11 @@ function name(item: DeploymentPromotion): string {
           Per product, the newest release that succeeded on dev and is not what prod runs. Promote opens the deploy
           dialog on its prod target with that release; nothing deploys before you confirm there.
         </p>
+        <p class="mt-2">
+          Dev check is the release's end-to-end check, run once its dev rollout succeeds: passed, failed, not run yet, or
+          no check declared. Auto-promote takes a release only once its check passed, or when it declares none; a
+          failed or missing result holds it, and promoting by hand is still yours to decide.
+        </p>
       </InfoPopover>
     </template>
     <DataRegion
@@ -129,9 +135,10 @@ function name(item: DeploymentPromotion): string {
               <span class="font-mono text-xs text-foreground">{{ item.prodRelease ?? "nothing" }}</span>
               <ArrowRight :size="14" aria-label="to" />
               <span class="font-mono text-xs font-medium text-foreground">{{ item.release }}</span>
-              <span>· passed dev <RelativeTime :value="item.devSucceededAt" /></span>
+              <span>· succeeded on dev <RelativeTime :value="item.devSucceededAt" /></span>
             </p>
-            <p v-if="item && rollbackRisks(item).length" class="mt-1 flex flex-wrap gap-1.5">
+            <p v-if="item" class="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <DevCheckPill :verification="item.verification" :verifies="item.verifies" has-hold />
               <Badge v-for="risk in rollbackRisks(item)" :key="risk" variant="warning">{{ risk }}</Badge>
             </p>
             <ReleaseChangelog v-if="item" class="mt-2" :product="item.product" :from="item.prodRelease" :to="item.release" />

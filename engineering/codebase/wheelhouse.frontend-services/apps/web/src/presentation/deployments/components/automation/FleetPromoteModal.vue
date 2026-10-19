@@ -32,9 +32,10 @@ import {
 } from "@wow-two-beta/fe/presentation/overlays";
 
 import { useDeployFreezes, useDeploymentTargets, useStartFleet } from "@/application/deployments";
-import { DeployFreezes, rollbackRisks } from "@/domain/deployments";
+import { DeployFreezes, DevCheckRules, rollbackRisks } from "@/domain/deployments";
 import { failureReason } from "@/integration/common";
 
+import DevCheckPill from "./DevCheckPill.vue";
 import FrozenBadge from "./FrozenBadge.vue";
 import ReleaseChangelog from "./ReleaseChangelog.vue";
 
@@ -73,6 +74,8 @@ const frozen = computed(() =>
     .filter((entry) => entry.freeze !== null),
 );
 /** The prod targets on the local server, which take a promotion only with their ID typed. */
+/** The releases whose dev check failed or has not run: auto-promote would hold them, a fleet still deploys them. */
+const unchecked = computed(() => props.items.filter((item) => DevCheckRules.of(item).holdsAutoPromote).length);
 const needsTyping = computed(
   () => new Set((targets.data.value ?? []).filter((target) => target.needsConfirmation).map((target) => target.id)),
 );
@@ -142,6 +145,7 @@ function close(open: boolean): void {
               <span class="font-mono text-xs text-foreground">{{ item.prodRelease ?? "nothing" }}</span>
               <ArrowRight :size="14" aria-label="to" />
               <span class="font-mono text-xs font-medium text-foreground">{{ item.release }}</span>
+              <DevCheckPill :verification="item.verification" :verifies="item.verifies" />
             </p>
             <ReleaseChangelog :product="item.product" :from="item.prodRelease" :to="item.release" />
             <Field v-if="needsTyping.has(item.prodTargetId)" :label="`Type ${item.prodTargetId} to promote prod on the local server`">
@@ -154,6 +158,12 @@ function close(open: boolean): void {
             </Field>
           </li>
         </ol>
+        <Alert
+          v-if="unchecked"
+          severity="warning"
+          :title="`${unchecked} ${unchecked === 1 ? 'release has' : 'releases have'} no passed dev check`"
+          description="Auto-promote waits for a passed check; this fleet promotes them anyway."
+        />
         <Alert
           v-if="props.items.some((item) => item.rollbackCompatible === false)"
           severity="warning"

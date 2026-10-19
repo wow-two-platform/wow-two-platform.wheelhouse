@@ -105,11 +105,15 @@ export function useRunningDeployments(entities: MaybeRefOrGetter<readonly string
   return running;
 }
 
-/** Per product, the newest release that succeeded on dev and is not what prod runs. */
-export function useDeploymentPromotions(entities: MaybeRefOrGetter<readonly string[]> = []) {
+/** Per product, the newest release that succeeded on dev and is not what prod runs; read while `enabled` holds. */
+export function useDeploymentPromotions(
+  entities: MaybeRefOrGetter<readonly string[]> = [],
+  enabled: MaybeRefOrGetter<boolean> = true,
+) {
   return useAppQuery({
     key: () => DeploymentKeys.promotions([...toValue(entities)].sort().join(",")),
     queryFn: ({ signal }) => deploymentHistoryApi.listPromotions(entityParams(toValue(entities)), signal),
+    enabled: () => toValue(enabled),
   });
 }
 

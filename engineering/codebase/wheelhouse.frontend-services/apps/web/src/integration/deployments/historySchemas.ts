@@ -79,6 +79,17 @@ export const DeploymentRangeStatsSchema = z.object({
   previous: RangeMeasuresSchema.nullable(),
 });
 
+/** A release's dev check; a status the console does not know reads as failed, as the host's gate does. */
+const VerificationSchema = z.object({
+  status: z.enum(['passed', 'failed']).catch('failed'),
+  service: nullableText.default(null),
+  completedAt: nullableText.default(null),
+  seconds: z.number().nullable().default(null),
+  exitCode: z.number().int().nullable().default(null),
+  detail: nullableText.default(null),
+  summary: nullableText.default(null),
+});
+
 export const DeploymentPromotionSchema = z.object({
   product: z.string(),
   workspace: nullableText.default(null),
@@ -91,6 +102,8 @@ export const DeploymentPromotionSchema = z.object({
   prodRelease: nullableText.default(null),
   rollbackCompatible: z.boolean().nullable().default(null),
   hasMigrations: z.boolean().nullable().default(null),
+  verifies: z.boolean().nullable().default(null),
+  verification: VerificationSchema.nullable().default(null),
 });
 
 export const DeploymentIssueSchema = z.object({

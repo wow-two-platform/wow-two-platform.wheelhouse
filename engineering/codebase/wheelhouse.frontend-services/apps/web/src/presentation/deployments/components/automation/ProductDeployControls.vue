@@ -68,7 +68,7 @@ function setAutoPromote(value: boolean): void {
     />
     <SwitchField
       :model-value="choices.autoPromote"
-      label="Promote to prod once a release passes its dev watch"
+      label="Promote to prod once a release passes its dev watch and dev check"
       size="sm"
       :is-disabled="locked !== null || update.loading.value"
       @update:model-value="setAutoPromote"

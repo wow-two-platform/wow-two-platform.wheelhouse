@@ -44,6 +44,7 @@ import {
 
 import {
   useCoveringFreeze,
+  useDeploymentPromotions,
   useReleaseFacts,
   useDeploymentOutcome,
   useDeploymentTargets,
@@ -65,6 +66,7 @@ import {
 } from "@/domain/deployments";
 
 import CheckResultList from "./CheckResultList.vue";
+import DevCheckPill from "./automation/DevCheckPill.vue";
 import JobStatusBadge from "./JobStatusBadge.vue";
 import DeploymentSteps from "./DeploymentSteps.vue";
 import TargetSites from "./TargetSites.vue";
@@ -142,6 +144,11 @@ const reasonNeeded = computed(() => (Boolean(freeze.value) && overrideFreeze.val
 /** What the release declares that a prod deploy should weigh, read when the prod confirm step opens. */
 const facts = useReleaseFacts(() => (step.value === "confirm" && isProd.value ? release.value : null));
 const risks = computed(() => rollbackRisks(facts.data.value));
+/** The dev-proven offer this prod deploy takes, when it is one: it carries the release's dev check. */
+const promotions = useDeploymentPromotions([], () => step.value === "confirm" && isProd.value);
+const offer = computed(() =>
+  promotions.data.value?.find((item) => item.prodTargetId === target.value && item.bundleId === release.value),
+);
 /** What prod runs now, read when its confirm step opens, so the changelog runs from it. */
 const prodState = useTargetState(() => (step.value === "confirm" && isProd.value ? target.value : null));
 const prodRuns = computed(() => prodState.data.value?.current?.release ?? null);
@@ -562,6 +569,10 @@ function close(open: boolean): void {
             <dd>{{ targetLabel(selectedTarget) }}</dd>
             <dt class="text-muted-foreground">Release</dt>
             <dd class="font-mono">{{ releaseLabel(selectedRelease) }}</dd>
+            <template v-if="offer">
+              <dt class="text-muted-foreground">Dev check</dt>
+              <dd><DevCheckPill :verification="offer.verification" :verifies="offer.verifies" :has-label="false" has-hold /></dd>
+            </template>
             <dt class="text-muted-foreground">Readiness</dt>
             <dd>
               {{

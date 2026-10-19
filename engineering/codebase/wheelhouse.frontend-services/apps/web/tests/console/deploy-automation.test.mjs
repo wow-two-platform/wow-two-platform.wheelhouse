@@ -5,7 +5,7 @@ import { bundleModule } from "./BundleModule.mjs";
 
 // The real rules of automatic deploys and freezes, and their wire decoding.
 const automation = await bundleModule(`
-  export { DefaultAutomation, DeployFreezes, rollbackRisks, DeploymentIssues, automationLockOf } from './src/domain/deployments';
+  export { DefaultAutomation, DeployFreezes, rollbackRisks, DeploymentIssues, automationLockOf, DevCheckRules } from './src/domain/deployments';
   export { BuildFailureSchema, DeploymentAutomationSchema, DeployFreezeSchema, ReleaseChangelogSchema } from './src/integration/deployments/automationSchemas';
   export { DeploymentPromotionSchema, DeploymentItemSchema } from './src/integration/deployments/historySchemas';
 `);
@@ -76,6 +76,39 @@ test("a release that cannot roll back automatically or carries migrations names 
   });
   assert.equal(offer.rollbackCompatible, null);
   assert.equal(automation.DeploymentItemSchema.parse({ id: "x", status: "succeeded", outcome: "succeeded", submittedAt: "x" }).deployReason, null);
+});
+
+test("a promotion's dev check reads passed, failed, not run or none declared, and holds auto-promote as the host does", () => {
+  const { DevCheckRules } = automation;
+  const ran = (status, fields = {}) => ({
+    status, service: "api", completedAt: "x", seconds: 12, exitCode: status === "passed" ? 0 : 3,
+    detail: status === "passed" ? "Passed" : "Exited 3", summary: null, ...fields,
+  });
+  const read = (verification, verifies) => {
+    const reading = DevCheckRules.of({ verification, verifies });
+    return [reading.state, reading.status, reading.word, reading.holdsAutoPromote];
+  };
+  assert.deepEqual(read(ran("passed"), true), ["passed", "succeeded", "passed", false]);
+  assert.deepEqual(read(ran("failed"), true), ["failed", "failed", "failed", true]);
+  assert.deepEqual(read(null, true), ["not_run", "none", "not run", true]);
+  assert.deepEqual(read(null, false), ["not_declared", "unknown", "no check declared", false]);
+  assert.deepEqual(read(null, null), ["not_declared", "unknown", "no check declared", false],
+    "an unknown bundle clears auto-promote, as the host's gate does");
+  assert.equal(DevCheckRules.of({ verification: ran("failed", { summary: "checkout returned 500" }), verifies: true }).cause,
+    "Exited 3 · in api · 12s: checkout returned 500");
+  assert.equal(DevCheckRules.of({ verification: ran("passed"), verifies: true }).cause, "Passed · in api · 12s");
+  assert.equal(DevCheckRules.of({ verification: ran("failed", { detail: "Timed out after 300s", exitCode: null }), verifies: true }).state,
+    "failed");
+
+  const decode = (fields) => automation.DeploymentPromotionSchema.parse({
+    product: "foreverpin", release: "v1.1.0", bundleId: "b", devTargetId: "d", devSucceededAt: "x", prodTargetId: "p", ...fields,
+  });
+  const bare = decode({});
+  assert.deepEqual([bare.verifies, bare.verification], [null, null]);
+  const checked = decode({ verifies: true, verification: { status: "passed", service: "api", seconds: 9 } });
+  assert.deepEqual([checked.verification.status, checked.verification.summary, checked.verification.exitCode], ["passed", null, null]);
+  assert.equal(decode({ verifies: true, verification: { status: "skipped" } }).verification.status, "failed",
+    "a status the console does not know reads as failed");
 });
 
 test("a changelog keeps release bodies as text and only GitHub links", () => {
