@@ -50,7 +50,7 @@ def release_candidates(repository):
         require(isinstance(resolved, dict) and isinstance(resolved.get("sha"), str)
                 and SHA.fullmatch(resolved["sha"]), "Invalid release source commit")
         candidates.append({"release": tag, "sourceCommit": resolved["sha"], "assetDigest": asset["digest"],
-                           "version": tuple(map(int, match.groups()))})
+                           "assetId": asset["id"], "version": tuple(map(int, match.groups()))})
     return sorted(candidates, key=lambda candidate: candidate["version"], reverse=True)
 
 
@@ -124,8 +124,7 @@ def _new_destination(destination):
 def _load(repository, root, candidate):
     """Download, checksum and validate one candidate's bundle under a private temporary root."""
     tag = candidate["release"]
-    payload = artifacts.fetch("https://github.com/" + repository + "/releases/download/"
-                              + quote(tag, safe="") + "/" + ASSET)
+    payload = artifacts.release_asset(repository, tag, ASSET, candidate["assetId"])
     require("sha256:" + hashlib.sha256(payload).hexdigest() == candidate["assetDigest"], "Release asset changed")
     archive = root / (tag + ".tar.gz")
     archive.write_bytes(payload)

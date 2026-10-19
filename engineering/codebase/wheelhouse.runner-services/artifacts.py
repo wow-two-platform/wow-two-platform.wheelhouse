@@ -1,4 +1,4 @@
-"""Discovery of completed release assets and per-commit candidate builds from the inventory's public repositories."""
+"""Discovery of completed release assets and per-commit candidate builds from the inventory's repositories."""
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -64,28 +64,23 @@ class ApiRedirect(HTTPRedirectHandler):
         return redirected
 
 
-def fetch(url, limit=MAX_ARCHIVE):
-    headers = {"User-Agent": "Wheelhouse-release-catalog", "X-GitHub-Api-Version": "2022-11-28"}
-    token_file = os.environ.get("WHEELHOUSE_GITHUB_TOKEN_FILE")
-    if token_file and urlparse(url).netloc == "api.github.com":
-        token = Path(token_file).read_text().strip()
-        require(token and "\n" not in token, "Invalid catalog credential")
-        headers["Authorization"] = "Bearer " + token
-    request = Request(url, headers=headers)
-    try:
-        with build_opener(ApiRedirect()).open(request, timeout=15) as response:
-            require(response.url.startswith("https://"), "Insecure release response")
-            data = response.read(limit + 1)
-    except HTTPError as error:
-        # Rate limits surface as 403/429. Only the status is reported, never the body or headers.
-        raise CommandFailed("GitHub request failed (HTTP " + str(error.code) + ")") from None
-    except (URLError, TimeoutError):
-        raise CommandFailed("GitHub request failed (network)") from None
-    require(len(data) <= limit, "Release response exceeded its size limit")
-    return data
+# The account a GitHub API path names: /repos/<owner>/…, /users/<owner>/… or /orgs/<owner>/….
+OWNER_PATH = re.compile(r"/(?:repos|users|orgs)/([A-Za-z0-9][A-Za-z0-9-]{0,38})(?:/|$)")
+# How long before its expiry an installation token stops being used; the API refreshes it well before.
+TOKEN_MARGIN = 60
+# The statuses that say a credential is missing, refused or out of rate limit; each is noted for the Issues panel.
+ACCESS_STATUSES = (401, 403, 429)
+
+
+def owner_of(url):
+    """The lowercase account a GitHub API URL addresses, or None for any other URL."""
+    parsed = urlparse(url)
+    match = OWNER_PATH.match(parsed.path) if parsed.scheme == "https" and parsed.netloc == "api.github.com" else None
+    return match.group(1).lower() if match else None
 
 
 def token():
+    """The single fallback token (WHEELHOUSE_GITHUB_TOKEN_FILE), or None."""
     token_file = os.environ.get("WHEELHOUSE_GITHUB_TOKEN_FILE")
     if not token_file:
         return None
@@ -94,21 +89,118 @@ def token():
     return value
 
 
+def installation_token(owner, clock=None):
+    """The GitHub App installation token for an owner from WHEELHOUSE_GITHUB_TOKENS_FILE, which the API writes before
+    each runner call ({"owners": {owner: {"token", "expiresAt"}}}); None when the file, the owner or an unexpired token
+    is missing. A malformed file counts as missing: the fallback token still serves."""
+    tokens_file = os.environ.get("WHEELHOUSE_GITHUB_TOKENS_FILE")
+    if not tokens_file or not owner:
+        return None
+    try:
+        entry = json.loads(Path(tokens_file).read_text()).get("owners", {}).get(owner)
+        value, expires = entry["token"], datetime.fromisoformat(str(entry["expiresAt"]).replace("Z", "+00:00"))
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+    if expires.tzinfo is None or not isinstance(value, str) or not value or any(c.isspace() for c in value):
+        return None
+    return value if expires.timestamp() - (clock or time.time)() > TOKEN_MARGIN else None
+
+
+def credential(url):
+    """The token a GitHub request carries, or None for an anonymous one. Only api.github.com ever receives one: the App
+    installation token for the owner the path names, else the single fallback token. Package reads take the fallback
+    token only, because an installation token cannot read packages."""
+    owner = owner_of(url)
+    if owner is None:
+        return None
+    if "/packages/" not in urlparse(url).path:
+        installed = installation_token(owner)
+        if installed:
+            return installed
+    return token()
+
+
+def note_access(url, status=None, headers=None, authenticated=False):
+    """Keeps, per owner, the last GitHub call refused with 401, 403 or 429 in WHEELHOUSE_GITHUB_ACCESS_FILE, which the
+    console's Issues panel reads; a later success for that owner clears it. Never stores a body, header or token."""
+    path, owner = os.environ.get("WHEELHOUSE_GITHUB_ACCESS_FILE"), owner_of(url)
+    if not path or owner is None or "/packages/" in urlparse(url).path:
+        return
+    try:
+        kept = json.loads(Path(path).read_text())
+        owners = kept.get("owners") if isinstance(kept, dict) and isinstance(kept.get("owners"), dict) else {}
+    except (OSError, ValueError):
+        owners = {}
+    if status is None:
+        if owner not in owners:
+            return
+        owners.pop(owner)
+    else:
+        remaining = headers.get("X-RateLimit-Remaining") if headers is not None else None
+        owners[owner] = {"status": status, "authenticated": authenticated,
+                         "rateLimited": status == 429 or remaining == "0"
+                         or (headers is not None and headers.get("Retry-After") is not None),
+                         "at": datetime.now(timezone.utc).isoformat()}
+    try:
+        write_json(path, {"owners": owners})
+    except OSError:
+        pass  # Visibility only; a failed note never fails the call.
+
+
+def fetch(url, limit=MAX_ARCHIVE, accept=None):
+    headers = {"User-Agent": "Wheelhouse-release-catalog", "X-GitHub-Api-Version": "2022-11-28"}
+    if accept:
+        headers["Accept"] = accept
+    bearer = credential(url)
+    if bearer:
+        headers["Authorization"] = "Bearer " + bearer
+    request = Request(url, headers=headers)
+    try:
+        with build_opener(ApiRedirect()).open(request, timeout=15) as response:
+            require(response.url.startswith("https://"), "Insecure release response")
+            data = response.read(limit + 1)
+    except HTTPError as error:
+        # Rate limits surface as 403/429. Only the status is reported, never the body or headers.
+        if error.code in ACCESS_STATUSES:
+            note_access(url, error.code, error.headers, bool(bearer))
+        raise CommandFailed("GitHub request failed (HTTP " + str(error.code) + ")") from None
+    except (URLError, TimeoutError):
+        raise CommandFailed("GitHub request failed (network)") from None
+    require(len(data) <= limit, "Release response exceeded its size limit")
+    note_access(url)
+    return data
+
+
 def post(url, body):
-    """A GitHub API write. Starting a build needs a token with Actions write access on the product repository."""
-    credential = token()
-    require(credential, "Starting a build needs WHEELHOUSE_GITHUB_TOKEN_FILE with Actions write access")
+    """A GitHub API write. Starting a build needs Actions write on the product repository: the GitHub App installed on
+    its owner, or the fallback token."""
+    bearer = credential(url)
+    require(bearer, "Starting a build needs the GitHub App installed on the repository's owner, or "
+                    "WHEELHOUSE_GITHUB_TOKEN_FILE with Actions write access")
     request = Request(url, data=json.dumps(body).encode(), method="POST",
                       headers={"User-Agent": "Wheelhouse-release-catalog", "X-GitHub-Api-Version": "2022-11-28",
                                "Accept": "application/vnd.github+json", "Content-Type": "application/json",
-                               "Authorization": "Bearer " + credential})
+                               "Authorization": "Bearer " + bearer})
     try:
         with build_opener(ApiRedirect()).open(request, timeout=15) as response:
             require(response.status in (200, 201, 202, 204), "GitHub refused the build request")
     except HTTPError as error:
+        if error.code in ACCESS_STATUSES:
+            note_access(url, error.code, error.headers, True)
         raise CommandFailed("GitHub request failed (HTTP " + str(error.code) + ")") from None
     except (URLError, TimeoutError):
         raise CommandFailed("GitHub request failed (network)") from None
+    note_access(url)
+
+
+def release_asset(repository, tag, name, asset_id):
+    """A release's archive. With a credential for the repository's owner it comes through the API's asset endpoint,
+    which serves private repositories too; anonymous, through the public download URL. Both redirect to GitHub's
+    storage host, which never receives the credential."""
+    api = API + repository + "/releases/assets/" + str(int(asset_id))
+    if credential(api):
+        return fetch(api, accept="application/octet-stream")
+    return fetch("https://github.com/" + repository + "/releases/download/" + quote(tag, safe="") + "/" + name)
 
 
 def source_of(product):
@@ -444,9 +536,8 @@ def prepare(root, identifier, importer):
             archive_bytes = candidate_archive(fetch(API + source.repository + "/actions/artifacts/"
                                                     + identifier.rsplit("-", 1)[1] + "/zip"))
         else:
-            url = ("https://github.com/" + source.repository + "/releases/download/"
-                   + quote(artifact["release"], safe="") + "/" + source.asset_name)
-            archive_bytes = fetch(url)
+            archive_bytes = release_asset(source.repository, artifact["release"], source.asset_name,
+                                          identifier.rsplit("-", 1)[1])
             require("sha256:" + hashlib.sha256(archive_bytes).hexdigest() == artifact["assetDigest"], "Release asset changed")
         with tempfile.TemporaryDirectory() as directory:
             archive = Path(directory) / "release.tar.gz"

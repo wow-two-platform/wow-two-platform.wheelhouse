@@ -397,3 +397,116 @@ class CandidateTests(unittest.TestCase):
             return self.fetch(url)
         with patch.object(artifacts, 'fetch', side_effect=flaky):
             self.assertEqual([], artifacts.available())
+
+
+class GitHubAccessTests(unittest.TestCase):
+    """Which credential each GitHub call carries, how a release archive is downloaded, and the per-owner access notes
+    the console's Issues panel reads."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        directory = Path(self.temp.name)
+        self.tokens = directory / 'tokens.json'
+        self.fallback = directory / 'token'
+        self.fallback.write_text('FALLBACK\n')
+        self.access = directory / 'github' / 'access.json'
+        soon = '2099-01-01T00:00:00Z'  # The API writes UTC with a Z.
+        self.tokens.write_text(json.dumps({'owners': {
+            'ocharo-hq': {'token': 'INSTALLED', 'expiresAt': soon},
+            'stale': {'token': 'EXPIRED', 'expiresAt': '2000-01-01T00:00:00+00:00'}}}))
+        environment = patch.dict('os.environ', {'WHEELHOUSE_GITHUB_TOKENS_FILE': str(self.tokens),
+                                                'WHEELHOUSE_GITHUB_TOKEN_FILE': str(self.fallback),
+                                                'WHEELHOUSE_GITHUB_ACCESS_FILE': str(self.access)})
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.requests = []
+        self.failure = None
+
+    def open(self, request, timeout=None):
+        self.requests.append(request)
+        if self.failure is not None:
+            raise self.failure
+        response = io.BytesIO(b'{}')
+        response.url, response.status = request.full_url, 200
+        return response
+
+    def opener(self):
+        opener = patch.object(artifacts, 'build_opener')
+        built = opener.start()
+        self.addCleanup(opener.stop)
+        built.return_value.open.side_effect = self.open
+
+    def test_each_owner_gets_its_installation_token_and_others_the_fallback(self):
+        self.assertEqual('INSTALLED', artifacts.credential('https://api.github.com/repos/Ocharo-HQ/site/releases'))
+        self.assertEqual('FALLBACK', artifacts.credential('https://api.github.com/repos/sulton-max/app/releases'))
+        self.assertEqual('FALLBACK', artifacts.credential('https://api.github.com/repos/stale/app/releases'),
+                         'an expired installation token is never sent')
+        self.assertEqual('FALLBACK', artifacts.credential(
+            'https://api.github.com/orgs/ocharo-hq/packages/container/site/versions'),
+            'packages take the fallback token, which may read them')
+        self.assertIsNone(artifacts.credential('https://github.com/ocharo-hq/site/releases/download/v1/a.tar.gz'))
+        self.assertIsNone(artifacts.credential('http://api.github.com/repos/ocharo-hq/site'))
+
+    def test_without_any_credential_the_call_is_anonymous(self):
+        import os
+        os.environ.pop('WHEELHOUSE_GITHUB_TOKENS_FILE')
+        os.environ.pop('WHEELHOUSE_GITHUB_TOKEN_FILE')
+        self.opener()
+        artifacts.fetch('https://api.github.com/repos/ocharo-hq/site/releases?per_page=10')
+        self.assertFalse(self.requests[0].has_header('Authorization'))
+
+    def test_a_malformed_tokens_file_falls_back_instead_of_failing(self):
+        self.tokens.write_text('{not json')
+        self.assertEqual('FALLBACK', artifacts.credential('https://api.github.com/repos/ocharo-hq/site'))
+
+    def test_an_authenticated_asset_comes_through_the_api_as_octet_stream(self):
+        self.opener()
+        artifacts.release_asset('ocharo-hq/site', 'v1.2.3', 'site-release.tar.gz', 77)
+        request = self.requests[0]
+        self.assertEqual('https://api.github.com/repos/ocharo-hq/site/releases/assets/77', request.full_url)
+        self.assertEqual('application/octet-stream', request.get_header('Accept'))
+        self.assertEqual('Bearer INSTALLED', request.get_header('Authorization'))
+
+    def test_an_anonymous_asset_comes_from_the_public_download_url_without_a_credential(self):
+        import os
+        os.environ.pop('WHEELHOUSE_GITHUB_TOKENS_FILE')
+        os.environ.pop('WHEELHOUSE_GITHUB_TOKEN_FILE')
+        self.opener()
+        artifacts.release_asset('ocharo-hq/site', 'v1.2.3', 'site-release.tar.gz', 77)
+        request = self.requests[0]
+        self.assertEqual('https://github.com/ocharo-hq/site/releases/download/v1.2.3/site-release.tar.gz',
+                         request.full_url)
+        self.assertFalse(request.has_header('Authorization'))
+
+    def test_a_build_dispatch_carries_the_owners_installation_token(self):
+        self.opener()
+        artifacts.post('https://api.github.com/repos/ocharo-hq/site/actions/workflows/w.yml/dispatches', {'ref': 'main'})
+        self.assertEqual('Bearer INSTALLED', self.requests[0].get_header('Authorization'))
+
+    def test_a_refused_call_is_noted_per_owner_and_a_later_success_clears_it(self):
+        self.opener()
+        headers = {'X-RateLimit-Remaining': '0'}
+        self.failure = HTTPError('https://api.github.com/repos', 403, 'rate limit', headers, io.BytesIO(b'PRIVATE'))
+        with self.assertRaises(artifacts.CommandFailed):
+            artifacts.fetch('https://api.github.com/repos/Ocharo-HQ/site/releases')
+        note = json.loads(self.access.read_text())['owners']['ocharo-hq']
+        self.assertEqual((403, True, True), (note['status'], note['authenticated'], note['rateLimited']))
+        self.assertNotIn('PRIVATE', self.access.read_text())
+        self.assertNotIn('INSTALLED', self.access.read_text())
+
+        self.failure = HTTPError('https://api.github.com/repos', 404, 'missing', {}, io.BytesIO(b''))
+        with self.assertRaises(artifacts.CommandFailed):
+            artifacts.fetch('https://api.github.com/repos/sulton-max/app/releases')
+        self.assertEqual({'ocharo-hq'}, set(json.loads(self.access.read_text())['owners']), 'a 404 is no access problem')
+
+        self.failure = None
+        artifacts.fetch('https://api.github.com/repos/ocharo-hq/site/releases')
+        self.assertEqual({}, json.loads(self.access.read_text())['owners'])
+
+    def test_package_reads_are_never_noted(self):
+        self.opener()
+        self.failure = HTTPError('https://api.github.com/orgs', 403, 'forbidden', {}, io.BytesIO(b''))
+        with self.assertRaises(artifacts.CommandFailed):
+            artifacts.fetch('https://api.github.com/orgs/ocharo-hq/packages/container/site/versions')
+        self.assertFalse(self.access.exists())
