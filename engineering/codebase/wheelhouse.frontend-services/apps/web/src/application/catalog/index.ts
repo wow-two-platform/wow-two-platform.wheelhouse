@@ -4,10 +4,10 @@ import { ProductKeys } from "@/application/products";
 import { WorkspaceKeys } from "@/application/workspaces";
 import { DeploymentKeys } from "@/application/deployments/DeploymentKeys";
 
-/** Query keys for the wow2 catalog. */
+/** Query keys for the merged hub catalog. */
 export const CatalogKeys = { catalog: ["catalog"] as const };
 
-/** The wow2 catalog and its import, which reloads the products and workspaces it changed. */
+/** The merged hub catalog and its import, which reloads the products and workspaces it changed. */
 export function useCatalog() {
   const catalog = useAppQuery({
     key: CatalogKeys.catalog,

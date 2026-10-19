@@ -11,4 +11,7 @@ public sealed record CatalogWorkspaceDto
 
     /// <summary>Gets one line on what the workspace holds, or <c>null</c> for none.</summary>
     public string? Description { get; init; }
+
+    /// <summary>Gets the repository of the hub that declares the workspace.</summary>
+    public required string Source { get; init; }
 }

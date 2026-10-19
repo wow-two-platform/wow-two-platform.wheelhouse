@@ -8,4 +8,4 @@ export {
   type CatalogSource,
   type CatalogWorkspace,
 } from './Catalog';
-export { CatalogRules, WorkspaceSelection, type CatalogWorkspaceGroup } from './CatalogRules';
+export { CatalogRules, WorkspaceSelection, type CatalogSourceGroup, type CatalogWorkspaceGroup } from './CatalogRules';

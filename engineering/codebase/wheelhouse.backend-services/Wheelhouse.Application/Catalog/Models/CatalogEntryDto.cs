@@ -27,6 +27,9 @@ public sealed record CatalogEntryDto
     /// entry not importable.</summary>
     public required IReadOnlyList<string> Repositories { get; init; }
 
+    /// <summary>Gets the repository of the hub that lists the entry.</summary>
+    public required string Source { get; init; }
+
     /// <summary>Gets the identifier of the product with the entry's slug, or <c>null</c> when none exists.</summary>
     public Guid? ProductId { get; init; }
 }

@@ -34,7 +34,7 @@ export const GlobalPlaces = [
 /** Account-level destinations, under Settings in the profile menu. */
 export const SettingsPlaces = [
   { path: '/settings/keys', label: 'Integration keys', description: 'Scoped keys other programs present to read Wheelhouse.' },
-  { path: '/settings/catalog', label: 'Catalog', description: 'Every wow2 app the workspace catalog lists, ready to import.' },
+  { path: '/settings/catalog', label: 'Catalog', description: 'Every app the hub catalogs list, by hub, ready to import.' },
 ] as const;
 
 /** A fixed place in the console: its URL, its title and the line under it. */

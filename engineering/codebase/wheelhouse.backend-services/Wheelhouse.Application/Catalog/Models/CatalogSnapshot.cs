@@ -1,6 +1,7 @@
 namespace Wheelhouse.Application.Catalog.Models;
 
-/// <summary>Represents one read of the catalog: where it came from and what it holds.</summary>
-/// <param name="Source">The repository, path, ref and commit the catalog was read from.</param>
-/// <param name="Document">The workspaces and entries.</param>
-public sealed record CatalogSnapshot(CatalogSourceDto Source, CatalogDocument Document);
+/// <summary>Represents one read of every hub: each hub's outcome, in settings order, and what the readable hubs hold
+/// together.</summary>
+/// <param name="Sources">Each hub's read, in settings order.</param>
+/// <param name="Document">The readable hubs' workspaces and entries, hub by hub, each tagged with its hub.</param>
+public sealed record CatalogSnapshot(IReadOnlyList<CatalogSourceRead> Sources, CatalogDocument Document);

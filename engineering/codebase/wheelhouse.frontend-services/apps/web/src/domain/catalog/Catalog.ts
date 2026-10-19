@@ -1,10 +1,15 @@
-/** Where the wow2 catalog was read from: `catalog.yml` in the workspace repository, at one commit. */
+/** One hub the catalog was read from: `catalog.yml` in the hub repository, at one commit, or why it is not listed. */
 export interface CatalogSource {
+  /** The hub repository, `owner/name`; workspaces and entries name it as their `source`. */
   repository: string;
   path: string;
   ref: string;
+  /** The hub's own name for itself; null when its file gives none or was not read. */
+  name: string | null;
   /** The full SHA the file was read at; null when the host could not resolve it. */
   commit: string | null;
+  /** Why the hub lists nothing, naming the hub; null when its workspaces and entries are listed. */
+  error: string | null;
 }
 
 /** A workspace the catalog groups its apps under. */
@@ -12,12 +17,16 @@ export interface CatalogWorkspace {
   slug: string;
   name: string;
   description: string;
+  /** The repository of the hub that declares it. */
+  source: string;
 }
 
-/** One wow2 app as the catalog lists it. */
+/** One app as a hub's catalog lists it. */
 export interface CatalogEntry {
   slug: string;
   name: string;
+  /** The repository of the hub that lists it. */
+  source: string;
   /** The slug of the catalog workspace the app belongs to. */
   workspace: string;
   /** What the app is, such as `app`, `platform` or `library`. */
@@ -30,9 +39,9 @@ export interface CatalogEntry {
   productId: string | null;
 }
 
-/** The whole catalog: its source, workspaces and apps. */
+/** The merged catalog: every hub read, in Wheelhouse's order, then the listed hubs' workspaces and apps. */
 export interface Catalog {
-  source: CatalogSource;
+  sources: CatalogSource[];
   workspaces: CatalogWorkspace[];
   entries: CatalogEntry[];
 }

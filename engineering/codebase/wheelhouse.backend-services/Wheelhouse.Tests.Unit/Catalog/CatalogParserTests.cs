@@ -6,7 +6,8 @@ using Wheelhouse.Domain.Catalog.Enums;
 
 namespace Wheelhouse.Tests.Unit.Catalog;
 
-/// <summary>Tests for <see cref="CatalogParser"/>, <see cref="DeployDescriptorParser"/> and <see cref="CatalogSettings"/>.</summary>
+/// <summary>Tests for <see cref="CatalogParser"/>, <see cref="DeployDescriptorParser"/>, <see cref="CatalogSettings"/> and
+/// <see cref="CatalogSourceSettings"/>.</summary>
 public sealed class CatalogParserTests
 {
     private const string Minimal =
@@ -144,6 +145,44 @@ public sealed class CatalogParserTests
     [InlineData("wow-two/wow-two-ws", "catalog.yml", "", false)]
     public void Settings_ShouldAcceptOnlyARepositoryARelativePathAndABranch(string repository, string path, string reference, bool valid)
     {
-        new CatalogSettings { Repository = repository, Path = path, Ref = reference }.IsValid.Should().Be(valid);
+        new CatalogSourceSettings { Repository = repository, Path = path, Ref = reference }.IsValid.Should().Be(valid);
+        new CatalogSettings { Sources = [new() { Repository = repository, Path = path, Ref = reference }] }.IsValid.Should().Be(valid);
+    }
+
+    [Fact]
+    public void Settings_ShouldReadTheThreeHubs_WhenNoSourceIsConfigured()
+    {
+        var settings = new CatalogSettings();
+
+        settings.Hubs.Select(hub => (hub.Repository, hub.Path, hub.Ref)).Should().Equal(
+            ("wow-two/wow-two-ws", "catalog.yml", "main"),
+            ("sulton-max/10x-ventures", "catalog.yml", "main"),
+            ("ocharo-hq/ocharo-ws", "catalog.yml", "main"));
+        settings.IsValid.Should().BeTrue();
+        new CatalogSettings { Sources = [new() { Repository = "a/hub" }] }.Hubs.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Settings_ShouldRefuseARepositoryListedTwice()
+    {
+        new CatalogSettings { Sources = [new() { Repository = "wow-two/wow-two-ws" }, new() { Repository = "Wow-Two/wow-two-ws", Path = "x.yml" }] }
+            .IsValid.Should().BeFalse();
+        new CatalogSettings { Sources = [.. Enumerable.Range(0, 21).Select(index => new CatalogSourceSettings { Repository = $"o/hub-{index}" })] }
+            .IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Parse_ShouldReadTheOptionalHub()
+    {
+        CatalogParser.Parse(Bytes(Minimal)).Value!.Hub.Should().BeNull();
+
+        var hub = CatalogParser.Parse(Bytes(Minimal.Replace("catalog: 1\n", "catalog: 1\nhub:\n  slug: ventures\n  name: 10x Ventures\n  repository: sulton-max/10x-ventures\n")));
+
+        hub.Problem.Should().BeNull();
+        (hub.Value!.Hub!.Slug, hub.Value.Hub.Name).Should().Be(("ventures", "10x Ventures"));
+        CatalogParser.Parse(Bytes(Minimal.Replace("catalog: 1\n", "catalog: 1\nhub:\n  slug: Ventures\n  name: V\n")))
+            .Problem.Should().Be("line 3: hub.slug must be a lowercase slug.");
+        CatalogParser.Parse(Bytes(Minimal.Replace("catalog: 1\n", "catalog: 1\nhub: [ventures]\n")))
+            .Problem.Should().Be("line 2: hub must be a mapping.");
     }
 }

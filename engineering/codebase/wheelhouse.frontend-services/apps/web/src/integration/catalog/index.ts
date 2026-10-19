@@ -2,30 +2,38 @@ import { z } from "zod";
 import type { Catalog, CatalogImportResult } from "@/domain/catalog";
 import { requestData } from "@/integration/common";
 
+const nullable = z.string().nullish().transform((value) => value ?? null);
+
 const CatalogSchema = z.object({
-  source: z.object({
-    repository: z.string(),
-    path: z.string(),
-    ref: z.string(),
-    commit: z.string().nullish().transform((value) => value ?? null),
-  }),
+  sources: z.array(
+    z.object({
+      repository: z.string(),
+      path: z.string(),
+      ref: z.string(),
+      name: nullable,
+      commit: nullable,
+      error: nullable,
+    }),
+  ),
   workspaces: z.array(
     z.object({
       slug: z.string(),
       name: z.string(),
       description: z.string().nullish().transform((value) => value ?? ""),
+      source: z.string(),
     }),
   ),
   entries: z.array(
     z.object({
       slug: z.string(),
       name: z.string(),
+      source: z.string(),
       workspace: z.string(),
       kind: z.string(),
       deploy: z.string(),
       purpose: z.string().nullish().transform((value) => value ?? ""),
       repositories: z.array(z.string()),
-      productId: z.string().nullish().transform((value) => value ?? null),
+      productId: nullable,
     }),
   ),
 });
@@ -39,7 +47,7 @@ const ImportResultSchema = z.object({
   warnings: z.array(z.object({ slug: z.string(), message: z.string() })).default([]),
 });
 
-/** The wow2 catalog Wheelhouse reads from the workspace repository; imports carry the `catalog` action. */
+/** The catalog Wheelhouse merges from every hub repository; imports carry the `catalog` action. */
 export const catalogApi = {
   getCatalog: (signal?: AbortSignal) => requestData<Catalog>("/api/catalog", CatalogSchema, { signal }),
   /** Adds the chosen entries as products, creating their workspaces as needed. */

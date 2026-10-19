@@ -13,7 +13,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Catalog.CommandHandlers;
 
-/// <summary>Handles <see cref="CatalogImportCommand"/>. Each chosen entry, in catalog order: an existing product with its
+/// <summary>Handles <see cref="CatalogImportCommand"/> over the merged hubs. Each chosen entry, in catalog order: an existing product with its
 /// slug moves into the entry's workspace; otherwise an entry Wheelhouse deploys (<c>deploy: wheelhouse</c>) with a
 /// repository becomes a product, whose release source <see cref="CatalogReleaseService"/> derives; any other entry is
 /// skipped with a warning. A workspace is created, last in the order, only when a product needs it. Every step checks
@@ -28,15 +28,11 @@ public sealed class CatalogImportCommandHandler(
     /// <inheritdoc />
     public async ValueTask<AppResult<CatalogImportResultDto>> HandleAsync(CatalogImportCommand request, CancellationToken cancellationToken)
     {
-        var read = await reader.ReadAsync(cancellationToken);
-        if (read is not AppResult<CatalogSnapshot>.Success { Data: var snapshot })
-            return AppResult<CatalogImportResultDto>.Fail(((AppResult<CatalogSnapshot>.Failure)read).Error);
-
+        var snapshot = await reader.ReadAsync(cancellationToken);
         var catalog = snapshot.Document;
         var unknown = request.Slugs.Where(slug => catalog.Entries.All(entry => entry.Slug != slug)).Distinct().ToList();
         if (unknown.Count > 0)
-            return AppResult<CatalogImportResultDto>.Fail(AppErrorFactory.Validation(
-                "The catalog has no entry " + string.Join(", ", unknown.Select(slug => $"'{slug}'")) + "."));
+            return AppResult<CatalogImportResultDto>.Fail(AppErrorFactory.Validation(Unknown(unknown, snapshot.Sources)));
 
         var import = new Import(catalog, workspaces);
         foreach (var entry in catalog.Entries.Where(entry => request.Slugs.Contains(entry.Slug)))
@@ -85,6 +81,14 @@ public sealed class CatalogImportCommandHandler(
             MovedProducts = import.Moved,
             Warnings = import.Warnings,
         });
+    }
+
+    /// <summary>Names the slugs no readable hub lists, and each hub that could not be read, since it may list them.</summary>
+    private static string Unknown(IReadOnlyList<string> slugs, IReadOnlyList<CatalogSourceRead> sources)
+    {
+        var message = "The catalog has no entry " + string.Join(", ", slugs.Select(slug => $"'{slug}'")) + ".";
+        var unread = sources.Where(read => read.Failure is not null).Select(read => read.Failure!.Message).ToList();
+        return unread.Count == 0 ? message : message + " Hubs not listed: " + string.Join(" ", unread);
     }
 
     /// <summary>Says why an entry with no product yet does not become one, or <c>null</c> when it does.</summary>

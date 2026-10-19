@@ -165,13 +165,14 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<IProductManifestSource, Wheelhouse.Infrastructure.Products.GitHubProductManifestSource>();
         builder.Services.AddScoped<IRepositoryFileSource, Wheelhouse.Infrastructure.Catalog.GitHubRepositoryFileSource>();
 
-        // The wow2 catalog: one YAML file in a GitHub repository, bound when first resolved; a malformed setting fails it.
+        // The catalog hubs: one YAML file in each hub repository, bound when first resolved; a malformed setting fails it.
         var configuration = builder.Configuration;
         builder.Services.AddValidatedOptions<Wheelhouse.Application.Catalog.CatalogSettings>(
             settings => configuration.GetSection("Catalog").Bind(settings),
             options => options.Validate(
                 settings => settings.IsValid,
-                "Catalog:Repository must be owner/name, Catalog:Path a relative file path and Catalog:Ref a branch."));
+                "Catalog:Sources must list at most 20 hubs, each with Repository owner/name (once), Path a relative file "
+                + "path and Ref a branch."));
 
         return builder;
     }

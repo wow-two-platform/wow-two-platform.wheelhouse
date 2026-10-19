@@ -11,22 +11,33 @@ using WoW.Two.Sdk.Beta.Be.Testing.Web;
 namespace Wheelhouse.Tests.E2E.Tests;
 
 /// <summary>
-/// E2E for the wow2 catalog — Wheelhouse reads <c>catalog.yml</c> from <c>wow-two/wow-two-ws@main</c> (the stub answers
-/// for GitHub), lists its workspaces and entries with the product each already is, and imports entries: workspaces as
-/// needed, a product per entry Wheelhouse deploys with images derived from its <c>deploy.yml</c>, and moves for existing
-/// products. A malformed catalog is refused naming the line and the field.
+/// E2E for the catalog hubs — Wheelhouse reads <c>catalog.yml</c> from each hub <c>Catalog:Sources</c> lists
+/// (<c>wow-two/wow-two-ws</c>, <c>sulton-max/10x-ventures</c>, <c>ocharo-hq/ocharo-ws</c>, each at <c>main</c>; the stub
+/// answers for GitHub), merges them in that order with each entry tagged by its hub, and imports entries from any of
+/// them: workspaces as needed, a product per entry Wheelhouse deploys with images derived from its <c>deploy.yml</c>,
+/// and moves for existing products. A hub that cannot be read, is malformed or repeats an earlier hub's slug carries its
+/// error, naming the line and field or both hubs, and lists nothing; the other hubs still list theirs.
 /// </summary>
 [Collection(WheelhouseCollection.Name)]
 public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBase(fixture)
 {
-    private const string CatalogRepository = "wow-two/wow-two-ws";
+    private const string Wow2 = "wow-two/wow-two-ws";
+    private const string Ventures = "sulton-max/10x-ventures";
+    private const string Ocharo = "ocharo-hq/ocharo-ws";
 
-    /// <summary>A catalog shaped like the real one: registry-only keys, quoted free text, block workspaces and entries
-    /// with and without repositories.</summary>
+    /// <summary>The wow2 hub's catalog, shaped like the real one: registry-only keys, quoted free text, block workspaces
+    /// and entries with and without repositories.</summary>
     private const string Catalog =
         """
         # yaml-language-server: $schema=conventions/development/repo/catalog/catalog.schema.json
         catalog: 1
+        hub:
+          slug: wow2
+          name: wow2
+          repository: wow-two/wow-two-ws
+        hubs:
+          - repository: sulton-max/10x-ventures
+            local: workbench/ventures/10x-ventures
 
         orgs:
           - slug: wow-two-platform
@@ -45,9 +56,6 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
           - slug: wow2-platform
             name: wow2 platform
             description: "Platform apps that deploy and run the portfolio"
-          - slug: own-ventures
-            name: Own ventures
-            description: "The owner's product ventures"
 
         entries:
           - slug: wheelhouse
@@ -74,15 +82,6 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
             status: "v0.1 built"
             purpose: "Sample app Wheelhouse deploys to prove every flow"
             repositories: [wow-two-platform/wow-two-platform.wheelhouse-canary, wow-two-platform/canary-fixtures]
-          - slug: foreverpin
-            name: ForeverPin
-            workspace: own-ventures
-            kind: venture
-            deploy: wheelhouse
-            status: "Active, v0.9"
-            purpose: "ForeverPin QR and programmable links"
-            repositories: [sulton-max/10x-venture-forever-pin]
-            local: workbench/ventures/10x-venture-forever-pin
           - slug: notes-app
             name: Notes
             workspace: personal
@@ -100,6 +99,68 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
             status: "Active"
             purpose: "Shared publish workflow"
             repositories: [wow-two-platform/wow-two-platform.pipelines]
+        """;
+
+    /// <summary>The ventures hub's catalog: no orgs, two workspaces.</summary>
+    private const string VenturesCatalog =
+        """
+        catalog: 1
+        hub:
+          slug: ventures
+          name: 10x Ventures
+          repository: sulton-max/10x-ventures
+        workspaces:
+          - slug: own-ventures
+            name: Own ventures
+            description: "The owner's product ventures"
+          - slug: other-ventures
+            name: Other ventures
+            description: "Ventures and client work run for others"
+        entries:
+          - slug: foreverpin
+            name: ForeverPin
+            workspace: own-ventures
+            kind: venture
+            deploy: wheelhouse
+            status: "Active, v0.9"
+            purpose: "ForeverPin QR and programmable links"
+            repositories: [sulton-max/10x-venture-forever-pin]
+            local: workbench/ventures/10x-venture-forever-pin
+          - slug: haven
+            name: Haven
+            workspace: other-ventures
+            kind: venture
+            deploy: wheelhouse
+            status: "Active"
+            purpose: "Real estate platform"
+            repositories: [sulton-max/10x-ven-haven]
+        """;
+
+    /// <summary>The Ocharo hub's catalog: one org, one workspace.</summary>
+    private const string OcharoCatalog =
+        """
+        catalog: 1
+        hub:
+          slug: ocharo
+          name: Ocharo
+          repository: ocharo-hq/ocharo-ws
+        orgs:
+          - slug: ocharo-hq
+            url: https://github.com/ocharo-hq
+            description: "Ocharo's brand organization"
+        workspaces:
+          - slug: ocharo
+            name: Ocharo
+            description: "Maftuna's brand"
+        entries:
+          - slug: ocharo-platform
+            name: Ocharo Platform
+            workspace: ocharo
+            kind: venture
+            deploy: wheelhouse
+            status: "Integration pending"
+            purpose: "Brand identity, catalogue and business management"
+            repositories: [ocharo-hq/ocharo-platform]
         """;
 
     private const string CanaryDescriptor =
@@ -125,10 +186,21 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
         return client;
     }
 
-    private string PushCatalog(string text = Catalog) => Fixture.RepositoryFiles.Push(CatalogRepository, "catalog.yml", text);
+    private string PushCatalog(string text = Catalog, string repository = Wow2) => Fixture.RepositoryFiles.Push(repository, "catalog.yml", text);
+
+    /// <summary>Pushes all three hubs' catalogs and returns their commits, in settings order.</summary>
+    private (string Wow2, string Ventures, string Ocharo) PushHubs(string ventures = VenturesCatalog, string ocharo = OcharoCatalog) =>
+        (PushCatalog(), PushCatalog(ventures, Ventures), PushCatalog(ocharo, Ocharo));
 
     private async Task<JsonElement> DataAsync(HttpResponseMessage response) =>
         (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data");
+
+    private async Task<JsonElement> CatalogAsync()
+    {
+        var response = await AdminClient.GetAsync("api/catalog");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return await DataAsync(response);
+    }
 
     private async Task<IReadOnlyList<WorkspaceResponse>> WorkspacesAsync() =>
         await (await AdminClient.GetAsync("api/workspaces")).ReadEnvelopeAsync<IReadOnlyList<WorkspaceResponse>>();
@@ -137,119 +209,182 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
 
     private static string[] Strings(JsonElement array) => [.. array.EnumerateArray().Select(item => item.GetString()!)];
 
+    private static string[] Slugs(JsonElement catalog, string list) =>
+        [.. catalog.GetProperty(list).EnumerateArray().Select(item => item.GetProperty("slug").GetString()!)];
+
+    private static string? Error(JsonElement catalog, int source) => catalog.GetProperty("sources")[source].GetProperty("error").GetString();
+
     [Fact]
-    public async Task Get_ShouldListWorkspacesAndEntriesWithTheirProducts_IgnoringRegistryOnlyKeys()
+    public async Task Get_ShouldMergeEveryHubInSettingsOrder_TaggingWorkspacesAndEntriesWithTheirHub()
     {
-        var commit = PushCatalog();
+        var commits = PushHubs();
 
         var response = await AdminClient.GetAsync("api/catalog");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.CacheControl?.NoStore.Should().BeTrue();
         var catalog = await DataAsync(response);
-        var source = catalog.GetProperty("source");
-        (source.GetProperty("repository").GetString(), source.GetProperty("path").GetString(), source.GetProperty("ref").GetString(),
-                source.GetProperty("commit").GetString())
-            .Should().Be((CatalogRepository, "catalog.yml", "main", commit));
-        catalog.GetProperty("workspaces").EnumerateArray().Select(workspace => workspace.GetProperty("slug").GetString())
-            .Should().Equal("personal", "wow2-platform", "own-ventures");
-        catalog.GetProperty("workspaces")[0].GetProperty("description").GetString().Should().Be("Personal tools and documents outside the ecosystem");
+        catalog.GetProperty("sources").EnumerateArray()
+            .Select(source => (source.GetProperty("repository").GetString(), source.GetProperty("path").GetString(),
+                source.GetProperty("ref").GetString(), source.GetProperty("name").GetString(), source.GetProperty("commit").GetString(),
+                source.GetProperty("error").ValueKind))
+            .Should().Equal(
+                (Wow2, "catalog.yml", "main", "wow2", commits.Wow2, JsonValueKind.Null),
+                (Ventures, "catalog.yml", "main", "10x Ventures", commits.Ventures, JsonValueKind.Null),
+                (Ocharo, "catalog.yml", "main", "Ocharo", commits.Ocharo, JsonValueKind.Null));
+        catalog.GetProperty("workspaces").EnumerateArray()
+            .Select(workspace => (workspace.GetProperty("slug").GetString(), workspace.GetProperty("source").GetString()))
+            .Should().Equal(("personal", Wow2), ("wow2-platform", Wow2), ("own-ventures", Ventures), ("other-ventures", Ventures),
+                ("ocharo", Ocharo));
+        catalog.GetProperty("entries").EnumerateArray()
+            .Select(entry => (entry.GetProperty("slug").GetString(), entry.GetProperty("source").GetString()))
+            .Should().Equal(("wheelhouse", Wow2), ("secrets-vault", Wow2), ("wheelhousecanary", Wow2), ("notes-app", Wow2),
+                ("pipelines", Wow2), ("foreverpin", Ventures), ("haven", Ventures), ("ocharo-platform", Ocharo));
+    }
 
+    [Fact]
+    public async Task Get_ShouldListEntriesWithTheirProducts_IgnoringRegistryOnlyKeys()
+    {
+        PushHubs();
+
+        var catalog = await CatalogAsync();
+
+        catalog.GetProperty("workspaces")[0].GetProperty("description").GetString().Should().Be("Personal tools and documents outside the ecosystem");
         var entries = catalog.GetProperty("entries").EnumerateArray().ToList();
-        entries.Select(entry => entry.GetProperty("slug").GetString())
-            .Should().Equal("wheelhouse", "secrets-vault", "wheelhousecanary", "foreverpin", "notes-app", "pipelines");
         var vault = entries[1];
         (vault.GetProperty("name").GetString(), vault.GetProperty("workspace").GetString(), vault.GetProperty("kind").GetString(),
                 vault.GetProperty("deploy").GetString(), vault.GetProperty("purpose").GetString())
             .Should().Be(("Secrets Vault", "wow2-platform", "platform", "wheelhouse", "Secrets vault — envelope-encrypted store + management UI"));
         Strings(entries[2].GetProperty("repositories")).Should().Equal(
             "wow-two-platform/wow-two-platform.wheelhouse-canary", "wow-two-platform/canary-fixtures");
-        Strings(entries[4].GetProperty("repositories")).Should().BeEmpty();
+        Strings(entries[3].GetProperty("repositories")).Should().BeEmpty();
         vault.TryGetProperty("status", out _).Should().BeFalse();
         vault.TryGetProperty("local", out _).Should().BeFalse();
+        catalog.TryGetProperty("hubs", out _).Should().BeFalse();
 
-        var foreverPin = (await ProductAsync("foreverpin")).GetProperty("id").GetString();
-        entries[3].GetProperty("productId").GetString().Should().Be(foreverPin);
+        entries[5].GetProperty("productId").GetString().Should().Be((await ProductAsync("foreverpin")).GetProperty("id").GetString());
         entries[0].GetProperty("productId").GetString().Should().Be((await ProductAsync("wheelhouse")).GetProperty("id").GetString());
         entries[1].GetProperty("productId").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]
-    public async Task Get_ShouldReadTheNewestCommit_WhenTheCatalogChanges()
+    public async Task Get_ShouldReadEachHubsNewestCommit_WhenACatalogChanges()
     {
-        PushCatalog();
-        var first = await DataAsync(await AdminClient.GetAsync("api/catalog"));
+        var first = PushHubs();
 
-        var newer = PushCatalog(Catalog.Replace("name: Personal", "name: Mine"));
-        var second = await DataAsync(await AdminClient.GetAsync("api/catalog"));
+        var newer = PushCatalog(VenturesCatalog.Replace("name: Own ventures", "name: Mine"), Ventures);
+        var catalog = await CatalogAsync();
 
-        second.GetProperty("source").GetProperty("commit").GetString().Should().Be(newer).And.NotBe(first.GetProperty("source").GetProperty("commit").GetString());
-        second.GetProperty("workspaces")[0].GetProperty("name").GetString().Should().Be("Mine");
+        catalog.GetProperty("sources")[1].GetProperty("commit").GetString().Should().Be(newer).And.NotBe(first.Ventures);
+        catalog.GetProperty("sources")[0].GetProperty("commit").GetString().Should().Be(first.Wow2);
+        catalog.GetProperty("workspaces")[2].GetProperty("name").GetString().Should().Be("Mine");
     }
 
     [Fact]
-    public async Task Get_ShouldReturn503_WhenGitHubCannotServeTheCatalogRepository()
+    public async Task Get_ShouldShowEachHubsError_WhenGitHubCannotServeThem()
     {
-        var response = await AdminClient.GetAsync("api/catalog");
+        var catalog = await CatalogAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-        (await response.ReadProblemAsync()).Detail.Should().Contain("wow-two/wow-two-ws@main");
+        catalog.GetProperty("sources").EnumerateArray().Select(source => source.GetProperty("commit").ValueKind)
+            .Should().AllBeEquivalentTo(JsonValueKind.Null);
+        Error(catalog, 0).Should().Contain("wow-two/wow-two-ws@main could not be read from GitHub");
+        Error(catalog, 1).Should().Contain("sulton-max/10x-ventures@main could not be read from GitHub");
+        Error(catalog, 2).Should().Contain("ocharo-hq/ocharo-ws@main could not be read from GitHub");
+        catalog.GetProperty("workspaces").GetArrayLength().Should().Be(0);
+        catalog.GetProperty("entries").GetArrayLength().Should().Be(0);
     }
 
     [Fact]
-    public async Task Get_ShouldReturn404_WhenTheRepositoryHasNoCatalog()
+    public async Task Get_ShouldListTheOtherHubs_WhenOneHubFails()
     {
-        Fixture.RepositoryFiles.PushEmpty(CatalogRepository);
+        PushHubs(ventures: "catalog: 1\nworkspaces: [\n");
 
-        var response = await AdminClient.GetAsync("api/catalog");
+        var catalog = await CatalogAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await response.ReadProblemAsync()).Detail.Should().Contain("catalog.yml");
+        (Error(catalog, 0), Error(catalog, 2)).Should().Be((null, null));
+        Error(catalog, 1).Should().StartWith("catalog.yml in sulton-max/10x-ventures@main, line 3");
+        catalog.GetProperty("sources")[1].GetProperty("commit").GetString().Should().NotBeNull();
+        Slugs(catalog, "entries").Should().Equal("wheelhouse", "secrets-vault", "wheelhousecanary", "notes-app", "pipelines", "ocharo-platform");
+        Slugs(catalog, "workspaces").Should().Equal("personal", "wow2-platform", "ocharo");
     }
 
     [Fact]
-    public async Task Get_ShouldReturn503_WhenTheCatalogFileCannotBeRead()
+    public async Task Get_ShouldShowTheHubsError_WhenItHasNoCatalog_OrItCannotBeRead()
     {
-        Fixture.RepositoryFiles.Push(CatalogRepository, "catalog.yml", RepositoryFileStatus.Unreadable);
+        PushHubs();
+        Fixture.RepositoryFiles.PushEmpty(Ventures);
+        Fixture.RepositoryFiles.Push(Ocharo, "catalog.yml", RepositoryFileStatus.Unreadable);
 
-        (await AdminClient.GetAsync("api/catalog")).StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var catalog = await CatalogAsync();
+
+        Error(catalog, 1).Should().Be("sulton-max/10x-ventures@main has no catalog.yml.");
+        Error(catalog, 2).Should().Be("catalog.yml in ocharo-hq/ocharo-ws@main could not be read from GitHub; try again.");
+        Slugs(catalog, "entries").Should().HaveCount(5);
+    }
+
+    [Fact]
+    public async Task Get_ShouldFailTheLaterHubNamingBoth_WhenTwoHubsListTheSameEntry()
+    {
+        PushHubs(ventures: VenturesCatalog.Replace("- slug: haven", "- slug: secrets-vault"));
+
+        var catalog = await CatalogAsync();
+
+        Error(catalog, 1).Should().Be(
+            "catalog.yml in sulton-max/10x-ventures@main lists the entry 'secrets-vault', which catalog.yml in "
+            + "wow-two/wow-two-ws@main lists too; each entry belongs to one hub.");
+        (Error(catalog, 0), Error(catalog, 2)).Should().Be((null, null));
+        Slugs(catalog, "entries").Should().NotContain("foreverpin").And.ContainSingle(slug => slug == "secrets-vault")
+            .And.Contain("ocharo-platform");
+        catalog.GetProperty("entries")[1].GetProperty("source").GetString().Should().Be(Wow2);
+        Slugs(catalog, "workspaces").Should().Equal("personal", "wow2-platform", "ocharo");
+    }
+
+    [Fact]
+    public async Task Get_ShouldFailTheLaterHubNamingBoth_WhenTwoHubsDeclareTheSameWorkspace()
+    {
+        PushHubs(ocharo: OcharoCatalog.Replace("- slug: ocharo\n", "- slug: own-ventures\n").Replace("workspace: ocharo", "workspace: own-ventures"));
+
+        var catalog = await CatalogAsync();
+
+        Error(catalog, 2).Should().Be(
+            "catalog.yml in ocharo-hq/ocharo-ws@main declares the workspace 'own-ventures', which catalog.yml in "
+            + "sulton-max/10x-ventures@main declares too; each workspace belongs to one hub.");
+        Slugs(catalog, "entries").Should().NotContain("ocharo-platform");
     }
 
     [Theory]
     [InlineData("catalog: 1\nworkspaces: [\n", "line 3")]
     [InlineData("catalog: 2\nworkspaces: []\nentries: []\n", "line 1: catalog must be 1")]
     [InlineData("catalog: 1\nentries: []\n", "workspaces is required")]
-    public async Task Get_ShouldReturn422NamingTheLine_WhenTheCatalogIsMalformed(string text, string expected)
+    [InlineData("catalog: 1\nhub: [wow2]\nworkspaces: []\nentries: []\n", "line 2: hub must be a mapping")]
+    public async Task Get_ShouldShowTheErrorNamingTheLine_WhenACatalogIsMalformed(string text, string expected)
     {
         PushCatalog(text);
 
-        var response = await AdminClient.GetAsync("api/catalog");
+        var catalog = await CatalogAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-        (await response.ReadProblemAsync()).Detail.Should().StartWith("catalog.yml").And.Contain(expected);
+        Error(catalog, 0).Should().StartWith("catalog.yml in wow-two/wow-two-ws@main, ").And.Contain(expected);
+        catalog.GetProperty("sources")[0].GetProperty("name").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Theory]
-    [InlineData("workspace: own-ventures\n    kind: venture\n    deploy: wheelhouse\n    status: \"Active, v0.9\"",
-        "workspace: ghost\n    kind: venture\n    deploy: wheelhouse\n    status: \"Active, v0.9\"", "line 52: entries[3].workspace names 'ghost'")]
-    [InlineData("kind: venture\n    deploy: wheelhouse\n    status: \"Active, v0.9\"",
-        "kind: venture\n    deploy: sometimes\n    status: \"Active, v0.9\"", "line 54: entries[3].deploy must be wheelhouse, ci or none")]
-    [InlineData("- slug: notes-app", "- slug: foreverpin", "line 59: entries[4].slug repeats the entry 'foreverpin'")]
-    public async Task Get_ShouldReturn422NamingTheLineAndField_WhenAnEntryBreaksARule(string find, string replace, string expected)
+    [InlineData("workspace: personal\n    kind: app", "workspace: ghost\n    kind: app", "line 56: entries[3].workspace names 'ghost'")]
+    [InlineData("kind: platform\n    deploy: wheelhouse\n    status: \"Active\"",
+        "kind: platform\n    deploy: sometimes\n    status: \"Active\"", "line 42: entries[1].deploy must be wheelhouse, ci or none")]
+    [InlineData("- slug: pipelines", "- slug: notes-app", "line 63: entries[4].slug repeats the entry 'notes-app'")]
+    public async Task Get_ShouldShowTheErrorNamingTheLineAndField_WhenAnEntryBreaksARule(string find, string replace, string expected)
     {
-        PushCatalog(Catalog.Replace(find, replace));
+        var text = Catalog.Replace(find, replace);
+        text.Should().NotBe(Catalog);
+        PushCatalog(text);
 
-        var response = await AdminClient.GetAsync("api/catalog");
-
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
-        (await response.ReadProblemAsync()).Detail.Should().Contain(expected);
+        Error(await CatalogAsync(), 0).Should().Contain(expected);
     }
 
     [Fact]
     public async Task Endpoints_ShouldTakeTheOwnersSessionOnly()
     {
-        PushCatalog();
+        PushHubs();
         var created = await AdminClient.SendAsync(new HttpRequestMessage(HttpMethod.Post, "api/integration-keys")
         {
             Content = JsonContent.Create(new { name = "Reader", scopes = new[] { "catalog:read" } }),
@@ -268,7 +403,7 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     [Fact]
     public async Task Import_ShouldCreateWorkspacesAndProductsAndMoveExistingOnes()
     {
-        PushCatalog();
+        PushHubs();
         Fixture.RepositoryFiles.Push("wow-two-platform/wow-two-platform.wheelhouse-canary", "engineering/deployment/deploy.yml", CanaryDescriptor);
         Fixture.RepositoryFiles.PushEmpty("wow-two-platform/wow-two-platform.secrets-vault");
 
@@ -323,9 +458,40 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     }
 
     [Fact]
+    public async Task Import_ShouldTakeEntriesFromEveryHub_CreatingEachHubsWorkspaces()
+    {
+        PushHubs();
+
+        var result = await DataAsync(await ImportClient().PostJsonAsync("api/catalog/import",
+            new { slugs = new[] { "ocharo-platform", "haven", "secrets-vault" } }));
+
+        Strings(result.GetProperty("createdWorkspaces")).Should().Equal("wow2-platform", "other-ventures", "ocharo");
+        Strings(result.GetProperty("createdProducts")).Should().Equal("secrets-vault", "haven", "ocharo-platform");
+        var workspaces = (await WorkspacesAsync()).ToDictionary(workspace => workspace.Slug, workspace => workspace.Id.ToString());
+        (await ProductAsync("haven")).GetProperty("workspaceId").GetString().Should().Be(workspaces["other-ventures"]);
+        var ocharo = await ProductAsync("ocharo-platform");
+        (ocharo.GetProperty("workspaceId").GetString(), ocharo.GetProperty("repository").GetProperty("name").GetString())
+            .Should().Be((workspaces["ocharo"], "ocharo-hq/ocharo-platform"));
+        (await CatalogAsync()).GetProperty("entries").EnumerateArray()
+            .Single(entry => entry.GetProperty("slug").GetString() == "ocharo-platform")
+            .GetProperty("productId").GetString().Should().Be(ocharo.GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task Import_ShouldTakeTheReadableHubsEntries_WhenAnotherHubFails()
+    {
+        PushHubs(ventures: "catalog: 1\nentries: []\n");
+
+        var response = await ImportClient().PostJsonAsync("api/catalog/import", new { slugs = new[] { "ocharo-platform" } });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        Strings((await DataAsync(response)).GetProperty("createdProducts")).Should().Equal("ocharo-platform");
+    }
+
+    [Fact]
     public async Task Import_ShouldChangeNothingMore_WhenRunAgain()
     {
-        PushCatalog();
+        PushHubs();
         var slugs = new { slugs = new[] { "secrets-vault", "wheelhouse", "foreverpin" } };
         (await ImportClient().PostJsonAsync("api/catalog/import", slugs)).StatusCode.Should().Be(HttpStatusCode.OK);
         var products = (await AdminClient.GetStringAsync("api/products")).Length;
@@ -344,7 +510,7 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     [Fact]
     public async Task Import_ShouldCreateAnEntrysWorkspaceAfterTheOwnersOwn()
     {
-        PushCatalog();
+        PushHubs();
         var created = await AdminClient.SendAsync(new HttpRequestMessage(HttpMethod.Post, "api/workspaces")
         {
             Content = JsonContent.Create(new { slug = "scratch", name = "Scratch" }),
@@ -361,7 +527,7 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     [Fact]
     public async Task Import_ShouldNoteADescriptorThatNamesAnotherProduct_OrCannotBeParsed()
     {
-        PushCatalog();
+        PushHubs();
         Fixture.RepositoryFiles.Push("wow-two-platform/wow-two-platform.wheelhouse-canary", "engineering/deployment/deploy.yml",
             CanaryDescriptor.Replace("product: wheelhousecanary", "product: canary"));
         Fixture.RepositoryFiles.Push("wow-two-platform/wow-two-platform.secrets-vault", "engineering/deployment/deploy.yml",
@@ -380,13 +546,28 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     [Fact]
     public async Task Import_ShouldReturn400AndChangeNothing_WhenAnEntryIsUnknown()
     {
-        PushCatalog();
+        PushHubs();
 
         var response = await ImportClient().PostJsonAsync("api/catalog/import", new { slugs = new[] { "secrets-vault", "ghost" } });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await response.ReadProblemAsync()).Detail.Should().Contain("'ghost'");
+        (await response.ReadProblemAsync()).Detail.Should().Be("The catalog has no entry 'ghost'.");
         (await AdminClient.GetAsync("api/products/secrets-vault")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await WorkspacesAsync()).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Import_ShouldReturn400NamingTheHubsNotListed_WhenAnEntrysHubCannotBeRead()
+    {
+        PushCatalog(Catalog.Replace("kind: backbone", "kind: startup"));
+
+        var response = await ImportClient().PostJsonAsync("api/catalog/import", new { slugs = new[] { "secrets-vault", "haven" } });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.ReadProblemAsync()).Detail.Should().StartWith("The catalog has no entry 'secrets-vault', 'haven'. Hubs not listed: ")
+            .And.Contain("entries[4].kind must be core, meta, platform")
+            .And.Contain("sulton-max/10x-ventures@main could not be read from GitHub")
+            .And.Contain("ocharo-hq/ocharo-ws@main could not be read from GitHub");
         (await WorkspacesAsync()).Should().ContainSingle();
     }
 
@@ -395,28 +576,16 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     [InlineData("Not_A_Slug")]
     public async Task Import_ShouldReturn400_WhenTheSlugsAreMissingOrMalformed(string slug)
     {
-        PushCatalog();
+        PushHubs();
         string[] slugs = slug.Length == 0 ? [] : [slug];
 
         (await ImportClient().PostJsonAsync("api/catalog/import", new { slugs })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]
-    public async Task Import_ShouldReturn422AndChangeNothing_WhenTheCatalogIsMalformed()
-    {
-        PushCatalog(Catalog.Replace("kind: venture\n    deploy: wheelhouse", "kind: startup\n    deploy: wheelhouse"));
-
-        var response = await ImportClient().PostJsonAsync("api/catalog/import", new { slugs = new[] { "secrets-vault" } });
-
-        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
-        (await response.ReadProblemAsync()).Detail.Should().Contain("entries[3].kind must be core, meta, platform");
-        (await WorkspacesAsync()).Should().ContainSingle();
-    }
-
-    [Fact]
     public async Task Import_ShouldLandInTheAuditTrail()
     {
-        PushCatalog();
+        PushHubs();
 
         (await ImportClient().PostJsonAsync("api/catalog/import", new { slugs = new[] { "secrets-vault", "wheelhouse" } })).EnsureSuccessStatusCode();
 

@@ -7,26 +7,24 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Catalog.QueryHandlers;
 
-/// <summary>Handles <see cref="CatalogGetQuery"/>: an entry's product is the product with its slug.</summary>
+/// <summary>Handles <see cref="CatalogGetQuery"/>: every hub's outcome, and the readable hubs' workspaces and entries; an
+/// entry's product is the product with its slug.</summary>
 public sealed class CatalogGetQueryHandler(CatalogReader reader, IProductsRepository products)
     : IQueryHandler<CatalogGetQuery, AppResult<CatalogDto>>
 {
     /// <inheritdoc />
     public async ValueTask<AppResult<CatalogDto>> HandleAsync(CatalogGetQuery request, CancellationToken cancellationToken)
     {
-        var read = await reader.ReadAsync(cancellationToken);
-        if (read is not AppResult<CatalogSnapshot>.Success { Data: var snapshot })
-            return AppResult<CatalogDto>.Fail(((AppResult<CatalogSnapshot>.Failure)read).Error);
-
+        var snapshot = await reader.ReadAsync(cancellationToken);
         var bySlug = (await products.GetAllAsync(cancellationToken)).ToDictionary(product => product.Slug, product => product.Id);
         return AppResult<CatalogDto>.Ok(new CatalogDto
         {
-            Source = snapshot.Source,
+            Sources = [.. snapshot.Sources.Select(read => read.Source)],
             Workspaces =
             [
                 .. snapshot.Document.Workspaces.Select(workspace => new CatalogWorkspaceDto
                 {
-                    Slug = workspace.Slug, Name = workspace.Name, Description = workspace.Description,
+                    Slug = workspace.Slug, Name = workspace.Name, Description = workspace.Description, Source = workspace.Source,
                 }),
             ],
             Entries =
@@ -40,6 +38,7 @@ public sealed class CatalogGetQueryHandler(CatalogReader reader, IProductsReposi
                     Deploy = entry.Deploy,
                     Purpose = entry.Purpose,
                     Repositories = entry.Repositories,
+                    Source = entry.Source,
                     ProductId = bySlug.TryGetValue(entry.Slug, out var id) ? id : null,
                 }),
             ],

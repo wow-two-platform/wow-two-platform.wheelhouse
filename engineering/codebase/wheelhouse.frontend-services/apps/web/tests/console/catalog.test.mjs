@@ -17,8 +17,10 @@ after(() => stop());
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
-const entry = (slug, fields = {}) => ({ slug, name: slug, workspace: "ventures", kind: "app", deploy: "wheelhouse",
-  purpose: "", repositories: [], productId: null, ...fields });
+const entry = (slug, fields = {}) => ({ slug, name: slug, source: "o/ventures", workspace: "ventures", kind: "app",
+  deploy: "wheelhouse", purpose: "", repositories: [], productId: null, ...fields });
+const hub = (repository, fields = {}) => ({ repository, path: "catalog.yml", ref: "main", name: null, commit: null,
+  error: null, ...fields });
 const entries = [
   entry("hijinx"),
   entry("wheelhouse", { productId: "p-wh" }),
@@ -81,6 +83,33 @@ test("a workspace's importable apps are selected and cleared together, leaving o
   assert.equal(CatalogRules.workspaceSelection({ importable: [] }, ["logs"]), "none");
 });
 
+test("the catalog groups hub by hub in the read order, each with its workspaces and counts, a failed hub empty", () => {
+  const catalog = {
+    sources: [
+      hub("wow-two/wow-two-ws", { name: "wow2", commit: "4f2c9e1a7b3d" }),
+      hub("o/ventures", { name: "10x Ventures", commit: "aa11bb22cc33" }),
+      hub("ocharo-hq/ocharo-ws", { commit: "ff00", error: "catalog.yml in ocharo-hq/ocharo-ws@main, line 3: …" }),
+    ],
+    workspaces: [
+      { slug: "wow2-platform", name: "wow2 platform", description: "", source: "wow-two/wow-two-ws" },
+      { slug: "ventures", name: "Ventures", description: "", source: "o/ventures" },
+    ],
+    entries: [...entries, entry("logs", { workspace: "wow2-platform", source: "wow-two/wow-two-ws" }), entry("lost", { source: "x/gone" })],
+  };
+  const hubs = CatalogRules.sources(catalog);
+  assert.deepEqual(hubs.map((group) => group.name), ["wow2", "10x Ventures", "ocharo-hq/ocharo-ws", "x/gone"]);
+  assert.deepEqual(hubs.map((group) => group.groups.map((workspace) => workspace.slug)),
+    [["wow2-platform"], ["ventures"], [], ["ventures"]]);
+  assert.deepEqual(hubs.map((group) => [group.entries, group.importable]), [[1, 1], [4, 2], [0, 0], [1, 1]]);
+  assert.equal(CatalogRules.sourceCountsLine(hubs[1]), "4 apps · 2 importable");
+  assert.equal(CatalogRules.sourceCountsLine({ ...hubs[0], importable: 0 }), "1 app · nothing to import");
+  assert.equal(CatalogRules.sourceCountsLine(hubs[2]), "Not listed");
+  assert.equal(CatalogRules.sourceHref(hubs[0].source), "https://github.com/wow-two/wow-two-ws/blob/4f2c9e1a7b3d/catalog.yml");
+  assert.equal(CatalogRules.sourceHref(hub("o/r")), "https://github.com/o/r/blob/main/catalog.yml");
+  assert.equal(CatalogRules.sourceHref(hubs[3].source), null);
+  assert.equal(CatalogRules.sourceHref(hub("not a repository")), null);
+});
+
 test("the import result and the source read as one line each", () => {
   assert.equal(CatalogRules.summary({ createdWorkspaces: 1, createdProducts: 2, movedProducts: 1 }),
     "Added 2 products, created 1 workspace and moved 1 product.");
@@ -101,13 +130,18 @@ test("the catalog decodes, and an import posts its slugs with the catalog action
   globalThis.fetch = async (url, options) => {
     requests.push({ url, options });
     if (url === "/api/catalog")
-      return json({ data: { source: { repository: "o/r", path: "catalog.yml", ref: "main", commit: null },
-        workspaces: [{ slug: "ventures", name: "Ventures", description: null }], entries } });
+      return json({ data: {
+        sources: [{ repository: "o/ventures", path: "catalog.yml", ref: "main", commit: null, error: "o/ventures@main has no catalog.yml." },
+          { repository: "o/r", path: "catalog.yml", ref: "main", name: "R", commit: "abc" }],
+        workspaces: [{ slug: "ventures", name: "Ventures", description: null, source: "o/r" }], entries } });
     return json({ data: { createdWorkspaces: ["labs"], createdProducts: 2, movedProducts: [] } });
   };
   const catalog = await catalogApi.getCatalog();
   assert.equal(catalog.ok, true);
   assert.equal(catalog.value.workspaces[0].description, "");
+  assert.deepEqual(catalog.value.sources.map((source) => [source.name, source.commit, source.error]),
+    [[null, null, "o/ventures@main has no catalog.yml."], ["R", "abc", null]]);
+  assert.equal(catalog.value.entries[0].source, "o/ventures");
   const result = await catalogApi.importEntries(["hijinx", "museums"]);
   assert.deepEqual(result.value, { createdWorkspaces: 1, createdProducts: 2, movedProducts: 0, warnings: [] });
   assert.equal(requests[1].url, "/api/catalog/import");

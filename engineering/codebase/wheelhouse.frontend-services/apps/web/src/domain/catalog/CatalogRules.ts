@@ -20,6 +20,19 @@ export interface CatalogWorkspaceGroup {
   notDeployable: number;
 }
 
+/** One hub's part of the catalog: where it was read, why it lists nothing if it does not, and its workspaces. */
+export interface CatalogSourceGroup {
+  source: CatalogSource;
+  /** The hub's own name, else its repository. */
+  name: string;
+  /** The hub's workspaces with their apps, in its file's order. */
+  groups: CatalogWorkspaceGroup[];
+  /** How many apps the hub lists. */
+  entries: number;
+  /** How many of them can be imported. */
+  importable: number;
+}
+
 /** How much of one workspace's importable apps the selection holds. */
 export const WorkspaceSelection = { None: 'none', Some: 'some', All: 'all' } as const;
 export type WorkspaceSelection = (typeof WorkspaceSelection)[keyof typeof WorkspaceSelection];
@@ -29,7 +42,7 @@ function count(value: number, noun: string): string {
   return `${value} ${noun}${value === 1 ? '' : 's'}`;
 }
 
-/** Pure rules for the catalog page: which entries import, the selection and the result line. */
+/** Pure rules for the catalog page: the hubs, which entries import, the selection and the result line. */
 export const CatalogRules = {
   /** Whether Wheelhouse deploys the entry and it is not a product yet. */
   isImportable: (entry: Pick<CatalogEntry, 'deploy' | 'productId'>): boolean =>
@@ -90,6 +103,36 @@ export const CatalogRules = {
       .filter((group) => group.entries.length > 0);
   },
 
+  /**
+   * The catalog hub by hub, in the order Wheelhouse reads them, each with its workspaces grouped as {@link groups} does.
+   * Workspaces and apps whose hub is not among the sources follow under a group of their own.
+   */
+  sources: (catalog: Pick<Catalog, 'sources' | 'workspaces' | 'entries'>): CatalogSourceGroup[] => {
+    const read = catalog.sources.map((source) => source.repository);
+    const stray = [...catalog.workspaces, ...catalog.entries].map((item) => item.source).filter((slug) => !read.includes(slug));
+    const sources: CatalogSource[] = [
+      ...catalog.sources,
+      ...[...new Set(stray)].map((repository) => ({ repository, path: '', ref: '', name: null, commit: null, error: null })),
+    ];
+    return sources.map((source) => {
+      const workspaces = catalog.workspaces.filter((workspace) => workspace.source === source.repository);
+      const entries = catalog.entries.filter((entry) => entry.source === source.repository);
+      return {
+        source,
+        name: source.name ?? source.repository,
+        groups: CatalogRules.groups({ workspaces, entries }),
+        entries: entries.length,
+        importable: CatalogRules.importable(entries).length,
+      };
+    });
+  },
+
+  /** `5 apps · 2 importable` for a hub, or `Not listed` when its read failed. */
+  sourceCountsLine: (group: Pick<CatalogSourceGroup, 'source' | 'entries' | 'importable'>): string =>
+    group.source.error
+      ? 'Not listed'
+      : `${count(group.entries, 'app')} · ${group.importable ? `${group.importable} importable` : 'nothing to import'}`,
+
   /** `2 importable · 1 in Wheelhouse · 1 not deployable`, leaving out the counts that are zero. */
   countsLine: (group: Pick<CatalogWorkspaceGroup, 'importable' | 'inWheelhouse' | 'notDeployable'>): string =>
     [
@@ -118,9 +161,16 @@ export const CatalogRules = {
       isSelected ? [...selected, ...group.importable] : selected.filter((slug) => !group.importable.includes(slug)),
     ),
 
-  /** `owner/repository@abc1234`, the line naming where the catalog was read. */
+  /** `owner/repository@abc1234`, the line naming where a hub's catalog was read. */
   sourceLabel: (source: CatalogSource): string =>
     `${source.repository}@${source.commit ? source.commit.slice(0, 7) : source.ref}`,
+
+  /** The hub's catalog file on GitHub at the commit it was read from (else its ref); null for a source that is not a
+   * GitHub repository or names no file. */
+  sourceHref: (source: CatalogSource): string | null =>
+    /^[\w.-]+\/[\w.-]+$/.test(source.repository) && source.path
+      ? `https://github.com/${source.repository}/blob/${source.commit ?? source.ref}/${source.path}`
+      : null,
 
   /** The notes an import left, two at most and a count of the rest; empty when it left none. */
   warningLine: (result: Pick<CatalogImportResult, 'warnings'>): string => {

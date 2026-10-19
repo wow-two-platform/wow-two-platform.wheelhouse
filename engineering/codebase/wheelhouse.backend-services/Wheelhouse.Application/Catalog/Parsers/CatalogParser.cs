@@ -5,9 +5,9 @@ using YamlDotNet.RepresentationModel;
 
 namespace Wheelhouse.Application.Catalog.Parsers;
 
-/// <summary>Parses the wow2 catalog (<c>catalog: 1</c>): its workspaces and entries. <c>orgs</c>, an entry's
-/// <c>status</c> and <c>local</c>, and any key Wheelhouse does not know are ignored. Every entry's workspace must be
-/// declared, and slugs are unique. A refusal names the line and the field.</summary>
+/// <summary>Parses a hub's catalog (<c>catalog: 1</c>): its hub, workspaces and entries. <c>orgs</c>, <c>hubs</c>, an
+/// entry's <c>status</c> and <c>local</c>, and any key Wheelhouse does not know are ignored; <c>hub</c> is optional.
+/// Every entry's workspace must be declared, and slugs are unique. A refusal names the line and the field.</summary>
 public static class CatalogParser
 {
     /// <summary>Holds the shape of a repository as the catalog writes it.</summary>
@@ -51,12 +51,26 @@ public static class CatalogParser
             for (var index = 0; index < entryNodes.Children.Count; index++)
                 entries.Add(Entry(YamlReader.Mapping(entryNodes.Children[index], $"entries[{index}]"), $"entries[{index}]", workspaces, entries));
 
-            return YamlParse<CatalogDocument>.Ok(new CatalogDocument(workspaces, entries));
+            return YamlParse<CatalogDocument>.Ok(new CatalogDocument(workspaces, entries, Hub(root)));
         }
         catch (YamlRefusal refusal)
         {
             return YamlParse<CatalogDocument>.Fail(refusal.Message);
         }
+    }
+
+    /// <summary>Reads the optional <c>hub</c>: its slug and name.</summary>
+    private static CatalogHubModel? Hub(YamlMappingNode root)
+    {
+        if (YamlReader.Get(root, "hub") is not { } node)
+            return null;
+
+        var hub = YamlReader.Mapping(node, "hub");
+        return new CatalogHubModel
+        {
+            Slug = YamlReader.Matching(YamlReader.Required(hub, "slug", "hub.slug"), "hub.slug", InventoryPatternConstants.Slug, "a lowercase slug"),
+            Name = YamlReader.Text(YamlReader.Required(hub, "name", "hub.name"), "hub.name"),
+        };
     }
 
     private static CatalogEntryModel Entry(
