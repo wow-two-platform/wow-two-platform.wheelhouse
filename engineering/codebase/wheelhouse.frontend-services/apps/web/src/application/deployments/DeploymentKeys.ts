@@ -14,6 +14,9 @@ export const DeploymentKeys = {
   commitsAll: ["deployments", "commits"] as const,
   logs: (target: string, service: string, tail: number) =>
     ["deployments", "logs", target, service, tail] as const,
+  /** A target's settings plan for one release; a save invalidates every release's. */
+  settings: (target: string, release: string) => ["deployments", "settings", target, release] as const,
+  settingsOf: (target: string) => ["deployments", "settings", target] as const,
   /** Every history view (pages, calendar, measures, promotions, issues): what a finished rollout changes. */
   historyViews: ["deployments", "history", "view"] as const,
   historyPage: (filter: string, limit: number) => ["deployments", "history", "view", "page", filter, limit] as const,

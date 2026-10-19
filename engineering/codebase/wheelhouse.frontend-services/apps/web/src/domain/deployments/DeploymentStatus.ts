@@ -92,7 +92,13 @@ const ATTENTIONS: ReadonlySet<string> = new Set(Object.values(Attention));
 /** The services a deployment put on its new release, or left there. @internal */
 const ON_RELEASE: ReadonlySet<ServiceResult> = new Set([ServiceResult.Updated, ServiceResult.New, ServiceResult.Unchanged]);
 /** The steps before a rollout changes anything. @internal */
-const BEFORE_CHANGES: ReadonlySet<string> = new Set(['Check target', 'Snapshot data', 'Pull images', 'Dry-run migrations']);
+const BEFORE_CHANGES: ReadonlySet<string> = new Set([
+  'Render settings',
+  'Check target',
+  'Snapshot data',
+  'Pull images',
+  'Dry-run migrations',
+]);
 /** The steps once the services run, whatever happened to them. @internal */
 const AFTER_CHANGES: ReadonlySet<string> = new Set([
   'Publish sites',

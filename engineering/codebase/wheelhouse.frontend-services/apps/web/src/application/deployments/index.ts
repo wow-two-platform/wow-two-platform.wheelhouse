@@ -11,6 +11,7 @@ export {
   useTargetStates,
 } from "./hooks/useDeploymentInventory";
 export { useDeploymentOutcome } from "./hooks/useDeploymentOutcome";
+export { useDeploySettings, useSaveDeploySettings } from "./hooks/useDeploySettings";
 export {
   useReconcileTarget,
   useRequestBuild,

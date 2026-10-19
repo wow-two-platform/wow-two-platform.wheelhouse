@@ -12,6 +12,14 @@ export type { ServiceLogs } from './models/ServiceLogs';
 export type { BuildRequest } from './models/BuildRequest';
 export type { RolloutRecord, TargetState } from './models/TargetState';
 export type { TargetCheck, TargetCheckItem } from './models/TargetCheck';
+export type {
+  DeploySetting,
+  DeploySettingSource,
+  DeploySettings,
+  DeploySettingsService,
+  DeploySettingValue,
+} from './models/DeploySettings';
+export { DeploySettingsRules, type DerivedSetting, type PromptedSetting } from './DeploySettingsRules';
 export { DeploymentExtensions, type IndicatorTone, type ReleaseDrift, type StatusVariant } from './DeploymentExtensions';
 export {
   DeploymentStateOrder,

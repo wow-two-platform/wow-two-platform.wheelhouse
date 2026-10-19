@@ -44,6 +44,7 @@ import {
 
 import {
   useCoveringFreeze,
+  useDeploySettings,
   useDeploymentPromotions,
   useReleaseFacts,
   useDeploymentOutcome,
@@ -52,12 +53,14 @@ import {
   useProductCommits,
   useReleaseArtifacts,
   useRequestBuild,
+  useSaveDeploySettings,
   useStartDeployment,
   useTargetCheck,
   useTargetState,
 } from "@/application/deployments";
 import {
   DeployFreezes,
+  DeploySettingsRules,
   JobStatus,
   rollbackRisks,
   type DeploymentTarget,
@@ -66,6 +69,7 @@ import {
 } from "@/domain/deployments";
 
 import CheckResultList from "./CheckResultList.vue";
+import DeploySettingsPanel from "./DeploySettingsPanel.vue";
 import DevCheckPill from "./automation/DevCheckPill.vue";
 import JobStatusBadge from "./JobStatusBadge.vue";
 import DeploymentSteps from "./DeploymentSteps.vue";
@@ -152,12 +156,25 @@ const offer = computed(() =>
 /** What prod runs now, read when its confirm step opens, so the changelog runs from it. */
 const prodState = useTargetState(() => (step.value === "confirm" && isProd.value ? target.value : null));
 const prodRuns = computed(() => prodState.data.value?.current?.release ?? null);
+/** The settings the release takes on the target, read when the confirm step opens: required values no layer sets block
+ *  the deploy, and a first deploy offers the optional ones too. */
+const settings = useDeploySettings(
+  () => (step.value === "confirm" ? target.value : null),
+  () => (step.value === "confirm" ? release.value : null),
+);
+const saveSettings = useSaveDeploySettings();
+const prompted = computed(() => DeploySettingsRules.prompted(settings.data.value));
+const entered = ref<Record<string, string>>({});
+const secretKinds = ref<Record<string, boolean>>({});
+const settingsBlock = computed(() => DeploySettingsRules.blocking(prompted.value, entered.value));
 const canDeploy = computed(
   () =>
     canChoose.value &&
     confirmed.value &&
     (!freeze.value || overrideFreeze.value) &&
-    (!reasonNeeded.value || reason.value.trim().length > 0),
+    (!reasonNeeded.value || reason.value.trim().length > 0) &&
+    !settings.loading.value &&
+    settingsBlock.value.length === 0,
 );
 const settled = computed(
   () => outcome.data.value?.status === JobStatus.Succeeded,
@@ -196,8 +213,11 @@ watch(
     overrideFreeze.value = false;
     reason.value = "";
     requested.value = null;
+    entered.value = {};
+    secretKinds.value = {};
     check.reset();
     start.reset();
+    saveSettings.reset();
     build.reset();
     void releases.refetch();
   },
@@ -210,6 +230,8 @@ watch([target, release], () => {
   typed.value = "";
   skipDev.value = false;
   overrideFreeze.value = false;
+  entered.value = {};
+  secretKinds.value = {};
   check.reset();
 });
 
@@ -275,9 +297,16 @@ function confirmSelection(): void {
   if (canChoose.value) step.value = "confirm";
 }
 
-/** Submits the confirmed bundle and follows only an acknowledged submission. */
+/** Saves the values the owner gave (secrets to the vault, the rest to the store), then submits the confirmed bundle
+ *  and follows only an acknowledged submission. */
 async function deploy(): Promise<void> {
-  if (!canDeploy.value || start.loading.value) return;
+  if (!canDeploy.value || start.loading.value || saveSettings.loading.value) return;
+  const values = DeploySettingsRules.values(prompted.value, entered.value, secretKinds.value);
+  if (values.length) {
+    const saved = await saveSettings.mutateAsync({ target: target.value, values });
+    if (!saved.ok) return;
+    entered.value = {};
+  }
   const result = await start.mutateAsync({
     target: target.value,
     release: release.value,
@@ -585,6 +614,26 @@ function close(open: boolean): void {
             </dd>
           </dl>
           <Alert
+            v-if="settings.error.value"
+            severity="warning"
+            title="Couldn't read the release's settings"
+            :description="failureReason(settings.error.value)"
+          />
+          <DeploySettingsPanel
+            v-else-if="settings.data.value"
+            v-model:entered="entered"
+            v-model:secrets="secretKinds"
+            :settings="settings.data.value"
+            :prompted="prompted"
+            :is-disabled="start.loading.value || saveSettings.loading.value"
+          />
+          <Alert
+            v-if="saveSettings.error.value"
+            severity="danger"
+            title="Settings not saved"
+            :description="failureReason(saveSettings.error.value)"
+          />
+          <Alert
             v-if="facts.data.value?.rollbackCompatible === false"
             severity="warning"
             title="Can't roll back automatically"
@@ -664,7 +713,7 @@ function close(open: boolean): void {
           <Button
             variant="solid"
             tone="primary"
-            :is-loading="start.loading.value"
+            :is-loading="start.loading.value || saveSettings.loading.value"
             :is-disabled="!canDeploy"
             @click="deploy"
           >
