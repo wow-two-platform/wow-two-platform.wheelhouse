@@ -30,7 +30,7 @@ public sealed class GitHubRunnerTokensTests : IDisposable
     public async Task PrepareAsync_ShouldWriteOneTokenPerInstalledOwner_ReadableByTheOwnerOnly()
     {
         _rig.Install("sulton-max", 11);
-        _rig.Install("ocharo-hq", 22, organization: true);
+        _rig.Install("ocharo-hq", 22);
 
         var path = await Tokens().PrepareAsync(CancellationToken.None);
 
@@ -41,6 +41,8 @@ public sealed class GitHubRunnerTokensTests : IDisposable
         owners.GetProperty("sulton-max").GetProperty("token").GetString().Should().Be("ghs_sulton-max_1");
         owners.GetProperty("ocharo-hq").GetProperty("expiresAt").GetDateTimeOffset()
             .Should().Be(_rig.Clock.GetUtcNow().AddHours(1));
+        document.RootElement.GetProperty("any").GetProperty("token").GetString()
+            .Should().BeOneOf("ghs_ocharo-hq_1", "ghs_sulton-max_1", "wow-two-apps reads public repositories with a lent token");
         if (!OperatingSystem.IsWindows())
             File.GetUnixFileMode(path!).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }

@@ -5,8 +5,8 @@ using Wheelhouse.Tests.Unit.Fakes;
 
 namespace Wheelhouse.Tests.Unit.GitHub;
 
-/// <summary>Tests for <see cref="GitHubAppTokens"/>: the installation lookup, the token exchange, the per-owner cache and
-/// its refresh, and the problems each refusal notes for the Issues panel.</summary>
+/// <summary>Tests for <see cref="GitHubAppTokens"/>: the installation list, the token exchange, the per-owner cache and
+/// its refresh, the token lent for public repositories, and the problems each refusal notes for the Issues panel.</summary>
 public sealed class GitHubAppTokensTests : IDisposable
 {
     private readonly GitHubAppRig _rig = new();
@@ -14,7 +14,7 @@ public sealed class GitHubAppTokensTests : IDisposable
     public void Dispose() => _rig.Dispose();
 
     [Fact]
-    public async Task GetAsync_ShouldFindAUsersInstallationAndExchangeItWithTheAppToken()
+    public async Task GetAsync_ShouldFindTheOwnerInTheAppsInstallationsAndExchangeItWithTheAppToken()
     {
         _rig.Install("sulton-max", 11);
 
@@ -22,7 +22,7 @@ public sealed class GitHubAppTokensTests : IDisposable
 
         token!.Token.Should().Be("ghs_sulton-max_1");
         _rig.GitHub.Calls.Select(call => call.Key).Should().Equal(
-            "GET users/sulton-max/installation", "POST app/installations/11/access_tokens");
+            "GET app/installations", "POST app/installations/11/access_tokens");
         _rig.GitHub.Calls.Should().AllSatisfy(call =>
         {
             call.Host.Should().Be("api.github.com");
@@ -31,15 +31,16 @@ public sealed class GitHubAppTokensTests : IDisposable
     }
 
     [Fact]
-    public async Task GetAsync_ShouldLookAnOrganizationUpWhenNoUserHasTheName()
+    public async Task GetAsync_ShouldListTheInstallationsOnceForEveryOwner()
     {
-        _rig.Install("ocharo-hq", 22, organization: true);
+        _rig.Install("sulton-max", 11);
+        _rig.Install("ocharo-hq", 22);
 
-        var token = await _rig.Tokens.GetAsync("ocharo-hq", CancellationToken.None);
+        var user = await _rig.Tokens.GetAsync("sulton-max", CancellationToken.None);
+        var organization = await _rig.Tokens.GetAsync("ocharo-hq", CancellationToken.None);
 
-        token!.Token.Should().Be("ghs_ocharo-hq_1");
-        _rig.GitHub.Calls.Select(call => call.Key).Should().Equal(
-            "GET users/ocharo-hq/installation", "GET orgs/ocharo-hq/installation", "POST app/installations/22/access_tokens");
+        (user!.Token, organization!.Token).Should().Be(("ghs_sulton-max_1", "ghs_ocharo-hq_1"));
+        _rig.GitHub.CountOf("GET app/installations").Should().Be(1);
     }
 
     [Fact]
@@ -55,7 +56,6 @@ public sealed class GitHubAppTokensTests : IDisposable
 
         kept.Should().BeSameAs(first);
         renewed!.Token.Should().Be("ghs_sulton-max_2");
-        _rig.GitHub.CountOf("GET users/sulton-max/installation").Should().Be(1, "the installation is remembered");
         _rig.GitHub.CountOf("POST app/installations/11/access_tokens").Should().Be(2);
     }
 
@@ -68,42 +68,49 @@ public sealed class GitHubAppTokensTests : IDisposable
             .Select(_ => Task.Run(() => _rig.Tokens.GetAsync("sulton-max", CancellationToken.None))));
 
         tokens.Select(token => token!.Token).Distinct().Should().Equal("ghs_sulton-max_1");
+        _rig.GitHub.CountOf("GET app/installations").Should().Be(1);
         _rig.GitHub.CountOf("POST app/installations/11/access_tokens").Should().Be(1);
     }
 
     [Fact]
-    public async Task GetAsync_ShouldKeepEachOwnersTokenApart()
+    public async Task GetAsync_ShouldGiveNoTokenForAnOwnerWithoutTheApp_WithoutNamingIt()
     {
         _rig.Install("sulton-max", 11);
-        _rig.Install("ocharo-hq", 22, organization: true);
 
-        var user = await _rig.Tokens.GetAsync("sulton-max", CancellationToken.None);
-        var organization = await _rig.Tokens.GetAsync("ocharo-hq", CancellationToken.None);
+        (await _rig.Tokens.GetAsync("wow-two", CancellationToken.None)).Should().BeNull();
+        (await _rig.Tokens.GetAsync("wow-two", CancellationToken.None)).Should().BeNull();
 
-        (user!.Token, organization!.Token).Should().Be(("ghs_sulton-max_1", "ghs_ocharo-hq_1"));
+        _rig.GitHub.CountOf("GET app/installations").Should().Be(1, "the list is kept ten minutes");
+        _rig.Tokens.IsInstalled("wow-two").Should().BeFalse();
+        _rig.Monitor.Current().Should().BeEmpty("an owner without the App is named only when a repository needs it");
+
+        _rig.Install("wow-two", 33);
+        _rig.Clock.Advance(GitHubAppTokens.InstallationsFor);
+        (await _rig.Tokens.GetAsync("wow-two", CancellationToken.None))!.Token.Should().Be("ghs_wow-two_1");
     }
 
     [Fact]
-    public async Task GetAsync_ShouldNoteAnOwnerWithoutTheApp_AndAskAgainOnlyAfterTenMinutes()
+    public async Task BorrowAsync_ShouldLendAKeptToken_OrIssueOneFromAnyInstallation()
     {
-        var none = await _rig.Tokens.GetAsync("wow-two", CancellationToken.None);
-        var again = await _rig.Tokens.GetAsync("wow-two", CancellationToken.None);
+        _rig.Install("sulton-max", 11);
 
-        (none, again).Should().Be(((GitHubAppToken?)null, (GitHubAppToken?)null));
-        _rig.GitHub.Calls.Should().HaveCount(2, "the second call waits for the retry time");
-        var issue = _rig.Monitor.Current().Should().ContainSingle().Subject;
-        (issue.Owner, issue.Cause).Should().Be(("wow-two", GitHubAccessCauses.NotInstalled));
+        var lent = await _rig.Tokens.BorrowAsync(CancellationToken.None);
+        var again = await _rig.Tokens.BorrowAsync(CancellationToken.None);
 
-        _rig.Install("wow-two", 33, organization: true);
-        _rig.Clock.Advance(GitHubAppTokens.RetryAfterRefusal);
-        (await _rig.Tokens.GetAsync("wow-two", CancellationToken.None))!.Token.Should().Be("ghs_wow-two_1");
-        _rig.Monitor.Current().Should().BeEmpty("an issued token clears the installation problem");
+        (lent!.Token, again).Should().Be(("ghs_sulton-max_1", lent));
+        _rig.GitHub.CountOf("POST app/installations/11/access_tokens").Should().Be(1);
+    }
+
+    [Fact]
+    public async Task BorrowAsync_ShouldLendNothing_WhenTheAppIsInstalledNowhere()
+    {
+        (await _rig.Tokens.BorrowAsync(CancellationToken.None)).Should().BeNull();
     }
 
     [Fact]
     public async Task GetAsync_ShouldNoteRefusedAppCredentials()
     {
-        _rig.GitHub.Answers["GET users/sulton-max/installation"] = () => new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        _rig.GitHub.Answers["GET app/installations"] = () => new HttpResponseMessage(HttpStatusCode.Unauthorized);
 
         (await _rig.Tokens.GetAsync("sulton-max", CancellationToken.None)).Should().BeNull();
 

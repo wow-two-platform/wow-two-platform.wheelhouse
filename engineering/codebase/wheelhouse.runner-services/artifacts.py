@@ -66,10 +66,21 @@ class ApiRedirect(HTTPRedirectHandler):
 
 # The account a GitHub API path names: /repos/<owner>/…, /users/<owner>/… or /orgs/<owner>/….
 OWNER_PATH = re.compile(r"/(?:repos|users|orgs)/([A-Za-z0-9][A-Za-z0-9-]{0,38})(?:/|$)")
+# A read that finds the repository itself — its branch heads, commits, trees, releases, branches — rather than one file
+# or run in it: a 404 there means the repository cannot be seen.
+REPOSITORY_READ = re.compile(r"/repos/([A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100})"
+                             r"(?:/commits(?:/[^/]+)?|/releases|/branches|/git/trees/[^/]+)?/?")
 # How long before its expiry an installation token stops being used; the API refreshes it well before.
 TOKEN_MARGIN = 60
 # The statuses that say a credential is missing, refused or out of rate limit; each is noted for the Issues panel.
 ACCESS_STATUSES = (401, 403, 429)
+
+
+class Credential(str, Enum):
+    """Where a GitHub call's token came from."""
+    INSTALLATION = "installation"  # the GitHub App installed on the owner the call addresses
+    FILE = "file"  # the single fallback token
+    BORROWED = "borrowed"  # another owner's installation, for public repositories
 
 
 def owner_of(url):
@@ -90,14 +101,16 @@ def token():
 
 
 def installation_token(owner, clock=None):
-    """The GitHub App installation token for an owner from WHEELHOUSE_GITHUB_TOKENS_FILE, which the API writes before
-    each runner call ({"owners": {owner: {"token", "expiresAt"}}}); None when the file, the owner or an unexpired token
-    is missing. A malformed file counts as missing: the fallback token still serves."""
+    """A GitHub App installation token from WHEELHOUSE_GITHUB_TOKENS_FILE, which the API writes before each runner call:
+    {"owners": {owner: {"token", "expiresAt"}}, "any": {"token", "expiresAt"}}. `owner` picks that owner's own
+    installation; None picks "any", an installation token for public repositories of owners without the App. None when
+    the file, the entry or an unexpired token is missing; a malformed file counts as missing."""
     tokens_file = os.environ.get("WHEELHOUSE_GITHUB_TOKENS_FILE")
-    if not tokens_file or not owner:
+    if not tokens_file:
         return None
     try:
-        entry = json.loads(Path(tokens_file).read_text()).get("owners", {}).get(owner)
+        kept = json.loads(Path(tokens_file).read_text())
+        entry = kept.get("owners", {}).get(owner) if owner else kept.get("any")
         value, expires = entry["token"], datetime.fromisoformat(str(entry["expiresAt"]).replace("Z", "+00:00"))
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return None
@@ -106,25 +119,49 @@ def installation_token(owner, clock=None):
     return value if expires.timestamp() - (clock or time.time)() > TOKEN_MARGIN else None
 
 
-def credential(url):
-    """The token a GitHub request carries, or None for an anonymous one. Only api.github.com ever receives one: the App
-    installation token for the owner the path names, else the single fallback token. Package reads take the fallback
-    token only, because an installation token cannot read packages."""
+def access(url):
+    """The token a GitHub request carries and where it came from, or (None, None) for an anonymous one. Only
+    api.github.com ever receives one: the App's installation on the owner the path names, else the fallback token,
+    else another installation's token, which reads public repositories of any owner (GitHub App tokens reach public
+    resources without permissions). Package reads take the fallback token only: an installation token cannot read
+    packages."""
     owner = owner_of(url)
     if owner is None:
-        return None
-    if "/packages/" not in urlparse(url).path:
-        installed = installation_token(owner)
-        if installed:
-            return installed
-    return token()
+        return None, None
+    packages = "/packages/" in urlparse(url).path
+    installed = None if packages else installation_token(owner)
+    if installed:
+        return installed, Credential.INSTALLATION
+    fallback = token()
+    if fallback:
+        return fallback, Credential.FILE
+    borrowed = None if packages else installation_token(None)
+    return (borrowed, Credential.BORROWED) if borrowed else (None, None)
 
 
-def note_access(url, status=None, headers=None, authenticated=False):
-    """Keeps, per owner, the last GitHub call refused with 401, 403 or 429 in WHEELHOUSE_GITHUB_ACCESS_FILE, which the
-    console's Issues panel reads; a later success for that owner clears it. Never stores a body, header or token."""
+def credential(url):
+    """The token a GitHub request carries, or None for an anonymous one (see `access`)."""
+    return access(url)[0]
+
+
+def rate_limited(status, headers):
+    return status == 429 or (headers is not None and (headers.get("X-RateLimit-Remaining") == "0"
+                                                      or headers.get("Retry-After") is not None))
+
+
+def note_access(url, status=None, headers=None, kind=None):
+    """Keeps, per owner, what kept a GitHub call from an owner's repositories in WHEELHOUSE_GITHUB_ACCESS_FILE, which the
+    console's Issues panel reads: a call refused with 401, 403 or 429, and, while the App is on, a repository that could
+    not be seen without its own installation (404). A later success for that owner (for a 404, on that repository)
+    clears it. Never stores a body, header or token."""
     path, owner = os.environ.get("WHEELHOUSE_GITHUB_ACCESS_FILE"), owner_of(url)
-    if not path or owner is None or "/packages/" in urlparse(url).path:
+    parsed = urlparse(url)
+    if not path or owner is None or "/packages/" in parsed.path:
+        return
+    seen = REPOSITORY_READ.fullmatch(parsed.path)
+    repository = seen.group(1).lower() if seen else None
+    if status == 404 and (repository is None or kind is Credential.INSTALLATION
+                          or not os.environ.get("WHEELHOUSE_GITHUB_TOKENS_FILE")):
         return
     try:
         kept = json.loads(Path(path).read_text())
@@ -132,15 +169,16 @@ def note_access(url, status=None, headers=None, authenticated=False):
     except (OSError, ValueError):
         owners = {}
     if status is None:
-        if owner not in owners:
+        noted = owners.get(owner)
+        if not isinstance(noted, dict) or (noted.get("repository") and noted.get("repository") != repository):
             return
         owners.pop(owner)
     else:
-        remaining = headers.get("X-RateLimit-Remaining") if headers is not None else None
-        owners[owner] = {"status": status, "authenticated": authenticated,
-                         "rateLimited": status == 429 or remaining == "0"
-                         or (headers is not None and headers.get("Retry-After") is not None),
-                         "at": datetime.now(timezone.utc).isoformat()}
+        owners[owner] = {"status": status, "authenticated": kind is not None,
+                         "installed": kind is Credential.INSTALLATION,
+                         "rateLimited": rate_limited(status, headers), "at": datetime.now(timezone.utc).isoformat()}
+        if status == 404:
+            owners[owner]["repository"] = repository
     try:
         write_json(path, {"owners": owners})
     except OSError:
@@ -148,10 +186,27 @@ def note_access(url, status=None, headers=None, authenticated=False):
 
 
 def fetch(url, limit=MAX_ARCHIVE, accept=None):
+    bearer, kind = access(url)
+    try:
+        return _fetch(url, limit, accept, bearer)
+    except HTTPError as error:
+        if kind is Credential.BORROWED and error.code in (401, 403) and not rate_limited(error.code, error.headers):
+            # Should GitHub refuse another installation's token for a public repository, the call goes anonymous.
+            bearer, kind = None, None
+            try:
+                return _fetch(url, limit, accept, None)
+            except HTTPError as anonymous:
+                error = anonymous
+        # Rate limits surface as 403/429. Only the status is reported, never the body or headers.
+        if error.code in ACCESS_STATUSES + (404,):
+            note_access(url, error.code, error.headers, kind)
+        raise CommandFailed("GitHub request failed (HTTP " + str(error.code) + ")") from None
+
+
+def _fetch(url, limit, accept, bearer):
     headers = {"User-Agent": "Wheelhouse-release-catalog", "X-GitHub-Api-Version": "2022-11-28"}
     if accept:
         headers["Accept"] = accept
-    bearer = credential(url)
     if bearer:
         headers["Authorization"] = "Bearer " + bearer
     request = Request(url, headers=headers)
@@ -159,12 +214,9 @@ def fetch(url, limit=MAX_ARCHIVE, accept=None):
         with build_opener(ApiRedirect()).open(request, timeout=15) as response:
             require(response.url.startswith("https://"), "Insecure release response")
             data = response.read(limit + 1)
-    except HTTPError as error:
-        # Rate limits surface as 403/429. Only the status is reported, never the body or headers.
-        if error.code in ACCESS_STATUSES:
-            note_access(url, error.code, error.headers, bool(bearer))
-        raise CommandFailed("GitHub request failed (HTTP " + str(error.code) + ")") from None
-    except (URLError, TimeoutError):
+    except (URLError, TimeoutError) as error:
+        if isinstance(error, HTTPError):
+            raise
         raise CommandFailed("GitHub request failed (network)") from None
     require(len(data) <= limit, "Release response exceeded its size limit")
     note_access(url)
@@ -173,10 +225,11 @@ def fetch(url, limit=MAX_ARCHIVE, accept=None):
 
 def post(url, body):
     """A GitHub API write. Starting a build needs Actions write on the product repository: the GitHub App installed on
-    its owner, or the fallback token."""
-    bearer = credential(url)
-    require(bearer, "Starting a build needs the GitHub App installed on the repository's owner, or "
-                    "WHEELHOUSE_GITHUB_TOKEN_FILE with Actions write access")
+    its owner, or the fallback token; another owner's installation cannot write here."""
+    bearer, kind = access(url)
+    require(bearer and kind is not Credential.BORROWED,
+            "Starting a build needs the GitHub App installed on the repository's owner, or "
+            "WHEELHOUSE_GITHUB_TOKEN_FILE with Actions write access")
     request = Request(url, data=json.dumps(body).encode(), method="POST",
                       headers={"User-Agent": "Wheelhouse-release-catalog", "X-GitHub-Api-Version": "2022-11-28",
                                "Accept": "application/vnd.github+json", "Content-Type": "application/json",
@@ -186,7 +239,7 @@ def post(url, body):
             require(response.status in (200, 201, 202, 204), "GitHub refused the build request")
     except HTTPError as error:
         if error.code in ACCESS_STATUSES:
-            note_access(url, error.code, error.headers, True)
+            note_access(url, error.code, error.headers, kind)
         raise CommandFailed("GitHub request failed (HTTP " + str(error.code) + ")") from None
     except (URLError, TimeoutError):
         raise CommandFailed("GitHub request failed (network)") from None
@@ -194,9 +247,9 @@ def post(url, body):
 
 
 def release_asset(repository, tag, name, asset_id):
-    """A release's archive. With a credential for the repository's owner it comes through the API's asset endpoint,
-    which serves private repositories too; anonymous, through the public download URL. Both redirect to GitHub's
-    storage host, which never receives the credential."""
+    """A release's archive. With a credential it comes through the API's asset endpoint, which serves private
+    repositories too; anonymous, through the public download URL. Both redirect to GitHub's storage host, which never
+    receives the credential."""
     api = API + repository + "/releases/assets/" + str(int(asset_id))
     if credential(api):
         return fetch(api, accept="application/octet-stream")

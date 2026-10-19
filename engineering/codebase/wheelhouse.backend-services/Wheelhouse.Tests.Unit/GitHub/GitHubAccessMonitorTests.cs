@@ -44,14 +44,36 @@ public sealed class GitHubAccessMonitorTests : IDisposable
     }
 
     [Fact]
-    public void Current_ShouldDropARefusedCallNobodyRepeatedWithinAnHour()
+    public void Current_ShouldDropARefusedCallNobodyRepeatedWithinAnHour_ButKeepTheAppsOwnProblemLonger()
     {
         _rig.Monitor.Refused("wow-two", 403, authenticated: false, rateLimited: true);
-        _rig.Monitor.NotInstalled("wow-two");
+        _rig.Monitor.InstallationRefused("sulton-max", 403);
 
         _rig.Clock.Advance(GitHubAccessMonitor.CallKeptFor + TimeSpan.FromSeconds(1));
 
-        _rig.Monitor.Current().Should().ContainSingle().Which.Cause.Should().Be(GitHubAccessCauses.NotInstalled);
+        _rig.Monitor.Current().Should().ContainSingle().Which.Owner.Should().Be("sulton-max");
+    }
+
+    [Fact]
+    public void Current_ShouldNameARepositoryTheRunnerCouldNotSeeWithoutItsOwnersApp()
+    {
+        var at = _rig.Clock.GetUtcNow().AddMinutes(-1).ToString("O");
+        WriteRunnerNotes($$$"""
+            {"owners": {
+              "sulton-max": {"status": 404, "authenticated": true, "installed": false, "rateLimited": false,
+                             "repository": "sulton-max/private-app", "at": "{{{at}}}"},
+              "wow-two": {"status": 404, "repository": "ocharo-hq/elsewhere", "at": "{{{at}}}"},
+              "ocharo-hq": {"status": 403, "authenticated": true, "installed": false, "rateLimited": false, "at": "{{{at}}}"}
+            }}
+            """);
+
+        var issues = _rig.Monitor.Current();
+
+        issues.Select(issue => (issue.Owner, issue.Cause)).Should().BeEquivalentTo(
+        [
+            ("sulton-max", GitHubAccessCauses.Unseen("sulton-max/private-app")),
+            ("ocharo-hq", GitHubAccessCauses.Refused(403, authenticated: true, rateLimited: false, installed: false)),
+        ]);
     }
 
     [Fact]

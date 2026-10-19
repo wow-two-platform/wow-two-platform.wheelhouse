@@ -8,15 +8,17 @@ using Wheelhouse.Infrastructure.Settings;
 
 namespace Wheelhouse.Infrastructure.GitHub;
 
-/// <summary>Keeps what keeps Wheelhouse from reaching GitHub, per owner: calls refused with 401, 403 or 429 (the
-/// console's, and those the runner notes in <c>{root}/github/access.json</c>), an owner without the GitHub App, and an
-/// App set up by half.</summary>
-/// <remarks>A later success for an owner clears its refused call; a working token clears its installation problem. A
-/// refused call nobody repeats drops after <see cref="CallKeptFor"/>, an installation problem after
-/// <see cref="SetupKeptFor"/>. Only statuses and fixed words are kept, never a token or a response body.</remarks>
+/// <summary>Keeps what keeps Wheelhouse from reaching GitHub, per owner: a call refused with 401, 403 or 429, a repository
+/// no credential at hand could see while the owner lacks the GitHub App (the console's notes, and those the runner keeps
+/// in <c>{root}/github/access.json</c>), a refused installation token, and an App set up by half.</summary>
+/// <remarks>An owner without the App is named only when one of its repositories needs it: public ones are read with
+/// another installation's token. A later success for an owner clears its refused call, and a read of the unseen
+/// repository clears that; a working token clears an installation problem. A note nobody repeats drops after
+/// <see cref="CallKeptFor"/> (<see cref="SetupKeptFor"/> for the App's own). Only statuses, repository names and fixed
+/// words are kept, never a token or a response body.</remarks>
 public sealed class GitHubAccessMonitor(DeploymentSettings settings, TimeProvider time) : IGitHubAccessIssues
 {
-    /// <summary>How long a refused call stays listed without being seen again.</summary>
+    /// <summary>How long a refused call or unseen repository stays listed without being seen again.</summary>
     public static readonly TimeSpan CallKeptFor = TimeSpan.FromHours(1);
 
     /// <summary>How long an installation or App problem stays listed without being seen again.</summary>
@@ -25,7 +27,7 @@ public sealed class GitHubAccessMonitor(DeploymentSettings settings, TimeProvide
     /// <summary>Holds the owner key the App's own problems are kept under.</summary>
     private const string AppKey = "";
 
-    private readonly ConcurrentDictionary<NoteKey, GitHubAccessIssueDto> _notes = new();
+    private readonly ConcurrentDictionary<NoteKey, Note> _notes = new();
 
     private enum NoteKind
     {
@@ -33,18 +35,24 @@ public sealed class GitHubAccessMonitor(DeploymentSettings settings, TimeProvide
         Installation,
     }
 
-    /// <summary>Notes a GitHub answer to a call for an owner: a refusal is kept, a success clears the owner's refusal.</summary>
+    /// <summary>Notes GitHub's answer to a call for an owner: a refusal, or an unseen repository while the owner lacks
+    /// its own installation, is kept; a success clears what it answers.</summary>
     /// <param name="owner">The owner the call addressed.</param>
+    /// <param name="address">The call's address; it tells a whole-repository read from a file read.</param>
     /// <param name="response">GitHub's answer; only its status and rate-limit headers are read.</param>
     /// <param name="authenticated">Whether the call carried a credential.</param>
-    public void Observe(string owner, HttpResponseMessage response, bool authenticated)
+    /// <param name="installed">Whether that credential was the owner's own App installation token.</param>
+    public void Observe(string owner, Uri? address, HttpResponseMessage response, bool authenticated, bool installed)
     {
         ArgumentNullException.ThrowIfNull(response);
         var status = (int)response.StatusCode;
+        var repository = GitHubOwners.RepositoryRead(address);
         if (status is 401 or 403 or 429)
-            Refused(owner, status, authenticated, IsRateLimited(response));
+            Refused(owner, status, authenticated, IsRateLimited(response), installed);
+        else if (response.StatusCode == HttpStatusCode.NotFound && repository is not null && !installed && AppIsOn)
+            Unseen(owner, repository);
         else if (response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NotModified)
-            _notes.TryRemove(new NoteKey(Normal(owner), NoteKind.Call), out _);
+            Succeeded(owner, repository);
     }
 
     /// <summary>Notes a call GitHub refused.</summary>
@@ -52,18 +60,31 @@ public sealed class GitHubAccessMonitor(DeploymentSettings settings, TimeProvide
     /// <param name="status">401, 403 or 429.</param>
     /// <param name="authenticated">Whether the call carried a credential.</param>
     /// <param name="rateLimited">Whether GitHub said the rate limit ran out.</param>
-    public void Refused(string owner, int status, bool authenticated, bool rateLimited) =>
-        Note(Normal(owner), NoteKind.Call, GitHubAccessCauses.Refused(status, authenticated, rateLimited), status);
+    /// <param name="installed">Whether the call carried the owner's own App installation token.</param>
+    public void Refused(string owner, int status, bool authenticated, bool rateLimited, bool installed = true) =>
+        Keep(Normal(owner), NoteKind.Call, GitHubAccessCauses.Refused(status, authenticated, rateLimited, installed), status, null);
 
-    /// <summary>Notes that the App is not installed on an owner.</summary>
+    /// <summary>Notes a repository no credential at hand could see while its owner lacks the App.</summary>
     /// <param name="owner">The owner.</param>
-    public void NotInstalled(string owner) => Note(Normal(owner), NoteKind.Installation, GitHubAccessCauses.NotInstalled, null);
+    /// <param name="repository">The lowercase <c>{owner}/{repo}</c>.</param>
+    public void Unseen(string owner, string repository) =>
+        Keep(Normal(owner), NoteKind.Call, GitHubAccessCauses.Unseen(repository), 404, repository);
+
+    /// <summary>Clears an owner's refused call, and its unseen repository when this read saw it.</summary>
+    /// <param name="owner">The owner.</param>
+    /// <param name="repository">The repository the read saw whole, when it was one.</param>
+    public void Succeeded(string owner, string? repository)
+    {
+        var key = new NoteKey(Normal(owner), NoteKind.Call);
+        if (_notes.TryGetValue(key, out var note) && (note.Repository is null || note.Repository == repository))
+            _notes.TryRemove(new KeyValuePair<NoteKey, Note>(key, note));
+    }
 
     /// <summary>Notes that GitHub refused an installation token for an owner.</summary>
     /// <param name="owner">The owner.</param>
     /// <param name="status">The HTTP status.</param>
     public void InstallationRefused(string owner, int status) =>
-        Note(Normal(owner), NoteKind.Installation, GitHubAccessCauses.InstallationRefused(status), status);
+        Keep(Normal(owner), NoteKind.Installation, GitHubAccessCauses.InstallationRefused(status), status, null);
 
     /// <summary>Clears an owner's installation problem once a token was issued.</summary>
     /// <param name="owner">The owner.</param>
@@ -72,7 +93,7 @@ public sealed class GitHubAccessMonitor(DeploymentSettings settings, TimeProvide
     /// <summary>Notes a problem with the App itself: its key or its credentials.</summary>
     /// <param name="cause">One of the <see cref="GitHubAccessCauses"/> words.</param>
     /// <param name="status">The HTTP status, when GitHub answered.</param>
-    public void AppRefused(string cause, int? status) => Note(AppKey, NoteKind.Installation, cause, status);
+    public void AppRefused(string cause, int? status) => Keep(AppKey, NoteKind.Installation, cause, status, null);
 
     /// <summary>Clears the App's own problem once GitHub accepted its credentials.</summary>
     public void AppWorks() => _notes.TryRemove(new NoteKey(AppKey, NoteKind.Installation), out _);
@@ -83,17 +104,17 @@ public sealed class GitHubAccessMonitor(DeploymentSettings settings, TimeProvide
         var now = time.GetUtcNow();
         var calls = new Dictionary<string, GitHubAccessIssueDto>(StringComparer.Ordinal);
         var issues = new List<GitHubAccessIssueDto>();
-        foreach (var (key, issue) in _notes)
+        foreach (var (key, note) in _notes)
         {
-            if (now - issue.At > (key.Kind == NoteKind.Call ? CallKeptFor : SetupKeptFor))
-                _notes.TryRemove(new KeyValuePair<NoteKey, GitHubAccessIssueDto>(key, issue));
+            if (now - note.Issue.At > (key.Kind == NoteKind.Call ? CallKeptFor : SetupKeptFor))
+                _notes.TryRemove(new KeyValuePair<NoteKey, Note>(key, note));
             else if (key.Kind == NoteKind.Call)
-                calls[key.Owner] = issue;
+                calls[key.Owner] = note.Issue;
             else
-                issues.Add(issue);
+                issues.Add(note.Issue);
         }
 
-        // One refused call per owner: the console's or the runner's, whichever is newer.
+        // One note per owner: the console's or the runner's, whichever is newer.
         foreach (var issue in ReadRunnerNotes())
         {
             if (now - issue.At <= CallKeptFor && (!calls.TryGetValue(issue.Owner!, out var kept) || kept.At < issue.At))
@@ -116,11 +137,14 @@ public sealed class GitHubAccessMonitor(DeploymentSettings settings, TimeProvide
             || (response.Headers.TryGetValues("X-RateLimit-Remaining", out var remaining) && remaining.Contains("0"));
     }
 
+    /// <summary>Gets whether the App is set up, so an owner without it can be told to install it.</summary>
+    private bool AppIsOn => settings.HasGitHubApp && settings.GitHubAppKeyFile.Length > 0 && File.Exists(settings.GitHubAppKeyFile);
+
     private static string Normal(string owner) => owner.ToLowerInvariant();
 
-    private void Note(string owner, NoteKind kind, string cause, int? status) =>
+    private void Keep(string owner, NoteKind kind, string cause, int? status, string? repository) =>
         _notes[new NoteKey(owner, kind)] =
-            new GitHubAccessIssueDto(owner.Length == 0 ? null : owner, cause, status, time.GetUtcNow());
+            new Note(new GitHubAccessIssueDto(owner.Length == 0 ? null : owner, cause, status, time.GetUtcNow()), repository);
 
     /// <summary>Names an App set up by half; checked on every read, so placing the missing piece clears it.</summary>
     private string? SetupProblem()
@@ -134,8 +158,8 @@ public sealed class GitHubAccessMonitor(DeploymentSettings settings, TimeProvide
         };
     }
 
-    /// <summary>Reads the runner's notes: <c>{"owners": {owner: {status, authenticated, rateLimited, at}}}</c>. An
-    /// unreadable or malformed file, or entry, counts as none.</summary>
+    /// <summary>Reads the runner's notes: <c>{"owners": {owner: {status, authenticated, installed, rateLimited, at,
+    /// repository}}}</c>. An unreadable or malformed file, or entry, counts as none.</summary>
     private List<GitHubAccessIssueDto> ReadRunnerNotes()
     {
         var notes = new List<GitHubAccessIssueDto>();
@@ -151,14 +175,21 @@ public sealed class GitHubAccessMonitor(DeploymentSettings settings, TimeProvide
                 var note = entry.Value;
                 if (!GitHubOwners.IsOwner(entry.Name) || note.ValueKind != JsonValueKind.Object
                     || !note.TryGetProperty("status", out var status) || !status.TryGetInt32(out var code)
-                    || code is not (401 or 403 or 429)
                     || !note.TryGetProperty("at", out var at) || at.ValueKind != JsonValueKind.String
                     || !DateTimeOffset.TryParse(at.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var seen))
                     continue;
-                var authenticated = note.TryGetProperty("authenticated", out var value) && value.ValueKind == JsonValueKind.True;
-                var rateLimited = note.TryGetProperty("rateLimited", out var limited) && limited.ValueKind == JsonValueKind.True;
-                notes.Add(new GitHubAccessIssueDto(
-                    Normal(entry.Name), GitHubAccessCauses.Refused(code, authenticated, rateLimited), code, seen));
+                var owner = Normal(entry.Name);
+                if (code is 401 or 403 or 429)
+                {
+                    notes.Add(new GitHubAccessIssueDto(owner, GitHubAccessCauses.Refused(code, Flag(note, "authenticated"),
+                        Flag(note, "rateLimited"), !note.TryGetProperty("installed", out _) || Flag(note, "installed")), code, seen));
+                }
+                else if (code == 404 && note.TryGetProperty("repository", out var repository)
+                         && repository.ValueKind == JsonValueKind.String && repository.GetString() is { } name
+                         && GitHubOwners.FromRepository(name) == owner)
+                {
+                    notes.Add(new GitHubAccessIssueDto(owner, GitHubAccessCauses.Unseen(name.ToLowerInvariant()), code, seen));
+                }
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
@@ -169,5 +200,10 @@ public sealed class GitHubAccessMonitor(DeploymentSettings settings, TimeProvide
         return notes;
     }
 
+    private static bool Flag(JsonElement note, string name) =>
+        note.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;
+
     private readonly record struct NoteKey(string Owner, NoteKind Kind);
+
+    private sealed record Note(GitHubAccessIssueDto Issue, string? Repository);
 }

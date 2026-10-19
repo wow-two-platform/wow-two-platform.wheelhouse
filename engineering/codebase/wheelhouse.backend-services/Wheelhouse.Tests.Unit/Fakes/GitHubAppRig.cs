@@ -30,12 +30,15 @@ public sealed class GitHubAppRig : IDisposable
         };
         if (writeKey)
             WriteKey(Key.ExportRSAPrivateKeyPem());
+        GitHub.Answers["GET app/installations"] = () => FakeGitHubApi.Json(HttpStatusCode.OK, "[]");
         Monitor = new GitHubAccessMonitor(Settings, Clock);
         Tokens = new GitHubAppTokens(
             new SingleClientHttpClientFactory(GitHub, new Uri("https://api.github.com/")), Settings, Clock, Monitor,
             NullLogger<GitHubAppTokens>.Instance);
         Credentials = new GitHubCredentials(Tokens, Settings);
     }
+
+    private readonly List<(string Owner, long Id)> _installations = [];
 
     /// <summary>Gets the App's key; its public half verifies what the rig signed.</summary>
     public RSA Key { get; } = RSA.Create(2048);
@@ -69,16 +72,15 @@ public sealed class GitHubAppRig : IDisposable
         File.WriteAllText(Settings.GitHubAppKeyFile, pem);
     }
 
-    /// <summary>Scripts an installation for an owner, found as a user or an organization, and the tokens it issues.</summary>
-    /// <param name="owner">The owner.</param>
+    /// <summary>Scripts an installation for an owner — listed by <c>/app/installations</c> — and the tokens it issues.</summary>
+    /// <param name="owner">The owner, a user or an organization.</param>
     /// <param name="installation">The installation id.</param>
-    /// <param name="organization">Whether the owner is an organization.</param>
     /// <param name="lifetime">How long each issued token lives; an hour by default.</param>
-    public void Install(string owner, long installation, bool organization = false, TimeSpan? lifetime = null)
+    public void Install(string owner, long installation, TimeSpan? lifetime = null)
     {
-        var kind = organization ? "orgs" : "users";
-        GitHub.Answers[$"GET {kind}/{owner}/installation"] =
-            () => FakeGitHubApi.Json(HttpStatusCode.OK, $$$"""{"id":{{{installation}}},"account":{"login":"{{{owner}}}"}}""");
+        _installations.Add((owner, installation));
+        var listing = string.Join(",", _installations.Select(item => $$$"""{"id":{{{item.Id}}},"account":{"login":"{{{item.Owner}}}"}}"""));
+        GitHub.Answers["GET app/installations"] = () => FakeGitHubApi.Json(HttpStatusCode.OK, "[" + listing + "]");
         var issued = 0;
         GitHub.Answers[$"POST app/installations/{installation}/access_tokens"] =
             () => FakeGitHubApi.Token($"ghs_{owner}_{++issued}", Clock.GetUtcNow() + (lifetime ?? TimeSpan.FromHours(1)));

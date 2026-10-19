@@ -8,4 +8,7 @@ public enum GitHubCredentialSource
 
     /// <summary>The single mounted fallback token (<c>Deployment:GitHubTokenFile</c>).</summary>
     TokenFile,
+
+    /// <summary>Another owner's installation token, lent for public repositories of an owner without the App.</summary>
+    Borrowed,
 }

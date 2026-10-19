@@ -210,9 +210,9 @@ by UID `1654`; preserve them during updates and backups.
 
 ## GitHub access
 
-Each console reaches GitHub through the GitHub App, then the token file, then anonymously
-([order and App setup](../deployment.md#github-access)). Without the App, both consoles run and fall back to anonymous
-reads. Once the App exists, for `wheelhouse-dev` and then `wheelhouse-prod`:
+Each console reaches GitHub through the GitHub App (the owner's installation, or a lent one for public repositories),
+then the token file, then anonymously ([order and App setup](../deployment.md#github-access)). Without the App, both
+consoles run and fall back to anonymous reads. Once the App exists, for `wheelhouse-dev` and then `wheelhouse-prod`:
 
 ```sh
 # The key, as the console's own user, into its persistent runner volume (a missing key leaves the App off).

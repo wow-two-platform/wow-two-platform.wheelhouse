@@ -255,19 +255,23 @@ and build dispatches — carries the first credential at hand for the owner its 
 1. The GitHub App's installation token for that owner (`Deployment:GitHubAppId`, `Deployment:GitHubAppKeyFile`).
 2. The single token file `Deployment:GitHubTokenFile` (`WHEELHOUSE_GITHUB_TOKEN_FILE` for the operator CLI).
 3. Console reads only: the signed-in owner's sign-in token.
-4. None: public repositories only, 60 calls an hour shared by the host's IP.
+4. Another installation's token, for public repositories of an owner without the App: GitHub App tokens reach public
+   resources without permissions
+   ([GitHub](https://docs.github.com/en/rest/authentication/permissions-required-for-github-apps)).
+   Should GitHub refuse it, the call is repeated anonymously.
+5. None: public repositories only, 60 calls an hour shared by the host's IP.
 
-- The API signs a 9-minute App token with the key, finds the owner's installation and exchanges it for an installation
-  token, kept per owner until 5 minutes before its hour runs out; one refresh runs at a time per owner.
-- Before each runner action that reaches GitHub, the API writes `<runner root>/github/tokens.json` (mode `0600`, one
-  token per inventory owner) and passes it as `WHEELHOUSE_GITHUB_TOKENS_FILE`; the runner picks by the owner in each
-  API address. Package versions take the token file only: an installation token cannot read packages.
+- The API signs a 9-minute App token with the key, lists the App's installations (kept 10 minutes) and exchanges the
+  owner's for an installation token, kept per owner until 5 minutes before its hour runs out; one refresh at a time.
+- Before each runner action that reaches GitHub, the API writes `<runner root>/github/tokens.json` (mode `0600`: one
+  token per installed inventory owner, plus one to lend) and passes it as `WHEELHOUSE_GITHUB_TOKENS_FILE`; the runner
+  picks by the owner in each API address. Package versions take the token file only; build dispatches never borrow.
 - With a credential, a release archive downloads through the API asset endpoint (`application/octet-stream`), so
   private releases work; without one, through the public download URL. A credential goes only to `api.github.com` and
   is stripped from the storage redirect.
-- A call refused with 401, 403 or 429, an owner without the App, or an App set up by half shows in Deployments ›
-  Issues as **GitHub access**, naming the owner and the cause; a later success clears it. Tokens, the key and response
-  bodies are never logged or returned.
+- Deployments › Issues shows **GitHub access** for a call refused with 401, 403 or 429, a refused installation token,
+  an App set up by half, and an owner without the App only once one of its repositories cannot be seen (a private
+  one). A later success clears it. Tokens, the key and response bodies are never logged or returned.
 - The key defaults to `<runner root>/github-app/private-key.pem`. A missing key never stops the console: the App stays
   off, Issues says so, and every call falls back.
 
@@ -276,8 +280,9 @@ Owner steps, once:
 1. GitHub › Settings › Developer settings › GitHub Apps › New GitHub App; turn the webhook off.
 2. Repository permissions: Actions read and write, Contents read-only, Metadata read-only; nothing else.
 3. Installable on any account. Create it, note its App ID and generate a private key.
-4. Install it on `sulton-max`, `ocharo-hq` and `wow-two-platform` with all repositories, and on any other owner Issues
-   names (the wow2 hub is under `wow-two`).
+4. Install it with all repositories on every owner with private repositories (`sulton-max`, `ocharo-hq`,
+   `wow-two-apps`, `wow-two-platform`), and on any other owner Issues names. A public-only owner (the wow2 hub's
+   `wow-two`) works without it; installing there too gives its reads its own rate limit.
 5. Place the key and set the App ID on each console: [VPS › GitHub access](vps/vps.md#github-access).
 
 Rotate by generating a new key, replacing the file and deleting the old key in GitHub; the key is read at each token

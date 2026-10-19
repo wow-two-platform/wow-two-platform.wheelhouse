@@ -414,7 +414,8 @@ class GitHubAccessTests(unittest.TestCase):
         soon = '2099-01-01T00:00:00Z'  # The API writes UTC with a Z.
         self.tokens.write_text(json.dumps({'owners': {
             'ocharo-hq': {'token': 'INSTALLED', 'expiresAt': soon},
-            'stale': {'token': 'EXPIRED', 'expiresAt': '2000-01-01T00:00:00+00:00'}}}))
+            'stale': {'token': 'EXPIRED', 'expiresAt': '2000-01-01T00:00:00+00:00'}},
+            'any': {'token': 'BORROWED', 'expiresAt': soon}}))
         environment = patch.dict('os.environ', {'WHEELHOUSE_GITHUB_TOKENS_FILE': str(self.tokens),
                                                 'WHEELHOUSE_GITHUB_TOKEN_FILE': str(self.fallback),
                                                 'WHEELHOUSE_GITHUB_ACCESS_FILE': str(self.access)})
@@ -497,8 +498,11 @@ class GitHubAccessTests(unittest.TestCase):
 
         self.failure = HTTPError('https://api.github.com/repos', 404, 'missing', {}, io.BytesIO(b''))
         with self.assertRaises(artifacts.CommandFailed):
-            artifacts.fetch('https://api.github.com/repos/sulton-max/app/releases')
-        self.assertEqual({'ocharo-hq'}, set(json.loads(self.access.read_text())['owners']), 'a 404 is no access problem')
+            artifacts.fetch('https://api.github.com/repos/ocharo-hq/site/releases')
+        with self.assertRaises(artifacts.CommandFailed):
+            artifacts.fetch('https://api.github.com/repos/sulton-max/app/contents/product/product.json?ref=main')
+        self.assertEqual({'ocharo-hq'}, set(json.loads(self.access.read_text())['owners']),
+                         'a missing file, or a repository its own installation cannot find, needs no App')
 
         self.failure = None
         artifacts.fetch('https://api.github.com/repos/ocharo-hq/site/releases')
@@ -509,4 +513,62 @@ class GitHubAccessTests(unittest.TestCase):
         self.failure = HTTPError('https://api.github.com/orgs', 403, 'forbidden', {}, io.BytesIO(b''))
         with self.assertRaises(artifacts.CommandFailed):
             artifacts.fetch('https://api.github.com/orgs/ocharo-hq/packages/container/site/versions')
+        self.assertFalse(self.access.exists())
+
+    def test_an_owner_without_the_app_reads_public_repositories_with_another_installations_token(self):
+        import os
+        os.environ.pop('WHEELHOUSE_GITHUB_TOKEN_FILE')
+        self.assertEqual(('BORROWED', artifacts.Credential.BORROWED),
+                         artifacts.access('https://api.github.com/repos/wow-two/wow-two-ws/releases'))
+        self.assertEqual(('INSTALLED', artifacts.Credential.INSTALLATION),
+                         artifacts.access('https://api.github.com/repos/ocharo-hq/site/releases'))
+        self.assertEqual((None, None), artifacts.access('https://api.github.com/orgs/wow-two/packages/container/x/versions'),
+                         'an installation token never reads packages')
+
+    def test_a_borrowed_token_github_refuses_is_retried_anonymously(self):
+        import os
+        os.environ.pop('WHEELHOUSE_GITHUB_TOKEN_FILE')
+        self.opener()
+        refusals = [HTTPError('https://api.github.com/repos', 403, 'forbidden', {}, io.BytesIO(b''))]
+
+        def open_once(request, timeout=None):
+            self.requests.append(request)
+            if refusals:
+                raise refusals.pop()
+            response = io.BytesIO(b'[]')
+            response.url, response.status = request.full_url, 200
+            return response
+        artifacts.build_opener.return_value.open.side_effect = open_once
+
+        self.assertEqual(b'[]', artifacts.fetch('https://api.github.com/repos/wow-two/wow-two-ws/releases'))
+        self.assertEqual(['Bearer BORROWED', None], [request.get_header('Authorization') for request in self.requests])
+        self.assertFalse(self.access.exists(), 'the anonymous retry succeeded')
+
+    def test_a_build_dispatch_never_borrows_another_owners_installation(self):
+        import os
+        os.environ.pop('WHEELHOUSE_GITHUB_TOKEN_FILE')
+        with self.assertRaisesRegex(ValueError, 'GitHub App installed'):
+            artifacts.post('https://api.github.com/repos/wow-two/wow-two-ws/actions/workflows/w.yml/dispatches', {})
+
+    def test_a_repository_unseen_without_its_owners_app_is_noted_until_it_is_read(self):
+        self.opener()
+        self.failure = HTTPError('https://api.github.com/repos', 404, 'missing', {}, io.BytesIO(b''))
+        with self.assertRaises(artifacts.CommandFailed):
+            artifacts.fetch('https://api.github.com/repos/Sulton-Max/Private-App/commits/main')
+        note = json.loads(self.access.read_text())['owners']['sulton-max']
+        self.assertEqual((404, 'sulton-max/private-app', False), (note['status'], note['repository'], note['installed']))
+
+        self.failure = None
+        artifacts.fetch('https://api.github.com/repos/sulton-max/public-app/releases')
+        self.assertIn('sulton-max', json.loads(self.access.read_text())['owners'], 'another repository says nothing')
+        artifacts.fetch('https://api.github.com/repos/sulton-max/private-app/git/trees/' + 'a' * 40)
+        self.assertEqual({}, json.loads(self.access.read_text())['owners'])
+
+    def test_without_the_app_an_unseen_repository_is_not_noted(self):
+        import os
+        os.environ.pop('WHEELHOUSE_GITHUB_TOKENS_FILE')
+        self.opener()
+        self.failure = HTTPError('https://api.github.com/repos', 404, 'missing', {}, io.BytesIO(b''))
+        with self.assertRaises(artifacts.CommandFailed):
+            artifacts.fetch('https://api.github.com/repos/sulton-max/private-app/releases')
         self.assertFalse(self.access.exists())

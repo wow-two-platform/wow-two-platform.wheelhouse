@@ -3,7 +3,8 @@ using Wheelhouse.Infrastructure.Settings;
 namespace Wheelhouse.Infrastructure.GitHub;
 
 /// <summary>Chooses the credential a GitHub call for an owner carries: the GitHub App's installation token for that
-/// owner, else the single fallback token file (<c>Deployment:GitHubTokenFile</c>), else none.</summary>
+/// owner, else the single fallback token file (<c>Deployment:GitHubTokenFile</c>), else none; <see cref="BorrowAsync"/>
+/// lends another installation's token for public repositories when nothing better is at hand.</summary>
 public sealed class GitHubCredentials(GitHubAppTokens app, DeploymentSettings settings)
 {
     /// <summary>Gets the credential for a call addressing an owner.</summary>
@@ -16,6 +17,12 @@ public sealed class GitHubCredentials(GitHubAppTokens app, DeploymentSettings se
             return new GitHubCredential(installed.Token, GitHubCredentialSource.App);
         return ReadTokenFile() is { } fallback ? new GitHubCredential(fallback, GitHubCredentialSource.TokenFile) : null;
     }
+
+    /// <summary>Gets another installation's token for public repositories of an owner without the App.</summary>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The credential, or <c>null</c> when the App is off or installed nowhere.</returns>
+    public async Task<GitHubCredential?> BorrowAsync(CancellationToken ct) =>
+        await app.BorrowAsync(ct) is { } lent ? new GitHubCredential(lent.Token, GitHubCredentialSource.Borrowed) : null;
 
     /// <summary>Reads the fallback token: one line, no spaces. A missing, unreadable or malformed file counts as none.</summary>
     /// <returns>The token, or <c>null</c>.</returns>

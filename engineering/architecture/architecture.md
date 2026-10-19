@@ -118,7 +118,8 @@ Images live in GitHub Container Registry, one repository per service; the digest
 Keep every deployed digest and declared rollback dependency, and at least the 10 newest releases; candidate
 bundle artifacts expire after 14 days. Deleting a release image needs a cross-host reference inventory first.
 Every GitHub call carries the GitHub App's installation token for the owner it addresses, else the fallback token file
-(`Deployment:GitHubTokenFile` / `WHEELHOUSE_GITHUB_TOKEN_FILE`), else none; a credential goes only to the GitHub API and
+(`Deployment:GitHubTokenFile` / `WHEELHOUSE_GITHUB_TOKEN_FILE`), else another installation's token for public
+repositories, else none; a credential goes only to the GitHub API and
 is stripped from cross-origin redirects ([GitHub access](../deployment/deployment.md#github-access)). Release rules:
 [deploy descriptor](../../../../../conventions/deployment/descriptor/deploy-descriptor.md) § *Builds and versions*.
 

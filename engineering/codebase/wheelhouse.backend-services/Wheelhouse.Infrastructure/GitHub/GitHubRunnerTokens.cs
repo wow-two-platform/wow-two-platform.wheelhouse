@@ -7,9 +7,10 @@ using Wheelhouse.Infrastructure.Settings;
 
 namespace Wheelhouse.Infrastructure.GitHub;
 
-/// <summary>Writes the GitHub App's installation tokens for the runner, one per owner of an inventory product, to
-/// <c>{root}/github/tokens.json</c> (mode 0600): <c>{"owners": {owner: {"token", "expiresAt"}}}</c>. The runner picks a
-/// token by the owner in each API address and falls back to the token file, then anonymous.</summary>
+/// <summary>Writes the GitHub App's installation tokens for the runner to <c>{root}/github/tokens.json</c> (mode 0600):
+/// <c>{"owners": {owner: {"token", "expiresAt"}}, "any": {…}}</c> — one per installed owner of an inventory product, and
+/// one of any installation for public repositories of the others. The runner picks the owner's own token by the owner
+/// in each API address, then the token file, then the lent one, then anonymous.</summary>
 /// <remarks>Written before every runner call that reaches GitHub; a token is replaced <see cref="GitHubAppTokens.RefreshBefore"/>
 /// its expiry, so one call always finishes inside it. The file is rewritten only when a token changed.</remarks>
 public sealed partial class GitHubRunnerTokens(
@@ -38,12 +39,12 @@ public sealed partial class GitHubRunnerTokens(
         foreach (var owner in owners)
         {
             if (await app.GetAsync(owner, ct) is { } token)
-                tokens[owner] = new RunnerToken(
-                    token.Token, token.ExpiresAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture));
+                tokens[owner] = Entry(token);
         }
 
         var path = GitHubRunnerFiles.TokensPath(settings.Root);
-        var content = JsonSerializer.Serialize(new RunnerTokens(tokens));
+        var content = JsonSerializer.Serialize(
+            new RunnerTokens(tokens, await app.BorrowAsync(ct) is { } lent ? Entry(lent) : null), Json);
         await Turn.WaitAsync(ct);
         try
         {
@@ -74,10 +75,17 @@ public sealed partial class GitHubRunnerTokens(
         }
     }
 
+    private static readonly JsonSerializerOptions Json = new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+
+    private static RunnerToken Entry(GitHubAppToken token) => new(
+        token.Token, token.ExpiresAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture));
+
     [LoggerMessage(Level = LogLevel.Error, Message = "The runner's GitHub tokens file could not be written ({Reason}); the runner falls back to the token file or anonymous access.")]
     private static partial void LogUnwritten(ILogger logger, string reason);
 
-    private sealed record RunnerTokens([property: JsonPropertyName("owners")] SortedDictionary<string, RunnerToken> Owners);
+    private sealed record RunnerTokens(
+        [property: JsonPropertyName("owners")] SortedDictionary<string, RunnerToken> Owners,
+        [property: JsonPropertyName("any")] RunnerToken? Any);
 
     private sealed record RunnerToken(
         [property: JsonPropertyName("token")] string Token,
