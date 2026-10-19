@@ -106,7 +106,8 @@ public sealed partial class DeploymentAutomationService(
     }
 
     /// <summary>Queues for each prod target of a product that auto-promotes the newest release that passed its dev watch
-    /// within <see cref="PromoteWithin"/> and that prod neither runs nor tried; each release is tried once per target. A
+    /// within <see cref="PromoteWithin"/> — and its end-to-end check, when it declares one — and that prod neither runs
+    /// nor tried; each release is tried once per target. A
     /// frozen target and a prod on the local server, which needs its ID typed, are left to the owner.</summary>
     private async Task<int> QueuePromotionsAsync(
         IReadOnlyList<ProductEntity> productRows, IReadOnlyDictionary<Guid, ProductAutomationEntity> settings,
@@ -127,7 +128,8 @@ public sealed partial class DeploymentAutomationService(
                 .Where(entry => entry.Record.TargetId is { } slug && dev.Contains(slug) && entry.Outcome == DeploymentOutcome.Succeeded
                     && entry.Record.Kind is "release" or null && entry.Record.Release is { } label && !label.StartsWith("sha-", StringComparison.Ordinal)
                     && entry.Record.BundleId is not null
-                    && entry.Record.Watch is { Status: "passed", CompletedAt: { } passed } && now - passed <= PromoteWithin)
+                    && entry.Record.Watch is { Status: "passed", CompletedAt: { } passed } && now - passed <= PromoteWithin
+                    && DeploymentVerificationDto.Clears(entry.Record.Verification, entry.Record.Verifies))
                 .OrderByDescending(entry => entry.Record.PublishedAt ?? entry.Record.CompletedAt ?? entry.Record.SubmittedAt)
                 .FirstOrDefault();
             if (proven is null)

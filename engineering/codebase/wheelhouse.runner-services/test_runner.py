@@ -744,6 +744,148 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual("dev", runner.read_json(prior / runner.ENVIRONMENT_OVERRIDE)["services"]["api"]["environment"]
                          ["DEPLOY_ENVIRONMENT"])
 
+    def test_a_release_that_opts_in_runs_dev_as_development_and_prod_as_production(self):
+        calls = []
+
+        class RecordingDocker(runner.Docker):
+            def execute(self, arguments, step, timeout=600):
+                calls.append(arguments)
+                return ""
+
+        override = self.bundle / runner.ENVIRONMENT_OVERRIDE
+        RecordingDocker(self.target, {}).up(self.bundle)
+        self.assertEqual({"DEPLOY_ENVIRONMENT": "dev"}, runner.read_json(override)["services"]["api"]["environment"])
+        self.manifest["dotnetEnvironment"] = True
+        self.save()
+        for environment, dotnet in (("dev", "Development"), ("prod", "Production")):
+            self.target["environment"] = environment
+            RecordingDocker(self.target, {}).up(self.bundle)
+            self.assertEqual({"DEPLOY_ENVIRONMENT": environment, "ASPNETCORE_ENVIRONMENT": dotnet,
+                              "DOTNET_ENVIRONMENT": dotnet},
+                             runner.read_json(override)["services"]["api"]["environment"])
+        self.manifest["dotnetEnvironment"] = "yes"
+        self.save()
+        with self.assertRaisesRegex(runner.Rejected, "dotnetEnvironment must be"):
+            runner.validate_bundle(self.bundle)
+
+    def test_turning_the_dotnet_environment_on_restarts_every_service(self):
+        self.assertEqual("succeeded", self.apply()["status"])
+        self.manifest["dotnetEnvironment"] = True
+        self.save()
+        result = self.apply()
+        self.assertEqual("succeeded", result["status"])
+        self.assertEqual("updated", result["serviceRollout"]["services"][0]["change"])
+        self.assertEqual("unchanged", self.apply()["serviceRollout"]["services"][0]["change"])
+
+    def verifying(self, environment="dev"):
+        self.target["environment"] = environment
+        self.target["root"] = str(self.root / "state")
+        self.target["variables"] = {"PLATFORM_NETWORK": "platform"}
+        self.target["ingress"] = self.local_ingress()
+        self.manifest.update(sites={"api": {"app": {}}}, ports={"api": 8080},
+                             verify={"service": "api", "command": ["sh", "-c", "curl --fail $VERIFY_SITE_APP"],
+                                     "timeoutSeconds": 60})
+        self.save()
+
+    def test_a_dev_rollout_runs_the_release_check_and_records_a_pass(self):
+        self.verifying()
+        seen = []
+
+        class CheckingDocker(FakeDocker):
+            def check(self, arguments, variables, timeout, container):
+                seen.append((arguments, variables, timeout, container))
+                return 0, "3 checks passed"
+
+        result = runner.apply(self.bundle, self.target, "test-operator", docker_factory=CheckingDocker)
+        self.assertEqual("succeeded", result["status"])
+        verification = result["verification"]
+        self.assertEqual(("passed", "api", 0, "Passed", "3 checks passed"),
+                         tuple(verification[key] for key in ("status", "service", "exitCode", "detail", "summary")))
+        step = next(step for step in result["steps"] if step["name"] == "Verify end to end")
+        self.assertEqual("succeeded", step["status"])
+        [(arguments, variables, timeout, container)] = seen
+        self.assertEqual(60, timeout)
+        self.assertEqual("pilot-dev-verify-" + result["id"][:8], container)
+        self.assertEqual(["--entrypoint", "sh", self.manifest["images"]["api"], "-c", "curl --fail $VERIFY_SITE_APP"],
+                         arguments[-5:])
+        self.assertIn("--network", arguments)
+        self.assertEqual("http://app-pilot.dev.localhost:18080", variables["VERIFY_SITE_APP"])
+        self.assertEqual("http://pilot-dev-api:8080", variables["VERIFY_SERVICE_API"])
+        self.assertEqual(("dev", "v1"), (variables["DEPLOY_ENVIRONMENT"], variables["VERIFY_RELEASE"]))
+        # Values travel in the environment, by name only; the settings file never reaches the check.
+        self.assertNotIn("http://app-pilot.dev.localhost:18080", arguments)
+        self.assertNotIn("DO_NOT_LOG", json.dumps([arguments, variables]))
+        self.assertEqual("passed", runner.state(self.target)["active"]["verification"]["status"])
+
+    def test_a_failing_check_warns_and_leaves_the_rollout_succeeded(self):
+        self.verifying()
+        for code, detail in ((3, "Exited 3"), (125, "Docker could not start the check (exit 125)"),
+                             (None, "Timed out after 60s")):
+            with self.subTest(code=code):
+                class FailingCheck(FakeDocker):
+                    def check(self, arguments, variables, timeout, container):
+                        return code, ""
+
+                result = runner.apply(self.bundle, self.target, "test-operator", docker_factory=FailingCheck)
+                self.assertEqual("succeeded", result["status"])
+                self.assertEqual(("failed", detail), (result["verification"]["status"], result["verification"]["detail"]))
+                self.assertNotIn("summary", result["verification"])
+                step = next(step for step in result["steps"] if step["name"] == "Verify end to end")
+                self.assertEqual(("warning", detail), (step["status"], step["detail"]))
+                self.assertIn("The end-to-end check failed: " + detail + "; auto-promote holds this release",
+                              result["warnings"])
+
+    def test_a_check_that_cannot_run_fails_without_failing_the_rollout(self):
+        self.verifying()
+
+        class BrokenCheck(FakeDocker):
+            def check(self, arguments, variables, timeout, container):
+                raise OSError("password=DO_NOT_LOG")
+
+        result = runner.apply(self.bundle, self.target, "test-operator", docker_factory=BrokenCheck)
+        self.assertEqual("succeeded", result["status"])
+        self.assertEqual(("failed", "The check could not run (OSError)"),
+                         (result["verification"]["status"], result["verification"]["detail"]))
+        self.assertNotIn("DO_NOT_LOG", json.dumps(result))
+
+    def test_prod_never_runs_the_check(self):
+        self.verifying("prod")
+
+        class CheckingDocker(FakeDocker):
+            def check(self, arguments, variables, timeout, container):
+                raise AssertionError("prod ran the check")
+
+            def execute(self, arguments, step, timeout=600):
+                return ""
+
+        result = runner.apply(self.bundle, self.target, "test-operator", docker_factory=CheckingDocker)
+        self.assertEqual("succeeded", result["status"])
+        self.assertNotIn("verification", result)
+        self.assertNotIn("Verify end to end", [step["name"] for step in result["steps"]])
+
+    def test_an_invalid_check_is_refused_before_docker(self):
+        for verify, message in (({"service": "worker", "command": ["true"]}, "unknown service"),
+                                ({"service": "api", "command": []}, "Invalid verify command"),
+                                ({"service": "api", "command": ["true"], "timeoutSeconds": 5}, "verify timeout")):
+            with self.subTest(message=message):
+                self.manifest["verify"] = verify
+                self.save()
+                with self.assertRaisesRegex(runner.Rejected, message):
+                    runner.validate_bundle(self.bundle)
+
+    def test_the_check_container_is_removed_when_it_runs_past_its_timeout(self):
+        calls = []
+
+        def fake_run(arguments, **options):
+            calls.append(arguments)
+            if arguments[:2] == ["docker", "run"]:
+                raise subprocess.TimeoutExpired(arguments, options["timeout"])
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+
+        with patch.object(runner.subprocess, "run", side_effect=fake_run):
+            self.assertEqual((None, ""), runner.Docker(self.target, {}).check(["docker", "run"], {"A": "b"}, 10, "box"))
+        self.assertEqual(["docker", "rm", "--force", "box"], calls[-1])
+
     def stack(self, release, images, depends=None):
         """A release of db, api (needs db), web (needs api) and an independent worker, each on its own image."""
         depends = {"api": ["db"], "web": ["api"]} if depends is None else depends

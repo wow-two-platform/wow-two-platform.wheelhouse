@@ -59,6 +59,44 @@ public sealed class AutoPromoteE2ETests(WheelhouseAppFixture fixture) : Wheelhou
             .Count(item => item.GetProperty("action").GetString() == "deployment.start").Should().Be(0, "nothing is tried, so nothing is refused");
     }
 
+    [Theory]
+    [InlineData("passed", true, true)]
+    [InlineData("failed", true, false)]
+    [InlineData(null, true, false)]  // declares a check that has not reported
+    [InlineData(null, false, true)]  // declares none
+    public async Task AutoPromote_ShouldTakeOnlyAReleaseWhoseDevCheckPassed_WhenItDeclaresOne(string? check, bool verifies, bool promoted)
+    {
+        await AutoPromoteAsync();
+        Seed("passed", TimeSpan.FromMinutes(2), verifies: verifies, check: check);
+
+        // A manual promote shows the check's result either way.
+        var offer = (await DataAsync("/api/deployments/promotions")).EnumerateArray().Single();
+        offer.GetProperty("verifies").GetBoolean().Should().Be(verifies);
+        if (check is null)
+            offer.GetProperty("verification").ValueKind.Should().Be(JsonValueKind.Null);
+        else
+            offer.GetProperty("verification").GetProperty("status").GetString().Should().Be(check);
+
+        (await PassAsync()).Submitted.Should().Be(promoted ? 1 : 0);
+        Fixture.Deployments.Starts.Should().HaveCount(promoted ? 1 : 0);
+    }
+
+    [Fact]
+    public async Task History_ShouldCarryTheDevCheck_OnTheDeploymentAndItsPage()
+    {
+        Seed("passed", TimeSpan.FromMinutes(2), verifies: true, check: "failed");
+
+        var item = (await DataAsync("/api/deployments/history")).GetProperty("items").EnumerateArray()
+            .Single(entry => entry.GetProperty("release").GetString() == "v1.1.0");
+        item.GetProperty("verifies").GetBoolean().Should().BeTrue();
+        var verification = item.GetProperty("verification");
+        (verification.GetProperty("status").GetString(), verification.GetProperty("detail").GetString(),
+            verification.GetProperty("exitCode").GetInt32()).Should().Be(("failed", "Exited 3", 3));
+
+        var detail = await DataAsync("/api/deployments/00000000-0000-4000-8000-000000000002/detail");
+        detail.GetProperty("deployment").GetProperty("verification").GetProperty("status").GetString().Should().Be("failed");
+    }
+
     [Fact]
     public async Task Issues_ShouldRaiseARolloutThatRegressedWhileWatched()
     {
@@ -73,7 +111,7 @@ public sealed class AutoPromoteE2ETests(WheelhouseAppFixture fixture) : Wheelhou
     }
 
     /// <summary>Prod runs v1.0.0; dev ran v1.1.0, which finished its watch <paramref name="ago"/> with <paramref name="watch"/>.</summary>
-    private void Seed(string watch, TimeSpan ago, string[]? findings = null)
+    private void Seed(string watch, TimeSpan ago, string[]? findings = null, bool? verifies = null, string? check = null)
     {
         // The host runs on the harness's fake clock.
         var now = Fixture.Host.Clock.GetUtcNow();
@@ -89,6 +127,13 @@ public sealed class AutoPromoteE2ETests(WheelhouseAppFixture fixture) : Wheelhou
             id = "00000000-0000-4000-8000-000000000002", targetId = "foreverpin-dev", bundleId = "foreverpin-gh-2", release = "v1.1.0",
             status = "succeeded", kind = "release", submittedAt = At(ago + TimeSpan.FromMinutes(12)), completedAt = At(ago + TimeSpan.FromMinutes(10)),
             publishedAt = At(TimeSpan.FromHours(3)),
+            verifies,
+            verification = check is null ? null : new
+            {
+                status = check, service = "management", startedAt = At(ago + TimeSpan.FromMinutes(10)),
+                completedAt = At(ago + TimeSpan.FromMinutes(9)), seconds = 41, exitCode = check == "passed" ? 0 : 3,
+                detail = check == "passed" ? "Passed" : "Exited 3",
+            },
             watch = new
             {
                 status = watch, startedAt = At(ago + TimeSpan.FromMinutes(10)), until = At(ago), checks = 9,

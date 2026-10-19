@@ -95,12 +95,26 @@ class BundleContractTests(unittest.TestCase):
                 self.assertEqual(("candidate", "sha-" + self.commit[:7]), (validated["kind"], validated["release"]))
                 self.assertNotEqual("release", validated["channel"])
 
+    @unittest.skipUnless(release is not None and hasattr(release, "verify_of"),
+                         "the pinned generator predates dotnetEnvironment and verify")
+    def test_the_environment_mapping_and_the_dev_check_pass_the_runner(self):
+        declared = copy.deepcopy(DESCRIPTOR)
+        declared.update(dotnetEnvironment=True,
+                        verify={"service": "api", "command": ["sh", "-c", "curl --fail $VERIFY_SITE_APP"], "timeout": "2m"})
+        self.descriptor = release.validate(declared)
+        validated = self.bundle("main")
+        self.assertTrue(validated["dotnetEnvironment"])
+        self.assertEqual({"service": "api", "command": ["sh", "-c", "curl --fail $VERIFY_SITE_APP"], "timeoutSeconds": 120},
+                         runner.release_verification(validated))
+
     @unittest.skipUnless(HAS_YAML, "PyYAML is not installed for this interpreter")
     def test_wheelhouse_own_descriptor_parses(self):
         path = HERE.parents[1] / "deployment" / "deploy.yml"
         descriptor = release.validate(release.parse(path.read_text()))
         self.assertEqual(["console"], list(descriptor["services"]))
         self.assertEqual("private", descriptor["services"]["console"]["sites"]["console"]["exposure"])
+        # Deployed dev runs the console as Development: its appsettings.Development.json holds defaults only.
+        self.assertTrue(descriptor["dotnetEnvironment"])
 
 
 if __name__ == "__main__":

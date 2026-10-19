@@ -6,13 +6,14 @@ from runner import SLUG, read_json, require
 PENDING = {"submitting", "queued", "running"}
 # One observation's fields the detail page shows; SSH details and remote paths never leave the control host.
 OBSERVED = ("status", "reason", "failure", "startedAt", "completedAt", "mutationStarted", "steps", "sites",
-            "warnings", "versions", "reconciledBy", "snapshot", "serviceRollout")
+            "warnings", "versions", "reconciledBy", "snapshot", "serviceRollout", "verification")
 
 
 def bundle_facts(root, bundle_id):
     """What a cached bundle declares: product, kind, branch, rollback compatibility, whether it carries schema
-    migrations (null while the bundle does not say) and each service's image and version, plus when its source
-    published it. None when the bundle is not cached or not readable."""
+    migrations (null while the bundle does not say), whether it declares an end-to-end check for dev (`verifies`) and
+    each service's image and version, plus when its source published it. None when the bundle is not cached or not
+    readable."""
     if not isinstance(bundle_id, str) or not SLUG.fullmatch(bundle_id):
         return None
     bundle = root / "bundles" / bundle_id
@@ -34,6 +35,7 @@ def bundle_facts(root, bundle_id):
             "kind": manifest.get("kind", "release"), "branch": manifest.get("branch"),
             "rollbackCompatible": manifest.get("rollbackCompatible") is True,
             "migrations": manifest["migrations"] if type(manifest.get("migrations")) is bool else None,
+            "verifies": isinstance(manifest.get("verify"), dict),
             "services": services,
             "publishedAt": published if isinstance(published, str) else None}
 
@@ -79,7 +81,7 @@ def records(root, submissions):
         bundle = facts[bundle_id] or {}
         item = {**job, "product": bundle.get("product"), "kind": bundle.get("kind"), "branch": bundle.get("branch"),
                 "rollbackCompatible": bundle.get("rollbackCompatible"), "migrations": bundle.get("migrations"),
-                "services": bundle.get("services"),
+                "verifies": bundle.get("verifies"), "services": bundle.get("services"),
                 "publishedAt": bundle.get("publishedAt")}
         if job.get("status") in PENDING:
             item["currentStep"] = current_step(root, job["id"])

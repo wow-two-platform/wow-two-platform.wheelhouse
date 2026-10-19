@@ -76,6 +76,12 @@ public sealed record DeploymentItemDto
     /// <summary>Gets the watch after a successful rollout; null when it was not watched.</summary>
     public DeploymentWatchDto? Watch { get; init; }
 
+    /// <summary>Gets whether the release declares an end-to-end check for dev; null when the bundle is unknown.</summary>
+    public bool? Verifies { get; init; }
+
+    /// <summary>Gets the release's end-to-end check after its dev rollout; null when the rollout ran none.</summary>
+    public DeploymentVerificationDto? Verification { get; init; }
+
     /// <summary>Maps an entry.</summary>
     /// <param name="entry">The joined submission.</param>
     /// <returns>The list item.</returns>
@@ -111,6 +117,8 @@ public sealed record DeploymentItemDto
             ChangedServices = entry.Changes?.Where(change => change.Changed).Select(change => change.Service).ToArray(),
             CurrentStep = entry.Outcome == DeploymentOutcome.Pending ? record.CurrentStep : null,
             Watch = entry.Outcome == DeploymentOutcome.Succeeded ? record.Watch : null,
+            Verifies = record.Verifies,
+            Verification = record.Verification,
         };
     }
 }

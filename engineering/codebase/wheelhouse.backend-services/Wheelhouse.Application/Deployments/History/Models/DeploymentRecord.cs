@@ -78,6 +78,12 @@ public sealed record DeploymentRecord
     /// <summary>Gets when the release source published the bundle.</summary>
     public DateTimeOffset? PublishedAt { get; init; }
 
+    /// <summary>Gets whether the release declares an end-to-end check for dev; null when the bundle is unknown.</summary>
+    public bool? Verifies { get; init; }
+
+    /// <summary>Gets the release's end-to-end check after its dev rollout; null when the rollout ran none.</summary>
+    public DeploymentVerificationDto? Verification { get; init; }
+
     /// <summary>Gets the watch after a successful rollout; null when it was not watched.</summary>
     public DeploymentWatchDto? Watch { get; init; }
 

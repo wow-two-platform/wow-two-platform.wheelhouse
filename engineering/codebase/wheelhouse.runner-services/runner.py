@@ -61,6 +61,15 @@ CURRENT = ("id", "release", "kind", "branch", "sourceCommit", "versions", "sites
 # The Compose override the runner writes beside a release's compose.json: every service receives the environment it
 # runs in as DEPLOY_ENVIRONMENT. Never part of a bundle or its hash.
 ENVIRONMENT_OVERRIDE = "environment.json"
+# How a release that opts in (`dotnetEnvironment`) runs under .NET: dev as Development, prod as Production. Another
+# environment gets no mapping.
+DOTNET_ENVIRONMENTS = {"dev": "Development", "prod": "Production"}
+# A release's end-to-end check on dev: the longest it may run, its container's memory, and how much of its output's
+# last line the job keeps.
+VERIFY_TIMEOUT = 300
+VERIFY_TIMEOUT_LIMIT = 1800
+VERIFY_MEMORY = "512m"
+VERIFY_SUMMARY_LIMIT = 300
 
 
 class Rejected(ValueError):
@@ -166,7 +175,26 @@ def validate_bundle(bundle):
     require(isinstance(ports, dict) and set(ports) <= set(services)
             and all(type(port) is int and 1 <= port <= 65535 for port in ports.values()), "Invalid service ports")
     release_sites(manifest)
+    require(type(manifest.get("dotnetEnvironment", False)) is bool, "dotnetEnvironment must be true or false")
+    release_verification(manifest)
     return manifest
+
+
+def release_verification(manifest):
+    """The end-to-end check a release declares for dev — the service whose image runs it, the command and its timeout
+    in seconds — or None when it declares none."""
+    verify = manifest.get("verify")
+    if verify is None:
+        return None
+    require(isinstance(verify, dict) and isinstance(verify.get("service"), str)
+            and verify["service"] in manifest.get("images", {}), "The verify check names an unknown service")
+    command = verify.get("command")
+    require(isinstance(command, list) and 0 < len(command) <= 32
+            and all(isinstance(part, str) and part and len(part) <= 1000 and "\0" not in part for part in command),
+            "Invalid verify command")
+    timeout = verify.get("timeoutSeconds", VERIFY_TIMEOUT)
+    require(type(timeout) is int and 10 <= timeout <= VERIFY_TIMEOUT_LIMIT, "The verify timeout must be 10-1800 seconds")
+    return {"service": verify["service"], "command": command, "timeoutSeconds": timeout}
 
 
 def service_dependencies(compose):
@@ -199,22 +227,24 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
-def rollout_plan(compose, environment, prior=None, prior_environment=None, same_inputs=True):
+def rollout_plan(compose, environment, prior=None, prior_environment=None, same_inputs=True, dotnet=False):
     """What a release changes on a target, service by service, against the release it runs (`prior`, its compose.json,
-    and `prior_environment`, the runner's override it ran with): `added`, `updated` (its definition or image differs)
-    or `unchanged`, and `removed` for what it drops. A changed service starts in its dependency wave; `staged` holds when
-    starting the changed services wave by wave differs from one Compose `up`: some service keeps running untouched, or
-    the changed ones span more than one wave. A changed interpolation input (`same_inputs` false) changes them all."""
+    and `prior_environment`, the runner's override it ran with): `added`, `updated` (its definition, image or the
+    environment the runner gives it — `dotnet` is the release's `dotnetEnvironment` — differs) or `unchanged`, and
+    `removed` for what it drops. A changed service starts in its dependency wave; `staged` holds when starting the
+    changed services wave by wave differs from one Compose `up`: some service keeps running untouched, or the changed
+    ones span more than one wave. A changed interpolation input (`same_inputs` false) changes them all."""
     services = compose["services"]
     dependencies = service_dependencies(compose)
     before = (prior or {}).get("services") or {}
     overrides = ((prior_environment or {}).get("services") or {}) if isinstance(prior_environment, dict) else {}
+    expected = {"environment": service_environment(environment, dotnet)}
     changes = {}
     for name in sorted(services):
         if prior is None or name not in before:
             changes[name] = "added"
         elif (not same_inputs or canonical(services[name]) != canonical(before[name])
-              or canonical(overrides.get(name)) != canonical({"environment": {"DEPLOY_ENVIRONMENT": environment}})):
+              or canonical(overrides.get(name)) != canonical(expected)):
             changes[name] = "updated"
         else:
             changes[name] = "unchanged"
@@ -837,6 +867,21 @@ class Docker:
         self.compose(bundle, "config", "--quiet")
         self.compose(bundle, "pull", "--policy", "always")
 
+    def check(self, arguments, variables, timeout, container):
+        """Runs a one-off check container whose environment also carries `variables` (passed by name, never as
+        arguments). Returns its exit code and its output's last nonblank line, cut short; a run past `timeout` removes
+        `container` and returns None for the code. The rest of the output is discarded."""
+        try:
+            result = subprocess.run(arguments, env={**self.environment, **variables}, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True, errors="replace", timeout=timeout)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(Exception):
+                subprocess.run(["docker", "rm", "--force", container], env=self.environment, capture_output=True,
+                               timeout=60)
+            return None, ""
+        lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+        return result.returncode, lines[-1][:VERIFY_SUMMARY_LIMIT] if lines else ""
+
     def health_timeout(self):
         timeout = self.target.get("healthTimeoutSeconds", 120)
         require(type(timeout) is int and 10 <= timeout <= 300, "Invalid health timeout")
@@ -874,15 +919,28 @@ class Docker:
                     + " returned " + status.strip()[:3] + ", expected " + str(expected))
 
 
+def service_environment(environment, dotnet=False):
+    """What the runner sets on every service of a release: DEPLOY_ENVIRONMENT, the environment it runs in; and for a
+    release that opts in (`dotnet`, its `dotnetEnvironment`), ASPNETCORE_ENVIRONMENT and DOTNET_ENVIRONMENT as .NET
+    names it — dev Development, prod Production."""
+    values = {"DEPLOY_ENVIRONMENT": environment}
+    if dotnet and environment in DOTNET_ENVIRONMENTS:
+        values["ASPNETCORE_ENVIRONMENT"] = values["DOTNET_ENVIRONMENT"] = DOTNET_ENVIRONMENTS[environment]
+    return values
+
+
 def environment_override(bundle, environment):
     """Writes, beside a release's compose.json, the Compose override that gives every service DEPLOY_ENVIRONMENT — the
-    environment it runs in (`dev`, `prod`) — so a product reads it without declaring it. Rewritten only when it differs;
-    a release copied by an older runner gains it the first time it is applied or rolled back to. Returns its path."""
+    environment it runs in (`dev`, `prod`) — so a product reads it without declaring it, and the .NET environment when
+    the release opts in (`dotnetEnvironment`). Rewritten only when it differs; a release copied by an older runner gains
+    it the first time it is applied or rolled back to. Returns its path."""
     require(SLUG.fullmatch(str(environment)), "Invalid target environment")
     bundle = Path(bundle)
     services = read_json(bundle / "compose.json").get("services")
     require(isinstance(services, dict) and services, "Compose declares no services")
-    override = {"services": {name: {"environment": {"DEPLOY_ENVIRONMENT": environment}} for name in sorted(services)}}
+    manifest = read_json(bundle / "release.json")
+    values = service_environment(environment, isinstance(manifest, dict) and manifest.get("dotnetEnvironment") is True)
+    override = {"services": {name: {"environment": dict(values)} for name in sorted(services)}}
     path = bundle / ENVIRONMENT_OVERRIDE
     try:
         current = read_json(path)
@@ -1012,6 +1070,19 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                         step["detail"] = plural(len(probed), "site") + " answered"
             record["status"] = "succeeded"
             write_json(previous_path, {key: record[key] for key in CURRENT if key in record})
+            # Dev only, once the release is recorded: the release's own end-to-end check. Its result gates auto-promote
+            # and never changes the outcome; a failure is a warning, since every container is healthy.
+            verification = release_verification(manifest) if target["environment"] == "dev" else None
+            if verification:
+                with contextlib.suppress(Exception), steps.run("Verify end to end") as step:
+                    result = verify_release(target, manifest, record, verification, docker, project)
+                    record["verification"] = result
+                    if result["status"] == "passed":
+                        step["detail"] = "Passed in " + str(result["seconds"]) + "s"
+                    else:
+                        step.update(status="warning", detail=result["detail"])
+                        record.setdefault("warnings", []).append(
+                            "The end-to-end check failed: " + result["detail"] + "; auto-promote holds this release")
             # Housekeeping after the release is recorded; it never changes the outcome.
             with contextlib.suppress(Exception), steps.run("Remove unused images") as step:
                 removed = prune_images(root, record, docker, KEEP_RELEASES)
@@ -1057,6 +1128,52 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
         return record
 
 
+def upper_name(name):
+    return re.sub(r"[^A-Z0-9]", "_", name.upper())
+
+
+def verify_release(target, manifest, record, verification, docker, project, clock=time.monotonic):
+    """Runs a release's end-to-end check after its dev rollout succeeded: the declared command in a one-off container
+    from the service's release image, on the platform network. Its environment holds the environment, the release, the
+    published sites (`VERIFY_SITES` as JSON, `VERIFY_SITE_<NAME>` each) and each service's address on the platform
+    network (`VERIFY_SERVICE_<NAME>`) — no settings file and no secret. Never raises; returns what the job keeps:
+    status (`passed` | `failed`), service, timings, exit code, an operator-safe detail and the output's last line."""
+    started, begun = now(), clock()
+    timeout, command = verification["timeoutSeconds"], verification["command"]
+    sites = [{key: site[key] for key in ("name", "service", "exposure", "url") if key in site}
+             for site in record.get("sites") or [] if isinstance(site, dict) and isinstance(site.get("url"), str)]
+    variables = {"DEPLOY_ENVIRONMENT": target["environment"], "VERIFY_RELEASE": manifest["release"],
+                 "VERIFY_SITES": json.dumps(sites)}
+    for site in sites:
+        variables.setdefault("VERIFY_SITE_" + upper_name(site["name"]), site["url"])
+    for service in sorted(manifest["images"]):
+        variables["VERIFY_SERVICE_" + upper_name(service)] = ("http://" + project + "-" + service + ":"
+                                                              + str(service_port(manifest, service)))
+    network = target.get("variables", {}).get("PLATFORM_NETWORK")
+    container = project + "-verify-" + record["id"][:8]
+    arguments = ["docker", "run", "--rm", "--name", container, "--pull", "never",
+                 *(["--network", network] if network else []), "--security-opt", "no-new-privileges:true",
+                 "--cap-drop", "ALL", "--memory", VERIFY_MEMORY, "--label", "wheelhouse.verify=" + project,
+                 *[part for name in sorted(variables) for part in ("-e", name)],
+                 "--entrypoint", command[0], manifest["images"][verification["service"]], *command[1:]]
+    try:
+        code, summary = docker.check(arguments, variables, timeout, container)
+    except Exception as error:
+        code, summary = -1, ""
+        detail = "The check could not run (" + type(error).__name__ + ")"
+    else:
+        detail = ("Timed out after " + str(timeout) + "s" if code is None else
+                  "Passed" if code == 0 else
+                  "Docker could not start the check (exit " + str(code) + ")" if code in (125, 126, 127) else
+                  "Exited " + str(code))
+    result = {"status": "passed" if code == 0 else "failed", "service": verification["service"],
+              "startedAt": started, "completedAt": now(), "seconds": int(clock() - begun), "exitCode": code,
+              "detail": detail}
+    if summary:
+        result["summary"] = summary
+    return result
+
+
 def plan_against(root, previous, compose, target, manifest):
     """The rollout plan of `compose` against the release the target runs (`previous`, its current.json): that release's
     compose.json, the environment override it ran with and its interpolation inputs. Without a readable previous release
@@ -1074,7 +1191,7 @@ def plan_against(root, previous, compose, target, manifest):
             same_inputs = read_json(root / "jobs" / (identifier + ".json")).get("interpolation") == \
                 interpolation_inputs(target, manifest)
     return rollout_plan(compose, target["environment"], prior if isinstance(prior, dict) else None, prior_environment,
-                        same_inputs)
+                        same_inputs, manifest.get("dotnetEnvironment") is True)
 
 
 def settle_services(record, starting, done=None, rolled_back=False):
@@ -1158,7 +1275,8 @@ def lock_held(base):
 
 def summary(record):
     fields = ("id", "release", "sourceCommit", "kind", "branch", "versions", "sites", "status", "actor", "startedAt",
-              "completedAt", "failure", "reason", "mutationStarted", "previous", "steps", "warnings", "snapshot")
+              "completedAt", "failure", "reason", "mutationStarted", "previous", "steps", "warnings", "snapshot",
+              "verification")
     return None if record is None else {key: record[key] for key in fields if key in record}
 
 

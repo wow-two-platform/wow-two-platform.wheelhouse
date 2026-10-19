@@ -4,6 +4,8 @@
 descriptor: 1
 product: wheelhouse
 platform: linux/amd64
+# Dev runs as .NET Development, prod as Production; appsettings.Development.json holds no machine-local value.
+dotnetEnvironment: true
 shared:
   - deployment/Dockerfile
 services:

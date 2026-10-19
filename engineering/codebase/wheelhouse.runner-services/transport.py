@@ -644,7 +644,8 @@ def jobs(root, limit=50):
                 "status": observed.get("status") or record.get("status")}
         if isinstance(record.get("fleetId"), str):
             item["fleetId"] = record["fleetId"]
-        for key in ("reason", "failure", "startedAt", "completedAt", "mutationStarted", "sourceCommit", "warnings"):
+        for key in ("reason", "failure", "startedAt", "completedAt", "mutationStarted", "sourceCommit", "warnings",
+                    "verification"):
             if key in observed:
                 item[key] = observed[key]
         result.append(item)

@@ -55,6 +55,25 @@ class HistoryTests(unittest.TestCase):
         self.assertNotIn("/srv/wheelhouse", json.dumps(record))
         self.assertNotIn("vps.example.net", json.dumps(record))
 
+    def test_records_say_whether_a_bundle_declares_a_dev_check_and_carry_its_result(self):
+        image = "ghcr.io/o/api@sha256:" + "a" * 64
+        self.bundle("pilot-v1", {"api": image})
+        manifest = runner.read_json(self.root / "bundles/pilot-v1/release.json")
+        manifest["verify"] = {"service": "api", "command": ["true"], "timeoutSeconds": 60}
+        runner.write_json(self.root / "bundles/pilot-v1/release.json", manifest)
+        self.bundle("pilot-v2", {"api": image})
+        checked = self.job(1, "succeeded")
+        self.job(2, "succeeded", bundle="pilot-v2")
+        verification = {"status": "failed", "service": "api", "exitCode": 3, "detail": "Exited 3"}
+        runner.write_json(self.root / "observed" / (checked + ".json"),
+                          {"id": checked, "status": "succeeded", "completedAt": "2026-10-01T10:05:00+00:00",
+                           "verification": verification})
+        records = {record["id"]: record for record in history.records(self.root, transport.jobs(self.root, limit=None))}
+        self.assertEqual((True, verification), (records[checked]["verifies"], records[checked]["verification"]))
+        other = next(record for identifier, record in records.items() if identifier != checked)
+        self.assertEqual((False, None), (other["verifies"], other.get("verification")))
+        self.assertEqual(verification, history.observation(self.root, checked, transport.observed_outcome)["verification"])
+
     def test_a_missing_bundle_leaves_product_and_services_unknown(self):
         self.job(1, "failed", bundle="pilot-gone")
         [record] = history.records(self.root, transport.jobs(self.root, limit=None))
