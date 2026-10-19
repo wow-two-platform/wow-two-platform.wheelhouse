@@ -393,10 +393,11 @@ service is an origin — never a guessed edge.
   with one are listed, and the status filter and `latest` apply (`latest` counts days in this `tz`). The same applied rollouts name the range's five busiest products
   (`products`: succeeded and failed per product, most first).
 - `GET /api/deployments/history/stats` measures the entities over the range (30 days by default) beside the range of
-  equal length before it, as the runner's statistics always have, with `look` and `act` counts; the status filter and
-  `latest` do not apply, and the deploys that changed nothing count only with `notApplied=true` — while `notApplied`
-  always counts them and `superseded` the applied attempts a later deploy replaced on the same target that local day
-  (in `tz`), so the console can say how many a latest-of-day view hides.
+  equal length before it, as the runner's statistics always have, with `look` and `act` counts; the status filter does
+  not apply, `latest` counts each target's last applied deploy of a local day in both ranges, and the deploys that
+  changed nothing count only with `notApplied=true` — while `notApplied` always counts them and `superseded` the applied
+  attempts a later deploy replaced on the same target that local day (in `tz`), so the console can say how many a
+  latest-of-day view hides.
 - `GET /api/deployments/running` lists live rollouts with their step; `GET /api/deployments/promotions` lists, per
   product and prod target, the newest release (never a commit build) that succeeded on dev and is not what prod runs —
   left out while a prod rollout of it runs or prod runs it or a later release.

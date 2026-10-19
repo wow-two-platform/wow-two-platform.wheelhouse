@@ -19,11 +19,13 @@ import { Tooltip } from "@wow-two-beta/fe/presentation/overlays";
 import { useShowAllAttempts } from "@/application/preferences";
 
 /**
- * The viewer's one Show all attempts switch: a compact icon toggle carrying how many attempts are hidden under the
- * current filter and range. Off, the calendar, the chosen day's rows and the list show each target's latest deploy of
- * a day; pressed, every attempt and every deploy that changed nothing, and the calendar marks mixed days. The measures
- * count every attempt either way. This browser remembers the choice. Hovering explains it in one line; on touch, the
- * panel's info button does.
+ * The viewer's one All attempts switch, in the deployments filter bar beside the products and the range: its name and a
+ * badge with how many attempts are hidden under the current filter and range. Off, the calendar, the chosen day's rows,
+ * the list and the measures take each target's latest deploy of a day; pressed, every attempt and every deploy that
+ * changed nothing, and the calendar marks mixed days. This browser remembers the choice. Hovering explains it in one
+ * line; on touch, the filter's info button does. The line opens below the toggle: the fe sdk tooltip's floating layer
+ * carries no z-index (it sits on the inner panel), so above the toggle the sticky filter strip would cover it — an fe
+ * sdk candidate.
  */
 defineOptions({ name: "AttemptsToggle" });
 const props = defineProps<AttemptsToggleProps>();
@@ -38,18 +40,26 @@ const hint = computed(() => {
 </script>
 
 <template>
-  <Tooltip :content="hint">
+  <Tooltip :content="hint" placement="bottom">
     <Button
       variant="outline"
       tone="neutral"
       size="md"
       :aria-pressed="shown"
       :aria-label="`Show all attempts: ${hint}`"
-      :class="['tabular-nums max-md:min-h-11', shown ? 'bg-muted' : '']"
+      :class="['max-md:min-h-11', shown ? 'bg-muted' : '']"
       @click="shown = !shown"
     >
       <template #leading><component :is="shown ? Eye : EyeOff" :size="16" aria-hidden="true" /></template>
-      <span aria-hidden="true">{{ props.hidden ?? "–" }}</span>
+      <span aria-hidden="true">All attempts</span>
+      <span
+        aria-hidden="true"
+        :class="[
+          'ms-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-medium tabular-nums',
+          shown ? 'bg-background text-foreground' : 'bg-muted text-muted-foreground',
+        ]"
+        >{{ props.hidden ?? "–" }}</span
+      >
     </Button>
   </Tooltip>
 </template>

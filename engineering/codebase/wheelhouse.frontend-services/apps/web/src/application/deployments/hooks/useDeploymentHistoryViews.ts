@@ -30,7 +30,7 @@ export function useHistoryView() {
   return computed<HistoryView>(() => ({ everyAttempt: everyAttempt.value, timeZone: ownerTimeZone() }));
 }
 
-/** Every attempt in the owner's time zone: what the measures count, and what a read the toggle does not govern takes. */
+/** Every attempt in the owner's time zone: what a read the toggle does not govern takes. */
 function everyAttempt(): HistoryView {
   return { everyAttempt: true, timeZone: ownerTimeZone() };
 }
@@ -88,13 +88,15 @@ export function useDeploymentActivity(filter: MaybeRefOrGetter<DeploymentFilterS
   });
 }
 
-/** The filter's measures over its range beside the range before it. They count every attempt, the deploys that changed
- * nothing included, whatever the viewer's toggle shows, and say how many a latest-of-day view hides. */
+/** The filter's measures over its range beside the range before it, following the viewer's toggle as the records do:
+ * each target's latest deploy of a day, or every attempt with the deploys that changed nothing. Either way they say how
+ * many a latest-of-day view hides (`notApplied` and `superseded`). */
 export function useDeploymentRangeStats(filter: MaybeRefOrGetter<DeploymentFilterState>) {
+  const view = useHistoryView();
   return useAppQuery({
-    key: () => DeploymentKeys.rangeStats(DeploymentFilters.key(toValue(filter), everyAttempt())),
+    key: () => DeploymentKeys.rangeStats(DeploymentFilters.key(toValue(filter), view.value)),
     queryFn: ({ signal }) =>
-      deploymentHistoryApi.getStats(DeploymentFilters.params(toValue(filter), new Date(), { view: everyAttempt() }), signal),
+      deploymentHistoryApi.getStats(DeploymentFilters.params(toValue(filter), new Date(), { view: view.value }), signal),
     keepPreviousData: true,
   });
 }

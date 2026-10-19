@@ -50,8 +50,8 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
         this.ToActionResult(await sender.SendAsync(new DeploymentActivityQuery(filter.ToFilter(), tz), ct));
 
     /// <summary>Measures the filter's entities over its range (the last 30 days without one) beside the range before
-    /// it; the status filter and <c>latest</c> do not apply, and <c>superseded</c> counts the attempts a later deploy
-    /// replaced that day in <c>tz</c>.</summary>
+    /// it; the status filter does not apply, <c>latest</c> counts each target's last deploy of a day in <c>tz</c>, and
+    /// <c>notApplied</c> and <c>superseded</c> always count what a latest-of-day view hides.</summary>
     [HttpGet("history/stats")]
     public async Task<IActionResult> HistoryStats([FromQuery] DeploymentFilterApiRequest filter, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentStatsQuery(filter.ToFilter()), ct));

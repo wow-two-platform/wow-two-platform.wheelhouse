@@ -233,14 +233,19 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
         Attention(await DataAsync("/api/deployments/history/activity?notApplied=true&tz=Asia/Tashkent&" + range)).Should()
             .Equal(("2026-10-07", 1, 0, 4, 1), ("2026-10-08", 0, 0, 1, 0));
 
-        // The measures count every attempt whatever the view keeps, and say how many a latest-of-day view hides.
-        var stats = (await DataAsync("/api/deployments/history/stats?notApplied=true&latest=true&tz=Asia/Tashkent&" + range))
-            .GetProperty("current");
-        (stats.GetProperty("deploys").GetInt32(), stats.GetProperty("act").GetInt32(), stats.GetProperty("notApplied").GetInt32(),
-                stats.GetProperty("superseded").GetInt32())
-            .Should().Be((7, 5, 1, 4));
-        (await DataAsync("/api/deployments/history/stats?tz=UTC&" + range)).GetProperty("current").GetProperty("superseded")
-            .GetInt32().Should().Be(5);
+        // The measures follow the view: every attempt, the refusal included, or each day's latest alone; either way they
+        // say how many a latest-of-day view hides.
+        (int, int, int, int, int) Measures(JsonElement stats) => (stats.GetProperty("deploys").GetInt32(),
+            stats.GetProperty("succeeded").GetInt32(), stats.GetProperty("act").GetInt32(),
+            stats.GetProperty("notApplied").GetInt32(), stats.GetProperty("superseded").GetInt32());
+        var every = (await DataAsync("/api/deployments/history/stats?notApplied=true&tz=Asia/Tashkent&" + range)).GetProperty("current");
+        Measures(every).Should().Be((7, 1, 5, 1, 4));
+        every.GetProperty("successRate").GetDouble().Should().BeApproximately(1d / 6, 1e-9);
+        var latestOnly = (await DataAsync("/api/deployments/history/stats?latest=true&tz=Asia/Tashkent&" + range)).GetProperty("current");
+        Measures(latestOnly).Should().Be((2, 1, 1, 1, 4));
+        latestOnly.GetProperty("successRate").GetDouble().Should().Be(0.5);
+        Measures((await DataAsync("/api/deployments/history/stats?latest=true&tz=UTC&" + range)).GetProperty("current"))
+            .Should().Be((1, 0, 1, 1, 5));
     }
 
     [Fact]

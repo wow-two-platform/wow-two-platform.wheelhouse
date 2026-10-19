@@ -19,20 +19,29 @@ import { computed } from "vue";
 
 import { Tag } from "@wow-two-beta/fe/presentation/display";
 
+import { useDeploymentRangeStats } from "@/application/deployments";
 import { EntitySelection, type DeploymentFilterState as Filter } from "@/domain/deployments";
 
+import AttemptsToggle from "./AttemptsToggle.vue";
 import DateRangeFilter from "./DateRangeFilter.vue";
 import EntityPicker from "./EntityPicker.vue";
 
 /**
- * One filter for both views and the measures: which workspaces, products and services, and when. Picked entities show
- * as chips that each remove themselves. Which attempts show follows the viewer's own Show all attempts toggle in the
- * deployments panel, not this filter.
+ * One filter for both views and the measures: which workspaces, products and services, which attempts, and when.
+ * Picked entities show as chips that each remove themselves. The All attempts toggle between the products and the range
+ * is the viewer's own choice, remembered by this browser rather than kept in the address; its badge counts the attempts
+ * hidden under the filter, from the measures' read, which it shares with the tiles.
  */
 defineOptions({ name: "DeploymentFilterBar" });
 const props = withDefaults(defineProps<DeploymentFilterBarProps>(), { isEntityLocked: false, isSingleRow: false });
 const emit = defineEmits<{ change: [filter: Partial<Filter>] }>();
 
+const stats = useDeploymentRangeStats(() => props.filter);
+/** The attempts a latest-of-day view hides under the filter: replaced that day, or changed nothing. */
+const hidden = computed(() => {
+  const current = stats.data.value?.current;
+  return current ? current.notApplied + current.superseded : null;
+});
 const chips = computed(() => (props.isEntityLocked ? [] : EntitySelection.chips(props.tree, props.filter.entities)));
 
 function remove(key: string): void {
@@ -57,6 +66,7 @@ function remove(key: string): void {
         :model-value="props.filter.entities"
         @update:model-value="emit('change', { entities: $event })"
       />
+      <AttemptsToggle :hidden="hidden" />
       <DateRangeFilter :model-value="props.filter.range" @update:model-value="emit('change', { range: $event })" />
     </div>
     <ul

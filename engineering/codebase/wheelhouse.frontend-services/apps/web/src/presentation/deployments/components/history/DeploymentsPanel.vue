@@ -28,7 +28,6 @@ import {
   ReleaseQueryKeys,
   useDeploymentActivity,
   useDeploymentPages,
-  useDeploymentRangeStats,
   useDeploymentTargets,
   useRunningDeployments,
 } from "@/application/deployments";
@@ -47,7 +46,6 @@ import DeploymentList from "./DeploymentList.vue";
 import DeploymentStatusLegend from "./DeploymentStatusLegend.vue";
 import DeploymentsInfo from "./DeploymentsInfo.vue";
 import RangeStatsTiles from "./RangeStatsTiles.vue";
-import AttemptsToggle from "./AttemptsToggle.vue";
 
 /** The day panel's narrowest width beside the calendar, with the gap before it: 18rem + 1.5rem. @internal */
 const SidePanelRoom = 312;
@@ -59,7 +57,7 @@ const SelectionPageLimit = 20;
 /**
  * Deployments under one shared filter, shown two ways: a calendar of outcomes per day (Grid), whose day expands into
  * that day's deployments, or the deployments newest first (List). Both show each target's latest deploy of a day until
- * the viewer's Show all attempts toggle shows every attempt, when the calendar also marks mixed days. From `lg`, where the panel has room beside the
+ * the viewer's All attempts toggle in the filter bar shows every attempt, when the calendar also marks mixed days. From `lg`, where the panel has room beside the
  * calendar, a day panel sits to its right: the chosen day's date and counts over one compact row per product, a lane
  * per environment with a glyph per deploy (`DayProductRows`), or one line asking for a day; narrower, the chosen day
  * stacks under the calendar. A glyph opens its release on the product's Deployments tab, whose List chooses the
@@ -89,13 +87,7 @@ const dayList = useDeploymentPages(route.filter, {
   enabled: () => isGrid.value && route.day.value !== null,
 });
 const running = useRunningDeployments(() => route.filter.value.entities);
-/** The measures' read, shared with the tiles: it counts every attempt, so it says how many the latest-of-day view
- * hides — the attempts a later deploy replaced that day and the deploys that changed nothing — which the toggle carries. */
-const stats = useDeploymentRangeStats(route.filter);
-const hiddenCount = computed(() => {
-  const current = stats.data.value?.current;
-  return current ? current.notApplied + current.superseded : null;
-});
+/** The viewer's All attempts toggle, in the filter bar: while on, the calendar marks mixed days. */
 const showAllAttempts = useShowAllAttempts();
 const isLive = computed(() => (running.data.value?.length ?? 0) > 0);
 
@@ -208,7 +200,6 @@ function setView(value: unknown): void {
       <DeploymentsInfo :is-grid="isGrid" />
     </template>
     <template #actions>
-      <AttemptsToggle :hidden="hiddenCount" />
       <ToggleGroup variant="segmented" aria-label="View" :model-value="route.view.value" @update:model-value="setView">
         <ToggleInput :value="DeploymentView.Grid" size="sm" class="max-md:min-h-9">
           <CalendarDays :size="14" aria-hidden="true" /><span class="ml-1">Grid</span>
@@ -268,7 +259,7 @@ function setView(value: unknown): void {
                 <InfoPopover title="The day">
                   <p class="mb-2.5">
                     One row per product. Each environment's lane holds its last deploy that day, what it runs now; with
-                    Show all attempts on, a glyph per attempt, oldest first, those that changed nothing dashed. A bar on
+                    All attempts on, a glyph per attempt, oldest first, those that changed nothing dashed. A bar on
                     the left marks a row whose latest deploy needs action (red) or a look (amber); those rows lead. Point
                     at a glyph for its release, time, state and actor, or tap it on touch; choose it to open the release
                     on the product's Deployments tab. The counts above say how many of the deploys shown reached each

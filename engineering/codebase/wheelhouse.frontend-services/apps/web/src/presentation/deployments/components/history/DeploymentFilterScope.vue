@@ -53,8 +53,10 @@ const emit = defineEmits<{ change: [filter: Partial<Filter>] }>();
           </template>
           <template #attempts>
             <p>
-              The calendar and the list show each target's last deploy of a day; the eye toggle beside Grid and List
-              shows every attempt. The measures count every attempt and every state.
+              The calendar, the list and the measures take each target's last deploy of a day: a day that ended on a
+              success reads as one, and a failure nothing fixed still shows. All attempts shows every attempt and the
+              deploys that changed nothing, in the records and the measures alike, and marks mixed days; its badge
+              counts what the last-of-day view hides. This browser remembers it.
             </p>
           </template>
         </InfoPopover>

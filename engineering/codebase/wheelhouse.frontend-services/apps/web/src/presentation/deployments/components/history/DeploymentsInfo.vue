@@ -38,7 +38,7 @@ const scale = CellFills.success.slice(1);
     <template #days>
       <p>
         Weeks run left to right, Monday on top; finished rollouts that changed the environment count on the day they
-        were submitted — each target's last of the day, or every attempt while the eye toggle shows them. Point at a day for its counts, choose it to see its deploys as one row per product, and move between
+        were submitted — each target's last of the day, or every attempt while All attempts is on. Point at a day for its counts, choose it to see its deploys as one row per product, and move between
         days with the arrow keys.
       </p>
     </template>
@@ -103,15 +103,14 @@ const scale = CellFills.success.slice(1);
     <template #statuses><DeploymentStatusLegend /></template>
     <template #attempts>
       <p>
-        The calendar, the chosen day's rows and the list show each target's last deploy of a day: a day that ended on a
-        success reads as one, and a failure nothing fixed still shows. Earlier attempts that day stay hidden, as do the
-        deploys that changed nothing — refused by a freeze or a gate, replaced in the queue, cancelled, or stopped by a
-        failed check before any change.
+        The calendar, the chosen day's rows, the list and the measures take each target's last deploy of a day: a day
+        that ended on a success reads as one, and a failure nothing fixed still shows. Earlier attempts that day stay
+        hidden, as do the deploys that changed nothing — refused by a freeze or a gate, replaced in the queue, cancelled,
+        or stopped by a failed check before any change.
       </p>
       <p class="mt-2.5">
-        The eye toggle beside Grid and List counts the hidden attempts and, pressed, shows every one (those that changed
-        nothing dashed), and the calendar marks the mixed days. The measures count every attempt either way. This browser
-        remembers it.
+        All attempts in the filter counts the hidden attempts and, pressed, shows every one (those that changed nothing
+        dashed) and counts them in the measures, and the calendar marks the mixed days. This browser remembers it.
       </p>
     </template>
   </InfoPopover>
