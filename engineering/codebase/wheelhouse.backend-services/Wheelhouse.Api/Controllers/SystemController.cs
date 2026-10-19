@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Wheelhouse.Api.Auth;
 using Wheelhouse.Api.Configurations;
 using Wheelhouse.Infrastructure.Settings;
+using WoW.Two.Sdk.Beta.Be.Web.Contracts;
 using WoW.Two.Sdk.Beta.Be.Web.SystemStatus;
 
 namespace Wheelhouse.Api.Controllers;
@@ -11,7 +13,8 @@ namespace Wheelhouse.Api.Controllers;
 [ApiController]
 [Route("api/system")]
 public sealed class SystemController(
-    HealthCheckService health, DeploymentSettings deployment, IHostEnvironment host, IConfiguration configuration)
+    HealthCheckService health, DeploymentSettings deployment, ConsoleSettings console, IHostEnvironment host,
+    IConfiguration configuration)
     : ControllerBase
 {
     /// <summary>The variable the runner gives every deployed service: the environment it runs in.</summary>
@@ -43,6 +46,23 @@ public sealed class SystemController(
             localRig = deployment.IsLocalRig,
         });
     }
+
+    /// <summary>Reports where the other console answers and which environment it serves, for the environment tag's
+    /// switch. The address is a host fact: only the owner's session reads it, never the anonymous status or an
+    /// integration key, and it is empty (both fields <see langword="null"/>) until <c>Console:PeerUrl</c> is set.</summary>
+    [Authorize(Policy = AuthConfigurationExtensions.OwnerSessionPolicy)]
+    [HttpGet("peer")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [ProducesResponseType<ApiResponse<PeerConsole>>(StatusCodes.Status200OK)]
+    public IActionResult Peer() =>
+        Ok(ApiResponse<PeerConsole>.Ok(console.PeerOrigin is { } url
+            ? new PeerConsole(url, ServedEnvironment() == "prod" ? "dev" : "prod")
+            : new PeerConsole(null, null)));
+
+    /// <summary>The other console, as the environment tag reads it.</summary>
+    /// <param name="Url">The other console's origin, <c>https://host[:port]</c>; <see langword="null"/> without a peer.</param>
+    /// <param name="Environment">The environment the other console serves, <c>dev</c> or <c>prod</c>.</param>
+    public sealed record PeerConsole(string? Url, string? Environment);
 
     /// <summary>The environment the runner named, when it is <c>dev</c> or <c>prod</c>; else the host's own rule.</summary>
     private string ServedEnvironment() =>
