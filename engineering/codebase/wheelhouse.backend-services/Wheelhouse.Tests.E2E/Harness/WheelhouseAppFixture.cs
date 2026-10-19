@@ -44,6 +44,9 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     /// <summary>The shared vault stub — records the last change so tests can assert what Wheelhouse forwarded.</summary>
     public StubVaultGateway Vaults { get; } = new();
 
+    /// <summary>The shared infrastructure stub — records Tailscale, enrollment and placement requests.</summary>
+    public StubInfraGateway Infra { get; } = new();
+
     /// <summary>The shared icon stub — add files with <see cref="StubProductIconSource.Add"/> to serve a repository's icons.</summary>
     public StubProductIconSource ProductIcons { get; } = new();
 
@@ -89,6 +92,8 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
                 // Tests run automation passes explicitly too, and move fleet rollouts on themselves.
                 ["Deployment:AutomationSeconds"] = "0",
                 ["Deployment:FleetSeconds"] = "0",
+                // Tests record finished infrastructure jobs explicitly.
+                ["Infra:FollowSeconds"] = "0",
                 // Every history read asks the stub, so a test sees the records it just wrote.
                 ["Deployment:HistorySeconds"] = "0",
                 // A browser client the owner allowed, beside the console's own origin.
@@ -101,6 +106,8 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
                 services.AddSingleton<Wheelhouse.Application.Abstractions.IDeploymentGateway>(Deployments);
                 services.RemoveAll<Wheelhouse.Application.Abstractions.IVaultGateway>();
                 services.AddSingleton<Wheelhouse.Application.Abstractions.IVaultGateway>(Vaults);
+                services.RemoveAll<Wheelhouse.Application.Abstractions.IInfraGateway>();
+                services.AddSingleton<Wheelhouse.Application.Abstractions.IInfraGateway>(Infra);
 
                 // Product icons come from the stub, never from GitHub.
                 services.RemoveAll<Wheelhouse.Application.Abstractions.IProductIconSource>();
@@ -162,6 +169,7 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
         Deployments.Observations.Clear();
         Deployments.Declarations = null;
         Vaults.Reset();
+        Infra.Clear();
         ProductIcons.Clear();
         ProductManifests.Clear();
         RepositoryFiles.Clear();

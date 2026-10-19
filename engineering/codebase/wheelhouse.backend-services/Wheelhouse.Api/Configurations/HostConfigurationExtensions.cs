@@ -147,6 +147,8 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.DeploymentAutomationWorker>();
         // Fleet rollouts: the running fleet moves on every Deployment:FleetSeconds.
         builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.FleetRolloutWorker>();
+        // Infrastructure: Tailscale, enrollment and placement (prod only), and the follower recording finished jobs.
+        builder.Services.AddInfraAutomation();
         // The runner-sites read holds briefly in the SDK cache, in process.
         builder.Services.AddHybridCaching();
         builder.Services.AddScoped<ITargetSites, Wheelhouse.Infrastructure.Products.RunnerTargetSites>();
