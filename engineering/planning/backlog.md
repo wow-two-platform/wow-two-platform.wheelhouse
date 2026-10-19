@@ -94,6 +94,8 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Roll prod back by promoting the previous release | feature | Dev-to-prod promotion exists |
 | Ability to see a product's deploys by hour and in other views in its details | feature | User 2026-10-19: not in the Deployments grid; product details only, after the Deployments, Products and Servers pages |
 | Ability to run one environment on several servers for uptime | feature | User 2026-10-19, future: one aggregated state (decision 44) and a per-server overlay; design first |
+| Back up Wheelhouse's own database on a schedule to at least two locations | feature | User 2026-10-19: not before Ocharo deploys; the control plane's audit, inventory and history need off-host copies |
+| Snapshot Wheelhouse's database in the promote workflow before a prod promotion | feature | User 2026-10-19: make `promote-prod.yml` reliable; a migration jump (0.3.9 → 0.5.x) runs on first start |
 | Ability to roll back automatically when the watch window sees a regression | feature | User 2026-10-19: later; the watch window flags the regression and the owner decides |
 | Recover database migrations across services when a later service fails | decision | User 2026-10-19, for discussion: A migrates, then B's migration fails, so A's must roll back too. Either every migration stays rollback-safe, or the release updates A and B first and migrates the databases after |
 | Show the maintenance page in Uzbek, Russian and English at least | feature | Parked 2026-10-19 from Iteration 15: per-product copy in the manifest, chosen by `Accept-Language` |

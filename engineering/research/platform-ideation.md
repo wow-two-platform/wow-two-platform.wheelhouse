@@ -55,6 +55,9 @@ written from it when the version opens.
 | 43 | A product's deploy history and its releases share one name and tab: Deployments | 2026-10-19 |
 | 44 | An environment on several servers shows one state: succeeded when all succeed, failed when all fail, degraded otherwise; an overlay lists each server | 2026-10-19 |
 | 45 | Each service can be stopped, started or restarted from the console now; settings and secrets changes restart their services now or at a set time | 2026-10-19 |
+| 46 | One build job per release in the shared pipeline; a product splits into per-service jobs only when its build regularly passes 10 minutes | 2026-10-19 |
+| 47 | A product's manifest declares the public paths each service serves; Wheelhouse picks domains from a connected provider (Cloudflare first) and applies DNS and routing per environment | 2026-10-19 |
+| 48 | Each console's environment tag switches to the same page on the other console | 2026-10-19 |
 
 | Fact | Owner |
 |---|---|
