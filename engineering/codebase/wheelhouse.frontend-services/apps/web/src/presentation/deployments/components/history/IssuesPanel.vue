@@ -48,6 +48,16 @@ function pathOf(issue: DeploymentIssue): string {
   return `${ConsolePaths.deployments}/${encodeURIComponent(issue.deployment.id)}`;
 }
 
+/**
+ * The issue's tone in the console's status vocabulary: a roll back and a regression after the deploy are degraded
+ * (amber); a failure, a failed roll back, an interruption and a stuck rollout are red. @internal
+ */
+function toneOf(issue: DeploymentIssue): string {
+  return issue.kind === DeploymentIssueKind.RolledBack || issue.kind === DeploymentIssueKind.Degraded
+    ? "text-warning"
+    : "text-destructive";
+}
+
 function describe(issue: DeploymentIssue): string {
   return `${productOf(issue)} ${issue.deployment.environment ?? issue.deployment.targetId ?? ""}`.trim();
 }
@@ -67,7 +77,7 @@ function describe(issue: DeploymentIssue): string {
         <component
           :is="issue.needsReconcile ? Wrench : TriangleAlert"
           :size="18"
-          :class="['mt-0.5 md:mt-0', issue.kind === DeploymentIssueKind.RolledBack || issue.kind === DeploymentIssueKind.Interrupted || issue.kind === DeploymentIssueKind.Degraded ? 'text-warning' : 'text-destructive']"
+          :class="['mt-0.5 md:mt-0', toneOf(issue)]"
           aria-hidden="true"
         />
         <div class="min-w-0">
@@ -86,7 +96,7 @@ function describe(issue: DeploymentIssue): string {
             <FrozenBadge :product="issue.deployment.product" :environment="issue.deployment.environment" />
           </p>
           <p class="mt-1 text-sm">
-            <span :class="issue.kind === DeploymentIssueKind.RolledBack || issue.kind === DeploymentIssueKind.Interrupted || issue.kind === DeploymentIssueKind.Degraded ? 'text-warning' : 'text-destructive'">{{
+            <span :class="toneOf(issue)">{{
               DeploymentIssues.headline(issue)
             }}</span>
             <span v-if="issue.deployment.reason" class="text-muted-foreground"> · {{ issue.deployment.reason }}</span>
