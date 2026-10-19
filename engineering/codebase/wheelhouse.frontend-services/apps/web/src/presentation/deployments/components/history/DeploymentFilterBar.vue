@@ -30,7 +30,8 @@ import EntityPicker from "./EntityPicker.vue";
  * One filter for both views and the measures: which workspaces, products and services, which attempts, and when.
  * Picked entities show as chips that each remove themselves. The All attempts toggle between the products and the range
  * is the viewer's own choice, remembered by this browser rather than kept in the address; its badge counts the attempts
- * hidden under the filter, from the measures' read, which it shares with the tiles.
+ * hidden under the filter, from the measures' read, which it shares with the tiles. A product's own bar — the toggle and
+ * the range — keeps one line on a phone: the toggle folds to its icon and badge, and the range's label truncates.
  */
 defineOptions({ name: "DeploymentFilterBar" });
 const props = withDefaults(defineProps<DeploymentFilterBarProps>(), { isEntityLocked: false, isSingleRow: false });
@@ -57,7 +58,9 @@ function remove(key: string): void {
         'flex min-w-0 flex-wrap items-center gap-2',
         props.isSingleRow
           ? 'max-md:-mx-1 max-md:flex-nowrap max-md:overflow-x-auto max-md:px-1 max-md:pr-6 max-md:pb-0.5 max-md:*:shrink-0 max-md:[mask-image:linear-gradient(to_right,#000_calc(100%-1.5rem),transparent)]'
-          : '',
+          : props.isEntityLocked
+            ? 'max-md:flex-nowrap'
+            : '',
       ]"
     >
       <EntityPicker

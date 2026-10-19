@@ -20,7 +20,10 @@ import { DeploymentFilters, type DeploymentRange as Range } from "@/domain/deplo
 import { useIsPhone } from "../../hooks/useIsPhone";
 import DateRangeChoices from "./DateRangeChoices.vue";
 
-/** The range control: presets ending now or a custom from and to with time. A popover from `md` up; a bottom sheet on a phone. */
+/**
+ * The range control: presets ending now or a custom from and to with time. A popover from `md` up; a bottom sheet on a
+ * phone, whose trigger may shrink in a full row, truncating its label.
+ */
 defineOptions({ name: "DateRangeFilter" });
 const props = defineProps<DateRangeFilterProps>();
 const emit = defineEmits<{ "update:modelValue": [value: Range] }>();
@@ -40,7 +43,7 @@ function choose(value: Range): void {
       variant="outline"
       tone="neutral"
       size="sm"
-      class="min-h-11 max-w-full justify-start"
+      class="min-h-11 max-w-full min-w-0 justify-start"
       :aria-label="`Date range: ${label}`"
       aria-haspopup="dialog"
       @click="open = true"

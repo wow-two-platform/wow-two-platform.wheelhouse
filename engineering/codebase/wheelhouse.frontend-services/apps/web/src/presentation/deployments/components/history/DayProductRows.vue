@@ -33,7 +33,9 @@ import { HintPlacement } from "./HintPlacement";
  * latest deploys need action (red) or a look (amber); those rows lead, then the rest, by name. Pointing at or focusing
  * a glyph shows its release, time, state and actor in a tooltip drawn in the top layer; a click opens the release on
  * the product's Deployments tab. On touch, a tap shows the same tooltip with a link to it. Glyphs wrap inside a narrow
- * lane. Causes, services and actions live in the release's rows and the deployment's own page, not here.
+ * lane, and a lane narrows rather than squeeze the name below 7rem. A name wraps to two lines between its words, never
+ * inside one: a word longer than the column ends in an ellipsis, the whole name in its title. Causes, services and
+ * actions live in the release's rows and the deployment's own page, not here.
  */
 defineOptions({ name: "DayProductRows" });
 const props = defineProps<DayProductRowsProps>();
@@ -61,8 +63,17 @@ let pointer = "";
 const slots = computed(() => {
   const busiest = Math.max(0, ...(props.rows ?? []).flatMap((row) => row.lanes.map((lane) => lane.glyphs.length)));
   const wide = Math.min(4, Math.max(2, busiest));
-  return { "--wh-lane-n": String(wide), "--wh-lane-np": String(Math.min(3, wide)) };
+  return {
+    "--wh-lane-n": String(wide),
+    "--wh-lane-np": String(Math.min(3, wide)),
+    "--wh-lanes": String(Math.max(1, props.environments.length)),
+  };
 });
+
+/** A name's words, which wrap only between one another. */
+function wordsOf(name: string): string[] {
+  return name.split(/\s+/).filter(Boolean);
+}
 
 const BarClass = { act: "bg-destructive", look: "bg-warning" } as const;
 const BarWords = { act: "needs action", look: "worth a look" } as const;
@@ -170,7 +181,7 @@ function unlisten(): void {
 </script>
 
 <template>
-  <div class="min-w-0">
+  <div class="@container min-w-0">
     <!-- A glyph is 24px (26px on a phone) with 4px gaps; a lane's column fits its slots and its 8px end padding. -->
     <table class="w-full table-fixed border-separate border-spacing-0 text-sm" :style="slots">
       <caption class="sr-only">
@@ -178,11 +189,7 @@ function unlisten(): void {
       </caption>
       <colgroup>
         <col />
-        <col
-          v-for="environment in props.environments"
-          :key="environment"
-          class="w-[calc(var(--wh-lane-n)*1.75rem+0.25rem)] max-md:w-[calc(var(--wh-lane-np)*1.875rem+0.25rem)]"
-        />
+        <col v-for="environment in props.environments" :key="environment" class="wh-lane" />
       </colgroup>
       <thead>
         <tr class="text-[0.6875rem] font-medium tracking-wide text-muted-foreground uppercase">
@@ -208,7 +215,12 @@ function unlisten(): void {
               :class="['absolute inset-y-1.5 left-0 w-[3px] rounded-full', BarClass[row.attention]]"
               aria-hidden="true"
             />
-            <span class="line-clamp-2 break-words hyphens-auto" :title="row.name">{{ row.name }}</span>
+            <!-- Each word truncates on its own, so a line breaks only between words. -->
+            <span class="line-clamp-2" :title="row.name"
+              ><template v-for="(word, index) in wordsOf(row.name)" :key="index"
+                >{{ index ? " " : "" }}<span class="inline-block max-w-full truncate align-top">{{ word }}</span></template
+              ></span
+            >
             <span v-if="row.attention" class="sr-only">, {{ BarWords[row.attention] }}</span>
           </th>
           <td v-for="lane in row.lanes" :key="lane.environment" class="border-t border-border py-1.5 pe-2 align-middle">
@@ -271,3 +283,17 @@ function unlisten(): void {
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+/* A lane's column fits its slots, but leaves the name at least 7rem: past that it narrows and its glyphs wrap, one glyph
+   wide at the least. Container units read the rows' own width, so the side panel and a phone both hold. */
+.wh-lane {
+  width: max(2rem, min(calc(var(--wh-lane-n) * 1.75rem + 0.25rem), calc((100cqw - 7rem) / var(--wh-lanes))));
+}
+
+@media (width < 48rem) {
+  .wh-lane {
+    width: max(2.125rem, min(calc(var(--wh-lane-np) * 1.875rem + 0.25rem), calc((100cqw - 7rem) / var(--wh-lanes))));
+  }
+}
+</style>

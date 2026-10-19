@@ -23,9 +23,8 @@ import { useShowAllAttempts } from "@/application/preferences";
  * badge with how many attempts are hidden under the current filter and range. Off, the calendar, the chosen day's rows,
  * the list and the measures take each target's latest deploy of a day; pressed, every attempt and every deploy that
  * changed nothing, and the calendar marks mixed days. This browser remembers the choice. Hovering explains it in one
- * line; on touch, the filter's info button does. The line opens below the toggle: the fe sdk tooltip's floating layer
- * carries no z-index (it sits on the inner panel), so above the toggle the sticky filter strip would cover it — an fe
- * sdk candidate.
+ * line; on touch, the filter's info button does. On a phone the name folds away, leaving the icon and the badge, so the
+ * toggle and the range keep one line; the accessible name carries the whole hint.
  */
 defineOptions({ name: "AttemptsToggle" });
 const props = defineProps<AttemptsToggleProps>();
@@ -40,18 +39,18 @@ const hint = computed(() => {
 </script>
 
 <template>
-  <Tooltip :content="hint" placement="bottom">
+  <Tooltip :content="hint">
     <Button
       variant="outline"
       tone="neutral"
       size="md"
       :aria-pressed="shown"
       :aria-label="`Show all attempts: ${hint}`"
-      :class="['max-md:min-h-11', shown ? 'bg-muted' : '']"
+      :class="['shrink-0 max-md:min-h-11', shown ? 'bg-muted' : '']"
       @click="shown = !shown"
     >
       <template #leading><component :is="shown ? Eye : EyeOff" :size="16" aria-hidden="true" /></template>
-      <span aria-hidden="true">All attempts</span>
+      <span aria-hidden="true" class="max-md:hidden">All attempts</span>
       <span
         aria-hidden="true"
         :class="[
