@@ -231,7 +231,9 @@ A GHCR pull remains the definitive image-availability check before container rep
 GitHub credentials, private releases included: [GitHub access](#github-access).
 
 Registry login belongs to the target deployment account. Public GHCR images need no pull credential;
-private images require a read-only token and `docker login --password-stdin`.
+private images require a read-only token and `docker login --password-stdin`. On a products host,
+`prepare.py --server products --ghcr-user … --ghcr-token-file …` does it, refusing any token but a classic
+`read:packages` one ([VPS › Products host](vps/vps.md#products-host)).
 Verify first-publish package visibility explicitly; source-repository visibility does not prove image visibility.
 
 The target requires Linux, Python 3, Docker Engine/Compose v2, private configuration files and the external `platform` network.
@@ -501,6 +503,7 @@ python3 rehearse.py deploy --env prod --tag v0.0.1-local.1 --confirm foreverpin-
 python3 rehearse.py bundle --tag v0.0.1-broken.1 --broken     # a release that fails after replacement
 python3 rehearse.py state --env dev
 python3 rehearse.py self                                      # Wheelhouse builds and deploys itself to wheelhouse-dev
+python3 rehearse.py products                                  # the products-host kit on a second local host
 python3 rehearse.py down --volumes
 ```
 
@@ -516,6 +519,15 @@ python3 rehearse.py down --volumes
 - `self` builds Wheelhouse's image and bundle from this checkout with `release.py` and deploys it to `wheelhouse-dev`.
 - Its private `console` site answers at `http://console-wheelhouse.dev.localhost:18080`, on database `wheelhouse_dev`.
 - Sign-in there needs a GitHub OAuth app in `state/secrets/dev/wheelhouse-console.json`; the file starts with placeholders.
+- `products` starts a products host with its own Docker daemon (SSH `127.0.0.1:2223`), laid out by
+  `bootstrap-products.sh`'s own steps; `prepare.py --server products` creates its platform, ForeverPin's databases and
+  site nodes. It pins and accepts a runner key and deploys the newest healthy release to `foreverpin-dev` over SSH from
+  its own inventory (`state/products/inventory`).
+- Its sites answer through the private entry point by site name, as a site node reaches them. A stand-in prod console
+  proves `authorize-runner.sh --remote` and `--accept` at a stand-in tailnet address.
+- A password-protected local registry stands in for GHCR: the deploy account signs in through `prepare.py`'s GHCR
+  sign-in, and the runner's SSH session pulls a private image that root, without a sign-in, cannot.
+- Packages, the firewall, unattended updates and the tailnet need a real Ubuntu host; the rehearsal leaves them out.
 
 ### From an IDE
 
@@ -627,6 +639,9 @@ A service's recent container output is readable on request through `logs`; Docke
 10. Bootstrap Wheelhouse privately or use the operator command from a workstation.
 11. Deploy dev, verify real URLs and provider callbacks, restore a backup, promote the same image digests to prod.
 
+A VPS that hosts products only follows [VPS › Products host](vps/vps.md#products-host): its bootstrap, `prepare.py`
+and `authorize-runner.sh` script steps 3–7, while the fingerprint and settings values stay with the owner. Its sites
+stay on the tailnet until public ingress ships.
 Existing product containers keep serving without Wheelhouse. A new VPS is a Servers entry plus its credential files; it uses the same product release.
 Data relocation remains a separately planned copy/restore/cutover operation.
 

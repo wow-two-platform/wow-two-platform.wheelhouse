@@ -5,24 +5,29 @@
 This bootstrap prepares the private control-plane host on Ubuntu 26.04 amd64: `wheelhouse-prod` and
 `wheelhouse-dev` side by side, each with its own database and sign-in. GitHub builds the image; the existing
 [runner](../../codebase/wheelhouse.runner-services/runner.py) deploys its immutable bundle over pinned SSH.
+A second VPS that runs products only is wired by [§ Products host](#products-host).
 
 ## Files and boundaries
 
 | Asset | Runs where | Result |
 |---|---|---|
 | [Host bootstrap](bootstrap.sh) | Verified VPS, administrator | Docker/Compose/Python/OpenSSH, deploy account, network, platform files |
-| [Configuration generator](prepare.py) | VPS, deployment account | Each console's database credentials, settings and target JSON |
+| [Products bootstrap](bootstrap-products.sh) | Verified products VPS, administrator | The same, plus SSH keys only, firewall, unattended security updates and the tailnet |
+| [Configuration generator](prepare.py) | VPS, deployment account | Each console's database credentials, settings and target JSON; with `--server products`, a products host's platform, databases, site nodes and GHCR sign-in |
 | [Canary generator](prepare_canary.py) | VPS, deployment account | The canary's dev and prod databases and settings files |
-| [Runner authorization](authorize-runner.sh) | VPS, administrator | A console's own runner SSH identity for this host |
+| [Runner authorization](authorize-runner.sh) | VPS, administrator | A console's own runner SSH identity for this host; with `--remote` and `--accept`, prod's identity for a products host |
 | [Identity template](identity.example.json) | Copy to a private VPS file | Real OAuth credentials and owner allowlist, supplied by the operator |
 | [Platform Compose](platform.compose.yml) | VPS | PostgreSQL 16, private Traefik ingress and the canary's tailnet nodes |
+| [Products Compose](products.compose.yml) | Products VPS | PostgreSQL 16, a private Traefik entry point and the site nodes `prepare.py` renders in |
+| [Site Serve config](tailscale-serve-products.json) | Products VPS, each site node | Tailnet HTTPS `:443` to Traefik's private entry point |
 | [Network and access](network.md) | Reference | Paths in, tailnet policy and tags, Docker networks, verification |
 | [Console allowlist](control-only.yml) | VPS ingress folder | Traefik middleware: the console entry points accept only the host itself |
-| [Tailnet policy](tailnet-policy.hujson) | Tailscale admin console | Owner devices reach consoles, SSH and canary sites; tagged nodes reach nothing |
+| [Tailnet policy](tailnet-policy.hujson) | Tailscale admin console | Owner devices reach consoles, SSH, canary and product sites; the control host reaches a products host's SSH only |
 | [Network migration](migrate-control-network.sh) | VPS, administrator, once | Moves an existing host onto the `control` and `platform` split |
 
-The scripts do not accept SSH host keys, enroll Tailscale, change firewall/sshd policy, fetch operator
-credentials or start Wheelhouse. They are executable preparation assets, not evidence of deployment.
+The control-host scripts do not accept SSH host keys, enroll Tailscale, change firewall/sshd policy, fetch operator
+credentials or start Wheelhouse. The products bootstrap does set SSH, firewall and tailnet policy; neither accepts a
+host key or fetches a credential. They are executable preparation assets, not evidence of deployment.
 `bootstrap.sh` can rerun on its prepared host; it refuses incompatible engines/networks and never upgrades an
 installed package, because a Docker upgrade restarts every container on the host.
 `prepare.py` refuses existing or partial credential output instead of rotating a live database password.
@@ -122,10 +127,12 @@ Narrow public SSH only after a second verified private SSH session and provider-
 ### Tailnet policy
 
 Tailscale's default policy lets every node reach every other. [tailnet-policy.hujson](tailnet-policy.hujson)
-replaces it: owner devices reach the consoles (443, 8443), administrator SSH and the canary sites, and every tagged
-node reaches nothing. Paste the policy under Access controls first (a tag must be defined before a machine can
+replaces it: owner devices reach the consoles (443, 8443), administrator SSH, the canary sites and the product sites.
+The one tagged path is the control host to a products host's SSH ([§ Products host](#products-host)); every other
+tagged node reaches nothing. Paste the policy under Access controls first (a tag must be defined before a machine can
 carry it), then tag the control-plane machine `tag:control` (Machines › Edit ACL tags). The policy's tests refuse a
-save that would let a canary node or the host reach anything.
+save that would let a canary, products or site node reach the control host, or the control host reach more than a
+products host's SSH.
 Verify from a canary node afterwards:
 
 
@@ -266,6 +273,199 @@ docker compose --env-file host.env -f compose.yml exec -T postgres psql -U postg
 
 Then remove the `canary-test` machine in the Tailscale admin console (Machines › canary-test › Remove).
 `172.30.0.11` stays unassigned.
+
+## Products host
+
+A second VPS runs products only, Ocharo first: PostgreSQL, a private Traefik entry point and one tailnet node per
+private site. No console and no Wheelhouse database run there. Only Wheelhouse prod deploys to it, over the tailnet;
+dev never receives its key. Until public ingress ships (v0.5 Iteration 11), every site answers on the tailnet only.
+
+```text
+Owner device -> https://<site-node>.<tailnet>.ts.net -> site node Serve :443 -> Traefik private 172.30.0.2:8080
+  -> <product>-<environment>-<service>:<port> on `platform`
+Prod console (control host) -> tailnet -> <products-tailnet-ip>:22 -> wheelhouse-deploy (prod's key, restrict)
+```
+
+| Path on the products host | Holds |
+|---|---|
+| `/srv/wheelhouse/platform/compose.yml` | Rendered by `prepare.py`: `products.compose.yml` plus one service per site node |
+| `/srv/wheelhouse/platform/.secrets/postgres-password` | PostgreSQL's administrator password, created once |
+| `/srv/wheelhouse/platform/sites.json` · `sites/<node>/` | Site nodes and their fixed addresses (`172.30.0.64/26`); each node's tailnet state |
+| `/srv/wheelhouse/config/<product>-<environment>/database.json` | Owner-only role, password and connection string |
+| `/srv/wheelhouse/config/<product>-<environment>/<service>.json` | The settings files a target names; mode `0444` inside the mode-`0700` folder |
+| `/srv/wheelhouse/private/` | Owner-placed `tailscale-sites.env` (site nodes' auth key) and, briefly, `ghcr-token` |
+| `/srv/wheelhouse/ingress/` | The runner's routes, read by Traefik |
+
+| Step | Who |
+|---|---|
+| Buy, verify the host key, administrator key, tailnet policy, auth key, GitHub token | Owner |
+| Packages, deploy account, kit, `platform` network, SSH policy, firewall, updates, tailnet join | `bootstrap-products.sh` |
+| PostgreSQL password, Compose file, databases, settings folders, site nodes, GHCR sign-in | `prepare.py --server products` |
+| Prod's runner identity, its host-key pin, its authorization and the proof it connects | `authorize-runner.sh` |
+| Server and targets, settings values, deploys | Owner, in Wheelhouse prod |
+
+The local rehearsal (`python3 rehearse.py products`) proves every scripted step except packages, the firewall, updates
+and the tailnet, which need a real Ubuntu host ([Local server](../deployment.md#local-server)).
+
+### 1. Buy and first sign-in (owner)
+
+1. Order the VPS in the OVH Canada account: Ubuntu 26.04 amd64, at least 8 GB RAM and 100 GB disk.
+2. Verify the SSH host fingerprint in the OVH console before the first connection, as in
+   [Initial administrator access](#initial-administrator-access).
+3. Put your own key on the administrator account and sign in with it; password sign-in goes in step 3:
+   `ssh-copy-id -i ~/.ssh/<your-key>.pub ubuntu@<public-ip>`, then `ssh ubuntu@<public-ip>`.
+4. Give the administrator a local password for the provider's KVM console, the recovery path once SSH is tailnet-only:
+   `sudo passwd ubuntu`. Keep it in the password manager; SSH never accepts it.
+
+### 2. Tailnet policy and site key (owner, Tailscale admin console)
+
+1. Paste [tailnet-policy.hujson](tailnet-policy.hujson) under Access controls and save; its tests must pass.
+   It defines `tag:products` (the host) and `tag:product-site` (the site nodes): owner devices reach the host's SSH and
+   the sites on 443, and the control host reaches the products host's SSH, nothing else.
+2. Settings › Keys › Generate auth key: reusable, pre-approved, tagged `tag:product-site`. Keep it for step 5.
+
+### 3. Bootstrap (owner runs the script)
+
+```sh
+scp -r engineering/deployment/vps ubuntu@<public-ip>:wheelhouse-kit
+ssh ubuntu@<public-ip>
+sudo bash wheelhouse-kit/bootstrap-products.sh --host-identity-verified --tailnet-hostname <products-node>
+```
+
+- `tailscale up` prints a sign-in link; open it as the tailnet administrator. The node joins as `tag:products`, so its
+  key never expires.
+- The script refuses to run before your key signs you in, since it turns password sign-in off.
+- SSH stays public until you close it. From the laptop, open a session over the tailnet and keep it open:
+  `ssh ubuntu@<products-tailnet-ip>`. In that session:
+  `sudo bash wheelhouse-kit/bootstrap-products.sh --host-identity-verified --tailnet-only-ssh`.
+- Fallback when the tailnet path is lost: sign in on the OVH KVM console and run
+  `sudo bash wheelhouse-kit/bootstrap-products.sh --host-identity-verified --public-ssh` (or `sudo ufw allow 22/tcp`).
+  OVH rescue mode is the last resort.
+- 80 and 443 stay closed. Apply pending OS updates once, in a reboot window:
+  `sudo apt-get update && sudo apt-get upgrade && sudo reboot`. After that, security updates install unattended,
+  without reboots; Docker and Tailscale upgrade only by hand.
+- Every step converges, so a rerun is safe; a rerun keeps the current SSH exposure.
+
+### 4. Platform (owner runs the script)
+
+```sh
+sudo -u wheelhouse-deploy -H python3 /srv/wheelhouse/bootstrap/prepare.py --server products
+sudo -u wheelhouse-deploy docker compose --env-file /srv/wheelhouse/platform/host.env \
+  -f /srv/wheelhouse/platform/compose.yml up -d --wait
+```
+
+Rerunning `prepare.py --server products` keeps the PostgreSQL password and renders `compose.yml` again, after a kit
+update too: run it after every `bootstrap-products.sh` rerun.
+
+### 5. Products and their sites (owner runs the script)
+
+```sh
+sudo -u wheelhouse-deploy -H python3 /srv/wheelhouse/bootstrap/prepare.py --server products \
+  --product ocharo-platform --database --site app=ocharo-desk --tailnet <tailnet>.ts.net
+sudo -u wheelhouse-deploy -H python3 /srv/wheelhouse/bootstrap/prepare.py --server products \
+  --product ocharo-studio --site app=ocharo-studio --tailnet <tailnet>.ts.net
+# The site nodes' auth key from step 2: paste TS_AUTHKEY=<key>, then Ctrl-D.
+sudo -u wheelhouse-deploy sh -c 'umask 077; cat > /srv/wheelhouse/private/tailscale-sites.env'
+sudo -u wheelhouse-deploy docker compose --env-file /srv/wheelhouse/platform/host.env \
+  -f /srv/wheelhouse/platform/compose.yml up -d --wait
+```
+
+- `--database` creates `<product>_dev` and `<product>_prod` (hyphens become underscores), each its own role owning
+  only its database, and writes `config/<product>-<environment>/database.json`. Existing credentials are refused.
+  Studio keeps SQLite on its volume, so it takes no `--database`.
+- `--site <site>=<node>` gives the site a node per environment: `<node>-dev` for dev, `<node>` for prod. The output names
+  each site's address, `https://<node>.<tailnet>.ts.net`. A repeated site keeps its node and address.
+- Each node appears under Machines as `tag:product-site`; HTTPS certificates must be enabled in the tailnet.
+
+### 6. GHCR read access (owner)
+
+Ocharo's images are private. GHCR takes a classic personal access token: GitHub › Settings › Developer settings ›
+Personal access tokens (classic), scope `read:packages` only, with an expiry. It reads every package the account can,
+so a dedicated machine account narrows it.
+
+```sh
+# Paste the token, then Ctrl-D.
+sudo -u wheelhouse-deploy sh -c 'umask 077; cat > /srv/wheelhouse/private/ghcr-token'
+sudo -u wheelhouse-deploy -H python3 /srv/wheelhouse/bootstrap/prepare.py --server products \
+  --ghcr-user <github-login> --ghcr-token-file /srv/wheelhouse/private/ghcr-token
+sudo shred -u /srv/wheelhouse/private/ghcr-token
+sudo -u wheelhouse-deploy -H docker pull ghcr.io/ocharo-hq/<image>:<tag>
+```
+
+`prepare.py` asks GitHub for the token's scopes and refuses anything but `read:packages`, then runs
+`docker login ghcr.io --password-stdin`; nothing prints the token. The credential lands in
+`/home/wheelhouse-deploy/.docker/config.json` (mode `0600`), which the runner's Docker reads over SSH. Rotate by placing a
+new token and running the same two commands.
+
+### 7. Prod's runner key (owner runs the script on both hosts)
+
+Copy the updated kit to the control host first (`scp -r engineering/deployment/vps <admin>@<control-host>:wheelhouse-kit`).
+
+```sh
+# Products host: its host key; the fingerprint must match the one verified in step 1. Save the key line on the
+# control host as products-host-key.pub.
+cat /etc/ssh/ssh_host_ed25519_key.pub; ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+# Control host: prod's identity for <server-id>, pinned to the products host's tailnet address; prints its public key.
+sudo bash wheelhouse-kit/authorize-runner.sh wheelhouse-prod <server-id> --remote <products-tailnet-ip> \
+  --host-key products-host-key.pub > wheelhouse-prod-runner.pub
+# Products host: copy wheelhouse-prod-runner.pub over (a public key), then authorize it for wheelhouse-deploy.
+sudo bash /srv/wheelhouse/bootstrap/authorize-runner.sh --accept wheelhouse-prod-runner.pub
+# Control host: the same command again proves prod's console reaches it.
+sudo bash wheelhouse-kit/authorize-runner.sh wheelhouse-prod <server-id> --remote <products-tailnet-ip> \
+  --host-key products-host-key.pub
+```
+
+- The identity lives only in prod's `/data/deployments/ssh/<server-id>/`; an existing one is never replaced.
+- `wheelhouse-dev` and any address outside the tailnet (`100.64.0.0/10`) are refused.
+- The address, not the MagicDNS name: the console resolves nothing on the tailnet.
+
+### 8. Register and deploy (owner, Wheelhouse prod)
+
+Servers › Add server:
+
+| Field | Value |
+|---|---|
+| Slug | `<server-id>`, as in step 7 |
+| Provider, region | OVHcloud, the VPS's region |
+| Host · SSH user · SSH port | `<products-tailnet-ip>` · `wheelhouse-deploy` · `22` |
+| Scheme · port · certificate resolver | `https` · empty · empty |
+| Entry points · private entry points | `private` · `private`: every site answers privately until public ingress ships |
+| Host pattern | Empty; each target names its site hosts |
+| Probe · private probe | `http://127.0.0.1:18080` · `http://127.0.0.1:18080` |
+
+Products: import Ocharo from its hub catalog (the GitHub App on `ocharo-hq` gives prod its private releases), then add
+dev and prod environments for each product:
+
+- Server `<server-id>`, network `platform`, root `/srv/wheelhouse`.
+- Settings per service: `/srv/wheelhouse/config/<product>-<environment>/<service>.json`.
+- Sites: `app` → `<node>-dev.<tailnet>.ts.net` (dev) or `<node>.<tailnet>.ts.net` (prod).
+
+Fill each settings file from the release's required keys (`transport.py template`, or the target's check, which
+names a missing one), then publish it read-only:
+
+- The connection string from `database.json`; `AllowedHosts` `<site host>;localhost`.
+- `Deployment:TrustedProxies` `["172.30.0.2"]`, Traefik's `platform` address.
+
+```sh
+sudo -u wheelhouse-deploy cat /srv/wheelhouse/config/ocharo-platform-dev/database.json
+sudo -u wheelhouse-deploy sh -c 'umask 077; f=/srv/wheelhouse/config/ocharo-platform-dev/desk.json;
+  [ ! -e "$f" ] || chmod 0600 "$f"; cat > "$f"; chmod 0444 "$f"'   # paste the JSON, then Ctrl-D
+```
+
+Deploy dev from Deployments: Check first, then Deploy. Open `https://ocharo-desk-dev.<tailnet>.ts.net` from an owner
+device. Promote to prod once dev passes.
+
+### Verify
+
+```sh
+sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin) '   # all "no"
+sudo ufw status verbose        # 22 on tailscale0 only after --tailnet-only-ssh; no 80 or 443
+sudo -u wheelhouse-deploy docker network inspect platform -f '{{json .IPAM.Config}}'
+```
+
+- From outside the tailnet, the public address answers on no port, IPv4 and IPv6, once SSH is tailnet-only.
+- From an owner device, each site answers at its node; Traefik's own 404 means the target names another host.
+- In prod, Servers shows the host's vitals and each target's check passes.
 
 ## GitHub-hosted CI access
 
