@@ -439,8 +439,9 @@ class TransportTests(unittest.TestCase):
         (bundle / "release.json").write_text(json.dumps(manifest))
         return bundle
 
-    def gated(self, dev_state=None, skip=False, confirm=None):
-        """Submits a release to pilot-prod with pilot-dev as its only dev target; SSH marks passing the gate."""
+    def gated(self, dev_state=None, skip=False, confirm=None, journal=None):
+        """Submits a release to pilot-prod with pilot-dev as its only dev target; SSH marks passing the gate. `journal` is
+        what pilot-dev's own journal answers for the release."""
         config = self.policy_config("prod", False, False)
         config["requiresDevPass"] = True
         dev = transport.fleet.Target("pilot-dev", "pilot", "pilot", transport.fleet.DeploymentEnvironment.DEV,
@@ -458,6 +459,7 @@ class TransportTests(unittest.TestCase):
                 patch.object(transport.fleet, "active_targets", return_value=(dev,)), \
                 patch.object(transport.artifacts, "prepare", return_value=self.release_bundle()), \
                 patch.object(transport, "target_state", side_effect=state), \
+                patch.object(transport, "journal_pass", return_value=journal), \
                 patch.object(transport, "Ssh", side_effect=Reached):
             try:
                 transport.submit(self.root, "pilot-prod", "pilot-gh-1", "max", confirm, skip)
@@ -472,6 +474,14 @@ class TransportTests(unittest.TestCase):
 
     def test_prod_takes_a_release_its_dev_target_verified(self):
         self.assertEqual("passed the gate", self.gated(dev_state={"release": "v1.0.0"}))
+
+    def test_prod_takes_a_release_its_dev_journal_holds_from_another_submitter(self):
+        # A rollback: dev runs a newer release now, but its journal holds this one's success (a CI-era deploy).
+        self.assertEqual("passed the gate", self.gated(
+            dev_state={"release": "v1.1.0"},
+            journal={"id": "j-1", "release": "v1.0.0", "completedAt": "2026-10-01T10:00:00+00:00"}))
+        with self.assertRaisesRegex(ValueError, "Deploy this release to dev first"):
+            self.gated(dev_state={"release": "v1.1.0"}, journal={"id": "j-2", "release": "v0.9.0"})
 
     def test_prod_takes_a_release_that_succeeded_on_dev_in_local_records(self):
         job = "00000000-0000-4000-8000-000000000001"
@@ -539,6 +549,55 @@ class TransportTests(unittest.TestCase):
         record = json.loads((self.root / "jobs" / (submitted["id"] + ".json")).read_text())
         self.assertEqual(fleet_id, record["fleetId"])
         self.assertEqual(fleet_id, transport.jobs(self.root)[0]["fleetId"])
+
+    def test_wheelhouse_prod_is_promoted_only_by_the_owner_with_the_typed_id_and_a_reason(self):
+        config = {**self.policy_config("prod", False, True), "requiresDevPass": False, "self": True}
+        config["target"] = {**config["target"], "product": "wheelhouse"}
+        launched = []
+
+        class FakeSsh:
+            def __init__(self, ssh_config):
+                pass
+
+            def run(self, command, stdin=None, timeout=30):
+                if "launch" in command:
+                    launched.append(command)
+                    return json.dumps({"id": "77777777-7777-4777-8777-777777777777", "status": "queued"})
+                return ""
+
+            def copy(self, files, destination):
+                pass
+
+        bundle = self.release_bundle()
+        manifest = json.loads((bundle / "release.json").read_text())
+        manifest["product"] = "wheelhouse"
+        (bundle / "release.json").write_text(json.dumps(manifest))
+        fleet_id = "66666666-6666-4666-8666-666666666666"
+        with patch.object(transport.fleet, "resolve_target", return_value=config), \
+                patch.object(transport.artifacts, "prepare", return_value=bundle), \
+                patch.object(transport, "Ssh", FakeSsh):
+            for arguments, refusal in (
+                    ({"confirm": "wheelhouse-prod"}, "Give a reason to promote Wheelhouse prod"),
+                    ({"reason": "v0.5 burn-in"}, "Type wheelhouse-prod to promote Wheelhouse prod"),
+                    ({"confirm": "wheelhouse-dev", "reason": "v0.5 burn-in"}, "Type wheelhouse-prod to promote"),
+                    ({"confirm": "wheelhouse-prod", "reason": "v0.5", "fleet_id": fleet_id}, "never part of a fleet")):
+                with self.subTest(arguments=arguments), self.assertRaisesRegex(ValueError, refusal):
+                    transport.submit(self.root, "wheelhouse-prod", "wheelhouse-v0-5-0", "max", **arguments)
+            self.assertEqual([], launched)
+            submitted = transport.submit(self.root, "wheelhouse-prod", "wheelhouse-v0-5-0", "max",
+                                         confirm="wheelhouse-prod", reason="v0.5 burn-in")
+        self.assertEqual("queued", submitted["status"])
+        record = json.loads((self.root / "jobs" / (submitted["id"] + ".json")).read_text())
+        self.assertEqual(("v0.5 burn-in", "77777777-7777-4777-8777-777777777777"),
+                         (record["deployReason"], record["remoteJobId"]))
+
+    def test_wheelhouse_dev_takes_automatic_deploys_but_never_a_fleet(self):
+        config = {**self.policy_config("dev", True, False), "requiresDevPass": False, "self": True}
+        with patch.object(transport.fleet, "resolve_target", return_value=config), \
+                patch.object(transport.artifacts, "prepare", return_value=self.release_bundle()):
+            with self.assertRaisesRegex(ValueError, "never part of a fleet"):
+                transport.submit(self.root, "wheelhouse-dev", "wheelhouse-v0-5-0", "automation",
+                                 fleet_id="66666666-6666-4666-8666-666666666666")
 
     def test_a_deploy_reason_is_one_short_line(self):
         for reason in ("", "   ", "two\nlines", "x" * 301):

@@ -45,6 +45,64 @@ class FleetTests(unittest.TestCase):
             self.assertEqual('platform', config['target']['variables']['PLATFORM_NETWORK'])
             self.assertEqual((False, False), (config['acceptsCandidates'], config['needsConfirmation']))
 
+    def control_host(self):
+        # The control host as prod's inventory holds it: the platform gateway, prod's runner key, any ingress row.
+        return fleet.Server('control', 'Control host', fleet.VpsProvider.OVHCLOUD, '172.30.0.1', 'bhs',
+                            ssh_user='wheelhouse-deploy',
+                            ingress=fleet.Ingress(entry_points=('private',), private_entry_points=('private',),
+                                                  cert_resolver=None, probe='http://127.0.0.1:18080'))
+
+    def self_targets(self):
+        return tuple(fleet.Target('wheelhouse-' + name, 'control', 'wheelhouse', environment,
+                                  (('console', '/srv/wheelhouse/config/console-' + name + '.json'),), 'control',
+                                  sites=(('console', 'wheelhouse.tailnet.ts.net'),))
+                     for name, environment in (('dev', fleet.DeploymentEnvironment.DEV),
+                                               ('prod', fleet.DeploymentEnvironment.PROD)))
+
+    def test_wheelhouse_targets_take_the_kits_console_ingress_on_one_server_row(self):
+        # The local fixture products include Wheelhouse itself.
+        with patch.object(fleet, 'SERVERS', (self.control_host(),)), patch.object(fleet, 'TARGETS', self.self_targets()):
+            dev, prod = (fleet.resolve_target(Path('/data/deployments'), 'wheelhouse-' + name) for name in ('dev', 'prod'))
+        self.assertEqual((['dev'], ['dev'], 8443, 'http://127.0.0.1:18082', 'http://127.0.0.1:18082'),
+                         tuple(dev['target']['ingress'][key] for key in
+                               ('entryPoints', 'privateEntryPoints', 'port', 'probe', 'privateProbe')))
+        self.assertEqual((['private'], ['private'], None, 'http://127.0.0.1:18080'),
+                         tuple(prod['target']['ingress'][key] for key in
+                               ('entryPoints', 'privateEntryPoints', 'port', 'privateProbe')))
+        for config in (dev, prod):
+            self.assertEqual(({'console': 'wheelhouse.tailnet.ts.net'}, None, None, 'https', True, True, 'control'),
+                             (config['target']['ingress']['hosts'], config['target']['ingress']['pattern'],
+                              config['target']['ingress']['certResolver'], config['target']['ingress']['scheme'],
+                              config['self'], config['target']['probeGate'] and config['target']['rollbackCompatible'],
+                              config['target']['variables']['PLATFORM_NETWORK']))
+            runner_target = dict(config['target'])
+            transport.validate_target(runner_target)
+        # Promoting the console itself takes the typed ID, as local prod does; its dev takes any release.
+        self.assertEqual((False, True, True), (dev['needsConfirmation'], prod['needsConfirmation'],
+                                               prod['requiresDevPass']))
+
+    def test_the_console_ingress_matches_the_kit_that_lays_the_host_out(self):
+        import importlib.util
+        path = Path(__file__).resolve().parents[2] / 'deployment' / 'vps' / 'prepare.py'
+        spec = importlib.util.spec_from_file_location('kit_prepare', path)
+        prepare = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(prepare)
+        self.assertEqual({name: (shape['entryPoint'], shape['port'], shape['probe'])
+                          for name, shape in prepare.ENVIRONMENTS.items()},
+                         {name: (shape['entryPoint'], shape['port'], shape['probe'])
+                          for name, shape in fleet.CONSOLE_INGRESS.items()})
+
+    def test_other_products_keep_the_server_ingress_and_no_gate(self):
+        target = fleet.Target('foreverpin-prod', 'control', 'foreverpin', fleet.DeploymentEnvironment.PROD, (), 'platform',
+                              sites=(('app', 'app.example.net'),))
+        with patch.object(fleet, 'SERVERS', (self.control_host(),)), patch.object(fleet, 'TARGETS', (target,)):
+            config = fleet.resolve_target(Path('/data/deployments'), target.id)
+        self.assertEqual((['private'], 'http://127.0.0.1:18080', False, False),
+                         (config['target']['ingress']['entryPoints'], config['target']['ingress']['probe'],
+                          config['self'], config['needsConfirmation']))
+        self.assertNotIn('probeGate', config['target'])
+        self.assertNotIn('rollbackCompatible', config['target'])
+
     def test_targets_list_by_product_then_along_the_promotion_path(self):
         def target(identifier, product, environment):
             return fleet.Target(identifier, 'pilot', product, environment, (), 'platform')

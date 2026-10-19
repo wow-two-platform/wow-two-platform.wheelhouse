@@ -32,6 +32,7 @@ COPY wheelhouse.runner-services/runner.py wheelhouse.runner-services/transport.p
      wheelhouse.runner-services/history.py wheelhouse.runner-services/registry.py \
      wheelhouse.runner-services/infra.py wheelhouse.runner-services/infra_jobs.py wheelhouse.runner-services/tailnet.py \
      wheelhouse.runner-services/enroll.py wheelhouse.runner-services/placement.py wheelhouse.runner-services/kit.py \
+     wheelhouse.runner-services/self_check.py \
      /app/runner/
 # The products-host kit an enrollment uploads, from the `kit` build context (deploy.yml): it ships with the release, so
 # an enrollment never fetches it, and its digest is recorded on each job.

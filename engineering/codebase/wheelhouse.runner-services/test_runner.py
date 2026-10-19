@@ -698,6 +698,81 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(("succeeded", "warning"), (result["status"], probe["status"]))
         self.assertNotIn("DO_NOT_LOG", json.dumps(result))
 
+    def test_a_gated_console_that_its_ingress_cannot_reach_rolls_back(self):
+        # Wheelhouse's own targets carry probeGate: healthy containers no one can open roll back to the previous release.
+        self.target["ingress"] = self.local_ingress(probe="http://ingress:80", privateProbe="http://ingress:80")
+        self.target["probeGate"] = True
+        self.manifest.update(sites={"api": {"console": {"exposure": "private"}}}, rollbackCompatible=True)
+        self.save()
+
+        def answers(target, sites):
+            sites[0]["probe"] = {"ok": True, "status": 200}
+            return sites
+        first = runner.apply(self.bundle, self.target, "test-operator", docker_factory=FakeDocker, prober=answers)
+        self.assertEqual("succeeded", first["status"])
+
+        def silent(target, sites):
+            sites[0]["probe"] = {"ok": False, "status": 404, "detail": "The ingress has no route for this host"}
+            return sites
+        for prober, reason in ((silent, "Site console did not answer through the ingress: The ingress has no route"
+                                         " for this host"),
+                               (lambda target, sites: [], "No probe address for this ingress"),
+                               (lambda target, sites: 1 / 0, "The site probe could not run")):
+            with self.subTest(reason=reason):
+                self.manifest["release"] = "v2"
+                self.save()
+                FakeDocker.events = []
+                result = runner.apply(self.bundle, self.target, "test-operator", docker_factory=FakeDocker, prober=prober)
+                self.assertEqual(("rolled_back", reason), (result["status"], result["reason"]))
+                self.assertEqual(["preflight", "pull", "up:v2", "verify:v2", "pull", "up:v1", "verify:v1"],
+                                 FakeDocker.events)
+                probe = next(step for step in result["steps"] if step["name"] == "Probe sites")
+                self.assertEqual(("failed", reason), (probe["status"], probe["detail"]))
+                self.assertEqual(first["id"], runner.state(self.target)["current"]["id"])
+
+    def test_a_target_whose_product_only_expands_its_schema_rolls_back_any_release(self):
+        # Wheelhouse's own targets promise expand-only migrations, so a release without the bundle flag still rolls back.
+        self.apply()
+        self.manifest.update(release="v2", rollbackCompatible=False)
+        self.save()
+        FakeDocker.fail = "v2"
+        self.target["rollbackCompatible"] = True
+        FakeDocker.events = []
+        self.assertEqual("rolled_back", self.apply()["status"])
+        self.assertEqual("up:v1", FakeDocker.events[-2])
+
+    def test_an_ungated_target_keeps_a_silent_site_a_warning(self):
+        self.target["ingress"] = self.local_ingress(probe="http://ingress:80")
+        self.manifest["sites"] = {"api": {"app": {}}}
+        self.save()
+        result = runner.apply(self.bundle, self.target, "test-operator", docker_factory=FakeDocker,
+                              prober=lambda target, sites: [])
+        self.assertEqual("succeeded", result["status"])
+
+    def test_passed_reads_a_release_success_from_the_journal_whoever_submitted_it(self):
+        jobs = self.root / "state/pilot-dev/jobs"
+        jobs.mkdir(parents=True)
+        runner.write_json(jobs / "a.json", {"id": "a", "release": "v1", "status": "succeeded",
+                                            "completedAt": "2026-10-01T10:00:00+00:00", "actor": "github:wheelhouse:1"})
+        runner.write_json(jobs / "b.json", {"id": "b", "release": "v1", "status": "succeeded",
+                                            "completedAt": "2026-10-02T10:00:00+00:00", "actor": "host:self-deploy"})
+        runner.write_json(jobs / "c.json", {"id": "c", "release": "v2", "status": "rolled_back",
+                                            "completedAt": "2026-10-03T10:00:00+00:00"})
+        runner.write_json(jobs / "d.json", {"id": "d", "release": "v3", "status": "succeeded"})
+        (jobs / "e.json").write_text("{not json")
+        self.assertEqual({"id": "b", "release": "v1", "completedAt": "2026-10-02T10:00:00+00:00"},
+                         runner.passed(self.target, "v1"))
+        self.assertIsNone(runner.passed(self.target, "v2"))
+        self.assertIsNone(runner.passed(self.target, "v3"), "a success without its completion is not yet a pass")
+        with self.assertRaisesRegex(ValueError, "Invalid release"):
+            runner.passed(self.target, "../v1")
+        target = self.root / "target.json"
+        runner.write_json(target, self.target)
+        with patch("sys.argv", ["runner.py", "passed", "--target", str(target), "--release", "v1"]), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(0, runner.main())
+        self.assertEqual("b", json.loads(output.getvalue())["id"])
+
     def test_cli_rejection_records_a_failed_check_step(self):
         (self.root / "settings.json").write_text(json.dumps({}))
         job = "22222222-2222-4222-8222-222222222222"

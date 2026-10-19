@@ -120,7 +120,7 @@ def targets(root):
                        "serverId": config["serverId"], "provider": config["provider"], "host": config["ssh"]["host"],
                        "acceptsCandidates": config["acceptsCandidates"],
                        "needsConfirmation": config["needsConfirmation"],
-                       "requiresDevPass": config["requiresDevPass"]})
+                       "requiresDevPass": config["requiresDevPass"], "self": config.get("self", False)})
     return result
 
 
@@ -153,7 +153,8 @@ def latest_sites(root):
 
 def dev_pass(root, product, release):
     """Where this release succeeded on one of the product's dev targets: local records first, then each dev target's
-    verified release. None when it never has."""
+    verified release, then each dev target's journal, which also holds rollouts another submitter ran (Wheelhouse's own
+    CI-era deploys, the host's self-deploy). None when it never has."""
     devs = [binding.id for binding in fleet.active_targets()
             if binding.product == product and binding.environment is fleet.DeploymentEnvironment.DEV]
     for job in jobs(root, limit=None):
@@ -162,11 +163,20 @@ def dev_pass(root, product, release):
     for target_id in devs:
         try:
             current = target_state(root, target_id).get("current") or {}
+            if current.get("release") == release:
+                return {"targetId": target_id, "at": current.get("completedAt")}
+            found = journal_pass(root, target_id, release)
         except (Rejected, CommandFailed, ValueError, OSError):
             continue  # an unreachable dev target proves nothing
-        if current.get("release") == release:
-            return {"targetId": target_id, "at": current.get("completedAt")}
+        if isinstance(found, dict) and found.get("release") == release:
+            return {"targetId": target_id, "at": found.get("completedAt")}
     return None
+
+
+def journal_pass(root, target_id, release):
+    """A dev target's own journal entry for a release that succeeded there, over one SSH read; None when it has none."""
+    config = fleet.resolve_target(root, target_id)
+    return run_remote(Ssh(config["ssh"]), "passed", config["target"], "--release", release)
 
 
 def admits(config, manifest):
@@ -261,6 +271,14 @@ def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False,
     values = provided_values(provided)
     require(fleet_id is None or (isinstance(fleet_id, str) and FLEET_ID.fullmatch(fleet_id)), "Invalid fleet id")
     config = fleet.resolve_target(root, target_id)
+    if config.get("self"):
+        # Wheelhouse's own targets: the console replaces itself or its sibling, so never as one step of a fleet, and
+        # its prod only after the owner types the ID and says why.
+        require(fleet_id is None, "Wheelhouse's own targets are never part of a fleet")
+        require(config["target"]["environment"] != "prod" or reason,
+                "Give a reason to promote Wheelhouse prod")
+        require(not config["needsConfirmation"] or confirm == target_id,
+                "Type " + target_id + " to promote Wheelhouse prod")
     require(not config["needsConfirmation"] or confirm == target_id,
             "Type the target ID to deploy prod to the local server")
     require(not skip_dev_pass or confirm == target_id, "Type the target ID to deploy without a dev pass")

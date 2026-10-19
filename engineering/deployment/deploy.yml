@@ -38,3 +38,10 @@ services:
     needs: [postgres]
     sites:
       console: { exposure: private }
+# Dev only, after each wheelhouse-dev rollout: readiness, status and an anonymous MCP initialization the console must
+# refuse, asked of the new console from its own image on its network. CI ran these after its deploys; the runner runs
+# them now that Wheelhouse prod deploys dev (decision 64). A failure warns on the rollout and never changes it.
+verify:
+  service: console
+  command: [python3, /app/runner/self_check.py]
+  timeout: 60s

@@ -61,6 +61,9 @@ RENDERED = ".target.json"
 DATABASE_FILE = "database.json"
 # A configuration path: sections and a key, as .NET binds them (`Section:Key`, `List:0`).
 SETTING_KEY = re.compile(r"[A-Za-z0-9_.-]{1,100}(?::[A-Za-z0-9_.-]{1,100}){0,9}")
+# What a typed key's value must look like (a bundle's `settings.<service>.types`); Wheelhouse checks saved values.
+SETTING_TYPES = ("text", "number", "boolean", "choice", "url", "cron", "date", "email")
+DATE_FORMAT = re.compile(r"(yyyy|MM|dd|HH|mm|ss|[-./: T])+")
 # A key's last part naming a secret: its values belong in the vault, never in the settings store.
 SECRET_KEY = re.compile(r".*(password|passphrase|secret|token|apikey|key|pwd|credentials?|connectionstring|salt)",
                         re.IGNORECASE)
@@ -113,6 +116,10 @@ class RenderRefused(Rejected):
 
 class CommandFailed(RuntimeError):
     """A failed external step. Messages hold only the step name and exit status."""
+
+
+class Unreachable(CommandFailed):
+    """Healthy containers that the ingress does not reach, on a target that gates on its site probe."""
 
 
 def require(condition, message):
@@ -218,14 +225,22 @@ def validate_bundle(bundle):
 
 def release_settings(manifest):
     """What a release declares about its services' settings beyond the required keys, by service: `optional` keys with
-    their defaults, the keys that are `secrets`, and the `allowed` values of a key. Optional in a bundle; only services
-    that take a settings file may declare them."""
+    their defaults, the keys that are `secrets`, the `allowed` values of a key, and each typed key's `types` entry (its
+    type, and a date's format). Optional in a bundle; only services that take a settings file may declare them."""
     declared = manifest.get("settings", {})
     require(isinstance(declared, dict) and set(declared) <= set(manifest.get("requiredConfiguration") or {}),
             "Settings declarations name a service without a settings file")
     result = {}
     for service, entry in declared.items():
-        require(isinstance(entry, dict) and set(entry) <= {"optional", "secrets", "allowed"}, "Invalid settings declaration")
+        require(isinstance(entry, dict) and set(entry) <= {"optional", "secrets", "allowed", "types"},
+                "Invalid settings declaration")
+        types = entry.get("types", {})
+        require(isinstance(types, dict) and all(
+            SETTING_KEY.fullmatch(key) and isinstance(value, dict) and set(value) <= {"type", "format"}
+            and value.get("type") in SETTING_TYPES
+            and (value.get("format") is None or (value["type"] == "date" and isinstance(value["format"], str)
+                                                 and DATE_FORMAT.fullmatch(value["format"])))
+            for key, value in types.items()), "Invalid setting types")
         optional, secrets, allowed = entry.get("optional", {}), entry.get("secrets", []), entry.get("allowed", {})
         require(isinstance(optional, dict) and all(SETTING_KEY.fullmatch(key) and isinstance(value, str)
                                                    and len(value) <= 2000 for key, value in optional.items()),
@@ -236,7 +251,8 @@ def release_settings(manifest):
             SETTING_KEY.fullmatch(key) and isinstance(values, list) and 0 < len(values) <= 50
             and all(isinstance(value, str) and len(value) <= 200 for value in values) for key, values in allowed.items()),
             "Invalid allowed setting values")
-        result[service] = {"optional": dict(optional), "secrets": list(secrets), "allowed": dict(allowed)}
+        result[service] = {"optional": dict(optional), "secrets": list(secrets), "allowed": dict(allowed),
+                           "types": {key: dict(value) for key, value in types.items()}}
     return result
 
 
@@ -1144,19 +1160,26 @@ def settings_declarations(target, manifest):
     network = target.get("variables", {}).get("PLATFORM_NETWORK")
     services = []
     for service, required in sorted((manifest.get("requiredConfiguration") or {}).items()):
-        entry = declared.get(service, {"optional": {}, "secrets": [], "allowed": {}})
+        entry = declared.get(service, {"optional": {}, "secrets": [], "allowed": {}, "types": {}})
         needs = service_needs(manifest, service)
         derived = derived_settings(target, project, manifest, service)
         keys = {}
-        for key in [*required, *entry["optional"]]:
+        # A typed key the release names neither required nor optional is an optional key without a default.
+        for key in [*required, *entry["optional"], *entry["secrets"], *entry["types"]]:
             if key in keys:
                 continue
+            typed = entry["types"].get(key)
             item = {"key": key, "required": key in required,
-                    "secret": key in entry["secrets"] or (key not in entry["optional"] and is_secret_key(key))}
+                    "secret": key in entry["secrets"]
+                    or (key not in entry["optional"] and typed is None and is_secret_key(key))}
             if key in entry["optional"]:
                 item["default"] = entry["optional"][key]
             if key in entry["allowed"]:
                 item["allowed"] = list(entry["allowed"][key])
+            if typed is not None:
+                item["type"] = typed["type"]
+                if typed.get("format"):
+                    item["format"] = typed["format"]
             keys[key] = item
         for key, value in derived.items():
             keys.setdefault(key, {"key": key, "required": False, "secret": False})
@@ -1738,6 +1761,13 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                     except Exception:
                         probed = None
                     failed = [site for site in probed or () if not site["probe"]["ok"]]
+                    if target.get("probeGate") is True and (not probed or failed):
+                        # A gated target (a Wheelhouse console) that its ingress cannot reach rolls back: healthy
+                        # containers no one can open are no better than failed ones.
+                        raise Unreachable("The site probe could not run" if probed is None else
+                                            "No probe address for this ingress" if not probed else
+                                            "Site " + failed[0]["name"] + " did not answer through the ingress: "
+                                            + failed[0]["probe"]["detail"])
                     if probed is None:
                         step.update(status="warning", detail="The site probe could not run")
                     elif not probed:
@@ -1782,13 +1812,16 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
             record["failure"] = type(error).__name__
             if reason(error):
                 record["reason"] = reason(error)
-            if mutation_started and isinstance(error, CommandFailed):
+            if mutation_started and isinstance(error, CommandFailed) and not isinstance(error, Unreachable):
                 with contextlib.suppress(Exception):
                     states = docker.unhealthy(destination)
                     if states:
                         record["reason"] += "; not healthy: " + ", ".join(states)
             settle_services(record, starting if mutation_started else None)
-            if mutation_started and previous and manifest["rollbackCompatible"]:
+            # A release that declares it, or a target whose product promises expand-only migrations (Wheelhouse's own,
+            # decision 65): the previous images run on whatever schema this release left.
+            if mutation_started and previous and (manifest["rollbackCompatible"]
+                                                  or target.get("rollbackCompatible") is True):
                 try:
                     with steps.run("Roll back to " + str(previous.get("release") or "the previous release")):
                         prior_bundle = root / "releases" / previous["id"]
@@ -1954,6 +1987,24 @@ def launch(bundle, target_path, actor, provided=None):
         with worker.stdin:
             worker.stdin.write(json.dumps(provided).encode())
     return {"id": job_id, "status": "queued"}
+
+
+def passed(target, release):
+    """The newest rollout that ran `release` to success on this target, read from its journal, whoever submitted it (a
+    control plane, CI or the host's own self-deploy): its id and completion, or None when none did."""
+    root, project = validate_target(target)
+    require(isinstance(release, str) and RELEASE.fullmatch(release), "Invalid release")
+    newest = None
+    for path in (root / project / "jobs").glob("*.json"):
+        try:
+            job = read_json(path)
+        except (OSError, ValueError):
+            continue
+        if (isinstance(job, dict) and job.get("release") == release and job.get("status") == "succeeded"
+                and isinstance(job.get("completedAt"), str)
+                and (newest is None or job["completedAt"] > newest["completedAt"])):
+            newest = job
+    return None if newest is None else {"id": newest.get("id"), "release": release, "completedAt": newest["completedAt"]}
 
 
 def acknowledge(target, job_id):
@@ -2504,11 +2555,12 @@ def read_provided(stream):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["validate", "apply", "launch", "status", "acknowledge", "state", "check",
-                                           "host", "vitals", "topology", "logs", "watch", "prune"])
+                                           "host", "vitals", "topology", "logs", "watch", "prune", "passed"])
     parser.add_argument("--bundle")
     parser.add_argument("--target")
     parser.add_argument("--target-json")
     parser.add_argument("--release-json")
+    parser.add_argument("--release", help="passed: the release label to look for in the target's journal")
     parser.add_argument("--actor", default="operator")
     parser.add_argument("--job")
     parser.add_argument("--service")
@@ -2545,6 +2597,8 @@ def main():
             result = watch(target or read_json(args.target))
         elif args.action == "prune":
             result = prune(target or read_json(args.target))
+        elif args.action == "passed":
+            result = passed(target or read_json(args.target), args.release)
         else:
             result = apply(args.bundle, read_json(args.target), args.actor, args.job, provided=provided)
         print(json.dumps(result))

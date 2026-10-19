@@ -32,6 +32,18 @@ class DeploymentEnvironment(str, Enum):
     PROD = "prod"
 
 
+# Wheelhouse itself, as its own inventory names it: prod deploys each release to `wheelhouse-dev` and promotes itself to
+# `wheelhouse-prod`, both on the control host (decision 64).
+SELF_PRODUCT = "wheelhouse"
+
+# How the control host's kit publishes each console (vps/prepare.py ENVIRONMENTS, which test_fleet compares): one
+# hostname, a Traefik entry point and HTTPS port per environment, probed on the host's own loopback port.
+CONSOLE_INGRESS = {
+    "dev": {"entryPoint": "dev", "port": 8443, "probe": "http://127.0.0.1:18082"},
+    "prod": {"entryPoint": "private", "port": None, "probe": "http://127.0.0.1:18080"},
+}
+
+
 # Environments a target no longer takes; their old deployment records still read, labelled as retired. `test` went
 # on 2026-10-17, when products moved to `main` only: every release deploys to dev, then is promoted to prod.
 RETIRED_ENVIRONMENTS = ("test",)
@@ -191,9 +203,27 @@ def requires_dev_pass(target):
     return target.environment is DeploymentEnvironment.PROD
 
 
+def is_self(target):
+    """Whether a target runs Wheelhouse itself: never part of a fleet; its prod is promoted only by the owner."""
+    return target.product == SELF_PRODUCT
+
+
 def needs_confirmation(server, target):
-    """Prod on the local server runs only after the operator types the target's ID."""
-    return server.provider is VpsProvider.LOCAL and target.environment is DeploymentEnvironment.PROD
+    """Prod on the local server, and Wheelhouse's own prod anywhere, run only after the operator types the target's ID."""
+    return target.environment is DeploymentEnvironment.PROD and (
+        server.provider is VpsProvider.LOCAL or is_self(target))
+
+
+def console_ingress(server, target):
+    """A Wheelhouse console's ingress on its control host, as the kit lays it out: the environment's own entry point,
+    port and loopback probe, beside the server's scheme. None for any other target, and on the local server, whose
+    fixtures keep its shared pattern."""
+    if not is_self(target) or server.provider is VpsProvider.LOCAL:
+        return None
+    shape = CONSOLE_INGRESS[target.environment.value]
+    return {"scheme": server.ingress.scheme, "port": shape["port"], "entryPoints": [shape["entryPoint"]],
+            "privateEntryPoints": [shape["entryPoint"]], "certResolver": None, "pattern": None,
+            "probe": shape["probe"], "privateProbe": shape["probe"]}
 
 
 def ingress_of(server, target):
@@ -201,6 +231,10 @@ def ingress_of(server, target):
     hosts = dict(target.sites)
     require(len(hosts) == len(target.sites), "Duplicate site host")
     require(all(SLUG.fullmatch(name) and HOST.fullmatch(host) for name, host in hosts.items()), "Invalid site host")
+    console = console_ingress(server, target)
+    if console is not None:
+        # One server row serves both consoles: each takes its environment's entry point, whatever the row's ingress.
+        return {**console, "hosts": hosts}
     # Prod on a VPS names every host itself; a shared preview pattern would publish it under the wrong domain.
     pattern = ingress.pattern if (target.environment is not DeploymentEnvironment.PROD
                                   or server.provider is VpsProvider.LOCAL) else None
@@ -241,13 +275,17 @@ def resolve_target(root, identifier):
             "acceptsCandidates": accepts_candidates(target),
             "needsConfirmation": needs_confirmation(server, target),
             "requiresDevPass": requires_dev_pass(target),
+            "self": is_self(target),
             "ssh": ssh_of(root, server),
             "target": {"product": target.product, "environment": target.environment.value,
                        "root": target.root, "settings": dict(target.settings),
                        "variables": {"PLATFORM_NETWORK": target.network}, "smoke": list(target.smoke),
                        "ingress": ingress_of(server, target),
                        # Wheelhouse renders every settings file at deploy; its target's own files are a layer.
-                       "render": True, **local_settings_root(server)}}
+                       "render": True, **local_settings_root(server),
+                       # Wheelhouse's own: a console its ingress cannot reach rolls back, since no one could open it,
+                       # and every release may, since its migrations only expand (decision 65).
+                       **({"probeGate": True, "rollbackCompatible": True} if is_self(target) else {})}}
 
 
 def local_settings_root(server):
