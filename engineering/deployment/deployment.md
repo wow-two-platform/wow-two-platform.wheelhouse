@@ -1,6 +1,6 @@
 # Deployment operations
 
-*Last updated: 2026-10-17*
+*Last updated: 2026-10-19*
 
 ## Ownership and current boundary
 
@@ -267,7 +267,8 @@ python3 $R logs     --root /path/to/inventory --target foreverpin-dev --service 
 
 `check`, `state`, `topology`, `vitals` and `logs` stream the runner over SSH stdin and leave no files on the target.
 `logs` returns one service's last 1-1000 container lines, timestamped; nothing stores them.
-`submit --confirm <target>` carries the typed confirmation that prod on the local server requires.
+`submit --confirm <target>` carries the typed confirmation that prod on the local server requires; `submit --fleet <id>`
+keeps the fleet rollout that submitted it on the job (the API sets it).
 
 ```sh
 python3 $R branches --root /path/to/inventory --product foreverpin
@@ -343,6 +344,16 @@ authenticated limit. Each pass also looks at the targets inside their watch wind
 `<runner root>/watching/` (preserve it with the runner root). A product that auto-promotes sends a release that
 passed its dev watch to prod.
 
+A fleet rollout worker runs every `Deployment:FleetSeconds` (default 10; 0 turns it off) while a fleet runs: it reads
+the history projection (no target is contacted) for the finished outcome of the product the fleet is on, then submits
+the next one through the ordinary deploy path ([architecture](../architecture/architecture.md#deployment-automation)).
+A fleet survives a restart: the next pass continues it.
+
+Every rollout records `serviceRollout` in its job record — each service's change against the release the target ran,
+the waves it started them in and how each ended — and `interpolation`, a hash of the target variables and settings
+paths Compose interpolates; a changed hash counts every service as changed. Each Compose call also takes the
+runner-written override `releases/<job>/environment.json`, which gives every service `DEPLOY_ENVIRONMENT`.
+
 A background sampler reads the vitals each `Operations:VitalsSampleMinutes` (default 5; 0 turns it off), stores each
 server's load, memory and fullest disk (a row with no target) and each target's container health in `vitals_samples`,
 and deletes readings older than 30 days.
@@ -356,7 +367,8 @@ Each rollout records its steps in its job record as they start and end, so the d
 | Check target | Lock, settings files, routes, disk, Docker and the release snapshot |
 | Snapshot data | Prod only: dumps each database and archives each named volume before anything changes; a failure fails the rollout |
 | Pull images | Every image, before any container changes |
-| Start containers | `compose up --wait` within the target's health timeout |
+| Start `<services>` | Only when the release changes some services but not all, or its changed services span dependency waves: `compose up --no-deps --wait` of one wave of changed services, after the waves they depend on; a failure leaves later waves unstarted |
+| Start containers | `compose up --wait --remove-orphans` within the target's health timeout: the whole release, so unchanged services keep running untouched; its detail names how many services changed and how many kept running |
 | Verify services | Exact image references, health, and the target's smoke checks |
 | Publish sites | The route file for the release's sites |
 | Probe sites | Each site through the ingress; a site that does not answer is a warning |

@@ -1,6 +1,6 @@
 # Wheelhouse architecture
 
-*Last updated: 2026-10-18*
+*Last updated: 2026-10-19*
 
 ## Runtime
 
@@ -72,7 +72,12 @@ The API accepts target and release IDs only. It cannot upload arbitrary Compose,
 4. On prod, snapshot the product's databases and named volumes on the target; a failed snapshot fails the rollout.
    Pull every image before replacing any running container.
 5. Save durable intent and the previous successful bundle on the target.
-6. Apply Compose, wait for every declared health check, then request each site through the ingress.
+6. Apply Compose service-aware: compare each service's definition (image digest included), the environment override
+   and the target's interpolation inputs with the release the target runs; start the changed services in dependency
+   waves (Compose `depends_on`, `up --no-deps --wait` per wave) when that differs from one `up`, so a failing service
+   leaves its dependents unstarted; then converge the whole release with one `up --wait --remove-orphans`, which keeps
+   unchanged services running untouched. Wait for every declared health check, then request each site through the
+   ingress. A `depends_on` naming an unknown service or forming a cycle is refused before anything changes.
 7. Record the outcome with release, source commit, actor and previous release.
 8. On failure, keep the attempted release; restore previous images only under a declared schema-compatibility
    guarantee. Never restore a database or delete volumes automatically.
@@ -350,8 +355,12 @@ aggregates; nothing is stored.
   with its version count when the token may read packages. GitHub's API reports no container package size, so
   `storageBytes` stays null. The console has the client (`useBuildUsage`); the product page does not show it yet.
 - `GET /api/deployments/{id}/detail` answers one deployment: each service from and to, the previous success, the
-  observation's steps, sites and warnings (`observed` false when unreadable), and `rollback`, the previous release,
-  only when this rollout is what its target runs and its release declares the previous images compatible.
+  observation's steps, sites and warnings (`observed` false when unreadable), `rollback`, the previous release,
+  only when this rollout is what its target runs and its release declares the previous images compatible, and
+  `serviceRollout` — `{ staged, waves, removed, services: [{ name, change, outcome, dependsOn }] }`, change `added` |
+  `updated` | `unchanged`, outcome `unchanged` (kept running) | `updated` | `failed` | `not_started` | `rolled_back`;
+  null for a rollout the runner did not report it for. The deployment page shows each service's outcome and wave.
+  History items carry `fleetId` when a fleet rollout submitted them.
 - `GET /api/deployments` (50 newest) and `GET /api/deployments/stats?days=` stay for Home, the product overview and the
   MCP `list_deployments` tool.
 
@@ -407,6 +416,28 @@ request acts as `automation`, so every automatic submission goes through the ord
   console shows them on Ready to promote rows. `GET /api/deployments/releases/{release}/facts` (runner `facts`) reads
   one bundle's `{ rollbackCompatible, migrations, sourceCommit, kind }` into the cache without contacting a target; the
   prod confirm step reads it.
+- **Fleet rollouts** (`fleet_rollouts`, `fleet_rollout_items`, migration `022-fleet-rollouts`): from Ready to promote
+  the owner picks several rows (or all) and promotes them to prod in one run. `POST /api/deployments/fleets`
+  `{ items: [{ target, release, confirm? }], reason?, overrideFreeze? }` (action header `deploy`, audited
+  `deployment.fleet`, subject `portfolio`, detail naming the fleet and each release) takes 1-20 items, each prod target
+  once, each a release Ready to promote offers for it (409 otherwise), a local-server prod only with its typed ID
+  (400), and refuses a frozen target unless it overrides with a reason (409/400) and while another fleet runs (409;
+  one runs at a time, a partial unique index). It answers 202 with the fleet after submitting the first product. Each
+  product then goes through the ordinary deploy command — freezes, the runner's gates, the reason and
+  `deployment.start` audits apply, with the detail `, fleet <id>` and the runner keeping `fleetId` on the job — as the
+  owner who started it, also from the background pass (`FleetRolloutWorker`, every `Deployment:FleetSeconds`, 10; 0
+  off). The fleet waits for each rollout's finished outcome (a terminal status with its completion), stops at the first
+  failure or refusal — the rest become `not_started` — and fails a product with no finished outcome after 30 minutes
+  or missing from the runner's records after two. `POST /api/deployments/fleets/{id}/cancel` (audited
+  `deployment.fleet.cancel`) stops it between products: the product it is on finishes. Its end is audited
+  `deployment.fleet.end` with each status's count and why it stopped. `GET /api/deployments/fleets?limit=` (newest
+  first, 1-50) and `GET /api/deployments/fleets/{id}` answer `{ id, actor, reason, overrideFreeze, status (running |
+  succeeded | failed | cancelled), createdAt, completedAt, cancelRequestedBy, cancelRequestedAt, items: [{ position,
+  product, target, bundleId, release, fromRelease, status (waiting | running | succeeded | failed | refused |
+  not_started), deploymentId, detail, startedAt, completedAt }] }`. The Deployments page's Ready to promote rows take a
+  multi-select with Promote selected and Promote all; the confirm dialog lists every product in order with what prod
+  runs, its rollback-risk badges and changelog, a freeze override, the reason and each local prod's typed ID; Running
+  now shows the running fleet's progress with Cancel, and Fleet rollouts lists the fleets that ended in the last day.
 - **Changelog at promote:** every `main` release's GitHub body lists its commits since the previous release above
   GitHub's generated notes (the shared publish workflow from pipelines `v0.4.0`, `release.py notes`); a product pinned
   to an older tag keeps GitHub's one-line note, and the compare commit list covers it. `GET /api/deployments/products/{product}/changelog?from=&to=`
