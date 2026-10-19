@@ -12,6 +12,7 @@ const bundle = await build({
       export * from './src/application/servers/ServerForms';
       export { vaultDefinitionFormOf, vaultDefinitionFormSchema, vaultDefinitionRequestOf } from './src/application/secrets/VaultDefinitionForms';
       export * from './src/application/workspaces/WorkspaceForms';
+      export { VpsProvider, VpsProviderLabels } from './src/domain/servers';
     `,
     resolveDir: process.cwd(),
   },
@@ -119,6 +120,16 @@ test("a server's empty optional ingress text is sent as absent and a new server 
     certResolver: "letsencrypt", pattern: null, probe: null, privateProbe: null,
   });
   assert.equal(forms.serverFormSchema.safeParse({ ...values, sshPort: null }).success, false);
+});
+
+test("the server form takes every provider, each with its own label", () => {
+  const values = { ...forms.serverFormOf(null), slug: "vps1", name: "VPS", host: "vps.example.net", region: "eu" };
+  for (const [provider, label] of [["ovhcloud", "OVHcloud"], ["contabo", "Contabo"]]) {
+    assert.equal(forms.serverFormSchema.safeParse({ ...values, provider }).success, true, provider);
+    assert.equal(forms.VpsProviderLabels[provider], label);
+  }
+  assert.equal(forms.serverFormSchema.safeParse({ ...values, provider: "vultr" }).success, false);
+  assert.deepEqual(Object.keys(forms.VpsProviderLabels).sort(), Object.values(forms.VpsProvider).sort());
 });
 
 test("a new environment starts as dev on the first server, and its slug follows the environment", () => {

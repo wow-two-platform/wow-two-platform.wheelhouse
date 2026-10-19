@@ -4,6 +4,8 @@ export const VpsProvider = {
   Local: 'local',
   /** Refers to an OVHcloud virtual server. */
   Ovhcloud: 'ovhcloud',
+  /** Refers to a Contabo virtual server. */
+  Contabo: 'contabo',
 } as const;
 export type VpsProvider = (typeof VpsProvider)[keyof typeof VpsProvider];
 
@@ -12,6 +14,7 @@ export const VpsProviderLabels: Readonly<Record<VpsProvider, string>> = {
   [VpsProvider.Hetzner]: 'Hetzner',
   [VpsProvider.Local]: 'Local',
   [VpsProvider.Ovhcloud]: 'OVHcloud',
+  [VpsProvider.Contabo]: 'Contabo',
 };
 
 /** How a server's ingress publishes sites. */

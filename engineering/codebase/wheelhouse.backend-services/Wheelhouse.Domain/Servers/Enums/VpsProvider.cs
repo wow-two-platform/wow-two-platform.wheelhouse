@@ -11,4 +11,7 @@ public enum VpsProvider
 
     /// <summary>Refers to an OVHcloud virtual server.</summary>
     Ovhcloud,
+
+    /// <summary>Refers to a Contabo virtual server.</summary>
+    Contabo,
 }

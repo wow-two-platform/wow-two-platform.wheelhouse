@@ -24,6 +24,7 @@ class VpsProvider(str, Enum):
     HETZNER = "hetzner"
     LOCAL = "local"
     OVHCLOUD = "ovhcloud"
+    CONTABO = "contabo"
 
 
 class DeploymentEnvironment(str, Enum):

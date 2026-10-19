@@ -124,6 +124,7 @@ public sealed class InventoryE2ETests(WheelhouseAppFixture fixture) : Wheelhouse
     [InlineData("hetzner")]
     [InlineData("local")]
     [InlineData("ovhcloud")]
+    [InlineData("contabo")]
     public async Task CreateServer_ShouldReturn201AndReachTheSnapshot_WhenTheOwnerAddsOne(string provider)
     {
         var response = await ActionClient("server").PostJsonAsync("api/servers", new

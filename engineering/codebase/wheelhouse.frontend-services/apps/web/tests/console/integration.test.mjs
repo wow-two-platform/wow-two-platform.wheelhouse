@@ -150,7 +150,7 @@ test("writes inventory rows with their own actions and decodes what the server s
 });
 
 test("round trips supported server providers and rejects an unknown provider", async () => {
-  for (const provider of ["hetzner", "local", "ovhcloud"]) {
+  for (const provider of ["hetzner", "local", "ovhcloud", "contabo"]) {
     const server = { slug: "pilot", name: "Pilot", provider, host: "vps.example.net", region: "pilot",
       sshUser: "deploy", sshPort: 22, ingress: { scheme: "https", port: null, entryPoints: ["websecure"],
         privateEntryPoints: [], certResolver: "letsencrypt", pattern: null, probe: null, privateProbe: null } };

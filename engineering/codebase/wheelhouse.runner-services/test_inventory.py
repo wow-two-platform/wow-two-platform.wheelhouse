@@ -51,7 +51,7 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(((), (), (), ()), (catalog.PRODUCTS, fleet.SERVERS, fleet.TARGETS, fleet.VAULTS))
 
     def test_a_snapshot_installs_products_servers_targets_and_vaults(self):
-        for provider in ('hetzner', 'ovhcloud'):
+        for provider in ('hetzner', 'ovhcloud', 'contabo'):
             with self.subTest(provider=provider):
                 document = json.loads(json.dumps(SNAPSHOT))
                 document['servers'][0]['provider'] = provider

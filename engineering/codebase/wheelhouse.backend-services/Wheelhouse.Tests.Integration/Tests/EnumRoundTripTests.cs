@@ -35,6 +35,7 @@ public sealed class EnumRoundTripTests(WheelhouseTestDb db) : IAsyncLifetime
     [InlineData(VpsProvider.Hetzner, "hetzner")]
     [InlineData(VpsProvider.Local, "local")]
     [InlineData(VpsProvider.Ovhcloud, "ovhcloud")]
+    [InlineData(VpsProvider.Contabo, "contabo")]
     public async Task InventoryEnums_ShouldBeStoredAsSnakeCaseTextAndReadBack_WhenRecorded(VpsProvider provider, string storedProvider)
     {
         var product = InventoryRows.Product("pilot") with { Status = ProductStatus.Inactive };
