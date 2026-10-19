@@ -173,7 +173,6 @@ function clear(): void {
         :model-value="props.filter.status === StatusFilter.All ? null : props.filter.status"
         is-clearable
         clear-label="Any status"
-        :get-option-label="(value) => StatusFilterLabels[value as StatusFilter]"
         @update:model-value="setStatus"
         ><SelectPickerTrigger aria-label="Status" width="10rem"><SelectPickerValue placeholder="Any status" /></SelectPickerTrigger
         ><SelectPickerContent
@@ -186,7 +185,6 @@ function clear(): void {
       <DateRangeFilter :model-value="props.filter.range" @update:model-value="emit('change', { range: $event })" />
       <SelectPicker
         :model-value="props.filter.sort"
-        :get-option-label="(value) => `Sort: ${ProductSortLabels[value as ProductSort]}`"
         @update:model-value="setSort"
         ><SelectPickerTrigger aria-label="Sort" width="11.5rem" :class="sortChanged ? 'border-primary/40' : ''"
           ><SelectPickerValue /></SelectPickerTrigger

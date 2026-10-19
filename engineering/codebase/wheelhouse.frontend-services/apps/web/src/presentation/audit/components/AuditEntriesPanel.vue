@@ -90,7 +90,7 @@ function newer(): void {
       </InfoPopover>
     </template>
     <template #actions>
-      <SelectPicker v-model="area" :get-option-label="(value) => AreaLabels[value as AuditArea]"
+      <SelectPicker v-model="area"
         ><SelectPickerTrigger aria-label="Area" width="14rem"><SelectPickerValue /></SelectPickerTrigger
         ><SelectPickerContent
           ><SelectPickerItem

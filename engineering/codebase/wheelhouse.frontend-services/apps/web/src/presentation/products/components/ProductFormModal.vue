@@ -140,7 +140,6 @@ async function remove(): Promise<void> {
               <Field label="Workspace" v-bind="product ? {} : { helper: 'Left empty, it joins the default workspace' }">
                 <SelectPicker
                   :model-value="field.value"
-                  :get-option-label="(id) => props.workspaces.find((item) => item.id === id)?.name ?? String(id)"
                   @update:model-value="(value: unknown) => field.setValue(typeof value === 'string' ? value : null)"
                   ><SelectPickerTrigger aria-label="Workspace"
                     ><SelectPickerValue placeholder="Choose a workspace" /></SelectPickerTrigger

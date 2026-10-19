@@ -90,7 +90,7 @@ const rows = useSkeletonItems(() => (releases.data.value ? visible.value : undef
             :value="name"
             :label="name" /></SelectPickerContent
       ></SelectPicker>
-      <SelectPicker v-model="kind" :get-option-label="(value) => KindFilter[value as KindFilter]"
+      <SelectPicker v-model="kind"
         ><SelectPickerTrigger aria-label="Kind" width="12rem"><SelectPickerValue /></SelectPickerTrigger
         ><SelectPickerContent
           ><SelectPickerItem

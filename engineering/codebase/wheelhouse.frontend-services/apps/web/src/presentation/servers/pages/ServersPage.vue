@@ -148,7 +148,6 @@ const trendWindow = computed(() => {
         v-model="provider"
         is-clearable
         clear-label="All providers"
-        :get-option-label="(value) => VpsProviderLabels[value as VpsProvider]"
         ><SelectPickerTrigger aria-label="Provider" width="12rem"
           ><SelectPickerValue placeholder="All providers" /></SelectPickerTrigger
         ><SelectPickerContent
@@ -273,7 +272,7 @@ const trendWindow = computed(() => {
           <section class="mb-5" :aria-label="`${server?.name ?? 'Server'} trends`">
             <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h3 class="text-xs font-medium text-muted-foreground">Trends · sampled every few minutes</h3>
-              <SelectPicker v-model="trendRange" :get-option-label="(value) => TrendLabels[value as TrendRange]"
+              <SelectPicker v-model="trendRange"
                 ><SelectPickerTrigger aria-label="Trend range" width="9rem"><SelectPickerValue /></SelectPickerTrigger
                 ><SelectPickerContent
                   ><SelectPickerItem

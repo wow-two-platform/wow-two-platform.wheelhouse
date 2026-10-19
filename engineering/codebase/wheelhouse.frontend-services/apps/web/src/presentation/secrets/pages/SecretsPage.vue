@@ -160,9 +160,6 @@ function selectNamespace(slug: string): void {
         <SelectPicker
           v-if="(vaults?.length ?? 0) > 1"
           :model-value="vault || null"
-          :get-option-label="
-            (id) => vaults?.find((item) => item.id === id)?.name ?? String(id)
-          "
           @update:model-value="selectVault"
         >
           <SelectPickerTrigger aria-label="Vault">

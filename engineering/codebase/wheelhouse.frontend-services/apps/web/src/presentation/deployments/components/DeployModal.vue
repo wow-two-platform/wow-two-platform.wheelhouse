@@ -346,12 +346,6 @@ function close(open: boolean): void {
               <SelectPicker
                 :model-value="target || null"
                 :is-disabled="check.loading.value"
-                :get-option-label="
-                  (key: string) =>
-                    targetLabel(
-                      targets.data.value?.find((item) => item.id === key),
-                    )
-                "
                 @update:model-value="selectTarget"
               >
                 <SelectPickerTrigger aria-label="Environment">
@@ -378,10 +372,6 @@ function close(open: boolean): void {
               <SelectPicker
                 :model-value="release || null"
                 :is-disabled="!available.length || check.loading.value"
-                :get-option-label="
-                  (key: string) =>
-                    releaseLabel(available.find((item) => item.id === key))
-                "
                 @update:model-value="
                   (value: string | null) => (release = value ?? '')
                 "
@@ -410,7 +400,6 @@ function close(open: boolean): void {
                 <Field label="Branch">
                   <SelectPicker
                     :model-value="branch"
-                    :get-option-label="(key: string) => key"
                     @update:model-value="
                       (value: string | null) => (branch = value ?? 'main')
                     "

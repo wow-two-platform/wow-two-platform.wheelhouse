@@ -108,7 +108,6 @@ async function remove(): Promise<void> {
               <Field label="Provider">
                 <SelectPicker
                   v-model="field.value"
-                  :get-option-label="(value) => VpsProviderLabels[value as VpsProvider]"
                   ><SelectPickerTrigger aria-label="Provider"><SelectPickerValue /></SelectPickerTrigger
                   ><SelectPickerContent
                     ><SelectPickerItem
