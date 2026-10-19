@@ -72,6 +72,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Vault consumer in the backend SDK | feature | Startup resolution, bounded timeout, fail-closed; unblocks ForeverPin adoption |
 | Scoped management credential for Wheelhouse | check | Vault-side change; replaces the shared administrator password |
 | Mint expiring product tokens | feature | The vault takes an expiry and rotates since its v0.3; the gateway still sends a name only |
+| Ability to run a product locally with its dev settings and secrets | feature | User 2026-10-19: settings and secrets live only in Wheelhouse dev and prod, yet a local run needs them too; e.g. pull the dev values into the gitignored `appsettings.Machine.json` and user secrets, never into the repository |
 | Ability to share one setting or secret value across products | feature | User 2026-10-17: products declare their own keys; Wheelhouse links keys that hold the same value and must change together to one row; otherwise rows stay separate |
 
 ---
@@ -90,6 +91,10 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | CVE gate: scan images at build, warn on prod confirm, rebuild on base-image fixes | feature | Parked 2026-10-19 |
 | Refresh dev's database from a redacted, compacted prod copy | feature | User 2026-10-19: no personal data reaches dev; feeds the end-to-end dev checks that gate auto-promote |
 | Roll prod back by promoting the previous release | feature | Dev-to-prod promotion exists |
+| Ability to roll back automatically when the watch window sees a regression | feature | User 2026-10-19: later; the watch window flags the regression and the owner decides |
+| Recover database migrations across services when a later service fails | decision | User 2026-10-19, for discussion: A migrates, then B's migration fails, so A's must roll back too. Either every migration stays rollback-safe, or the release updates A and B first and migrates the databases after |
+| Show the maintenance page in Uzbek, Russian and English at least | feature | Parked 2026-10-19 from Iteration 15: per-product copy in the manifest, chosen by `Accept-Language` |
+| Turn on `dotnetEnvironment` for ForeverPin, Haven, Ocharo Studio, Ocharo Desk and Secrets Vault | check | User 2026-10-19: later, when each product's chat works on it. Each keys behaviour on `Development` or holds localhost values; move those to `appsettings.Machine.json` first |
 | Run each app's migrations as a rollout step and show their state | feature | User decision 2026-10-14: apps own their SQL; the runner migrates with the new image between pull and start; prod waits for test. The app database's own migration journal stays the authority; Wheelhouse reads it at deploy and keeps what it saw in the job history, never a second table. Rollback scripts run only on a confirmed operator action |
 | Mount a GitHub token that can start product builds | check | `WHEELHOUSE_GITHUB_TOKEN_FILE` with Actions write on each product; the Build button needs it |
 | Pull private GHCR images on targets | check | Public images need no token (Wheelhouse's console is public since 2026-10-09); private ones need a read-only pull token per target |

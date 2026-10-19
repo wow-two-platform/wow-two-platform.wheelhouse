@@ -1,6 +1,6 @@
 # Platform ideation — v0.5
 
-*Last updated: 2026-10-17*
+*Last updated: 2026-10-19*
 
 Settled decisions from the v0.5 platform brainstorm: what the platform is, how products are modelled and who owns each
 fact. Iteration happens in the conversation; this file records only what the owner settled. The v0.5 version doc is
@@ -41,6 +41,14 @@ written from it when the version opens.
 | 29 | Info buttons always show context on click, dimmed and revealed on hover; a first-visit tour is a separate future feature | 2026-10-19 |
 | 30 | Each hub (wow2, ventures, Ocharo) keeps its own `catalog.yml`; Wheelhouse reads all of them | 2026-10-19 |
 | 31 | An expired session signs out once and returns to the same page after sign-in; no error toasts | 2026-10-19 |
+| 32 | GitHub access goes through one GitHub App installed on every owner; a token file stays the fallback | 2026-10-19 |
+| 33 | Deploys carry eight states, coloured by the attention they need rather than by state | 2026-10-19 |
+| 34 | Deploys that changed nothing (refused, cancelled, expired) are hidden by default; stats count them and the product's tabs list them | 2026-10-19 |
+| 35 | On phones a deploy's service map becomes an impact list with an "Open map" action | 2026-10-19 |
+| 36 | Services declare dependencies as `dependsOn` in `deploy.yml`; rollouts follow that order and roll back release-wide | 2026-10-19 |
+| 37 | A service restarts only when its own image or settings change; a dependency's update never restarts it | 2026-10-19 |
+| 38 | Only Wheelhouse deploys through CI; Wheelhouse deploys every other product; catalog `ci`/`none` entries never create products | 2026-10-19 |
+| 39 | Automatic rollback on a watch-window regression waits; the watch window flags the regression | 2026-10-19 |
 
 | Fact | Owner |
 |---|---|
