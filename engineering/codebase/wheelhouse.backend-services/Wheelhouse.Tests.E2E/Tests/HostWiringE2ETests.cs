@@ -69,6 +69,26 @@ public sealed class HostWiringE2ETests(WheelhouseAppFixture fixture) : Wheelhous
         body.GetProperty("environment").GetString().Should().Be("dev");
     }
 
+    [Theory]
+    [InlineData("prod", "prod")]
+    [InlineData("dev", "dev")]
+    [InlineData(" PROD ", "prod")]
+    [InlineData("staging", "dev")] // not an environment Wheelhouse knows: the host's own rule (Development here)
+    public async Task Status_ShouldReportTheEnvironmentTheRunnerNamed_WhenItNamesOne(string named, string reported)
+    {
+        var configuration = Fixture.Host.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
+        configuration["DEPLOY_ENVIRONMENT"] = named;
+        try
+        {
+            var body = JsonDocument.Parse(await AnonymousClient.GetStringAsync("/api/system/status")).RootElement;
+            body.GetProperty("environment").GetString().Should().Be(reported);
+        }
+        finally
+        {
+            configuration["DEPLOY_ENVIRONMENT"] = null;
+        }
+    }
+
     [Fact]
     public async Task Migrations_ShouldCarryTheProductVersion_WhenApplied()
     {

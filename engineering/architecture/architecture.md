@@ -57,6 +57,10 @@ environment-specific domains or database values; a target supplies its settings,
 image bytes. The shared publish workflow builds bundles from each product's `deploy.yml`
 ([descriptor convention](../../../../../conventions/deployment/descriptor/deploy-descriptor.md)).
 
+Every service can read the environment it runs in from `DEPLOY_ENVIRONMENT` (`dev` or `prod`): the runner writes a
+Compose override beside the release's `compose.json` (`environment.json`, never part of the bundle or its hash) that
+sets it on each service, and passes it to every Compose call, so a product needs no descriptor change to know it.
+
 Bundles are privileged owner inputs: hashes bind files together, not publishers to identities.
 The API accepts target and release IDs only. It cannot upload arbitrary Compose, run shell commands or disclose SSH keys.
 
@@ -423,8 +427,9 @@ nothing and are skipped), `running` (the newest success, so the release serving)
 outcome, actor, submittedAt, completedAt, reason }` — and `weekly`, finished rollouts per week. Per workspace —
 `{ workspace, succeeded, failed, weekly: [{ succeeded, failed }] }`. Only finished rollouts count in weeks, as the
 activity calendar's days do; a rollout whose product the inventory no longer holds counts nowhere. Read-only; never
-contacts a target. `/api/system/status` also names the `environment` the console serves (`prod` as Production, else
-`dev`), so the Products page shows the console's own CI-deployed version there.
+contacts a target. `/api/system/status` also names the `environment` the console serves — its `DEPLOY_ENVIRONMENT`
+(`dev` or `prod`), else `prod` as Production and `dev` otherwise — so the Products page shows the console's own
+CI-deployed version there.
 
 ## Secrets vaults
 

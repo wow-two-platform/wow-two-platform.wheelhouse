@@ -58,6 +58,9 @@ SNAPSHOT_IMAGE_PATTERN = re.compile(r"[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?(@
 CONNECTION_VALUE = re.compile(r"[A-Za-z0-9_.$][A-Za-z0-9_.$-]{0,62}")
 # What a target remembers about its verified release: identity, service versions and published sites.
 CURRENT = ("id", "release", "kind", "branch", "sourceCommit", "versions", "sites")
+# The Compose override the runner writes beside a release's compose.json: every service receives the environment it
+# runs in as DEPLOY_ENVIRONMENT. Never part of a bundle or its hash.
+ENVIRONMENT_OVERRIDE = "environment.json"
 
 
 class Rejected(ValueError):
@@ -748,8 +751,10 @@ class Docker:
         self.execute(["docker", "compose", "version"], "docker compose version", timeout=30)
 
     def compose(self, bundle, *arguments):
+        override = environment_override(bundle, self.target["environment"])
         return self.execute(["docker", "compose", "--project-name", self.project,
-                             "--env-file", "/dev/null", "-f", str(Path(bundle) / "compose.json"), *arguments],
+                             "--env-file", "/dev/null", "-f", str(Path(bundle) / "compose.json"), "-f", str(override),
+                             *arguments],
                             "compose " + arguments[0])
 
     def unhealthy(self, bundle):
@@ -792,6 +797,25 @@ class Docker:
                                   "--max-time", "10", "http://localhost:" + port + probe["path"])
             require(status.strip() == str(expected), "Smoke check failed: " + probe["service"] + " " + probe["path"]
                     + " returned " + status.strip()[:3] + ", expected " + str(expected))
+
+
+def environment_override(bundle, environment):
+    """Writes, beside a release's compose.json, the Compose override that gives every service DEPLOY_ENVIRONMENT — the
+    environment it runs in (`dev`, `prod`) — so a product reads it without declaring it. Rewritten only when it differs;
+    a release copied by an older runner gains it the first time it is applied or rolled back to. Returns its path."""
+    require(SLUG.fullmatch(str(environment)), "Invalid target environment")
+    bundle = Path(bundle)
+    services = read_json(bundle / "compose.json").get("services")
+    require(isinstance(services, dict) and services, "Compose declares no services")
+    override = {"services": {name: {"environment": {"DEPLOY_ENVIRONMENT": environment}} for name in sorted(services)}}
+    path = bundle / ENVIRONMENT_OVERRIDE
+    try:
+        current = read_json(path)
+    except (OSError, ValueError):
+        current = None
+    if current != override:
+        write_json(path, override)
+    return path
 
 
 def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=probe_sites):

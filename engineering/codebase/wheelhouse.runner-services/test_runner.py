@@ -675,6 +675,69 @@ class RunnerTests(unittest.TestCase):
         SmokeDocker(self.target, {}).verify(self.bundle, runner.validate_bundle(self.bundle))
         self.assertEqual("http://localhost:80/health", calls[-1][-1])
 
+    def test_every_compose_call_gives_each_service_its_environment(self):
+        self.compose["services"]["worker"] = dict(self.compose["services"]["api"])
+        self.manifest["images"]["worker"] = self.manifest["images"]["api"]
+        self.save()
+        calls = []
+
+        class RecordingDocker(runner.Docker):
+            def execute(self, arguments, step, timeout=600):
+                calls.append(arguments)
+                return ""
+
+        self.target["environment"] = "prod"
+        RecordingDocker(self.target, {}).up(self.bundle)
+        override = self.bundle / runner.ENVIRONMENT_OVERRIDE
+        self.assertEqual(["-f", str(self.bundle / "compose.json"), "-f", str(override)], calls[-1][6:10])
+        self.assertEqual({"services": {"api": {"environment": {"DEPLOY_ENVIRONMENT": "prod"}},
+                                       "worker": {"environment": {"DEPLOY_ENVIRONMENT": "prod"}}}},
+                         runner.read_json(override))
+        # Rewritten only when it differs, and never part of the bundle's hash.
+        written = override.stat().st_mtime_ns
+        RecordingDocker(self.target, {}).pull(self.bundle)
+        self.assertEqual(written, override.stat().st_mtime_ns)
+        runner.validate_bundle(self.bundle)
+        self.target["environment"] = "dev"
+        RecordingDocker(self.target, {}).up(self.bundle)
+        self.assertEqual("dev", runner.read_json(override)["services"]["api"]["environment"]["DEPLOY_ENVIRONMENT"])
+
+    def test_a_rollback_to_a_release_copied_before_the_override_gains_it(self):
+        self.manifest["rollbackCompatible"] = True
+        self.save()
+        runner.apply(self.bundle, self.target, "test-operator", docker_factory=FakeDocker)
+        previous = runner.read_json(self.root / "state/pilot-dev/current.json")["id"]
+        prior = self.root / "state/pilot-dev/releases" / previous
+        (prior / runner.ENVIRONMENT_OVERRIDE).unlink(missing_ok=True)
+        self.manifest["release"] = "v2"
+        self.save()
+
+        class FailingDocker(runner.Docker):
+            def preflight(self, manifest):
+                pass
+
+            def execute(self, arguments, step, timeout=600):
+                if "up" in arguments and str(self.bundle_of(arguments)).endswith(previous) is False:
+                    raise runner.CommandFailed("compose up failed (exit 1); inspect target containers privately")
+                if arguments[-1] == "json":
+                    return "[]"
+                if "ps" in arguments:
+                    return "cid\n"
+                if arguments[:2] == ["docker", "inspect"]:
+                    return json.dumps([{"Config": {"Image": FailingDocker.image},
+                                        "State": {"Health": {"Status": "healthy"}}}])
+                return ""
+
+            @staticmethod
+            def bundle_of(arguments):
+                return Path(arguments[arguments.index("-f") + 1]).parent
+
+        FailingDocker.image = self.manifest["images"]["api"]
+        result = runner.apply(self.bundle, self.target, "test-operator", docker_factory=FailingDocker)
+        self.assertEqual("rolled_back", result["status"])
+        self.assertEqual("dev", runner.read_json(prior / runner.ENVIRONMENT_OVERRIDE)["services"]["api"]["environment"]
+                         ["DEPLOY_ENVIRONMENT"])
+
     def test_logs_read_one_service_bounded_and_refuse_a_missing_container(self):
         class LogDocker:
             containers = "abc123\n"
