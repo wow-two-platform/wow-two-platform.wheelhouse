@@ -45,8 +45,8 @@ const scale = computed(() =>
     <template #days>
       <p>
         Weeks run left to right, Monday on top; finished rollouts that changed the environment count on the day they
-        were submitted. Point at a day for its counts, choose it to list its deployments, and move between days with the
-        arrow keys.
+        were submitted. Point at a day for its counts, choose it to see its deploys as one row per product, and move between
+        days with the arrow keys.
       </p>
     </template>
     <template #outcomes>
@@ -103,7 +103,8 @@ const scale = computed(() =>
       <p>
         Refused by a freeze or a gate, replaced in the queue by a newer release, cancelled, or stopped by a failed check
         before any change: they stay out of the records and the measures. The eye toggle beside Grid and List counts
-        them and, pressed, shows them in the list, the calendar's days, the product tabs and the measures. This browser
+        them and, pressed, shows them in the list, the calendar's days and the chosen day's rows (dashed), the product tabs and the
+        measures. This browser
         remembers it.
       </p>
     </template>

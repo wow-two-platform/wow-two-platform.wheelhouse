@@ -9,10 +9,12 @@ export interface DeploymentsPanelProps {
 </script>
 
 <script setup lang="ts">
-import { computed, ref, useTemplateRef } from "vue";
+import { computed, nextTick, ref, useTemplateRef, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { CalendarDays, List, MousePointerClick, X } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Badge } from "@wow-two-beta/fe/presentation/display";
 import { ToggleGroup, ToggleInput } from "@wow-two-beta/fe/presentation/forms";
 import { DataRegion } from "@wow-two-beta/fe/presentation/feedback";
 import { TailwindBreakpoints, useBreakpoint } from "@wow-two-beta/fe/foundation/device";
@@ -21,17 +23,23 @@ import { useResizeObserver } from "@wow-two-beta/fe/foundation/observers";
 import {
   buildEntityTree,
   DeploymentView,
+  isSelectedRelease,
+  readReleaseSelection,
+  ReleaseQueryKeys,
   useDeploymentActivity,
   useDeploymentPages,
   useDeploymentRangeStats,
+  useDeploymentTargets,
   useRunningDeployments,
 } from "@/application/deployments";
 import { usePortfolio } from "@/application/portfolio";
+import { DayLanes, DeploymentFilters } from "@/domain/deployments";
 import { useRefresh } from "@/bootstrap/query";
 import { InfoPopover, Panel, RefreshButton } from "@/presentation/common/components";
 
 import { useDeploymentViewRoute } from "../../hooks/useDeploymentViewRoute";
 import ActivityGrid from "./ActivityGrid.vue";
+import DayProductRows from "./DayProductRows.vue";
 import DeploymentDayStats from "./DeploymentDayStats.vue";
 import DeploymentFilterBar from "./DeploymentFilterBar.vue";
 import DeploymentList from "./DeploymentList.vue";
@@ -44,21 +52,27 @@ import UnchangedToggle from "./UnchangedToggle.vue";
 const SidePanelRoom = 312;
 /** The most deployments one read of a day takes (the API's page limit), so its counts are whole on any real day. @internal */
 const DayPageSize = 100;
+/** The most older pages the List reads on its own while looking for a chosen release. @internal */
+const SelectionPageLimit = 20;
 
 /**
  * Deployments under one shared filter, shown two ways: a calendar of outcomes per day (Grid), whose day expands into
  * that day's deployments, or every deployment newest first (List). From `lg`, where the panel has room beside the
- * calendar, a day panel sits to its right: the chosen day's counts and deployments, or one line asking for a day;
- * narrower, the chosen day stacks under the calendar. The day's counts are tiles for each status that occurred, read
- * from its deployments, whose rows carry the same status pills. The range's totals are the measures above, never
- * repeated here; where the panel holds its own filter bar (a product's tab), the measures sit under it. The calendar's
- * key and the statuses are behind the info button beside the title. The filter, the view and the expanded day live in
- * the address.
+ * calendar, a day panel sits to its right: the chosen day's date and counts over one compact row per product, a lane
+ * per environment with a glyph per deploy (`DayProductRows`), or one line asking for a day; narrower, the chosen day
+ * stacks under the calendar. A glyph opens its release on the product's Deployments tab, whose List chooses the
+ * address's `release` (and `env`) rows and scrolls to them. The range's totals are the measures above, never repeated
+ * here; where the panel holds its own filter bar (a product's tab), the measures sit under it. The calendar's key and
+ * the statuses are behind the info button beside the title. The filter, the view and the expanded day live in the
+ * address.
  */
 defineOptions({ name: "DeploymentsPanel" });
 const props = withDefaults(defineProps<DeploymentsPanelProps>(), { lockedProduct: null, hasFilterBar: true });
 const route = useDeploymentViewRoute(() => props.lockedProduct);
+const address = useRoute();
+const router = useRouter();
 const portfolio = usePortfolio();
+const targets = useDeploymentTargets();
 const tree = computed(() => buildEntityTree(portfolio.groups.value, portfolio.showInactive.value));
 const productNames = computed(
   () => new Map(portfolio.products.products.value.map((product) => [product.slug, product.name] as const)),
@@ -77,6 +91,69 @@ const running = useRunningDeployments(() => route.filter.value.entities);
 const stats = useDeploymentRangeStats(route.filter);
 const unchangedCount = computed(() => stats.data.value?.current.notApplied ?? null);
 const isLive = computed(() => (running.data.value?.length ?? 0) > 0);
+
+/** The chosen day's rows, one per product, and the environments their lanes cover. */
+const dayItems = computed(() => (dayList.loading.value ? undefined : dayList.items.value));
+const dayRows = computed(() =>
+  dayItems.value ? DayLanes.rows(dayItems.value, productNames.value, targets.data.value ?? []) : undefined,
+);
+const dayEnvironments = computed(() => DayLanes.environments(dayItems.value ?? []));
+const isToday = computed(() => route.day.value === DeploymentFilters.localDate(new Date()));
+
+/** The release the address chose (a glyph's link): the List marks its rows, reads older pages to find them, and
+ * scrolls to the first. */
+const selection = computed(() => readReleaseSelection(address.query));
+const selectedIds = computed(
+  () => new Set(list.items.value.filter((item) => isSelectedRelease(item, selection.value)).map((item) => item.id)),
+);
+const selectionLabel = computed(() =>
+  selection.value ? [selection.value.release, selection.value.environment].filter(Boolean).join(" on ") : "",
+);
+const isSelectionMissing = computed(
+  () =>
+    Boolean(selection.value) &&
+    !isGrid.value &&
+    !list.loading.value &&
+    !selectedIds.value.size &&
+    !list.hasNextPage.value &&
+    !list.isFetchingNextPage.value,
+);
+let pagesRead = 0;
+let scrolledTo: string | null = null;
+watch(
+  () => [selection.value?.release, selection.value?.environment, isGrid.value] as const,
+  () => {
+    pagesRead = 0;
+    scrolledTo = null;
+  },
+);
+watch(
+  () =>
+    [selectedIds.value.size, list.hasNextPage.value, list.isFetchingNextPage.value, list.loading.value, isGrid.value] as const,
+  async ([found, hasMore, isFetching, isLoading, grid]) => {
+    const chosen = selection.value;
+    if (!chosen || grid || isLoading) return;
+    if (!found) {
+      if (hasMore && !isFetching && pagesRead < SelectionPageLimit) {
+        pagesRead += 1;
+        void list.fetchNextPage();
+      }
+      return;
+    }
+    const key = `${chosen.release}|${chosen.environment ?? ""}`;
+    if (scrolledTo === key) return;
+    scrolledTo = key;
+    await nextTick();
+    document.querySelector<HTMLElement>("[data-selected-release]")?.scrollIntoView({ block: "center" });
+  },
+  { immediate: true, flush: "post" },
+);
+
+/** Clears the chosen release from the address; the environment stays, as the product page reads it too. @internal */
+function clearSelection(): void {
+  const query = Object.fromEntries(Object.entries(address.query).filter(([key]) => key !== ReleaseQueryKeys[0]));
+  void router.replace({ path: address.path, query, hash: address.hash });
+}
 const refresh = useRefresh(() =>
   Promise.all(isGrid.value ? [activity.refetch(), ...(route.day.value ? [dayList.refetch()] : [])] : [list.refetch()]),
 );
@@ -98,13 +175,18 @@ const isSide = computed(
   () => (breakpoint.value === "lg" || breakpoint.value === "xl" || breakpoint.value === "2xl") && spare.value >= SidePanelRoom,
 );
 
+/** The chosen day's date, its year left out in the current one so the today tag fits beside it. */
 const dayTitle = computed(() => {
   const day = route.day.value;
   if (!day) return "";
   const [year, month, date] = day.split("-").map(Number) as [number, number, number];
-  return new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(
-    new Date(year, month - 1, date),
-  );
+  const isThisYear = year === new Date().getFullYear();
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "long",
+    day: "numeric",
+    ...(isThisYear ? {} : { year: "numeric" }),
+  }).format(new Date(year, month - 1, date));
 });
 
 /** Switches Grid and List; pressing the active segment keeps the view. @internal */
@@ -170,25 +252,36 @@ function setView(value: unknown): void {
           aria-live="polite"
           data-info-scope
         >
-          <div class="flex items-center justify-between gap-3">
-            <div class="flex min-w-0 items-center gap-1">
-              <h3 class="text-sm font-semibold">{{ dayTitle }}</h3>
-              <InfoPopover title="The day's statuses">
-                <p class="mb-2.5">
-                  A tile counts each state the day's deployments reached, first the total; a state nobody reached takes
-                  no tile. Each row below carries its state chip, its cause and its services.
-                </p>
-                <DeploymentStatusLegend />
-              </InfoPopover>
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <h3 class="text-sm font-semibold">{{ dayTitle }}</h3>
+                <Badge v-if="isToday" variant="neutral">today</Badge>
+                <InfoPopover title="The day">
+                  <p class="mb-2.5">
+                    One row per product. Each environment's lane holds a glyph per deploy that day, oldest first, so the
+                    last is what it runs now. A bar on the left marks a row whose latest deploy needs action (red) or a
+                    look (amber); those rows lead. Point at a glyph for its release, time, state and actor, or tap it on
+                    touch; choose it to open the release on the product's Deployments tab. The counts above say how many
+                    deploys reached each state.
+                  </p>
+                  <DeploymentStatusLegend />
+                </InfoPopover>
+              </div>
+              <!-- Icon-only on a phone, so the date, its today tag and the info button keep one line. -->
+              <Button
+                variant="ghost"
+                tone="neutral"
+                size="sm"
+                :aria-label="`Close ${dayTitle}`"
+                class="shrink-0 max-md:size-11 max-md:px-0"
+                @click="route.setDay(null)"
+              >
+                <template #leading><X :size="14" aria-hidden="true" /></template><span class="max-md:hidden">Close</span>
+              </Button>
             </div>
-            <Button variant="ghost" tone="neutral" size="sm" :aria-label="`Close ${dayTitle}`" class="max-md:min-h-11" @click="route.setDay(null)">
-              <template #leading><X :size="14" aria-hidden="true" /></template>Close
-            </Button>
+            <DeploymentDayStats :items="dayItems" :has-more="dayList.hasNextPage.value" />
           </div>
-          <DeploymentDayStats
-            :items="dayList.loading.value ? undefined : dayList.items.value"
-            :has-more="dayList.hasNextPage.value"
-          />
           <DataRegion
             :is-first-load="dayList.loading.value"
             :error="dayList.error.value"
@@ -198,15 +291,18 @@ function setView(value: unknown): void {
             empty-description="Nothing under this filter was submitted on this day."
             loading-label="Loading the day's deployments"
           >
-            <DeploymentList
-              :items="dayList.loading.value ? undefined : dayList.items.value"
-              :product-names="productNames"
-              :has-more="dayList.hasNextPage.value"
-              :is-loading-more="dayList.isFetchingNextPage.value"
-              :is-product-hidden="Boolean(props.lockedProduct)"
-              :layout="isSide ? 'rows' : 'table'"
-              @more="dayList.fetchNextPage()"
-            />
+            <DayProductRows :rows="dayRows" :environments="dayEnvironments" :range="route.filter.value.range" />
+            <div v-if="dayList.hasNextPage.value" class="mt-3 flex justify-center">
+              <Button
+                variant="outline"
+                tone="neutral"
+                size="sm"
+                :is-loading="dayList.isFetchingNextPage.value"
+                class="max-md:min-h-11"
+                @click="dayList.fetchNextPage()"
+                >Load older deployments</Button
+              >
+            </div>
           </DataRegion>
         </section>
         <p
@@ -226,12 +322,31 @@ function setView(value: unknown): void {
         empty-description="Widen the range, choose All, or clear the products and services."
         loading-label="Loading deployments"
       >
+        <div v-if="selection" class="mb-3 flex min-w-0 flex-wrap items-center gap-2 text-sm">
+          <span class="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 py-0.5 ps-2.5 pe-1">
+            <span class="truncate"
+              >Release <span class="font-mono text-xs font-medium">{{ selectionLabel }}</span></span
+            >
+            <Button
+              variant="ghost"
+              tone="neutral"
+              size="sm"
+              shape="square"
+              class="size-6 max-md:size-9"
+              :aria-label="`Clear the chosen release ${selectionLabel}`"
+              @click="clearSelection"
+              ><template #leading><X :size="12" aria-hidden="true" /></template
+            ></Button>
+          </span>
+          <span v-if="isSelectionMissing" class="text-muted-foreground">Not deployed in this range.</span>
+        </div>
         <DeploymentList
           :items="list.loading.value ? undefined : list.items.value"
           :product-names="productNames"
           :has-more="list.hasNextPage.value"
           :is-loading-more="list.isFetchingNextPage.value"
           :is-product-hidden="Boolean(props.lockedProduct)"
+          :selected-ids="selectedIds"
           @more="list.fetchNextPage()"
         />
       </DataRegion>

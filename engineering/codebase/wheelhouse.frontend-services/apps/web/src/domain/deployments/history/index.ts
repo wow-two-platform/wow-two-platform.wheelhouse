@@ -50,3 +50,11 @@ export {
   type DayCounts,
 } from './ActivityCalendar';
 export { ServiceRollouts, type ServiceOutcomeReading, type ServiceRollout, type ServiceRolloutService } from './ServiceRollout';
+export {
+  DayLaneEnvironments,
+  DayLanes,
+  type DayGlyph,
+  type DayLane,
+  type DayRow,
+  type DayTarget,
+} from './DayLanes';

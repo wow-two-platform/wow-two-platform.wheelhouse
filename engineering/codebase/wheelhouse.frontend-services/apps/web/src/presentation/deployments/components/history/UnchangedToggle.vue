@@ -29,7 +29,7 @@ const shown = useShowUnchanged();
 const hint = computed(() => {
   const count = props.count ?? 0;
   const what = `${count} ${count === 1 ? "deploy" : "deploys"} changed nothing (refused, cancelled, expired)`;
-  return shown.value ? `${what} — shown in records and stats; hide them` : `${what} — show them in records and stats`;
+  return shown.value ? `${what} — hide them from records and stats` : `${what} — show them in records and stats`;
 });
 </script>
 

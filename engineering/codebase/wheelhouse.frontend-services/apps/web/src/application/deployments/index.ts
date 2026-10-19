@@ -54,3 +54,11 @@ export {
   useUnfreezeDeploys,
   useUpdateAutomation,
 } from "./hooks/useDeploymentAutomation";
+export {
+  ReleaseQueryKeys,
+  isSelectedRelease,
+  readReleaseSelection,
+  releaseLocation,
+  releaseOf,
+  type ReleaseSelection,
+} from "./ReleaseSelection";

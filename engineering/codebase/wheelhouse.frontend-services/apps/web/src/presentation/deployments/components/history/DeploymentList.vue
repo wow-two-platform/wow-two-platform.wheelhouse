@@ -13,15 +13,13 @@ export interface DeploymentListProps {
   readonly isLoadingMore?: boolean;
   /** Hides the product column, as a product's own tab does. */
   readonly isProductHidden?: boolean;
-  /**
-   * `table` (default): the List view's table, stacked into cards below `md`. `rows`: the same facts as one compact row
-   * per deployment, for a narrow column such as the calendar's day panel.
-   */
-  readonly layout?: "table" | "rows";
+  /** The deployments of a release the address chose: their rows are marked, and the first carries `data-selected-release`. */
+  readonly selectedIds?: ReadonlySet<string>;
 }
 </script>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
@@ -47,20 +45,21 @@ import ServiceStrip from "../ServiceStrip.vue";
 /**
  * Lists deployments with how each went and what it changed; a row opens the deployment's own page. Each row carries
  * the state chip with its cause beneath it, and the service strip — one glyph per service in rollout order, the origin
- * ringed, in words on a phone. A deploy that changed nothing shows dimmed. Below `md` the SDK table stacks each row
- * into a labelled card; the `rows` layout says the same in one compact row each, for a narrow column. Older
- * deployments load a page at a time.
+ * ringed, in words on a phone. A deploy that changed nothing shows dimmed; the rows of a chosen release are marked.
+ * Below `md` the SDK table stacks each row into a labelled card. Older deployments load a page at a time.
  */
 defineOptions({ name: "DeploymentList" });
 const props = withDefaults(defineProps<DeploymentListProps>(), {
   hasMore: false,
   isLoadingMore: false,
   isProductHidden: false,
-  layout: "table",
+  selectedIds: () => new Set<string>(),
 });
 const emit = defineEmits<{ more: [] }>();
 const router = useRouter();
 const rows = useSkeletonItems(() => props.items, 5);
+/** The first chosen row, which the panel scrolls to. */
+const firstSelected = computed(() => props.items?.find((item) => props.selectedIds.has(item.id))?.id ?? null);
 
 /** A deployment's chip reading. @internal */
 const readingOf = (item: DeploymentItem) => DeploymentStates.of(item);
@@ -100,42 +99,7 @@ function open(item: DeploymentItem | undefined, event: MouseEvent): void {
 
 <template>
   <div class="flex min-w-0 flex-col gap-3">
-    <ul v-if="props.layout === 'rows'" class="flex min-w-0 flex-col divide-y divide-border" aria-label="Deployments">
-      <li v-for="(item, index) in rows" :key="item?.id ?? `placeholder-${index}`" class="min-w-0">
-        <RouterLink
-          v-if="item"
-          :to="pathOf(item)"
-          :class="[
-            '-mx-2 flex min-h-11 min-w-0 flex-col gap-1 rounded-lg px-2 py-2.5 hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-primary',
-            isUnchanged(item) ? 'opacity-70' : '',
-          ]"
-          :aria-label="`Deployment of ${item.release ?? item.bundleId ?? 'an unknown release'} to ${item.targetId ?? 'a removed target'}`"
-        >
-          <span class="flex min-w-0 items-center justify-between gap-3">
-            <span class="flex min-w-0 items-center gap-2">
-              <span class="truncate font-mono text-xs font-medium">{{ item.release ?? item.bundleId ?? "—" }}</span>
-              <Badge v-if="item.kind === 'candidate'" variant="neutral">build</Badge>
-              <Badge :variant="item.environment === 'prod' ? 'info' : 'neutral'">{{ item.environment ?? item.targetId ?? "—" }}</Badge>
-            </span>
-            <span class="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{{ durationOf(item) }}</span>
-          </span>
-          <span class="flex min-w-0 items-start justify-between gap-2 text-sm">
-            <DeploymentStateChip :reading="readingOf(item)" has-cause />
-            <ServiceStrip v-if="item.services" :services="item.services" class="shrink-0 pt-0.5" />
-          </span>
-          <span class="truncate text-xs text-muted-foreground">
-            <template v-if="!props.isProductHidden">{{ productOf(item) }} · </template
-            ><RelativeTime :value="item.startedAt ?? item.submittedAt" /> · {{ item.actor ?? "—" }}<template
-              v-if="!item.services && !isUnchanged(item) && item.changedServices?.length"
-            >
-              · <span class="font-mono">{{ item.changedServices.join(", ") }}</span></template
-            >
-          </span>
-        </RouterLink>
-        <span v-else class="block py-2.5" aria-hidden="true"><span class="block h-14 animate-pulse rounded-lg bg-muted motion-reduce:animate-none" /></span>
-      </li>
-    </ul>
-    <Table v-else density="compact" is-hoverable>
+    <Table density="compact" is-hoverable>
       <TableHead>
         <TableRow>
           <TableHeaderCell>Release</TableHeaderCell>
@@ -152,7 +116,13 @@ function open(item: DeploymentItem | undefined, event: MouseEvent): void {
         <TableRow
           v-for="(item, index) in rows"
           :key="item?.id ?? `placeholder-${index}`"
-          :class="['cursor-pointer', isUnchanged(item) ? 'opacity-70' : '']"
+          :class="[
+            'cursor-pointer',
+            isUnchanged(item) ? 'opacity-70' : '',
+            item && props.selectedIds.has(item.id) ? 'bg-primary/10 shadow-[inset_3px_0_0_var(--color-primary)] hover:bg-primary/15' : '',
+          ]"
+          :aria-current="item && props.selectedIds.has(item.id) ? 'true' : undefined"
+          :data-selected-release="item && item.id === firstSelected ? '' : undefined"
           @click="open(item, $event)"
         >
           <TableCell>

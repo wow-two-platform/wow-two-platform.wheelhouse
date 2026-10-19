@@ -6,8 +6,9 @@ import { bundleModule } from "./BundleModule.mjs";
 // The real rules: the activity calendar, the entity picker's selection model, the filter's address round trip and the
 // history wire decoding.
 const history = await bundleModule(`
-  export { ActivityCalendar, EntitySelection, EntityKeys, DeploymentFilters, StatusFilter, RangePreset, DeploymentIssues, DeploymentStates } from './src/domain/deployments';
+  export { ActivityCalendar, EntitySelection, EntityKeys, DeploymentFilters, StatusFilter, RangePreset, DeploymentIssues, DeploymentStates, DayLanes } from './src/domain/deployments';
   export { readDeploymentQuery, writeDeploymentQuery, mergeDeploymentQuery, buildEntityTree } from './src/application/deployments';
+  export { releaseLocation, readReleaseSelection, isSelectedRelease } from './src/application/deployments/ReleaseSelection';
   export { DeploymentItemSchema, DeploymentDetailSchema, DeploymentIssueSchema, DeploymentActivitySchema } from './src/integration/deployments/historySchemas';
   export { scopeOf } from './src/application/navigation/Scope';
   export { HintPlacement } from './src/presentation/deployments/components/history/HintPlacement';
@@ -349,4 +350,98 @@ test("the day tooltip sits above its cell, flips below at the top edge and slide
   assert.deepEqual(HintPlacement.place({ left: 360, top: 300, width: 20, height: 20 }, size, viewport), { left: 182, top: 270, side: "top" });
   // At the left edge, and too near the top: slid right and flipped below.
   assert.deepEqual(HintPlacement.place({ left: 0, top: 10, width: 20, height: 20 }, size, viewport), { left: 8, top: 36, side: "bottom" });
+});
+
+// The chosen day as one compact row per product: lanes per environment, glyphs oldest first, rows by attention.
+const deploy = (id, product, environment, at, state, attention, extra = {}) => ({
+  id, product, environment, targetId: `${product}-${environment}`, release: `v1.0.${id}`, bundleId: null, actor: "sulton-max",
+  status: "succeeded", state, substate: null, attention, cause: null, submittedAt: at, startedAt: at, ...extra,
+});
+
+test("a day row holds a lane per environment, each deploy oldest first, so the last is what runs now", () => {
+  const { DayLanes } = history;
+  const items = [
+    deploy(3, "vault", "dev", "2026-10-19T10:00:00Z", "succeeded", "none"),
+    deploy(1, "vault", "dev", "2026-10-19T08:00:00Z", "failed", "act"),
+    deploy(2, "vault", "prod", "2026-10-19T09:00:00Z", "succeeded", "none"),
+  ];
+  const [row] = DayLanes.rows(items, new Map([["vault", "Secrets Vault"]]));
+  assert.equal(row.name, "Secrets Vault");
+  assert.deepEqual(row.lanes.map((lane) => lane.environment), ["dev", "prod"]);
+  assert.deepEqual(row.lanes[0].glyphs.map((glyph) => glyph.release), ["v1.0.1", "v1.0.3"]);
+  // Fixed the same day: the failed glyph stays, and the lane's latest deploy needs nothing.
+  assert.equal(row.lanes[0].attention, null);
+  assert.equal(row.attention, null);
+  // A product with no deploy in an environment still has its lane, empty.
+  const [only] = DayLanes.rows([deploy(4, "pin", "prod", "2026-10-19T09:00:00Z", "succeeded", "none")], new Map());
+  assert.deepEqual(only.lanes.map((lane) => lane.glyphs.length), [0, 1]);
+  assert.deepEqual(DayLanes.environments([deploy(5, "pin", "test", "2026-10-19T09:00:00Z", "succeeded", "none")]), ["dev", "prod", "test"]);
+});
+
+test("a row's bar follows its lanes' latest deploys, and a deploy that changed nothing never hides a failure", () => {
+  const { DayLanes } = history;
+  const lane = (...states) =>
+    DayLanes.rows(states.map(([state, attention], index) =>
+      deploy(index, "p", "dev", `2026-10-19T0${index}:00:00Z`, state, attention)), new Map())[0].lanes[0].attention;
+  assert.equal(lane(["succeeded", "none"], ["failed", "act"]), "act");
+  assert.equal(lane(["failed", "act"], ["not_applied", "none"]), "act");
+  assert.equal(lane(["succeeded", "none"], ["not_applied", "look"]), "look");
+  assert.equal(lane(["rolled_back", "look"], ["succeeded", "none"]), null);
+  assert.equal(lane(["degraded", "look"]), "look");
+  assert.equal(lane(["failed", "act"], ["in_progress", "info"]), null);
+});
+
+test("rows needing action lead, then those worth a look, then the rest, by name within each", () => {
+  const { DayLanes } = history;
+  const items = [
+    deploy(1, "zeta", "dev", "2026-10-19T08:00:00Z", "succeeded", "none"),
+    deploy(2, "alpha", "dev", "2026-10-19T08:00:00Z", "succeeded", "none"),
+    deploy(3, "mid", "prod", "2026-10-19T08:00:00Z", "rolled_back", "look"),
+    deploy(4, "last", "prod", "2026-10-19T08:00:00Z", "partial", "act"),
+    deploy(5, null, "prod", "2026-10-19T08:00:00Z", "failed", "act", { targetId: "gone-prod" }),
+  ];
+  const rows = DayLanes.rows(items, new Map([["last", "Last"], ["mid", "Mid"], ["alpha", "Alpha"], ["zeta", "Zeta"]]));
+  assert.deepEqual(rows.map((row) => [row.name, row.attention]), [
+    ["gone-prod", "act"], ["Last", "act"], ["Mid", "look"], ["Alpha", null], ["Zeta", null],
+  ]);
+  assert.equal(rows[0].isProduct, false);
+});
+
+test("a glyph's tooltip says version, time, state and actor, and names the server of a several-server lane", () => {
+  const { DayLanes } = history;
+  const at = new Date(2026, 9, 19, 14, 5).toISOString();
+  const items = [
+    deploy(1, "nasiya", "prod", at, "failed", "act", { substate: "rollback_not_allowed", targetId: "nasiya-prod" }),
+    deploy(2, "nasiya", "dev", at, "succeeded", "none", { targetId: "nasiya-dev" }),
+  ];
+  const targets = [
+    { id: "nasiya-prod", product: "nasiya", environment: "prod", serverId: "ovh1" },
+    { id: "nasiya-prod-hel1", product: "nasiya", environment: "prod", serverId: "hel1" },
+    { id: "nasiya-dev", product: "nasiya", environment: "dev", serverId: "hel1" },
+  ];
+  const [row] = DayLanes.rows(items, new Map(), targets);
+  assert.equal(DayLanes.hint(row.lanes[1].glyphs[0]), "v1.0.1 · 14:05 · Failed, rollback not allowed · sulton-max · on ovh1");
+  assert.equal(DayLanes.hint(row.lanes[0].glyphs[0]), "v1.0.2 · 14:05 · Succeeded · sulton-max");
+});
+
+test("a glyph opens its release on the product's Deployments tab, as a list over the view's range", () => {
+  const item = { product: "foreverpin", release: "v1.8.2", bundleId: "b-1", environment: "prod" };
+  assert.deepEqual(history.releaseLocation(item, { kind: "preset", preset: "6m" }), {
+    path: "/p/foreverpin/deployments", query: { view: "list", release: "v1.8.2", env: "prod" },
+  });
+  assert.deepEqual(history.releaseLocation(item, { kind: "custom", from: "2026-01-01T00:00", to: "2026-02-01T00:00" }).query, {
+    from: "2026-01-01T00:00", to: "2026-02-01T00:00", view: "list", release: "v1.8.2", env: "prod",
+  });
+  assert.equal(history.releaseLocation({ ...item, release: null }, { kind: "preset", preset: "12m" }).query.release, "b-1");
+  assert.equal(history.releaseLocation({ ...item, product: null }, { kind: "preset", preset: "6m" }), null);
+
+  const selection = history.readReleaseSelection({ release: "v1.8.2", env: "prod", view: "list" });
+  assert.deepEqual(selection, { release: "v1.8.2", environment: "prod" });
+  assert.ok(history.isSelectedRelease(item, selection));
+  assert.ok(!history.isSelectedRelease({ ...item, environment: "dev" }, selection));
+  assert.ok(history.isSelectedRelease({ ...item, environment: "dev" }, history.readReleaseSelection({ release: "v1.8.2" })));
+  assert.equal(history.readReleaseSelection({ env: "prod" }), null);
+  // The selection's keys survive the view's own address writes.
+  const state = history.readDeploymentQuery({ view: "list", release: "v1.8.2", env: "prod" });
+  assert.deepEqual(history.mergeDeploymentQuery({ release: "v1.8.2", env: "prod" }, state), { release: "v1.8.2", env: "prod", view: "list" });
 });
