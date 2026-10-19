@@ -70,7 +70,8 @@ const isUnchanged = (item: DeploymentItem | undefined) => item?.state === Deploy
 
 /** The changed services in words, for a deployment whose target reported no per-service results. @internal */
 function changed(item: DeploymentItem): string {
-  if (item.changedServices === null) return "—";
+  // A deploy that changed nothing touched no service, whatever its release would have changed.
+  if (item.changedServices === null || isUnchanged(item)) return "—";
   return item.changedServices.length ? item.changedServices.join(", ") : "none";
 }
 
@@ -125,7 +126,7 @@ function open(item: DeploymentItem | undefined, event: MouseEvent): void {
           <span class="truncate text-xs text-muted-foreground">
             <template v-if="!props.isProductHidden">{{ productOf(item) }} · </template
             ><RelativeTime :value="item.startedAt ?? item.submittedAt" /> · {{ item.actor ?? "—" }}<template
-              v-if="!item.services && item.changedServices?.length"
+              v-if="!item.services && !isUnchanged(item) && item.changedServices?.length"
             >
               · <span class="font-mono">{{ item.changedServices.join(", ") }}</span></template
             >
