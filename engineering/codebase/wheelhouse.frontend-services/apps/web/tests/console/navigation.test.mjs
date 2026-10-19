@@ -59,22 +59,24 @@ test("an old Workspace link keeps every other parameter and needs a product", ()
 
 test("a product's tabs are addressed by path, Overview by the product's own address", () => {
   assert.equal(ProductTabs[0].value, "overview");
-  assert.deepEqual(ProductTabs.slice(0, 4).map((tab) => tab.label), ["Overview", "Releases", "Secrets", "Activity"]);
+  // Releases joined Deployments (2026-10-19): one tab holds the history and the releases it can deploy.
+  assert.deepEqual(ProductTabs.map((tab) => tab.label), ["Overview", "Deployments", "Secrets", "Activity"]);
   assert.equal(ConsolePaths.product("wheelhouse"), "/p/wheelhouse");
   assert.equal(ConsolePaths.product("wheelhouse", "overview"), "/p/wheelhouse");
   assert.equal(ConsolePaths.product("wheelhouse", "activity"), "/p/wheelhouse/activity");
   assert.deepEqual(productLocation("wheelhouse", { env: "prod" }, "secrets"), { path: "/p/wheelhouse/secrets", query: { env: "prod" } });
   assert.equal(productTabOf(null).value, "overview");
-  assert.equal(productTabOf("releases").label, "Releases");
+  assert.equal(productTabOf("deployments").label, "Deployments");
+  assert.equal(productTabOf("releases"), null, "the old tab redirects at the router, not here");
   assert.equal(productTabOf("no-such-tab"), null);
 });
 
 test("a tab other than Overview closes the scope instead of the inspected service", () => {
-  const crumbs = scopeOf({ ...base, path: "/p/wheelhouse/releases", params: { product: "wheelhouse", tab: "releases" },
+  const crumbs = scopeOf({ ...base, path: "/p/wheelhouse/deployments", params: { product: "wheelhouse", tab: "deployments" },
     query: { env: "prod", inspect: "service", item: "api" } });
   assert.deepEqual(crumbs.map((crumb) => [crumb.level, crumb.label]),
-    [["home", "Home"], ["workspace", "Platform"], ["product", "Wheelhouse"], ["tab", "Releases"]]);
-  assert.deepEqual(crumbs[3].location, { path: "/p/wheelhouse/releases", query: {} });
+    [["home", "Home"], ["workspace", "Platform"], ["product", "Wheelhouse"], ["tab", "Deployments"]]);
+  assert.deepEqual(crumbs[3].location, { path: "/p/wheelhouse/deployments", query: {} });
   assert.equal(scopeOf({ ...base, path: "/p/wheelhouse", params: { product: "wheelhouse", tab: "overview" } }).length, 3);
 });
 

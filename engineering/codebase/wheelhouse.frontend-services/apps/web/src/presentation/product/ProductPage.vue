@@ -22,14 +22,14 @@ import ProductHeader from "./ProductHeader.vue";
 import ProductOverview from "./tabs/ProductOverview.vue";
 
 /* Overview ships with the page; the other tabs load the first time they open. @internal */
-const ProductReleases = defineAsyncComponent(() => import("./tabs/ProductReleases.vue"));
 const ProductSecrets = defineAsyncComponent(() => import("./tabs/ProductSecrets.vue"));
 const ProductActivity = defineAsyncComponent(() => import("./tabs/ProductActivity.vue"));
 const ProductDeployments = defineAsyncComponent(() => import("./tabs/ProductDeployments.vue"));
 
 /**
  * One product on its own page: the header — what it is and what applies to all of it — over its tabs: Overview
- * (environments, services, comparison, inspector), Releases, Secrets and Activity. Each tab has its own address,
+ * (environments, services, comparison, inspector), Deployments (the history and the releases it can deploy), Secrets
+ * and Activity. Each tab has its own address,
  * `/p/{product}/{tab}`, with Overview at `/p/{product}`; the tabs scroll sideways on phones. A tab's top-bar actions
  * come from its panel. A new tab adds its entry to `ProductTabs` (application/navigation) and its panel below. The page
  * it shows is remembered — product and tab — so the sidebar's Products returns to it; phones get "All products" at the
@@ -73,7 +73,7 @@ function chooseTab(value: string): void {
   void router.push({ path: ConsolePaths.product(productKey.value, value), query });
 }
 
-/* On a phone the tab list scrolls sideways; the chosen tab, such as Deployments at its end, scrolls into view. */
+/* On a phone the tab list scrolls sideways; the chosen tab, such as Activity at its end, scrolls into view. */
 watch(
   () => [tab.value.value, firstLoad.value] as const,
   async () => {
@@ -144,8 +144,8 @@ watch(
       <TabsGroupPanel :value="ProductTab.Overview" class="min-w-0">
         <ProductOverview @add-environment="header?.addEnvironment()" />
       </TabsGroupPanel>
-      <TabsGroupPanel :value="ProductTab.Releases" class="min-w-0">
-        <ProductReleases :product="productKey" />
+      <TabsGroupPanel :value="ProductTab.Deployments" class="min-w-0">
+        <ProductDeployments :product="productKey" />
       </TabsGroupPanel>
       <TabsGroupPanel :value="ProductTab.Secrets" class="min-w-0">
         <ProductSecrets v-if="record" :product="record" />
@@ -157,9 +157,6 @@ watch(
       </TabsGroupPanel>
       <TabsGroupPanel :value="ProductTab.Activity" class="min-w-0">
         <ProductActivity :product="productKey" />
-      </TabsGroupPanel>
-      <TabsGroupPanel :value="ProductTab.Deployments" class="min-w-0">
-        <ProductDeployments :product="productKey" />
       </TabsGroupPanel>
     </TabsGroup>
   </DataRegion>

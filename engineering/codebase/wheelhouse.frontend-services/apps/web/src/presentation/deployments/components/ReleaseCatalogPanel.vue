@@ -37,7 +37,7 @@ import { InfoPopover, Panel, RefreshButton } from "@/presentation/common/compone
 
 /**
  * Lists the deployable catalog: published releases and commit builds from approved repositories, newest first. A
- * product page passes its product, so the panel lists that product's releases only.
+ * product's Deployments tab passes its product, so the panel lists that product's releases only.
  */
 defineOptions({ name: "ReleaseCatalogPanel" });
 const props = withDefaults(defineProps<ReleaseCatalogPanelProps>(), { product: null });
@@ -69,9 +69,9 @@ const rows = useSkeletonItems(() => (releases.data.value ? visible.value : undef
 </script>
 
 <template>
-  <Panel title="Releases">
+  <Panel title="Releases and builds">
     <template #info>
-      <InfoPopover title="Releases">
+      <InfoPopover title="Releases and builds">
         <p>
           A published release deploys to any environment. A commit's build deploys to dev only and expires after 14
           days.

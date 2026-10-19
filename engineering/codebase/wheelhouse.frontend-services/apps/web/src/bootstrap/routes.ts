@@ -1,5 +1,6 @@
 import { createAppRouter, type AppRoute, type LazyRoute } from '@wow-two-beta/fe/router';
-import { legacyProductRedirect, workspaceHash } from '@/application/navigation/ConsolePaths';
+import { ConsolePaths, legacyProductRedirect, workspaceHash } from '@/application/navigation/ConsolePaths';
+import { MovedProductTabs } from '@/application/navigation/ProductTabs';
 
 /** The portfolio home: every workspace and its products. */
 export const HomePlace = {
@@ -56,6 +57,9 @@ const Pages: Record<Place['path'], LazyRoute> = {
   '/settings/catalog': () => import('@/presentation/catalog/pages/CatalogPage.vue'),
 };
 
+/** The product page, shared by its tabs' route and the addresses of tabs that moved. @internal */
+const ProductPage: LazyRoute = () => import('@/presentation/product/ProductPage.vue');
+
 /** A place's route: its handle carries the title (scope bar and document title) and the description. @internal */
 function placeRoute(place: Place): AppRoute {
   return { path: place.path, lazy: Pages[place.path], handle: { title: place.label, description: place.description } };
@@ -82,10 +86,20 @@ export const router = createAppRouter(
         redirect: { path: '/products', hash: workspaceHash(param(params['workspace'])) },
       }),
     },
+    // A tab that moved keeps its old address: /p/x/releases opens Deployments, its query (?release=&env=) intact.
+    ...Object.entries(MovedProductTabs).map(
+      ([segment, tab]): AppRoute => ({
+        path: `/p/:product/${segment}`,
+        lazy: ProductPage,
+        guard: ({ to, params }) => ({
+          redirect: { path: ConsolePaths.product(param(params['product']), tab), query: to.query, hash: to.hash },
+        }),
+      }),
+    ),
     // One route for every tab, so moving between tabs keeps the page and its reads; the page answers an unknown tab.
     {
       path: '/p/:product/:tab?',
-      lazy: () => import('@/presentation/product/ProductPage.vue'),
+      lazy: ProductPage,
       handle: { title: (route) => param(route.params['product']), description: 'A product, environment by environment.' },
     },
     ...[...PrimaryPlaces, ...GlobalPlaces, ...SettingsPlaces].map(placeRoute),

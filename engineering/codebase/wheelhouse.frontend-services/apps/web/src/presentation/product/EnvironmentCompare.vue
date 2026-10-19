@@ -67,7 +67,7 @@ const rows = computed(() => comparison.value.rows.filter((row) => !props.hiddenS
           <TableHeaderCell>Service</TableHeaderCell>
           <TableHeaderCell v-for="column in comparison.columns" :key="column.targetId">
             <span class="block capitalize">{{ column.environment }}</span>
-            <span class="block font-mono text-[11px] font-normal text-muted-foreground">{{
+            <span class="block font-mono text-[11px] font-normal tracking-normal text-muted-foreground normal-case">{{
               !column.read ? "Reading…" : (column.release ?? "Not deployed")
             }}</span>
           </TableHeaderCell>
@@ -82,9 +82,15 @@ const rows = computed(() => comparison.value.rows.filter((row) => !props.hiddenS
             class="font-mono text-xs"
             :title="version ? `Last changed in ${version.changedIn}` : ''"
           >
+            <!-- Every version wears the same outlined pill; one that has not reached the next environment is tinted. -->
             <span
               v-if="version"
-              :class="row.pending[index] ? 'rounded-md bg-primary-soft px-1.5 py-0.5 text-primary-soft-foreground' : ''"
+              :class="[
+                'inline-flex rounded-md border px-1.5 py-0.5',
+                row.pending[index]
+                  ? 'border-primary/40 bg-primary-soft text-primary-soft-foreground'
+                  : 'border-border text-foreground',
+              ]"
               >{{ version.version }}</span
             ><span v-else class="text-muted-foreground">—</span>
             <span v-if="row.pending[index]" class="sr-only">

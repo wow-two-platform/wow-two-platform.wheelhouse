@@ -29,13 +29,14 @@ import {
   useSkeletonItems,
 } from "@wow-two-beta/fe/presentation/feedback";
 import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
-import { ConsolePaths } from "@/application/navigation";
+import { ConsolePaths, ProductTab } from "@/application/navigation";
 import { useLastEnvironment, useShowInactive } from "@/application/preferences";
 import { useProducts } from "@/application/products";
 import { useServerVitals } from "@/application/servers";
 import {
   useDeploymentTargets,
   useDeploymentHistory,
+  useDeploymentPages,
   useTargetState,
   useReleaseArtifacts,
   useDeploymentOutcome,
@@ -54,7 +55,10 @@ import {
 import { Measures } from "@/domain/common";
 import {
   DeploymentExtensions,
+  EntityKeys,
+  RangePreset,
   TargetCondition,
+  type DeploymentFilterState,
   type DeploymentJob,
 } from "@/domain/deployments";
 import { ProductStatusRules } from "@/domain/products";
@@ -67,7 +71,6 @@ import {
   DeploymentSteps,
   ReconcileModal,
   ServiceLogsModal,
-  TargetSites,
   useDeployModal,
 } from "@/presentation/deployments";
 import { InfoPopover, RefreshButton } from "@/presentation/common/components";
@@ -208,11 +211,38 @@ const inspectedJob = computed(() =>
 );
 /** The page's first read: the frame renders with placeholder values until the inventory arrives. */
 const firstLoad = computed(() => inventoryRead.value.status === "loading");
-/** The environment's recent submissions, or placeholder rows until the history first arrives. */
+/** The product's deployments as the history reads them, every attempt: the state, attention and cause each recent
+ * submission wears, the same chip as the Deployments views. */
+const productHistory = useDeploymentPages(
+  () =>
+    ({
+      entities: productKey.value ? [EntityKeys.product(productKey.value)] : [],
+      range: { kind: "preset", preset: RangePreset.Year },
+    }) satisfies DeploymentFilterState,
+  { limit: 100, everyAttempt: true, enabled: () => Boolean(productKey.value) },
+);
+const historyItems = computed(() => new Map(productHistory.items.value.map((item) => [item.id, item] as const)));
+/** The environment's recent submissions, or placeholder rows until the history and their states first arrive. */
 const recentRows = useSkeletonItems(
-  () => (history.data.value ? targetHistory.value.slice(0, 6) : undefined),
+  () => (history.data.value && !productHistory.loading.value ? targetHistory.value.slice(0, 6) : undefined),
   3,
 );
+/** What a submission's chip reads: the history's state where it holds the submission at the same runner status (a
+ * fresher follow-up outruns it), else its runner status. */
+function stateOf(job: DeploymentJob) {
+  const item = historyItems.value.get(job.id);
+  return item && item.status === job.status
+    ? {
+        status: item.status,
+        state: item.state,
+        substate: item.substate,
+        attention: item.attention,
+        cause: item.cause,
+        reason: item.reason,
+        watch: item.watch,
+      }
+    : { status: job.status, reason: job.reason ?? null };
+}
 /** The environment's observed services, or placeholder cards until the vitals first arrive. */
 const serviceCards = useSkeletonItems(
   () =>
@@ -240,6 +270,7 @@ const refresh = useRefresh(() =>
     targets.refetch(),
     vitals.refetch(),
     history.refetch(),
+    productHistory.refetch(),
     releases.refetch(),
     ...(target.value ? [state.refetch()] : []),
     ...(target.value ? [topology.refetch()] : []),
@@ -476,7 +507,6 @@ function openDeploy(job?: DeploymentJob): void {
                 </button>
               </SkeletonStateGroup>
             </DataRegion>
-            <TargetSites :sites="state.data.value?.current?.sites" />
             <EnvironmentCompare
               v-if="product"
               :targets="product.targets"
@@ -681,7 +711,7 @@ function openDeploy(job?: DeploymentJob): void {
               >
                 <h3 class="text-sm font-semibold">Recent deployments</h3>
                 <RouterLink
-                  :to="ConsolePaths.deployments"
+                  :to="ConsolePaths.product(productKey ?? '', ProductTab.Deployments)"
                   class="text-xs font-medium text-primary hover:underline"
                   >View all</RouterLink
                 >
@@ -721,8 +751,7 @@ function openDeploy(job?: DeploymentJob): void {
                     ></span
                   ><DeploymentStatusPill
                     v-if="job"
-                    :status="job.status"
-                    :reason="job.reason"
+                    v-bind="stateOf(job)"
                     :has-cause="false"
                     class="shrink-0"
                   /><ChevronRight
@@ -815,7 +844,7 @@ function openDeploy(job?: DeploymentJob): void {
                   <h3 class="break-all text-lg font-semibold">
                     {{ inspectedJob.release ?? "Deployment" }}
                   </h3>
-                  <DeploymentStatusPill class="mt-2" :status="inspectedJob.status" />
+                  <DeploymentStatusPill class="mt-2" v-bind="stateOf(inspectedJob)" />
                 </div>
                 <p
                   v-if="outcome.error.value"

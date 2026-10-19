@@ -79,11 +79,21 @@ test("an old workspace link opens its group on the Products page; a product page
 });
 
 test("a product's tab is a path segment on the same route", async () => {
-  await router.push("/p/wheelhouse/releases");
+  await router.push("/p/wheelhouse/secrets");
   const tabRecord = router.currentRoute.value.matched.at(-1);
-  assert.deepEqual(router.currentRoute.value.params, { product: "wheelhouse", tab: "releases" });
+  assert.deepEqual(router.currentRoute.value.params, { product: "wheelhouse", tab: "secrets" });
 
   await router.push("/p/wheelhouse?env=prod");
   assert.equal(router.currentRoute.value.matched.at(-1), tabRecord, "Overview and the tabs share one route record.");
 
+});
+
+test("the old Releases tab opens Deployments, keeping a release link's query", async () => {
+  await router.push("/p/foreverpin/releases?view=list&release=v1.2.0&env=prod");
+  assert.equal(router.currentRoute.value.path, "/p/foreverpin/deployments");
+  assert.deepEqual(router.currentRoute.value.query, { view: "list", release: "v1.2.0", env: "prod" });
+  assert.deepEqual(router.currentRoute.value.params, { product: "foreverpin", tab: "deployments" });
+
+  await router.push("/p/foreverpin/releases");
+  assert.equal(router.currentRoute.value.fullPath, "/p/foreverpin/deployments");
 });
