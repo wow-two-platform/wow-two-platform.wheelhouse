@@ -1,18 +1,19 @@
 <script lang="ts">
 import type { PortfolioGroup } from '@/application/portfolio';
-import type { useProductReadings } from '@/application/portfolio';
+import type { ProductFacts } from '@/domain/portfolio';
 import type { Product } from '@/domain/products';
 
 /** One workspace's products on the home page. */
 export interface WorkspaceSectionProps {
   /** The workspace and the products to show. */
   readonly group: PortfolioGroup;
-  /** The environment health and last deploy of each product. */
-  readonly readings: Pick<ReturnType<typeof useProductReadings>, 'environmentsOf' | 'lastDeployOf' | 'historyLoading'>;
+  /** Each product's pills, condition and trend; undefined while the targets load. */
+  readonly factsOf: (slug: string) => ProductFacts | undefined;
+  /** The trends' weeks; empty while the summary loads. */
+  readonly weeks: readonly string[];
+  readonly isPinned: (product: Product) => boolean;
   /** Draws the cards as placeholders during the first load. */
   readonly isLoading?: boolean;
-  /** The heading level, so a workspace page and the home page keep an outline. */
-  readonly headingLevel?: 2 | 3;
 }
 </script>
 <script setup lang="ts">
@@ -20,57 +21,50 @@ import { computed } from 'vue';
 import { RouterLink } from 'vue-router';
 import { useSkeletonItems } from '@wow-two-beta/fe/presentation/feedback';
 import { ConsolePaths } from '@/application/navigation';
-import ProductCard from './ProductCard.vue';
+import ProductTile from '@/presentation/products/components/ProductTile.vue';
 
 /**
- * A workspace's name, product count and product cards. The actions slot holds the workspace's pin toggle; the
- * card-actions slot puts controls on each product's card.
+ * A workspace's name, product count and its products as the Products page draws them: mark, name, description, one
+ * pill per environment and the deploy trend. The name opens the workspace's group on the Products page.
  */
 defineOptions({ name: 'WorkspaceSection' });
-const props = withDefaults(defineProps<WorkspaceSectionProps>(), { isLoading: false, headingLevel: 2 });
-const slots = defineSlots<{ actions?(): unknown; 'card-actions'?(props: { product: Product }): unknown }>();
+const props = withDefaults(defineProps<WorkspaceSectionProps>(), { isLoading: false });
+const emit = defineEmits<{ edit: [product: Product] }>();
+defineSlots<{}>();
 const cards = useSkeletonItems(() => (props.isLoading ? undefined : props.group.products), 3);
 const name = computed(() => props.group.workspace?.name ?? 'No workspace');
 const hidden = computed(() => props.group.total - props.group.products.length);
-const headingId = computed(() => `workspace-${props.group.workspace?.slug ?? 'none'}`);
+const headingId = computed(() => `home-workspace-${props.group.workspace?.slug ?? 'none'}`);
 </script>
 <template>
   <section :aria-labelledby="headingId" class="min-w-0">
-    <header class="mb-3 flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-      <div class="flex min-w-0 items-baseline gap-2">
-        <component :is="`h${props.headingLevel}`" :id="headingId" class="truncate text-base font-semibold">
-          <RouterLink
-            v-if="props.group.workspace"
-            :to="ConsolePaths.workspace(props.group.workspace.slug)"
-            class="hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
-            >{{ name }}</RouterLink
-          >
-          <template v-else>{{ name }}</template>
-        </component>
-        <span v-if="!props.isLoading" class="shrink-0 text-xs tabular-nums text-muted-foreground"
-          >{{ props.group.products.length }} product{{ props.group.products.length === 1 ? '' : 's'
-          }}<template v-if="hidden > 0"> · {{ hidden }} inactive hidden</template></span
+    <header class="mb-3 flex min-w-0 items-baseline gap-2">
+      <h2 :id="headingId" class="truncate text-base font-semibold">
+        <RouterLink
+          v-if="props.group.workspace"
+          :to="ConsolePaths.workspace(props.group.workspace.slug)"
+          class="hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
+          >{{ name }}</RouterLink
         >
-      </div>
-      <div class="flex shrink-0 items-center gap-1"><slot name="actions" /></div>
-    </header>
-    <p v-if="props.group.workspace?.description" class="-mt-2 mb-3 text-sm text-muted-foreground">
-      {{ props.group.workspace.description }}
-    </p>
-    <div v-if="cards.length" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      <ProductCard
-        v-for="(product, index) in cards"
-        :key="product?.slug ?? `placeholder-${index}`"
-        :product="product ?? null"
-        :environments="product ? props.readings.environmentsOf(product.slug) : undefined"
-        :last-deploy="product ? props.readings.lastDeployOf(product.slug) : null"
-        :history-loading="props.readings.historyLoading.value"
+        <template v-else>{{ name }}</template>
+      </h2>
+      <span v-if="!props.isLoading" class="shrink-0 text-xs tabular-nums text-muted-foreground"
+        >{{ props.group.products.length }} product{{ props.group.products.length === 1 ? '' : 's'
+        }}<template v-if="hidden > 0"> · {{ hidden }} inactive hidden</template></span
       >
-        <template v-if="slots['card-actions'] && product" #actions
-          ><slot name="card-actions" :product="product"
-        /></template>
-      </ProductCard>
-    </div>
+    </header>
+    <ul v-if="cards.length" role="list" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3" :aria-label="name">
+      <li v-for="(product, index) in cards" :key="product?.slug ?? `placeholder-${index}`" class="flex min-w-0">
+        <ProductTile
+          class="flex-1"
+          :product="product ?? null"
+          :facts="product ? props.factsOf(product.slug) : undefined"
+          :weeks="props.weeks"
+          :is-pinned="product ? props.isPinned(product) : false"
+          @edit="product && emit('edit', product)"
+        />
+      </li>
+    </ul>
     <p v-else class="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
       {{ hidden > 0 ? 'Only inactive products; turn on Show inactive to see them.' : 'No products in this workspace yet.' }}
     </p>

@@ -8,8 +8,9 @@ import { usePinned } from '@/application/pins';
 import { PinIcon } from '@/presentation/pins';
 
 /**
- * The pinned products on the home page, in the owner's order: a row that scrolls sideways, with Edit for reordering and
- * unpinning. On phones it leads the page, since the sidebar that also lists pins is absent there.
+ * The pinned products on a phone's home page, in the owner's order: one compact row of chips that scrolls sideways,
+ * with Edit for reordering and unpinning. Phones have no sidebar, which holds the pins on larger screens; the page
+ * shows this strip below `md` only.
  */
 /** The editor loads when editing starts; it draws on the SDK's sortable list, which browsing never needs. @internal */
 const PinEditor = defineAsyncComponent(() => import('@/presentation/pins/PinEditor.vue'));
@@ -25,13 +26,14 @@ const editing = ref(false);
     aria-labelledby="pinned-heading"
     class="min-w-0"
   >
-    <header class="mb-2 flex items-center justify-between gap-3">
-      <h2 id="pinned-heading" class="text-sm font-semibold text-muted-foreground">Pinned</h2>
+    <header class="mb-1.5 flex items-center justify-between gap-3">
+      <h2 id="pinned-heading" class="text-xs font-semibold text-muted-foreground">Pinned</h2>
       <Button
         v-if="pinned.entries.value.length"
         size="sm"
         variant="ghost"
         tone="neutral"
+        class="max-md:min-h-11"
         :aria-pressed="editing"
         @click="editing = !editing"
       >
@@ -42,25 +44,25 @@ const editing = ref(false);
     <DataRegion :is-first-load="pinned.isFirstLoad.value" loading-label="Loading pins">
       <template #skeleton>
         <div class="flex gap-2 overflow-hidden" aria-hidden="true">
-          <SkeletonState v-for="index in 3" :key="index" class="h-12 w-40 shrink-0 rounded-xl" />
+          <SkeletonState v-for="index in 3" :key="index" class="h-10 w-32 shrink-0 rounded-full" />
         </div>
       </template>
-      <div v-if="editing" class="max-w-xl rounded-2xl border border-border bg-card p-2">
+      <div v-if="editing" class="rounded-2xl border border-border bg-card p-2">
         <PinEditor :entries="pinned.entries.value" />
       </div>
-      <!-- Bleeds to the screen edges on phones, so the row reads as one that scrolls. -->
+      <!-- Bleeds to the screen edges, so the row reads as one that scrolls. -->
       <ul
         v-else
         role="list"
-        class="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:-mx-6 sm:px-6 md:mx-0 md:flex-wrap md:overflow-visible md:px-0"
+        class="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]"
       >
         <li v-for="entry in pinned.visible.value" :key="entry.pin.id" class="shrink-0 snap-start">
           <RouterLink
             :to="entry.location!"
-            class="flex min-h-12 max-w-64 items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2 text-sm transition-colors hover:border-primary/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            class="flex min-h-11 max-w-52 items-center gap-2 rounded-full border border-border bg-card ps-1.5 pe-3.5 text-[13px] transition-colors hover:border-primary/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             :class="entry.active ? '' : 'opacity-60'"
           >
-            <PinIcon :entry="entry" size="sm" />
+            <PinIcon :entry="entry" />
             <span class="min-w-0 truncate font-medium">{{ entry.label }}</span>
           </RouterLink>
         </li>
