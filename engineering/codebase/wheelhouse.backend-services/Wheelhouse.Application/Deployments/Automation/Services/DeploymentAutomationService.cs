@@ -60,15 +60,17 @@ public sealed partial class DeploymentAutomationService(
 
     /// <summary>Describes one product's automation choices; a product without a row takes the defaults. Only a product
     /// Wheelhouse deploys (<see cref="ProductDeployMode.Wheelhouse"/>) takes automatic deploys; for one its own CI or
-    /// nothing deploys, both read off whatever its row says.</summary>
+    /// nothing deploys, both read off whatever its row says. Wheelhouse itself never auto-promotes: its prod is promoted by
+    /// the owner alone (decision 64).</summary>
     /// <param name="product">The product.</param>
     /// <param name="row">Its recorded choices, if any.</param>
     /// <returns>The description.</returns>
     public static ProductAutomationDto Describe(ProductEntity product, ProductAutomationEntity? row)
     {
         var automatic = product.Deploy == ProductDeployMode.Wheelhouse;
+        var self = product.Slug == SelfDeploy.Constants.SelfProduct.Slug;
         return new ProductAutomationDto(product.Slug, automatic && (row?.AutoDeployDev ?? true),
-            automatic && (row?.AutoPromote ?? false), product.Deploy == ProductDeployMode.Ci, product.Deploy);
+            automatic && !self && (row?.AutoPromote ?? false), product.Deploy == ProductDeployMode.Ci, product.Deploy);
     }
 
     /// <summary>Holds how recently a release must have passed its dev watch for auto-promote to take it, so turning

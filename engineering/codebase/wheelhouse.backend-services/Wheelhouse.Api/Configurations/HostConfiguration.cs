@@ -20,6 +20,7 @@ public static class HostConfiguration
             .AddPersistenceLayer()
             .AddInfrastructureLayer()
             .AddApplicationLayer()
+            .AddSelfDeploy()
             .AddAuthentication()
             .AddApiServices()
             .AddWheelhouseMcp();

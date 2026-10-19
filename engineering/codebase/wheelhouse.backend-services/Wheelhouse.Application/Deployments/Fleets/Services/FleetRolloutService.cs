@@ -76,6 +76,9 @@ public sealed partial class FleetRolloutService(
             if (local.Contains(target.ServerId) && item.Confirm != item.Target)
                 return Fail(AppErrorFactory.Validation($"Type {item.Target} to promote prod on the local server."));
             var offer = offered.FirstOrDefault(row => row.ProdTargetId == item.Target && row.BundleId == item.Release);
+            if (offer?.Product == SelfDeploy.Constants.SelfProduct.Slug)
+                return Fail(AppErrorFactory.Validation(
+                    $"{item.Target} runs Wheelhouse itself, which restarts as it is promoted; promote it on its own."));
             if (offer is null)
                 return Fail(AppErrorFactory.Conflict(
                     $"{item.Release} is not ready to promote to {item.Target}: it has not passed dev, or prod already runs it or a later release."));
