@@ -13,7 +13,7 @@ namespace Wheelhouse.Application.Deployments.History.Models;
 /// <param name="MedianRolloutSeconds">The median time from start to a finished outcome.</param>
 /// <param name="MedianRecoverySeconds">The median time from a target's failure to its next success.</param>
 /// <param name="NotApplied">Deploys that changed nothing: refused, replaced, cancelled, expired, a failed check or
-/// stopped before changes.</param>
+/// stopped before changes. The range's own measures count them whether or not the other figures include them.</param>
 /// <param name="Look">Deploys worth a look, those that changed nothing included.</param>
 /// <param name="Act">Deploys that need action.</param>
 public sealed record DeploymentMeasuresDto(

@@ -71,7 +71,8 @@ public sealed class RunnerDeploymentRecordsTests
         var record = result.Should().BeOfType<AppResult<IReadOnlyList<DeploymentRecord>>.Success>().Subject.Data[0];
         record.Watch!.Status.Should().Be("replaced", "a window recorded `superseded` before the rename reads by its new word");
         var api = record.ServiceRollout!.Services.Single();
-        (api.Name, api.Outcome, api.From, api.To, api.Reason, api.Health).Should().Be(("api", "updated", "0.9.0", "1.0.0", "image", "healthy"));
+        // A release reads as its version, else its short image digest.
+        (api.Name, api.Outcome, api.From, api.To, api.Reason, api.Health).Should().Be(("api", "updated", "0.9.0", "9e0d4c1f2a35", "image", "healthy"));
         api.At.Should().Be(DateTimeOffset.Parse("2026-10-01T10:01:00Z"));
     }
 
@@ -137,8 +138,9 @@ public sealed class RunnerDeploymentRecordsTests
                         {
                             new
                             {
-                                name = "api", change = "updated", outcome = "updated", dependsOn = Array.Empty<string>(), from = "0.9.0",
-                                to = "1.0.0", reason = "image", health = "healthy", at = "2026-10-01T10:01:00+00:00",
+                                name = "api", change = "updated", outcome = "updated", dependsOn = Array.Empty<string>(),
+                                from = new { version = "0.9.0", digest = "3f1c2a9b7d10" }, to = new { version = (string?)null, digest = "9e0d4c1f2a35" },
+                                reason = "image", health = "healthy", at = "2026-10-01T10:01:00+00:00",
                             },
                         },
                     },

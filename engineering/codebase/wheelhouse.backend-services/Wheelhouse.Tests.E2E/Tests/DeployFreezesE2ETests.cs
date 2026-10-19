@@ -132,8 +132,9 @@ public sealed class DeployFreezesE2ETests(WheelhouseAppFixture fixture) : Wheelh
         var range = "from=" + Uri.EscapeDataString(at.AddDays(-1).ToString("O")) + "&to=" + Uri.EscapeDataString(at.AddDays(1).ToString("O"));
         var stats = (await DataAsync("/api/deployments/history/stats?notApplied=true&" + range)).GetProperty("current");
         (stats.GetProperty("deploys").GetInt32(), stats.GetProperty("notApplied").GetInt32()).Should().Be((1, 1));
-        (await DataAsync("/api/deployments/history/stats?" + range)).GetProperty("current").GetProperty("deploys").GetInt32()
-            .Should().Be(0, "stats leave out what changed nothing unless asked for it");
+        var hidden = (await DataAsync("/api/deployments/history/stats?" + range)).GetProperty("current");
+        (hidden.GetProperty("deploys").GetInt32(), hidden.GetProperty("notApplied").GetInt32())
+            .Should().Be((0, 1), "stats leave out what changed nothing unless asked for it, and say how many they hide");
     }
 
     [Fact]

@@ -153,6 +153,20 @@ public sealed class DeploymentStateRulesTests
             .Select(item => item.Service).Should().Equal("db", "api", "web");
     }
 
+    [Fact]
+    public void Of_ShouldTakeAnUnknownHealthAsNothingWrong_AndCarryWhyEachServiceChanged()
+    {
+        var rollout = new ServiceRolloutDto(false, [], [],
+        [
+            new ServiceRolloutItemDto("api", "updated", "updated", [], "0.9.0", "1.0.0", "definition", "unknown"),
+            new ServiceRolloutItemDto("web", "unchanged", "unchanged", [], "1.0.0", "1.0.0", null, "unhealthy"),
+        ]);
+        var reading = DeploymentStateRules.Of(Record("succeeded") with { ServiceRollout = rollout }, null, null);
+        reading.Services!.Select(item => (item.Service, item.Result, item.Reason))
+            .Should().Equal(("api", "updated", "definition"), ("web", "affected", (string?)null));
+        (reading.State, reading.Substate).Should().Be(("degraded", "at_deploy"));
+    }
+
     [Theory]
     [InlineData(DeploymentIntentOutcome.Refused, DeploymentRefusal.Freeze, "refused", "none", "freeze")]
     [InlineData(DeploymentIntentOutcome.Refused, DeploymentRefusal.Gate, "refused", "none", "gate")]

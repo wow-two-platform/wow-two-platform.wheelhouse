@@ -23,8 +23,9 @@ public static class DeploymentStateRules
     /// <summary>The runner's statuses of a submission that has not finished.</summary>
     private static readonly HashSet<string> Pending = ["submitting", "queued", "running"];
 
-    /// <summary>The health readings that mean nothing is wrong yet.</summary>
-    private static readonly HashSet<string> Fine = ["healthy", "starting", "running"];
+    /// <summary>The health readings that say nothing is wrong: <c>unknown</c> is no container, still starting, or a
+    /// rollout that stopped before changing anything.</summary>
+    private static readonly HashSet<string> Fine = ["healthy", "starting", "running", "unknown"];
 
     /// <summary>The steps before a rollout changes anything.</summary>
     private static readonly HashSet<string> Checking = ["Check target", "Snapshot data", "Pull images", "Dry-run migrations"];
@@ -229,7 +230,7 @@ public static class DeploymentStateRules
                     var hurt = found.Contains(item.Name) || (item.Health is { } health && !Fine.Contains(health));
                     if (hurt && result is "updated" or "new" or "unchanged" or "restored")
                         result = "affected";
-                    return new DeploymentServiceResultDto(item.Name, result, false, item.From, item.To, item.Health);
+                    return new DeploymentServiceResultDto(item.Name, result, false, item.From, item.To, item.Health, item.Reason);
                 }),
         ];
     }

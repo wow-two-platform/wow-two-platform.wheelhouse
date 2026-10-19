@@ -163,7 +163,7 @@ public sealed partial class RunnerDeploymentRecords(
                 Text(item, "name") is { } name && Text(item, "change") is { } change && Text(item, "outcome") is { } outcome
                     ? new ServiceRolloutItemDto(name, change, outcome,
                         Each(item, "dependsOn", other => other.ValueKind == JsonValueKind.String ? other.GetString() : null) ?? [],
-                        Text(item, "from"), Text(item, "to"), Text(item, "reason"), Text(item, "health"), Instant(item, "at"))
+                        Release(item, "from"), Release(item, "to"), Text(item, "reason"), Text(item, "health"), Instant(item, "at"))
                     : null) ?? [];
             var waves = Each(rollout, "waves", wave => wave.ValueKind == JsonValueKind.Array
                 ? (IReadOnlyList<string>)[.. wave.EnumerateArray().Where(name => name.ValueKind == JsonValueKind.String).Select(name => name.GetString()!)]
@@ -177,6 +177,18 @@ public sealed partial class RunnerDeploymentRecords(
             return null;
         }
     }
+
+    /// <summary>A service's release in a rollout: <c>{ version, digest }</c> read as its version, else its 12-hex image
+    /// digest; a plain string as itself; null when absent. @internal</summary>
+    private static string? Release(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value)
+            ? value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString(),
+                JsonValueKind.Object => Text(value, "version") ?? Text(value, "digest"),
+                _ => null,
+            }
+            : null;
 
     /// <summary>A string property, or null. @internal</summary>
     private static string? Text(JsonElement element, string property) =>

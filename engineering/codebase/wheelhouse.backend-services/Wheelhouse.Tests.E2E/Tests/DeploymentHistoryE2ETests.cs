@@ -213,7 +213,7 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
                 current.GetProperty("refused").GetInt32(), current.GetProperty("pending").GetInt32())
             .Should().Be((2, 1, 0, 0, 1), "the refusal changed nothing, so it counts only when asked for");
         (current.GetProperty("notApplied").GetInt32(), current.GetProperty("look").GetInt32(), current.GetProperty("act").GetInt32())
-            .Should().Be((0, 1, 0));
+            .Should().Be((1, 1, 0), "the hidden refusal is counted, so the console can say how many it hides");
         var counted = (await DataAsync(
             "/api/deployments/history/stats?product=foreverpin&notApplied=true&from=2026-10-04T00:00:00Z&to=2026-10-08T00:00:00Z")).GetProperty("current");
         (counted.GetProperty("deploys").GetInt32(), counted.GetProperty("refused").GetInt32(), counted.GetProperty("notApplied").GetInt32())
