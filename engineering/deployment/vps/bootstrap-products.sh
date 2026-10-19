@@ -55,7 +55,9 @@ require_host() {
     }
     # Password sign-in is turned off below; the administrator running this must already sign in with a key.
     [[ -n ${SUDO_USER:-} && $SUDO_USER != root ]] || {
-        echo 'Run through sudo from the administrator account, so its SSH key can be checked first.' >&2; exit 1;
+        echo 'Run through sudo from the administrator account, so its SSH key can be checked first.' >&2
+        echo 'A root-only image (Contabo) has none yet: create it with create-admin.sh, as vps.md describes.' >&2
+        exit 1
     }
     local admin_keys
     admin_keys=$(getent passwd "$SUDO_USER" | cut -d: -f6)/.ssh/authorized_keys

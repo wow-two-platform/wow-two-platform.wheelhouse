@@ -54,6 +54,174 @@ class ScriptTests(unittest.TestCase):
         self.assertIn("tailnet_tag=tag:products", script)
 
 
+OWNER_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOwnerKeyOwnerKeyOwnerKeyOwnerKeyOwnerKey owner@laptop"
+OTHER_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOtherKeyOtherKeyOtherKeyOtherKeyOtherK other@elsewhere"
+
+# Stands in for the host the script changes: the account database, useradd, usermod, install and passwd are functions
+# acting on a scratch directory (BSD install cannot read a pipe), so the steps run without root. $USER_UID sets an
+# existing account's uid, and $PASSWORD_STATE is what `passwd --status` reports.
+ADMIN_HOST = r"""
+. "$KIT/create-admin.sh"
+getent() {
+    case "$1 $2" in
+        "passwd root") echo "root:x:0:0::$ROOT_HOME:/bin/bash" ;;
+        "passwd $ADMIN") [[ -e $STATE/user ]] && echo "$ADMIN:x:$USER_UID:$USER_UID::$HOMES/$ADMIN:/bin/bash" ;;
+        "group sudo") echo "sudo:x:27:" ;;
+        *) return 2 ;;
+    esac
+}
+id() { case "$1" in -u) echo "$USER_UID" ;; -gn) echo "$ADMIN" ;; esac; }
+have_sudo() { return 0; }
+useradd() { echo "useradd $*" >> "$STATE/calls"; mkdir -p "$HOMES/$ADMIN"; touch "$STATE/user"; }
+usermod() { echo "usermod $*" >> "$STATE/calls"; }
+passwd() { echo "passwd $*" >> "$STATE/calls"; echo "$ADMIN ${PASSWORD_STATE:-L} 2026-10-19 0 99999 7 -1"; }
+install() {
+    local mode directory=false args=()
+    while (($#)); do
+        case "$1" in -d) directory=true; shift ;; -m) mode=$2; shift 2 ;; -o|-g) shift 2 ;; *) args+=("$1"); shift ;; esac
+    done
+    if $directory; then
+        mkdir -p "${args[0]}"; chmod "$mode" "${args[0]}"
+    else
+        cat "${args[0]}" > "${args[1]}"; chmod "$mode" "${args[1]}"
+    fi
+}
+"""
+
+
+class CreateAdminTests(unittest.TestCase):
+    """create-admin.sh on a root-only image: the named sudo user, root's keys, no password, nothing overwritten."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        base = Path(self.temp.name)
+        self.state, self.homes, self.root_home = base / "state", base / "home", base / "root"
+        for folder in (self.state, self.homes, self.root_home / ".ssh"):
+            folder.mkdir(parents=True)
+        self.root_keys = self.root_home / ".ssh" / "authorized_keys"
+        self.root_keys.write_text(f"# provider\n{OWNER_KEY}\n\n")
+
+    def admin_keys(self, user="alice"):
+        return self.homes / user / ".ssh" / "authorized_keys"
+
+    def calls(self):
+        calls = self.state / "calls"
+        return calls.read_text().splitlines() if calls.exists() else []
+
+    def run_script(self, user="alice", uid=1001, password_state="L", entry="create_admin"):
+        steps = f'parse_arguments "{user}"; {entry}' if entry == "create_admin" else entry
+        return subprocess.run(
+            ["bash", "-c", ADMIN_HOST + steps], capture_output=True, text=True,
+            env={**os.environ, "KIT": str(KIT), "STATE": str(self.state), "HOMES": str(self.homes),
+                 "ROOT_HOME": str(self.root_home), "ADMIN": user, "USER_UID": str(uid),
+                 "PASSWORD_STATE": password_state})
+
+    def existing_user(self, keys=None, user="alice"):
+        (self.homes / user / ".ssh").mkdir(parents=True)
+        (self.state / "user").touch()
+        if keys is not None:
+            self.admin_keys(user).write_text(keys)
+
+    def test_a_fresh_image_gets_a_sudo_admin_with_roots_keys_and_the_passwd_command(self):
+        result = self.run_script()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["useradd --create-home --shell /bin/bash alice", "usermod --append --groups sudo alice",
+                          "passwd --status alice"], self.calls())
+        self.assertEqual(OWNER_KEY + "\n", self.admin_keys().read_text())
+        self.assertEqual(0o700, (self.homes / "alice" / ".ssh").stat().st_mode & 0o777)
+        self.assertEqual(0o600, self.admin_keys().stat().st_mode & 0o777)
+        self.assertIn("\n  passwd alice\n", result.stdout)
+        self.assertIn("ssh alice@<public-ip>", result.stdout)
+
+    def test_it_never_sets_a_password(self):
+        self.run_script()
+        self.assertEqual([], [call for call in self.calls() if call.startswith("passwd") and "--status" not in call])
+        script = (KIT / "create-admin.sh").read_text()
+        self.assertNotRegex(script, r"chpasswd|usermod[^\n]*--password|useradd[^\n]*--password|passwd\s+-d|--stdin")
+
+    def test_a_rerun_changes_nothing_and_skips_the_command_once_a_password_exists(self):
+        self.run_script()
+        again = self.run_script(password_state="P")
+        self.assertEqual(0, again.returncode, again.stderr)
+        self.assertEqual(1, sum(call.startswith("useradd") for call in self.calls()))
+        self.assertEqual(OWNER_KEY + "\n", self.admin_keys().read_text())
+        self.assertIn("already has a password", again.stdout)
+        self.assertNotIn("\n  passwd alice\n", again.stdout)
+
+    def test_an_existing_user_without_keys_gets_roots_keys(self):
+        self.existing_user()
+        result = self.run_script()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(OWNER_KEY + "\n", self.admin_keys().read_text())
+        self.assertFalse(any(call.startswith("useradd") for call in self.calls()))
+
+    def test_an_existing_user_with_other_keys_is_refused_untouched(self):
+        self.existing_user(OTHER_KEY + "\n")
+        result = self.run_script()
+        self.assertEqual(1, result.returncode)
+        self.assertIn("differ from root's", result.stderr)
+        self.assertEqual(OTHER_KEY + "\n", self.admin_keys().read_text())
+        self.assertEqual([], self.calls())
+
+    def test_an_existing_user_with_only_some_of_roots_keys_is_refused(self):
+        self.root_keys.write_text(f"{OWNER_KEY}\n{OTHER_KEY}\n")
+        self.existing_user(OWNER_KEY + "\n")
+        result = self.run_script()
+        self.assertEqual(1, result.returncode)
+        self.assertEqual([], self.calls())
+
+    def test_a_user_holding_the_same_keys_in_another_order_is_left_alone(self):
+        self.root_keys.write_text(f"{OWNER_KEY}\n{OTHER_KEY}\n")
+        self.existing_user(f"{OTHER_KEY}\n{OWNER_KEY}\n")
+        result = self.run_script()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(["usermod --append --groups sudo alice", "passwd --status alice"], self.calls())
+
+    def test_it_refuses_when_root_has_no_authorized_key(self):
+        for content in (None, "", "# only a comment\n\n"):
+            with self.subTest(content=content):
+                if content is None:
+                    self.root_keys.unlink()
+                else:
+                    self.root_keys.write_text(content)
+                result = self.run_script()
+                self.assertEqual(1, result.returncode)
+                self.assertIn("ssh-copy-id root@<public-ip>", result.stderr)
+                self.assertEqual([], self.calls())
+                self.assertFalse((self.homes / "alice").exists())
+
+    def test_it_refuses_a_system_account_and_a_symlinked_ssh_folder(self):
+        self.existing_user(OWNER_KEY + "\n")
+        self.assertIn("system account", self.run_script(uid=999).stderr)
+        (self.homes / "alice" / ".ssh" / "authorized_keys").unlink()
+        (self.homes / "alice" / ".ssh").rmdir()
+        (self.homes / "alice" / ".ssh").symlink_to(self.root_home / ".ssh")
+        self.assertIn("symlink", self.run_script().stderr)
+        self.assertEqual([], self.calls())
+
+    def test_it_takes_only_a_plain_lowercase_name_that_is_not_root_or_the_deploy_account(self):
+        for name in ("", "Root", "root", "wheelhouse-deploy", "1admin", "a b", "x" * 40, "ops;id"):
+            with self.subTest(name=name):
+                result = self.run_script(user=name)
+                self.assertEqual(2, result.returncode)
+                self.assertEqual([], self.calls())
+        self.assertEqual(0, self.run_script(user="ops-admin").returncode)
+
+    @unittest.skipIf(os.geteuid() == 0, "running as root would create a real account")
+    def test_run_without_root_it_stops_before_changing_anything(self):
+        for arguments in ([], ["alice"]):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(["bash", str(KIT / "create-admin.sh"), *arguments], capture_output=True, text=True)
+                self.assertEqual(2, result.returncode)
+
+    def test_sourcing_it_defines_its_steps_without_running_them(self):
+        result = subprocess.run(["bash", "-c", '. "$1"; declare -F | awk "{print \\$3}"', "_",
+                                 str(KIT / "create-admin.sh")], capture_output=True, text=True, check=True)
+        self.assertLessEqual({"parse_arguments", "require_root", "have_sudo", "key_lines", "keys_relation",
+                              "create_admin", "main"}, set(result.stdout.split()))
+
+
 class ComposeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
