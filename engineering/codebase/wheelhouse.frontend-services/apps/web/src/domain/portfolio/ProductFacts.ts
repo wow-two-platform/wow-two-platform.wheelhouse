@@ -42,11 +42,8 @@ export interface ProductFacts {
   readonly condition: ProductCondition;
   /** The newest submission to any environment; null when it was never deployed. */
   readonly lastDeployedAt: string | null;
-  /** Finished rollouts per week and environment, dev first. */
+  /** Finished rollouts per week and environment, dev first, over the trend's weeks. */
   readonly series: readonly EnvironmentSeries[];
-  /** Rollouts that succeeded and failed over the summary's weeks. */
-  readonly succeeded: number;
-  readonly failed: number;
 }
 
 /** The worst state among a product's pills, as its condition. */
@@ -60,8 +57,16 @@ export function conditionOf(pills: readonly EnvironmentPill[]): ProductCondition
   return ProductCondition.Idle;
 }
 
-/** A product's facts from its pills and its summary entry, which is absent for a product never deployed. */
-export function factsOf(slug: string, pills: readonly EnvironmentPill[], summary: PortfolioProduct | undefined): ProductFacts {
+/**
+ * A product's facts from its pills and its summary entry, which is absent for a product never deployed. The trend's
+ * entry — the same summary over the weeks a page's range covers — gives the weekly series; the summary by default.
+ */
+export function factsOf(
+  slug: string,
+  pills: readonly EnvironmentPill[],
+  summary: PortfolioProduct | undefined,
+  trend: PortfolioProduct | undefined = summary,
+): ProductFacts {
   const submitted = (summary?.environments ?? [])
     .map((environment) => environment.lastDeploy?.submittedAt)
     .filter((value): value is string => typeof value === 'string')
@@ -73,10 +78,8 @@ export function factsOf(slug: string, pills: readonly EnvironmentPill[], summary
     lastDeployedAt: submitted[0] ?? null,
     series: pills.map((pill) => ({
       environment: pill.environment,
-      values: summary?.environments.find((item) => item.environment === pill.environment)?.weekly ?? [],
+      values: trend?.environments.find((item) => item.environment === pill.environment)?.weekly ?? [],
     })),
-    succeeded: summary?.succeeded ?? 0,
-    failed: summary?.failed ?? 0,
   };
 }
 

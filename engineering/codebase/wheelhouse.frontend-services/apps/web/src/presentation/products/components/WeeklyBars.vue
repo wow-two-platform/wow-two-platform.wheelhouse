@@ -10,10 +10,14 @@ export interface WeeklySeries {
   readonly color: string;
 }
 
-/** A compact weekly bar chart: one column per week, its series stacked bottom first. */
+/** A compact bar chart over periods — weeks by default — one column per period, its series stacked bottom first. */
 export interface WeeklyBarsProps {
-  /** Each week's Monday (`YYYY-MM-DD`), oldest first; an empty list draws the placeholder. */
+  /** Each period's first date (`YYYY-MM-DD`), oldest first; an empty list draws the placeholder. */
   readonly weeks: readonly string[];
+  /** Each column's title, aligned with `weeks`, such as `Mon, Oct 13`; `Week of {date}` by default. */
+  readonly labels?: readonly string[] | undefined;
+  /** Stretches the chart across its container's width rather than drawing fixed-width columns. */
+  readonly fill?: boolean;
   readonly series: readonly WeeklySeries[];
   /** The chart's accessible summary. */
   readonly label: string;
@@ -34,12 +38,19 @@ import { computed } from "vue";
 import { SkeletonState } from "@wow-two-beta/fe/presentation/feedback";
 
 /**
- * A sparkline of weekly counts: thin columns, one per week, their series stacked from the baseline in the order given,
- * a surface gap between segments, and a faint tick for an empty week so the timeline stays readable. Each column's
- * title names its week and every series' count; the whole chart carries one summary label for assistive technology.
+ * A sparkline of counts per period: thin columns, one per week (or the day or month its labels name), their series
+ * stacked from the baseline in the order given, a surface gap between segments, and a faint tick for an empty period
+ * so the timeline stays readable. Each column's title names its period and every series' count; the whole chart
+ * carries one summary label for assistive technology.
  */
 defineOptions({ name: "WeeklyBars" });
-const props = withDefaults(defineProps<WeeklyBarsProps>(), { unit: "deploys", height: 20, barWidth: 4 });
+const props = withDefaults(defineProps<WeeklyBarsProps>(), {
+  unit: "deploys",
+  height: 20,
+  barWidth: 4,
+  labels: undefined,
+  fill: false,
+});
 defineSlots<{}>();
 
 const gap = computed(() => Math.max(1, Math.round(props.barWidth / 2)));
@@ -67,12 +78,13 @@ const columns = computed(() =>
       });
     const date = new Date(`${monday}T00:00:00`);
     const parts = props.series.map((series) => `${series.values[week] ?? 0} ${series.label}`).join(", ");
+    const period = props.labels?.[week] ?? `Week of ${Number.isNaN(date.getTime()) ? monday : monthDay.format(date)}`;
     return {
       key: monday,
       x,
       segments,
       empty: totals.value[week] === 0,
-      title: `Week of ${Number.isNaN(date.getTime()) ? monday : monthDay.format(date)}: ${parts}`,
+      title: `${period}: ${parts}`,
     };
   }),
 );
@@ -81,15 +93,17 @@ const columns = computed(() =>
   <SkeletonState
     v-if="!props.weeks.length"
     class="shrink-0 rounded"
-    :style="{ width: `${12 * (props.barWidth + gap) - gap}px`, height: `${props.height}px` }"
+    :style="{ width: props.fill ? '100%' : `${12 * (props.barWidth + gap) - gap}px`, height: `${props.height}px` }"
   />
+  <!-- Stretched, the columns keep their proportions across the width; titles answer as before. -->
   <svg
     v-else
     role="img"
     :aria-label="props.label"
-    :width="width"
+    :width="props.fill ? '100%' : width"
     :height="props.height"
     :viewBox="`0 0 ${width} ${props.height}`"
+    :preserveAspectRatio="props.fill ? 'none' : undefined"
     class="shrink-0 overflow-visible"
   >
     <g v-for="column in columns" :key="column.key">

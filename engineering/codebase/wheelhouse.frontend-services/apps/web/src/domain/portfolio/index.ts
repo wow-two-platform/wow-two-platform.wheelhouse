@@ -17,10 +17,12 @@ export {
 } from './ProductFacts';
 export {
   DefaultProductFilter,
+  ProductFilterKeys,
   ProductFilterQuery,
   ProductFilterRules,
   ProductSort,
   ProductSortLabels,
+  ProductsDefaultRange,
   StatusFilter,
   StatusFilterLabels,
   type ProductFilterState,
@@ -35,5 +37,7 @@ export {
   type PortfolioWeek,
   type PortfolioWorkspace,
 } from './PortfolioSummary';
-export { workspaceStatsOf, type WorkspaceStats } from './WorkspaceStats';
+export { workspaceStatsOf, type WorkspaceRollouts, type WorkspaceStats } from './WorkspaceStats';
+export { BucketSize, RolloutBuckets, type RolloutBucket, type RolloutDays } from './RolloutBuckets';
+export { TrendWindows, type TrendWindow } from './TrendWindow';
 export { directSiteOf, siteLinksOf, type SiteAddress, type SiteLink } from './SiteLinks';

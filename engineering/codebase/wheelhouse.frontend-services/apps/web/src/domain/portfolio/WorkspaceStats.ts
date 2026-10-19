@@ -1,39 +1,56 @@
 import { ProductCondition, type ProductFacts } from './ProductFacts';
-import { successRate, type PortfolioWeek, type PortfolioWorkspace } from './PortfolioSummary';
+import { successRate } from './PortfolioSummary';
+import { RolloutBuckets, type BucketSize, type RolloutBucket, type RolloutDays } from './RolloutBuckets';
 
-/** A workspace's figures on its card or row. */
-export interface WorkspaceStats {
-  /** The products shown, following "Show inactive". */
-  readonly products: number;
-  readonly failing: number;
-  /** Rolled back, degraded or unread. */
-  readonly attention: number;
-  readonly deploying: number;
-  /** Percent of finished rollouts over the summary's weeks that succeeded; null when none finished. */
-  readonly successRate: number | null;
+/** The finished rollouts of a workspace's shown products over the filter's range. */
+export interface WorkspaceRollouts {
   readonly succeeded: number;
   readonly failed: number;
-  /** Succeeded and failed rollouts per week; empty until the summary arrives. */
-  readonly weekly: readonly PortfolioWeek[];
+  /** Percent of finished rollouts that succeeded; null when none finished. */
+  readonly successRate: number | null;
+  /** How long each chart column lasts. */
+  readonly size: BucketSize;
+  /** The range's columns, oldest first. */
+  readonly buckets: readonly RolloutBucket[];
 }
 
-/** A workspace's figures from its shown products' facts and its summary entry. */
+/** A workspace's figures on its card or row: what its shown products are now, and their rollouts over the range. */
+export interface WorkspaceStats {
+  /** The products shown: the ones the filter keeps, following "Show inactive". */
+  readonly products: number;
+  readonly failing: number;
+  /** Degraded: rolled back, or serving under strain. */
+  readonly degraded: number;
+  readonly deploying: number;
+  /** Their rollouts over the range; null until the range is read. */
+  readonly rollouts: WorkspaceRollouts | null;
+}
+
+/** A workspace's figures from its shown products' facts and their rollouts per day over the range. */
 export function workspaceStatsOf(
   facts: readonly (ProductFacts | undefined)[],
-  summary: PortfolioWorkspace | undefined,
+  activity: RolloutDays | undefined,
 ): WorkspaceStats {
   const count = (...conditions: ProductCondition[]) =>
     facts.filter((item) => item !== undefined && conditions.includes(item.condition)).length;
-  const succeeded = summary?.succeeded ?? 0;
-  const failed = summary?.failed ?? 0;
   return {
     products: facts.length,
     failing: count(ProductCondition.Failing),
-    attention: count(ProductCondition.Attention, ProductCondition.Unknown),
+    degraded: count(ProductCondition.Attention),
     deploying: count(ProductCondition.Deploying),
-    successRate: successRate(succeeded, failed),
+    rollouts: activity ? rolloutsOf(activity) : null,
+  };
+}
+
+/** The range's totals, rate and columns. @internal */
+function rolloutsOf(activity: RolloutDays): WorkspaceRollouts {
+  const succeeded = activity.days.reduce((sum, day) => sum + day.succeeded, 0);
+  const failed = activity.days.reduce((sum, day) => sum + day.failed, 0);
+  return {
     succeeded,
     failed,
-    weekly: summary?.weekly ?? [],
+    successRate: successRate(succeeded, failed),
+    size: RolloutBuckets.sizeOf(activity.from, activity.to),
+    buckets: RolloutBuckets.of(activity),
   };
 }

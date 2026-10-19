@@ -22,6 +22,7 @@ import {
   SelectPickerValue,
 } from "@wow-two-beta/fe/presentation/forms";
 import { BottomSheet, BottomSheetTitle, Popover, PopoverContent, PopoverTrigger } from "@wow-two-beta/fe/presentation/overlays";
+import { DeploymentFilters } from "@/domain/deployments";
 import {
   ProductFilterQuery,
   ProductSort,
@@ -30,6 +31,8 @@ import {
   StatusFilterLabels,
   type ProductFilterState as Filter,
 } from "@/domain/portfolio";
+import DateRangeChoices from "@/presentation/deployments/components/history/DateRangeChoices.vue";
+import DateRangeFilter from "@/presentation/deployments/components/history/DateRangeFilter.vue";
 import { useIsPhone } from "@/presentation/deployments/hooks/useIsPhone";
 import ShowInactiveSwitch from "@/presentation/shell/components/ShowInactiveSwitch.vue";
 import ChoiceChips from "./ChoiceChips.vue";
@@ -37,9 +40,10 @@ import WorkspaceFilterList from "./WorkspaceFilterList.vue";
 
 /**
  * One row that governs the workspaces and products below it: search by name, slug or description; workspaces (a red
- * mark on one whose products are failing); status; the one "Show inactive" switch; and the sort, name by default.
- * The page keeps search, filter and sort in its address. On a phone the row holds the search and one "Filter" button
- * whose sheet carries the rest, sorting included.
+ * mark on one whose products are failing); status; the date range their rollout figures and trends cover, the
+ * Deployments page's picker; the one "Show inactive" switch; and the sort, name by default. The page keeps search,
+ * filter, range and sort in its address. On a phone the row holds the search and one "Filter" button whose sheet
+ * carries the rest, the range and sorting included.
  */
 defineOptions({ name: "ProductFilters" });
 const props = defineProps<ProductFiltersProps>();
@@ -77,7 +81,7 @@ function clear(): void {
     <SearchInput
       :model-value="props.filter.search"
       size="md"
-      class="min-w-0 max-md:flex-1 md:w-64"
+      class="min-w-0 max-md:flex-1 md:w-48"
       placeholder="Search products"
       aria-label="Search products by name, slug or description"
       @update:model-value="emit('change', { search: $event })"
@@ -107,6 +111,12 @@ function clear(): void {
           <section>
             <h3 class="mb-2 text-xs font-semibold text-muted-foreground">Status</h3>
             <ChoiceChips label="Status" :options="StatusFilterLabels" :model-value="props.filter.status" @update:model-value="setStatus" />
+          </section>
+          <section aria-labelledby="sheet-range">
+            <h3 id="sheet-range" class="text-xs font-semibold text-muted-foreground">
+              Date range <span class="font-normal">· {{ DeploymentFilters.label(props.filter.range) }}</span>
+            </h3>
+            <DateRangeChoices :model-value="props.filter.range" class="-mx-2" @choose="emit('change', { range: $event })" />
           </section>
           <section aria-labelledby="sheet-workspaces">
             <h3 id="sheet-workspaces" class="mb-1.5 text-xs font-semibold text-muted-foreground">Workspaces</h3>
@@ -165,7 +175,7 @@ function clear(): void {
         clear-label="Any status"
         :get-option-label="(value) => StatusFilterLabels[value as StatusFilter]"
         @update:model-value="setStatus"
-        ><SelectPickerTrigger aria-label="Status" width="10.5rem"><SelectPickerValue placeholder="Any status" /></SelectPickerTrigger
+        ><SelectPickerTrigger aria-label="Status" width="10rem"><SelectPickerValue placeholder="Any status" /></SelectPickerTrigger
         ><SelectPickerContent
           ><SelectPickerItem
             v-for="value in [StatusFilter.Failing, StatusFilter.Attention, StatusFilter.Healthy, StatusFilter.Idle]"
@@ -173,11 +183,12 @@ function clear(): void {
             :item-key="value"
             :label="StatusFilterLabels[value]" /></SelectPickerContent
       ></SelectPicker>
+      <DateRangeFilter :model-value="props.filter.range" @update:model-value="emit('change', { range: $event })" />
       <SelectPicker
         :model-value="props.filter.sort"
         :get-option-label="(value) => `Sort: ${ProductSortLabels[value as ProductSort]}`"
         @update:model-value="setSort"
-        ><SelectPickerTrigger aria-label="Sort" width="12.5rem" :class="sortChanged ? 'border-primary/40' : ''"
+        ><SelectPickerTrigger aria-label="Sort" width="11.5rem" :class="sortChanged ? 'border-primary/40' : ''"
           ><SelectPickerValue /></SelectPickerTrigger
         ><SelectPickerContent
           ><SelectPickerItem

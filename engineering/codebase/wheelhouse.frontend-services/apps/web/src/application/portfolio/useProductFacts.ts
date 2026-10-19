@@ -1,13 +1,14 @@
-import { computed, type ComputedRef, type InjectionKey } from "vue";
+import { computed, toValue, type ComputedRef, type InjectionKey, type MaybeRefOrGetter } from "vue";
 import { useDeploymentTargets } from "@/application/deployments";
 import { useServerVitals } from "@/application/servers";
 import { useApiConnection } from "@/application/system";
 import { EnvironmentHealthRules } from "@/domain/overview";
+import type { DeploymentRange } from "@/domain/deployments";
 import {
   EnvironmentPillRules,
   factsOf,
+  TrendWindows,
   type PortfolioProduct,
-  type PortfolioWorkspace,
   type ProductFacts,
 } from "@/domain/portfolio";
 import { EnvironmentOrder } from "@/domain/targets";
@@ -31,27 +32,33 @@ export const TrendScalesKey: InjectionKey<ComputedRef<TrendScales>> = Symbol("Tr
 const MinimumScale = 4;
 
 /**
- * Each product's environment pills, condition, last deploy and weekly trend, and each workspace's summary: the targets
- * and vitals the console already reads, joined with the portfolio summary. Pills read health without deployment stats;
- * the summary's latest rollouts carry what failed or rolled back.
+ * Each product's environment pills, condition, last deploy and weekly trend: the targets and vitals the console already
+ * reads, joined with the portfolio summary. Pills read health without deployment stats; the summary's latest rollouts
+ * carry what failed or rolled back. Pills always read as of now; a range — the Products page's — sets the weeks the
+ * trends cover, twelve weeks to now without one.
  */
-export function useProductFacts() {
+export function useProductFacts(range: MaybeRefOrGetter<DeploymentRange | null> = null) {
   const targets = useDeploymentTargets();
   const vitals = useServerVitals();
   const summary = usePortfolioSummary();
+  const trendWindow = computed(() => {
+    const value = toValue(range);
+    return value ? TrendWindows.of(value, new Date()) : null;
+  });
+  /* Without a range the trends read the pills' own summary; with one, the same summary over the range's weeks. */
+  const trend = toValue(range) === null ? summary : usePortfolioSummary(trendWindow);
   const system = useApiConnection();
 
-  const summaryByProduct = computed(
-    () => new Map<string, PortfolioProduct>((summary.data.value?.products ?? []).map((item) => [item.product, item])),
-  );
-  const summaryByWorkspace = computed(
-    () => new Map<string, PortfolioWorkspace>((summary.data.value?.workspaces ?? []).map((item) => [item.workspace, item])),
-  );
+  const byProduct = (data: typeof summary.data.value) =>
+    new Map<string, PortfolioProduct>((data?.products ?? []).map((item) => [item.product, item]));
+  const summaryByProduct = computed(() => byProduct(summary.data.value));
+  const trendByProduct = computed(() => byProduct(trend.data.value));
   /** Facts are computed on demand and kept until a read changes. @internal */
   const cache = computed(() => {
     void targets.data.value;
     void vitals.data.value;
     void summary.data.value;
+    void trend.data.value;
     void system.version.value;
     return new Map<string, ProductFacts>();
   });
@@ -81,24 +88,22 @@ export function useProductFacts() {
           : null,
       });
     });
-    const facts = factsOf(slug, pills, product);
+    const facts = factsOf(slug, pills, product, trendByProduct.value.get(slug));
     cache.value.set(slug, facts);
     return facts;
   }
 
   return {
     factsOf: factsFor,
-    workspaceSummaryOf: (slug: string) => summaryByWorkspace.value.get(slug),
     /** True until the targets first answer: pills draw placeholders. */
     isLoading: computed(() => targets.data.value === undefined && !targets.error.value),
-    /** True until the summary first answers: trends draw placeholders. */
-    isSummaryLoading: computed(() => summary.data.value === undefined && !summary.error.value),
     /** True until the vitals first answer: health reads as unknown meanwhile. */
     isVitalsLoading: computed(() => vitals.data.value === undefined && !vitals.error.value),
-    weeks: computed(() => summary.data.value?.weeks ?? []),
+    /** The trends' weeks, each its Monday; empty until the trend's summary answers. */
+    weeks: computed(() => trend.data.value?.weeks ?? []),
     /** The busiest week of any product, never below four. */
     scales: computed<TrendScales>(() => {
-      const data = summary.data.value;
+      const data = trend.data.value;
       const productTop = Math.max(
         0,
         ...(data?.products ?? []).flatMap((item) =>
@@ -107,6 +112,6 @@ export function useProductFacts() {
       );
       return { products: Math.max(MinimumScale, productTop) };
     }),
-    refresh: () => Promise.all([targets.refetch(), vitals.refetch(), summary.refetch()]),
+    refresh: () => Promise.all([targets.refetch(), vitals.refetch(), summary.refetch(), ...(trend === summary ? [] : [trend.refetch()])]),
   };
 }

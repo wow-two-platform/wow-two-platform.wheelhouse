@@ -7,12 +7,13 @@ import { product } from "./LoadModule.mjs";
 const {
   EnvironmentPillRules, shortRelease, factsOf, conditionOf, rolloutConditionOf, ProductFilterQuery, ProductFilterRules,
   DefaultProductFilter, workspaceStatsOf, siteLinksOf, directSiteOf, productsDestination, workspaceOfHash, ConsolePaths,
+  RolloutBuckets, TrendWindows, productTrailOf,
 } = await bundleModule(`
   export {
     EnvironmentPillRules, shortRelease, factsOf, conditionOf, rolloutConditionOf, ProductFilterQuery, ProductFilterRules,
-    DefaultProductFilter, workspaceStatsOf, siteLinksOf, directSiteOf,
+    DefaultProductFilter, workspaceStatsOf, siteLinksOf, directSiteOf, RolloutBuckets, TrendWindows,
   } from './src/domain/portfolio';
-  export { productsDestination, workspaceOfHash, ConsolePaths } from './src/application/navigation';
+  export { productsDestination, workspaceOfHash, ConsolePaths, productTrailOf } from './src/application/navigation';
 `);
 after(() => stop());
 
@@ -102,16 +103,25 @@ test("the sidebar's mark reads the latest rollouts alone", () => {
   assert.equal(rolloutConditionOf(undefined), "idle");
 });
 
-test("search, workspaces, status and sort round-trip through the address, defaults left out", () => {
+test("search, workspaces, status, range and sort round-trip through the address, defaults left out", () => {
   assert.deepEqual(ProductFilterQuery.parse({}), DefaultProductFilter);
+  assert.deepEqual(DefaultProductFilter.range, { kind: "preset", preset: "90d" });
   assert.deepEqual(ProductFilterQuery.toQuery(DefaultProductFilter), {});
-  const state = { search: "qr codes", workspaces: ["ventures", "platform"], status: "failing", sort: "last-deployed" };
+  const state = { search: "qr codes", workspaces: ["ventures", "platform"], status: "failing",
+    range: { kind: "preset", preset: "30d" }, sort: "last-deployed" };
   const query = ProductFilterQuery.toQuery(state);
-  assert.deepEqual(query, { q: "qr codes", workspace: "ventures,platform", status: "failing", sort: "last-deployed" });
+  assert.deepEqual(query, { q: "qr codes", workspace: "ventures,platform", status: "failing", range: "30d", sort: "last-deployed" });
   assert.deepEqual(ProductFilterQuery.parse(query), state);
-  assert.deepEqual(ProductFilterQuery.parse({ status: "bogus", sort: ["oldest-updated"], workspace: "a,,a" }),
-    { search: "", workspaces: ["a"], status: "all", sort: "oldest-updated" });
+  assert.deepEqual(ProductFilterQuery.parse({ status: "bogus", sort: ["oldest-updated"], workspace: "a,,a", range: "1y" }),
+    { search: "", workspaces: ["a"], status: "all", range: DefaultProductFilter.range, sort: "oldest-updated" });
+  // A custom range is written as the Deployments page writes it, and wins over a preset.
+  const custom = { ...DefaultProductFilter, range: { kind: "custom", from: "2026-09-01T00:00", to: "2026-10-01T00:00" } };
+  assert.deepEqual(ProductFilterQuery.toQuery(custom), { from: "2026-09-01T00:00", to: "2026-10-01T00:00" });
+  assert.deepEqual(ProductFilterQuery.parse({ range: "7d", from: "2026-09-01T00:00", to: "2026-10-01T00:00" }).range, custom.range);
+  assert.deepEqual(ProductFilterQuery.parse({ from: "2026-10-01T00:00", to: "2026-09-01T00:00" }).range, DefaultProductFilter.range);
+  // The range and the sort change figures and order, not which workspaces and products show.
   assert.equal(ProductFilterQuery.isNarrowed({ ...DefaultProductFilter, sort: "failed-first" }), false);
+  assert.equal(ProductFilterQuery.isNarrowed(custom), false);
   assert.equal(ProductFilterQuery.isNarrowed({ ...DefaultProductFilter, search: "x" }), true);
 });
 
@@ -147,13 +157,65 @@ test("sorts order by name, by deploy time with never-deployed last, and by outco
   assert.deepEqual(apply({ sort: "succeeded-first" }), ["alpha", "beta", "gamma"]);
 });
 
-test("a workspace's figures count its shown products' conditions and its rollouts' success rate", () => {
+test("a workspace's figures count its shown products now and their rollouts over the range", () => {
   const stats = workspaceStatsOf(
     [{ condition: "failing" }, { condition: "attention" }, { condition: "unknown" }, { condition: "deploying" }, undefined],
-    { workspace: "w", succeeded: 9, failed: 3, weekly: [{ succeeded: 9, failed: 3 }] },
+    { from: "2026-10-13", to: "2026-10-19", days: [{ date: "2026-10-14", succeeded: 7, failed: 1 }, { date: "2026-10-19", succeeded: 2, failed: 2 }] },
   );
-  assert.deepEqual([stats.products, stats.failing, stats.attention, stats.deploying, stats.successRate], [5, 1, 2, 1, 75]);
-  assert.equal(workspaceStatsOf([], undefined).successRate, null);
+  // Degraded counts the degraded products only; an unread one is no reading, not degraded.
+  assert.deepEqual([stats.products, stats.failing, stats.degraded, stats.deploying], [5, 1, 1, 1]);
+  assert.deepEqual([stats.rollouts.succeeded, stats.rollouts.failed, stats.rollouts.successRate, stats.rollouts.size],
+    [9, 3, 75, "day"]);
+  assert.equal(stats.rollouts.buckets.length, 7);
+  // Until the range is read there are no rollout figures; a range without rollouts has no rate.
+  assert.equal(workspaceStatsOf([], undefined).rollouts, null);
+  assert.equal(workspaceStatsOf([], { from: "2026-10-13", to: "2026-10-19", days: [] }).rollouts.successRate, null);
+});
+
+test("a range's rollouts fall into days up to a month, weeks up to six months, months beyond", () => {
+  assert.equal(RolloutBuckets.sizeOf("2026-10-18", "2026-10-19"), "day");
+  assert.equal(RolloutBuckets.sizeOf("2026-09-19", "2026-10-19"), "day");
+  assert.equal(RolloutBuckets.sizeOf("2026-07-21", "2026-10-19"), "week");
+  assert.equal(RolloutBuckets.sizeOf("2025-10-19", "2026-10-19"), "month");
+  // Every column of the range is present, oldest first, empty or not.
+  const days = RolloutBuckets.of({ from: "2026-10-18", to: "2026-10-19", days: [{ date: "2026-10-19", succeeded: 2, failed: 1 }] });
+  assert.deepEqual(days.map((item) => [item.start, item.succeeded, item.failed]), [["2026-10-18", 0, 0], ["2026-10-19", 2, 1]]);
+  // Weeks start on Monday; the first may begin before the range.
+  const weeks = RolloutBuckets.of({ from: "2026-07-22", to: "2026-10-19", days: [
+    { date: "2026-07-22", succeeded: 1, failed: 0 }, { date: "2026-07-26", succeeded: 1, failed: 1 },
+    { date: "2026-10-19", succeeded: 3, failed: 0 }, { date: "2026-12-01", succeeded: 9, failed: 9 },
+  ] });
+  assert.equal(weeks[0].start, "2026-07-20");
+  assert.deepEqual([weeks[0].succeeded, weeks[0].failed], [2, 1]);
+  assert.equal(weeks.at(-1).start, "2026-10-19");
+  assert.equal(weeks.at(-1).succeeded, 3);
+  assert.equal(weeks.length, 14);
+  const months = RolloutBuckets.of({ from: "2025-10-20", to: "2026-10-19", days: [{ date: "2026-02-14", succeeded: 4, failed: 0 }] });
+  assert.equal(months.length, 13);
+  assert.deepEqual([months[4].start, months[4].succeeded], ["2026-02-01", 4]);
+  assert.deepEqual(RolloutBuckets.of({ from: "2026-10-19", to: "2026-10-18", days: [] }), []);
+});
+
+test("product trends cover every week the range touches, at most 52, and pin a past range's end", () => {
+  const monday = new Date(2026, 9, 19, 9, 0);
+  assert.deepEqual(TrendWindows.of({ kind: "preset", preset: "24h" }, monday), { weeks: 2, to: null });
+  assert.deepEqual(TrendWindows.of({ kind: "preset", preset: "24h" }, new Date(2026, 9, 21, 9, 0)), { weeks: 1, to: null });
+  assert.equal(TrendWindows.of({ kind: "preset", preset: "90d" }, monday).weeks, 14);
+  assert.equal(TrendWindows.of({ kind: "preset", preset: "12m" }, monday).weeks, 52);
+  const past = TrendWindows.of({ kind: "custom", from: "2026-09-07T00:00", to: "2026-09-21T00:00" }, monday);
+  assert.equal(past.weeks, 2);
+  assert.equal(past.to, new Date(2026, 8, 21).toISOString());
+});
+
+test("the sidebar's trail names the open product's workspace and product, or the slug until they arrive", () => {
+  const platform = { id: "w-platform", slug: "platform", name: "Platform", description: "", order: 0 };
+  const wheelhouse = product({ id: "p-wh", slug: "wheelhouse", name: "Wheelhouse", workspaceId: platform.id });
+  const trail = productTrailOf("wheelhouse", [wheelhouse], [platform]);
+  assert.equal(trail.workspace, platform);
+  assert.deepEqual([trail.slug, trail.name], ["wheelhouse", "Wheelhouse"]);
+  assert.deepEqual(productTrailOf("wheelhouse", [], []), { workspace: null, slug: "wheelhouse", name: "wheelhouse", product: null });
+  assert.equal(productTrailOf("orphan", [product({ slug: "orphan", workspaceId: "w-gone" })], [platform]).workspace, null);
+  assert.equal(productTrailOf(null, [wheelhouse], [platform]), null);
 });
 
 test("sites group by name across environments, public first, private marked; one address opens directly", () => {

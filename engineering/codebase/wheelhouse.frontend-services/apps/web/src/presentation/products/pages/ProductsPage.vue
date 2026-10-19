@@ -9,11 +9,19 @@ import { ToggleGroup, ToggleInput } from "@wow-two-beta/fe/presentation/forms";
 import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
 import { ConsolePaths, workspaceHash, workspaceOfHash } from "@/application/navigation";
 import { usePins } from "@/application/pins";
-import { TrendScalesKey, useProductFacts, usePortfolio, type PortfolioGroup } from "@/application/portfolio";
+import {
+  TrendScalesKey,
+  useProductFacts,
+  usePortfolio,
+  useWorkspaceActivity,
+  type PortfolioGroup,
+} from "@/application/portfolio";
 import { ProductsView, useGroupExpansion, useProductsView } from "@/application/preferences";
 import { useRefresh } from "@/bootstrap/query";
+import { DeploymentFilters } from "@/domain/deployments";
 import { PinKind } from "@/domain/pins";
 import {
+  ProductFilterKeys,
   ProductFilterQuery,
   ProductFilterRules,
   workspaceStatsOf,
@@ -34,23 +42,29 @@ import WorkspacesModal from "../components/WorkspacesModal.vue";
 import WorkspaceTile from "../components/WorkspaceTile.vue";
 
 /**
- * The Products page: the workspaces first — each a card or row with its products' failing and needs-a-look counts,
- * its rollouts' success rate and weekly trend, a click scrolling to its products — then every workspace's products in
- * the owner's workspace order, as cards or rows. One Cards | Rows switch from tablets up governs both sections; phones
- * always show full-width cards. Search, workspace, status and sort live in the address (`q`, `workspace`, `status`,
- * `sort`); "Show inactive" is the console's one switch. A workspace's group is addressed by `#workspace-{slug}`, which
- * old `/w/{slug}` links and the scope bar's workspace crumb open.
+ * The Products page: the workspaces first — each a card or row with its figures as pills (rollouts that succeeded
+ * over the range with their success rate, products failing, needing a look and deploying) and the range's rollouts as
+ * a chart, a click scrolling to its products — then every workspace's products in the owner's workspace order, as
+ * cards or rows. One filter governs both: search, workspaces and status decide which workspaces and products show,
+ * and a workspace's figures count only the products it shows; the date range sets the period the figures and the
+ * product trends cover. One Cards | Rows switch from tablets up governs both sections; phones always show full-width
+ * cards. Search, workspace, status, range and sort live in the address (`q`, `workspace`, `status`, `range` or `from`
+ * and `to`, `sort`); "Show inactive" is the console's one switch. A workspace's group is addressed by
+ * `#workspace-{slug}`, which old `/w/{slug}` links, the scope bar's workspace crumb and the sidebar's trail open.
  */
 defineOptions({ name: "ProductsPage" });
 const route = useRoute();
 const router = useRouter();
 const portfolio = usePortfolio();
-const facts = useProductFacts();
+const filter = computed(() => ProductFilterQuery.parse(route.query));
+const facts = useProductFacts(() => filter.value.range);
 const pins = usePins();
 const viewChoice = useProductsView();
 const expansion = useGroupExpansion();
 const isPhone = useIsPhone();
-const refresh = useRefresh(() => Promise.all([portfolio.products.reload(), portfolio.workspaces.reload(), facts.refresh()]));
+const refresh = useRefresh(() =>
+  Promise.all([portfolio.products.reload(), portfolio.workspaces.reload(), facts.refresh(), activity.refresh()]),
+);
 const productForm = ref<{ open: boolean; product: Product | null }>({ open: false, product: null });
 const managingWorkspaces = ref(false);
 /* Every product trend on the page shares one scale, so a busy product reads taller than a quiet one. */
@@ -59,8 +73,12 @@ provide(TrendScalesKey, facts.scales);
 /** Phones always show cards; the switch is not offered there. */
 const view = computed(() => (isPhone.value ? ProductsView.Cards : viewChoice.value));
 const firstLoad = computed(() => portfolio.isFirstLoad.value);
-const filter = computed(() => ProductFilterQuery.parse(route.query));
 const narrowed = computed(() => ProductFilterQuery.isNarrowed(filter.value));
+/** The range in words for the pills' titles: "the last 90 days", or the custom bounds. @internal */
+const rangeText = computed(() => {
+  const label = DeploymentFilters.label(filter.value.range);
+  return filter.value.range.kind === "preset" ? label.replace(/^Last/, "the last") : label;
+});
 
 /** A group's element id, which `#workspace-{slug}` names. @internal */
 function groupIdOf(workspace: Workspace | null): string {
@@ -71,36 +89,42 @@ function groupIdOf(workspace: Workspace | null): string {
 const placeholders = [0, 1].map((index) => ({
   group: { workspace: null, products: [], total: 0, active: 0 } as PortfolioGroup,
   id: `placeholder-${index}`,
-  stats: undefined,
+  stats: undefined as WorkspaceStats | undefined,
   products: [null, null, null] as (Product | null)[],
 }));
 
-/** Each workspace group the workspace filter keeps, with its figures and its filtered, sorted products. @internal */
+/** Each workspace group the workspace filter keeps, with its filtered, sorted products. @internal */
 const sections = computed(() =>
   portfolio.groups.value
     .filter((group) => !filter.value.workspaces.length || (group.workspace && filter.value.workspaces.includes(group.workspace.slug)))
-    .map((group) => {
-      const stats: WorkspaceStats | undefined = facts.isLoading.value
-        ? undefined
-        : workspaceStatsOf(
-            group.products.map((product) => facts.factsOf(product.slug)),
-            group.workspace ? facts.workspaceSummaryOf(group.workspace.slug) : undefined,
-          );
-      return {
-        group,
-        id: groupIdOf(group.workspace),
-        stats,
-        products: ProductFilterRules.apply(group.products, facts.factsOf, filter.value),
-      };
-    }),
+    .map((group) => ({
+      group,
+      id: groupIdOf(group.workspace),
+      products: ProductFilterRules.apply(group.products, facts.factsOf, filter.value),
+    })),
 );
-/** The groups to draw: placeholders on the first load; while narrowed, only groups with a match. @internal */
+/** The groups the filter keeps: while narrowed, only the ones with a match; workspaces and products alike. @internal */
+const keptSections = computed(() =>
+  narrowed.value ? sections.value.filter((section) => section.products.length > 0) : sections.value,
+);
+/* Each kept workspace's rollouts over the range, counting only the products it shows. */
+const activity = useWorkspaceActivity(
+  () => (firstLoad.value ? [] : keptSections.value.map((section) => ({ key: section.id, products: section.products.map((item) => item.slug) }))),
+  () => filter.value.range,
+);
+/** The groups to draw with their figures: placeholders on the first load. @internal */
 const shownSections = computed(() =>
   firstLoad.value
     ? placeholders
-    : narrowed.value
-      ? sections.value.filter((section) => section.products.length > 0)
-      : sections.value,
+    : keptSections.value.map((section) => ({
+        ...section,
+        stats: facts.isLoading.value
+          ? undefined
+          : workspaceStatsOf(
+              section.products.map((product) => facts.factsOf(product.slug)),
+              activity.activityOf(section.id, section.products.length),
+            ),
+      })),
 );
 const matchCount = computed(() => sections.value.reduce((sum, section) => sum + section.products.length, 0));
 const workspaceOptions = computed<WorkspaceOption[]>(() =>
@@ -127,7 +151,7 @@ function isPinned(product: Product): boolean {
 function changeFilter(change: Partial<ProductFilterState>): void {
   const next = { ...filter.value, ...change };
   const rest = Object.fromEntries(
-    Object.entries(route.query).filter(([key]) => !["q", "workspace", "status", "sort"].includes(key)),
+    Object.entries(route.query).filter(([key]) => !(ProductFilterKeys as readonly string[]).includes(key)),
   );
   void router.replace({ path: route.path, query: { ...rest, ...ProductFilterQuery.toQuery(next) } });
 }
@@ -229,11 +253,11 @@ function emptyTextOf(group: PortfolioGroup): string {
           aria-labelledby="workspaces-heading"
         >
           <WorkspaceListRow
-            v-for="section in firstLoad ? placeholders : sections"
+            v-for="section in shownSections"
             :key="section.id"
             :workspace="section.group.workspace"
             :stats="section.stats"
-            :weeks="facts.weeks.value"
+            :range-text="rangeText"
             :is-loading="firstLoad"
             :group-id="section.id"
             @open="openWorkspace(section.group.workspace)"
@@ -247,7 +271,7 @@ function emptyTextOf(group: PortfolioGroup): string {
           aria-labelledby="workspaces-heading"
         >
           <li
-            v-for="section in firstLoad ? placeholders : sections"
+            v-for="section in shownSections"
             :key="section.id"
             class="flex min-w-0 max-sm:w-[82%] max-sm:shrink-0 max-sm:snap-start"
           >
@@ -255,7 +279,7 @@ function emptyTextOf(group: PortfolioGroup): string {
               class="flex-1"
               :workspace="section.group.workspace"
               :stats="section.stats"
-              :weeks="facts.weeks.value"
+              :range-text="rangeText"
               :is-loading="firstLoad"
               :group-id="section.id"
               @open="openWorkspace(section.group.workspace)"

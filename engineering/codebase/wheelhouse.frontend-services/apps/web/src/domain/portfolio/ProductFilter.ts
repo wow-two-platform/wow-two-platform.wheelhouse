@@ -1,3 +1,9 @@
+import {
+  DeploymentFilters,
+  RangePreset,
+  RangePresets,
+  type DeploymentRange,
+} from '@/domain/deployments/history/DeploymentFilter';
 import type { Product } from '@/domain/products';
 import { ProductCondition, type ProductFacts } from './ProductFacts';
 
@@ -47,20 +53,30 @@ export const StatusFilterLabels: Readonly<Record<StatusFilter, string>> = {
   idle: 'Not deployed',
 };
 
-/** The Products page's search, filter and sort, as its address carries them. */
+/**
+ * The Products page's search, filter, range and sort, as its address carries them. Search, workspaces and status
+ * narrow which workspaces and products show; the range sets the period their rollout counts, success rates and trends
+ * cover.
+ */
 export interface ProductFilterState {
   readonly search: string;
   /** Workspace slugs; empty for every workspace. */
   readonly workspaces: readonly string[];
   readonly status: StatusFilter;
+  /** The period the workspace figures and the trends cover: the Deployments page's presets, or a custom from and to. */
+  readonly range: DeploymentRange;
   readonly sort: ProductSort;
 }
+
+/** The range the Products page opens with: 90 days, close to a quarter of weekly trends. */
+export const ProductsDefaultRange: DeploymentRange = { kind: 'preset', preset: RangePreset.Quarter };
 
 /** The filter in force when the address names none. */
 export const DefaultProductFilter: ProductFilterState = {
   search: '',
   workspaces: [],
   status: StatusFilter.All,
+  range: ProductsDefaultRange,
   sort: ProductSort.Name,
 };
 
@@ -75,8 +91,28 @@ function isOneOf<T extends string>(values: Readonly<Record<string, T>>, value: s
   return value !== null && (Object.values(values) as string[]).includes(value);
 }
 
+/** The query keys the filter owns; the page keeps every other key. */
+export const ProductFilterKeys = ['q', 'workspace', 'status', 'range', 'from', 'to', 'sort'] as const;
+
+/** Reads the range the way the Deployments page does: custom `from` and `to`, else a `range` preset. @internal */
+function rangeOf(query: Readonly<Record<string, unknown>>): DeploymentRange {
+  const from = first(query['from']);
+  const to = first(query['to']);
+  if (from && to && DeploymentFilters.isValidCustom(from, to)) return { kind: 'custom', from, to };
+  const preset = RangePresets.find((item) => item.value === first(query['range']))?.value;
+  return preset ? { kind: 'preset', preset } : ProductsDefaultRange;
+}
+
+/** Whether two ranges are the same choice. @internal */
+function sameRange(left: DeploymentRange, right: DeploymentRange): boolean {
+  return left.kind === 'preset' && right.kind === 'preset'
+    ? left.preset === right.preset
+    : left.kind === 'custom' && right.kind === 'custom' && left.from === right.from && left.to === right.to;
+}
+
 /**
- * The filter's address form: `q` (search), `workspace` (comma-separated slugs), `status` and `sort`, each left out at
+ * The filter's address form: `q` (search), `workspace` (comma-separated slugs), `status`, the range as the Deployments
+ * page writes it (`range` preset, or custom `from` and `to` in local `YYYY-MM-DDTHH:mm`) and `sort`, each left out at
  * its default, so a plain `/products` is the default view. Unknown values read as the default.
  */
 export const ProductFilterQuery = {
@@ -87,6 +123,7 @@ export const ProductFilterQuery = {
       search: (first(query['q']) ?? '').slice(0, 100),
       workspaces: [...new Set((first(query['workspace']) ?? '').split(',').map((slug) => slug.trim()).filter(Boolean))],
       status: isOneOf(StatusFilter, status) ? status : StatusFilter.All,
+      range: rangeOf(query),
       sort: isOneOf(ProductSort, sort) ? sort : ProductSort.Name,
     };
   },
@@ -95,10 +132,14 @@ export const ProductFilterQuery = {
     if (state.search.trim()) query['q'] = state.search.trim();
     if (state.workspaces.length) query['workspace'] = state.workspaces.join(',');
     if (state.status !== StatusFilter.All) query['status'] = state.status;
+    if (state.range.kind === 'custom') {
+      query['from'] = state.range.from;
+      query['to'] = state.range.to;
+    } else if (!sameRange(state.range, ProductsDefaultRange)) query['range'] = state.range.preset;
     if (state.sort !== ProductSort.Name) query['sort'] = state.sort;
     return query;
   },
-  /** Whether anything narrows the products; sorting alone does not. */
+  /** Whether anything narrows the workspaces and products; the range and the sort alone do not. */
   isNarrowed: (state: ProductFilterState): boolean =>
     Boolean(state.search.trim()) || state.workspaces.length > 0 || state.status !== StatusFilter.All,
 } as const;

@@ -6,21 +6,25 @@ import type { Workspace } from "@/domain/workspaces";
 export interface WorkspaceListRowProps {
   readonly workspace: Workspace | null;
   readonly stats: WorkspaceStats | undefined;
-  readonly weeks: readonly string[];
+  /** The range's words for the pills' titles. */
+  readonly rangeText: string;
   readonly isLoading?: boolean;
   readonly groupId: string;
 }
 
-/** The row's columns: name, products, needs you, success, trend — shared with the list's header. */
-export const WorkspaceRowColumns = "grid-cols-[minmax(0,1fr)_5.5rem_minmax(0,14rem)_6rem_4.75rem]";
+/** The row's columns: name, products, figures, chart. */
+export const WorkspaceRowColumns = "grid-cols-[minmax(0,1fr)_5.5rem_minmax(0,15rem)_8.5rem]";
 </script>
 <script setup lang="ts">
 import { Text } from "@wow-two-beta/fe/presentation/display";
-import WorkspaceRollup from "./WorkspaceRollup.vue";
+import WorkspaceStatPills from "./WorkspaceStatPills.vue";
 import WorkspaceTrend from "./WorkspaceTrend.vue";
 
-/** A workspace in one line: name and description, product count, what needs the owner, success rate and trend. The
- * whole row is one button that scrolls to the workspace's products. */
+/**
+ * A workspace in one line: name and description, product count, its figures as pills — rollouts that succeeded over
+ * the range with their success rate, products failing, needing a look and deploying — and the range's chart. The whole
+ * row is one button that scrolls to the workspace's products.
+ */
 defineOptions({ name: "WorkspaceListRow" });
 const props = withDefaults(defineProps<WorkspaceListRowProps>(), { isLoading: false });
 const emit = defineEmits<{ open: [] }>();
@@ -50,12 +54,7 @@ defineSlots<{}>();
     <span class="text-xs tabular-nums text-muted-foreground"
       ><template v-if="props.stats">{{ props.stats.products }} product{{ props.stats.products === 1 ? "" : "s" }}</template></span
     >
-    <WorkspaceRollup :stats="props.isLoading ? undefined : props.stats" is-compact />
-    <span class="text-xs text-muted-foreground tabular-nums"
-      ><template v-if="props.stats?.successRate != null"
-        ><span class="font-semibold text-foreground">{{ props.stats.successRate }}%</span> success</template
-      ><template v-else-if="props.stats">—</template></span
-    >
-    <div class="flex justify-end"><WorkspaceTrend :stats="props.isLoading ? undefined : props.stats" :weeks="props.weeks" /></div>
+    <WorkspaceStatPills :stats="props.isLoading ? undefined : props.stats" :range-text="props.rangeText" />
+    <div class="flex justify-end"><WorkspaceTrend :rollouts="props.isLoading ? null : (props.stats?.rollouts ?? null)" fill /></div>
   </li>
 </template>

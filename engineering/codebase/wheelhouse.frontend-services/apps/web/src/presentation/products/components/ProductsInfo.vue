@@ -45,7 +45,7 @@ const legend: { pill: Pill; text: string }[] = [
     </template>
     <template #trend>
       <p>
-        Finished rollouts per week over twelve weeks:
+        Finished rollouts per week over the weeks the date range touches:
         <span class="inline-flex items-center gap-1"
           ><span class="size-2.5 rounded-sm bg-(--color-chart-prod)" aria-hidden="true" />prod</span
         >
@@ -58,8 +58,9 @@ const legend: { pill: Pill; text: string }[] = [
     </template>
     <template #workspaces>
       <p>
-        Each workspace counts its failing products and those that need a look, and its rollouts' success rate over the
-        same weeks, failures red in its trend. Choose one to jump to its products.
+        Each workspace counts the products the filter shows. Its pills: rollouts that succeeded over the date range with
+        their success rate, then products failing, degraded and deploying now; a zero is left out. Its chart shows the
+        range's rollouts per day, week or month, failures red. Choose one to jump to its products.
       </p>
     </template>
   </InfoPopover>

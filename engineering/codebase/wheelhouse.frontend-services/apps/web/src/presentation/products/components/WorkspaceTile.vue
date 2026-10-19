@@ -7,7 +7,8 @@ export interface WorkspaceTileProps {
   /** The workspace; null draws the card's placeholder, or names products without a workspace once loaded. */
   readonly workspace: Workspace | null;
   readonly stats: WorkspaceStats | undefined;
-  readonly weeks: readonly string[];
+  /** The range's words for the pills' titles. */
+  readonly rangeText: string;
   readonly isLoading?: boolean;
   /** The id of the group the card scrolls to, for `aria-controls`. */
   readonly groupId: string;
@@ -15,13 +16,14 @@ export interface WorkspaceTileProps {
 </script>
 <script setup lang="ts">
 import { Text } from "@wow-two-beta/fe/presentation/display";
-import WorkspaceRollup from "./WorkspaceRollup.vue";
+import WorkspaceStatPills from "./WorkspaceStatPills.vue";
 import WorkspaceTrend from "./WorkspaceTrend.vue";
 
 /**
- * A workspace at a glance: name and product count, its description, what needs the owner across its products, and
- * its rollouts' success rate beside their weekly trend. The whole card is one button that scrolls to the workspace's
- * products below; workspaces have no page of their own.
+ * A workspace at a glance: name and product count, its description, then one line as on a product card — its figures
+ * as pills (rollouts that succeeded over the range with their success rate folded in, products failing, degraded and
+ * deploying) and, beside them, the range's rollouts as a chart. The whole card is one button that scrolls to the
+ * workspace's products below; workspaces have no page of their own.
  */
 defineOptions({ name: "WorkspaceTile" });
 const props = withDefaults(defineProps<WorkspaceTileProps>(), { isLoading: false });
@@ -52,16 +54,13 @@ defineSlots<{}>();
     <Text class="line-clamp-2 min-h-[2lh] text-[13px] leading-snug text-muted-foreground" skeleton-width="12rem">{{
       props.isLoading ? "" : (props.workspace?.description ?? "Products the console holds without a workspace.")
     }}</Text>
-    <WorkspaceRollup :stats="props.isLoading ? undefined : props.stats" />
-    <div class="mt-auto flex items-end justify-between gap-3 pt-1">
-      <p class="text-xs text-muted-foreground">
-        <template v-if="props.stats?.successRate != null"
-          ><span class="text-sm font-semibold text-foreground tabular-nums">{{ props.stats.successRate }}%</span>
-          success · {{ props.weeks.length }} wk</template
-        >
-        <template v-else-if="props.stats && props.weeks.length">No rollouts in {{ props.weeks.length }} weeks</template>
-      </p>
-      <WorkspaceTrend :stats="props.isLoading ? undefined : props.stats" :weeks="props.weeks" />
+    <!-- The pills keep one line; the chart takes the room left, up to 7rem, and drops below only when even 3rem
+         would not fit. -->
+    <div class="mt-auto flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 pt-1">
+      <WorkspaceStatPills :stats="props.isLoading ? undefined : props.stats" :range-text="props.rangeText" is-single-line />
+      <div class="ms-auto flex min-w-12 max-w-28 flex-1 justify-end">
+        <WorkspaceTrend :rollouts="props.isLoading ? null : (props.stats?.rollouts ?? null)" fill />
+      </div>
     </div>
   </article>
 </template>
