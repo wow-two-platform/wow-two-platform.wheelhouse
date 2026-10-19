@@ -502,6 +502,7 @@ function openDeploy(job?: DeploymentJob): void {
                 <span class="flex items-center gap-2">
                 <RefreshButton
                   variant="ghost"
+                  size="md"
                   icon-only
                   label="Refresh services"
                   class="max-md:size-11"
@@ -514,10 +515,10 @@ function openDeploy(job?: DeploymentJob): void {
                   :model-value="serviceView"
                   @update:model-value="setServiceView"
                 >
-                  <ToggleInput value="map" size="sm"
+                  <ToggleInput value="map" size="sm" class="max-md:min-h-9"
                     ><Network :size="14" />Map</ToggleInput
                   >
-                  <ToggleInput value="list" size="sm"
+                  <ToggleInput value="list" size="sm" class="max-md:min-h-9"
                     ><List :size="14" />List</ToggleInput
                   >
                 </ToggleGroup>

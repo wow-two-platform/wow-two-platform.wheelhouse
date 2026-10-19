@@ -13,15 +13,15 @@ export interface DeploymentsInfoProps {
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { StatusState, StatusWords } from "@/domain/common";
-import { InfoPopover, StatusPill, type InfoSection } from "@/presentation/common/components";
+import { InfoPopover, type InfoSection } from "@/presentation/common/components";
 
 import { CellFills } from "./CellFills";
+import DeploymentStatusLegend from "./DeploymentStatusLegend.vue";
 
 /**
- * What the deployments panel's info button holds: the calendar's key — what a square is and how to move between days,
- * what its colour and marks say, how today and the chosen day are told apart — while the calendar shows, and always
- * the statuses a deployment's pill and the day's counts use.
+ * What the deployments panel's info button holds: the calendar's key while the calendar shows — what a square is and
+ * how to move between days, what its colour and marks say, how today and the chosen day are told apart — and the
+ * statuses a deployment's pill uses in the List view. A chosen day's own info button explains its statuses there.
  */
 defineOptions({ name: "DeploymentsInfo" });
 const props = defineProps<DeploymentsInfoProps>();
@@ -32,18 +32,9 @@ const CalendarSections: readonly InfoSection[] = [
   { key: "marks", title: "Today and the chosen day" },
 ];
 const StatusSection: InfoSection = { key: "statuses", title: "Statuses" };
-const sections = computed(() => (props.isGrid ? [...CalendarSections, StatusSection] : [StatusSection]));
+const sections = computed(() => (props.isGrid ? CalendarSections : [StatusSection]));
 const scale = computed(() => CellFills[props.status === "failed" ? "danger" : "success"].slice(1));
 
-/** Each status a deployment can end in, and what it means. @internal */
-const Statuses: ReadonlyArray<{ readonly state: StatusState; readonly text: string }> = [
-  { state: StatusState.Succeeded, text: "Finished as intended." },
-  { state: StatusState.Failed, text: "Failed, or restoring the previous release failed too." },
-  { state: StatusState.Degraded, text: "Rolled back to the previous release, or regressed while watched; the row names the cause." },
-  { state: StatusState.Interrupted, text: "Stopped mid-way, then reconciled." },
-  { state: StatusState.Deploying, text: "Submitted, queued or running." },
-  { state: StatusState.Refused, text: "Refused by the runner before it changed anything." },
-];
 </script>
 
 <template>
@@ -100,15 +91,7 @@ const Statuses: ReadonlyArray<{ readonly state: StatusState; readonly text: stri
         </li>
       </ul>
     </template>
-    <template #statuses>
-      <ul class="flex flex-col gap-2" aria-label="Statuses">
-        <li v-for="item in Statuses" :key="item.state" class="flex items-start gap-2.5">
-          <span class="w-28 shrink-0"><StatusPill :state="item.state" :label="StatusWords[item.state]" /></span
-          ><span class="pt-0.5 text-xs text-muted-foreground">{{ item.text }}</span>
-        </li>
-      </ul>
-      <p class="mt-2.5 text-xs text-muted-foreground">A chosen day's tiles count each status that occurred that day.</p>
-    </template>
+    <template #statuses><DeploymentStatusLegend /></template>
   </InfoPopover>
 </template>
 

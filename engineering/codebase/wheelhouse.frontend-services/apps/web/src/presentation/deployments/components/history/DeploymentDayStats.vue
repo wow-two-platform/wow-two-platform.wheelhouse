@@ -21,8 +21,9 @@ import { statusClass, StatusIcons, statusIconClass } from "@/presentation/common
 
 /**
  * The chosen day at a glance, above its deployments: a compact tile for the day's total, then one per status that
- * occurred — succeeded, failed, degraded, interrupted, deploying, refused — each its icon, count and word in the same
- * tones as the status pills; a status nobody reached takes no tile. Tiles wrap, so a narrow day panel keeps every one.
+ * occurred — succeeded, failed, degraded, interrupted, deploying, refused — each its icon and count in the same tones
+ * as the status pills, its word in the title and for assistive technology; a status nobody reached takes no tile.
+ * Tiles wrap, so a narrow day panel keeps every one.
  */
 defineOptions({ name: "DeploymentDayStats" });
 const props = withDefaults(defineProps<DeploymentDayStatsProps>(), { hasMore: false });
@@ -51,6 +52,7 @@ const totalLabel = computed(() => `${total.value}${props.hasMore ? "+" : ""}`);
       :key="count.state"
       class="inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs"
       :class="statusClass(count.state)"
+      :title="`${count.count} ${count.word}`"
     >
       <component
         :is="StatusIcons[count.state]"
@@ -60,7 +62,7 @@ const totalLabel = computed(() => `${total.value}${props.hasMore ? "+" : ""}`);
         :class="statusIconClass(count.state)"
       />
       <span class="text-sm font-semibold tabular-nums">{{ count.count }}</span>
-      <span data-detail class="text-muted-foreground">{{ count.word }}</span>
+      <span class="sr-only">{{ count.word }}</span>
     </li>
   </ul>
 </template>

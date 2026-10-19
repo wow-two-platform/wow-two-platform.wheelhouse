@@ -256,7 +256,7 @@ test("a deployment's status reads in the console's vocabulary: a roll back and a
   });
   assert.equal(of({ watch: { status: "passed", findings: [] } }).state, "succeeded");
   assert.deepEqual(of({ status: "failed", reason: "image pull failed" }), { state: "failed", word: "failed", cause: "image pull failed" });
-  assert.equal(of({ status: "rollback_failed" }).state, "failed");
+  assert.deepEqual(of({ status: "rollback_failed" }), { state: "failed", word: "failed", cause: "restoring the previous release failed too" });
   assert.deepEqual(of({ status: "interrupted" }), { state: "interrupted", word: "interrupted", cause: "stopped mid-way" });
   assert.equal(of({ status: "rejected" }).state, "refused");
   for (const status of ["submitting", "queued", "running"]) assert.equal(of({ status }).state, "deploying");

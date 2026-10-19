@@ -21,9 +21,8 @@ const Sections: readonly InfoSection[] = [
   <InfoPopover title="Services" :sections="Sections">
     <template #map>
       <p>
-        Each service the environment's verified release declares, with the networks it joins, the sites the ingress
-        routes to it and the platform services it needs. Startup order, sites, platform and volumes switch on and off
-        above the map.
+        The services the verified release declares, with their networks, sites and the platform services they need. The
+        buttons above the map switch each layer on and off.
       </p>
       <ul class="mt-2.5 flex flex-col gap-1.5 text-xs" aria-label="Lines">
         <li class="flex items-center gap-2"><span class="h-px w-5 shrink-0 bg-primary" aria-hidden="true" />Shared network</li>

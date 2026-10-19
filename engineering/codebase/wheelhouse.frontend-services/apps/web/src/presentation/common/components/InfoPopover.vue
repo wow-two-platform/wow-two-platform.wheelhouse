@@ -28,6 +28,11 @@ import InfoPopoverContent from "./InfoPopoverContent.vue";
 
 /** The region an info button belongs to; the nearest one reveals it. */
 const ScopeSelector = "[data-info-scope]";
+/** The tallest a popover grows, and the margin it keeps from the screen's edges, in px. @internal */
+const PanelMaxHeight = 480;
+const ScreenMargin = 16;
+/** Below the button, a popover has room enough once this tall; else it takes the taller side. @internal */
+const EnoughRoom = 320;
 
 /**
  * An info ("i") button beside a title, holding the context a region needs once: a legend, what a control applies to,
@@ -93,9 +98,33 @@ onBeforeUnmount(() => {
 
 /* ---- Open and close ---- */
 
+/**
+ * Where the popover opens and how tall it may grow: below the button when there is room, else on the taller side, never
+ * past the screen's edge — it scrolls inside instead. The positioner only flips, so the room is measured here.
+ */
+const room = ref<{ placement: "bottom-start" | "top-start"; maxHeight: number }>({
+  placement: "bottom-start",
+  maxHeight: PanelMaxHeight,
+});
+
+function measureRoom(): void {
+  const rect = anchor.value?.getBoundingClientRect();
+  if (!rect) return;
+  const below = window.innerHeight - rect.bottom - ScreenMargin * 1.5;
+  const above = rect.top - ScreenMargin * 1.5;
+  const isBelow = below >= EnoughRoom || below >= above;
+  room.value = {
+    placement: isBelow ? "bottom-start" : "top-start",
+    maxHeight: Math.max(160, Math.min(PanelMaxHeight, isBelow ? below : above)),
+  };
+}
+
 /** On a phone the button opens the sheet, and keeps the popover's own toggle out of it. @internal */
 function press(event: MouseEvent): void {
-  if (!isPhone.value) return;
+  if (!isPhone.value) {
+    if (!open.value) measureRoom();
+    return;
+  }
   event.preventDefault();
   open.value = true;
 }
@@ -120,7 +149,7 @@ function close(): void {
     :data-scoped="scope ? '' : undefined"
     :data-revealed="isRevealed ? '' : undefined"
   >
-    <Popover :open="open && !isPhone" placement="bottom-start" @update:open="setPopover">
+    <Popover :open="open && !isPhone" :placement="room.placement" @update:open="setPopover">
       <PopoverTrigger as-child @click="press">
         <Button
           variant="ghost"
@@ -134,7 +163,11 @@ function close(): void {
           <Info :size="16" aria-hidden="true" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent :aria-labelledby="titleId" class="w-[min(22rem,calc(100vw-2rem))] p-4">
+      <PopoverContent
+        :aria-labelledby="titleId"
+        class="w-[min(22rem,calc(100vw-2rem))] overflow-y-auto p-4"
+        :style="{ maxHeight: `${room.maxHeight}px` }"
+      >
         <InfoPopoverContent :title="props.title" :title-id="titleId" :sections="props.sections" @close="close">
           <template v-for="key in sectionKeys" :key="key" #[key]><slot :name="key" /></template>
           <template v-if="!sectionKeys.length" #default><slot /></template>

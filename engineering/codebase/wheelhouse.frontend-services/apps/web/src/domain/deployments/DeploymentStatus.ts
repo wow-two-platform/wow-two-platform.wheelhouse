@@ -72,7 +72,7 @@ export const DeploymentStatusRules = {
           joined(input.restored ? `rolled back to ${input.restored}` : 'rolled back to the previous release', reason),
         );
       case JobStatus.RollbackFailed:
-        return reading(StatusState.Failed, joined('restoring the previous release failed too', reason));
+        return reading(StatusState.Failed, reason ?? 'restoring the previous release failed too');
       case JobStatus.Failed:
         return reading(StatusState.Failed, reason);
       case JobStatus.Interrupted:

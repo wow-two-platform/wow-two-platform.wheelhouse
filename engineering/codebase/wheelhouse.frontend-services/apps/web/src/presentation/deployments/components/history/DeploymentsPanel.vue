@@ -27,13 +27,14 @@ import {
 } from "@/application/deployments";
 import { usePortfolio } from "@/application/portfolio";
 import { useRefresh } from "@/bootstrap/query";
-import { Panel, RefreshButton } from "@/presentation/common/components";
+import { InfoPopover, Panel, RefreshButton } from "@/presentation/common/components";
 
 import { useDeploymentViewRoute } from "../../hooks/useDeploymentViewRoute";
 import ActivityGrid from "./ActivityGrid.vue";
 import DeploymentDayStats from "./DeploymentDayStats.vue";
 import DeploymentFilterBar from "./DeploymentFilterBar.vue";
 import DeploymentList from "./DeploymentList.vue";
+import DeploymentStatusLegend from "./DeploymentStatusLegend.vue";
 import DeploymentsInfo from "./DeploymentsInfo.vue";
 import RangeStatsTiles from "./RangeStatsTiles.vue";
 
@@ -162,9 +163,19 @@ function setView(value: unknown): void {
             isSide ? 'flex-1 self-stretch border-l border-border pl-6' : 'border-t border-border pt-4',
           ]"
           aria-live="polite"
+          data-info-scope
         >
           <div class="flex items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold">{{ dayTitle }}</h3>
+            <div class="flex min-w-0 items-center gap-1">
+              <h3 class="text-sm font-semibold">{{ dayTitle }}</h3>
+              <InfoPopover title="The day's statuses">
+                <p class="mb-2.5">
+                  A tile counts each status the day's deployments reached, first the total; a status nobody reached
+                  takes no tile. Each row below carries its status and, where there is one, the cause.
+                </p>
+                <DeploymentStatusLegend />
+              </InfoPopover>
+            </div>
             <Button variant="ghost" tone="neutral" size="sm" :aria-label="`Close ${dayTitle}`" class="max-md:min-h-11" @click="route.setDay(null)">
               <template #leading><X :size="14" aria-hidden="true" /></template>Close
             </Button>
