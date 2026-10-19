@@ -18,6 +18,18 @@ tailnet_tag=tag:products
 ssh_policy=/etc/ssh/sshd_config.d/01-wheelhouse-products.conf
 kit_assets=(products.compose.yml tailscale-serve-products.json prepare.py authorize-runner.sh)
 
+# Writes stdin to a file through a temporary copy beside it: Ubuntu 26.04's uutils install cannot replace an
+# existing file from /dev/stdin ("No such file or directory").
+write_file() {  # mode owner group destination < content
+    local mode=$1 owner=$2 group=$3 destination=$4 temporary
+    temporary=$(mktemp "$(dirname "$destination")/.write.XXXXXX")
+    if ! cat > "$temporary" || ! install -m "$mode" -o "$owner" -g "$group" "$temporary" "$destination"; then
+        rm -f "$temporary"
+        return 1
+    fi
+    rm -f "$temporary"
+}
+
 usage() {
     cat <<'EOF'
 Usage: sudo bash bootstrap-products.sh --host-identity-verified [--tailnet-hostname <name>]
@@ -85,7 +97,7 @@ install_packages() {
     install -d -m 0755 /etc/apt/keyrings /usr/share/keyrings
     curl --fail --silent --show-error --location --proto '=https' \
         https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-    install -m 0644 /dev/stdin /etc/apt/sources.list.d/docker.sources <<EOF
+    write_file 0644 root root /etc/apt/sources.list.d/docker.sources <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/ubuntu
 Suites: $VERSION_CODENAME
@@ -173,7 +185,7 @@ write_ssh_policy() {
     install -d -m 0755 "$(dirname "$ssh_policy")"
     local previous=
     [[ -f $ssh_policy ]] && previous=$(cat "$ssh_policy")
-    install -m 0644 /dev/stdin "$ssh_policy" <<'EOF'
+    write_file 0644 root root "$ssh_policy" <<'EOF'
 # Written by bootstrap-products.sh: SSH keys only.
 PubkeyAuthentication yes
 PasswordAuthentication no
@@ -202,11 +214,11 @@ harden_ssh() {
 
 # Security updates install unattended; reboots stay with the owner, and Docker and Tailscale never upgrade unattended.
 enable_security_upgrades() {
-    install -m 0644 /dev/stdin /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
+    write_file 0644 root root /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 EOF
-    install -m 0644 /dev/stdin /etc/apt/apt.conf.d/52wheelhouse-unattended-upgrades <<'EOF'
+    write_file 0644 root root /etc/apt/apt.conf.d/52wheelhouse-unattended-upgrades <<'EOF'
 // Written by bootstrap-products.sh. An engine upgrade restarts every container, so the owner upgrades Docker.
 Unattended-Upgrade::Automatic-Reboot "false";
 Unattended-Upgrade::Package-Blacklist {

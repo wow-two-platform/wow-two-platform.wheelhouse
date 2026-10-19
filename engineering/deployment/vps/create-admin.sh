@@ -10,6 +10,18 @@ umask 077
 
 deploy_user=wheelhouse-deploy
 
+# Writes stdin to a file through a temporary copy beside it: Ubuntu 26.04's uutils install cannot replace an
+# existing file from /dev/stdin ("No such file or directory").
+write_file() {  # mode owner group destination < content
+    local mode=$1 owner=$2 group=$3 destination=$4 temporary
+    temporary=$(mktemp "$(dirname "$destination")/.write.XXXXXX")
+    if ! cat > "$temporary" || ! install -m "$mode" -o "$owner" -g "$group" "$temporary" "$destination"; then
+        rm -f "$temporary"
+        return 1
+    fi
+    rm -f "$temporary"
+}
+
 usage() {
     cat >&2 <<'EOF'
 Usage: bash create-admin.sh <admin-user>     (as root, once, on a root-only image)
@@ -82,7 +94,7 @@ create_admin() {
     usermod --append --groups sudo "$admin"
     group=$(id -gn "$admin")
     install -d -m 0700 -o "$admin" -g "$group" "$home/.ssh"
-    key_lines "$root_keys" | install -m 0600 -o "$admin" -g "$group" /dev/stdin "$home/.ssh/authorized_keys"
+    key_lines "$root_keys" | write_file 0600 "$admin" "$group" "$home/.ssh/authorized_keys"
 
     password_state=$(passwd --status "$admin" | awk '{print $2}')
     echo "Administrator $admin is ready: in the sudo group, signing in with the SSH keys root trusts."
