@@ -197,7 +197,7 @@ def databases():
 def up(console=False, dev=False):
     """Creates keys, pins the target's host key and starts the server, plus the console or the IDE database."""
     migrate()
-    for folder in (STATE, KEYS, SECRETS, INVENTORY / "ssh" / "local"):
+    for folder in (STATE, KEYS, SECRETS, STATE / "settings", INVENTORY / "ssh" / "local"):
         private_dir(folder)
     identity = INVENTORY / "ssh" / "local" / "identity"
     if not identity.exists():

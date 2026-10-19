@@ -245,4 +245,12 @@ def resolve_target(root, identifier):
             "target": {"product": target.product, "environment": target.environment.value,
                        "root": target.root, "settings": dict(target.settings),
                        "variables": {"PLATFORM_NETWORK": target.network}, "smoke": list(target.smoke),
-                       "ingress": ingress_of(server, target)}}
+                       "ingress": ingress_of(server, target),
+                       # Wheelhouse renders every settings file at deploy; its target's own files are a layer.
+                       "render": True, **local_settings_root(server)}}
+
+
+def local_settings_root(server):
+    """Where the local server's rendered settings live: under the rig's state, mounted at the same path in its target
+    container and on the Docker host, so bind sources resolve. A VPS keeps them under <root>/config/."""
+    return {"settingsRoot": str(LOCAL_STATE / "settings")} if server.provider is VpsProvider.LOCAL else {}

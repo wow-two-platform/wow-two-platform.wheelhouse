@@ -11,6 +11,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${REHEARSAL_STATE:?Set REHEARSAL_STATE}/keys:/rehearsal-keys
       - ${REHEARSAL_STATE}/secrets:${REHEARSAL_STATE}/secrets:ro
+      # The settings Wheelhouse renders at each deploy, at the same path, so the daemon resolves their bind sources.
+      - ${REHEARSAL_STATE}/settings:${REHEARSAL_STATE}/settings
       - deployments:/srv/wheelhouse
     restart: unless-stopped
   # The local server's ingress: Traefik reads the runner's route files, as on a VPS, and answers every

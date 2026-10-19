@@ -53,6 +53,25 @@ PLATFORM_SERVICES = ("postgres", "valkey", "broker")
 EXPOSURES = ("public", "private")
 TERMINAL = {"succeeded", "failed", "rolled_back", "rollback_failed", "interrupted", "rejected"}
 PROXIES = "Deployment:TrustedProxies"
+HOSTS = "AllowedHosts"
+# A rendering target's settings: <root>/config/<product>-<environment>/<service>.target.json, beside the host's own
+# files (database.json, any hand-placed <service>.json), in the mode-0700 folder the host kit creates.
+SETTINGS_FOLDER = "config"
+RENDERED = ".target.json"
+DATABASE_FILE = "database.json"
+# A configuration path: sections and a key, as .NET binds them (`Section:Key`, `List:0`).
+SETTING_KEY = re.compile(r"[A-Za-z0-9_.-]{1,100}(?::[A-Za-z0-9_.-]{1,100}){0,9}")
+# A key's last part naming a secret: its values belong in the vault, never in the settings store.
+SECRET_KEY = re.compile(r".*(password|passphrase|secret|token|apikey|key|pwd|credentials?|connectionstring|salt)",
+                        re.IGNORECASE)
+# The platform's ingress, as the host kits name it: the Compose service `ingress` of a `wheelhouse-*` project.
+INGRESS_SERVICE = "ingress"
+REGISTRY_HOST = re.compile(r"[a-z0-9][a-z0-9.-]{0,252}(?::[0-9]{1,5})?")
+REGISTRY_USER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}")
+# How a pull signed in, as a job record names it: the GitHub App's installation token, or the control host's token file.
+CREDENTIALS = {"installation": "the GitHub App's token", "file": "the control host's read-only token"}
+# The first bytes of every SQLite database file.
+SQLITE_HEADER = "SQLite format 3"
 # Pre-deploy snapshots on prod: the image that runs pg_dump and tar (the platform's own PostgreSQL image, so nothing new
 # is pulled), and how many a target keeps. A target's `snapshot` entry may name others.
 SNAPSHOT_IMAGE = "postgres:16-alpine"
@@ -83,6 +102,11 @@ VERIFY_SUMMARY_LIMIT = 300
 
 class Rejected(ValueError):
     """A refused precondition. Messages hold only static text and contract key names."""
+
+
+class RenderRefused(Rejected):
+    """A settings render that cannot complete, such as a required key no layer sets; its job names the render step."""
+    step = "Render settings"
 
 
 class CommandFailed(RuntimeError):
@@ -174,6 +198,7 @@ def validate_bundle(bundle):
             "Configuration contract names an unknown service")
     for fields in required.values():
         require(isinstance(fields, list) and all(isinstance(key, str) for key in fields), "Invalid configuration contract")
+    release_settings(manifest)
     versions = manifest.get("versions", {})
     require(isinstance(versions, dict) and set(versions) <= set(services), "Versions name an unknown service")
     for entry in versions.values():
@@ -187,6 +212,30 @@ def validate_bundle(bundle):
     require(type(manifest.get("dotnetEnvironment", False)) is bool, "dotnetEnvironment must be true or false")
     release_verification(manifest)
     return manifest
+
+
+def release_settings(manifest):
+    """What a release declares about its services' settings beyond the required keys, by service: `optional` keys with
+    their defaults, the keys that are `secrets`, and the `allowed` values of a key. Optional in a bundle; only services
+    that take a settings file may declare them."""
+    declared = manifest.get("settings", {})
+    require(isinstance(declared, dict) and set(declared) <= set(manifest.get("requiredConfiguration") or {}),
+            "Settings declarations name a service without a settings file")
+    result = {}
+    for service, entry in declared.items():
+        require(isinstance(entry, dict) and set(entry) <= {"optional", "secrets", "allowed"}, "Invalid settings declaration")
+        optional, secrets, allowed = entry.get("optional", {}), entry.get("secrets", []), entry.get("allowed", {})
+        require(isinstance(optional, dict) and all(SETTING_KEY.fullmatch(key) and isinstance(value, str)
+                                                   and len(value) <= 2000 for key, value in optional.items()),
+                "Invalid optional settings")
+        require(isinstance(secrets, list) and all(isinstance(key, str) and SETTING_KEY.fullmatch(key) for key in secrets),
+                "Invalid secret settings")
+        require(isinstance(allowed, dict) and all(
+            SETTING_KEY.fullmatch(key) and isinstance(values, list) and 0 < len(values) <= 50
+            and all(isinstance(value, str) and len(value) <= 200 for value in values) for key, values in allowed.items()),
+            "Invalid allowed setting values")
+        result[service] = {"optional": dict(optional), "secrets": list(secrets), "allowed": dict(allowed)}
+    return result
 
 
 def release_verification(manifest):
@@ -310,7 +359,7 @@ def settings_fingerprints(target, compose, manifest):
     required = manifest.get("requiredConfiguration") or {}
     result = {}
     for name in sorted(compose["services"]):
-        path = target.get("settings", {}).get(name) if name in required else None
+        path = settings_file(target, name) if name in required else None
         contents = hashlib.sha256(Path(path).read_bytes()).hexdigest() if path else None
         result[name] = hashlib.sha256(canonical({"settings": contents, "environment": values}).encode()).hexdigest()
     return result
@@ -319,8 +368,9 @@ def settings_fingerprints(target, compose, manifest):
 def interpolation_inputs(target, manifest):
     """A fingerprint of what Compose interpolates into a release on this target — its variables and settings paths —
     so a rollout knows whether an unchanged definition still resolves the same. Holds no value, only its hash."""
+    files = {name: settings_file(target, name) for name in sorted(manifest.get("requiredConfiguration", {}))}
     inputs = {"environment": target["environment"], "variables": target.get("variables", {}),
-              "settings": {name: target.get("settings", {}).get(name) for name in sorted(manifest.get("requiredConfiguration", {}))}}
+              "settings": {name: str(path) if path else None for name, path in files.items()}}
     return hashlib.sha256(canonical(inputs).encode()).hexdigest()
 
 
@@ -691,9 +741,10 @@ def snapshot_sources(target, manifest, compose, project):
     databases, seen = [], set()
     for service in sorted(manifest.get("images", {})):
         wanted = needs.get(service, [])
-        if not isinstance(wanted, list) or "postgres" not in wanted or service not in target.get("settings", {}):
+        path = settings_file(target, service) if service in (manifest.get("requiredConfiguration") or {}) else None
+        if not isinstance(wanted, list) or "postgres" not in wanted or path is None or not path.is_file():
             continue
-        settings = read_json(target["settings"][service])
+        settings = read_json(path)
         strings = settings.get("ConnectionStrings") if isinstance(settings, dict) else None
         for value in (strings.values() if isinstance(strings, dict) else ()):
             connection = connection_of(value)
@@ -755,12 +806,22 @@ def take_snapshot(base, job_id, target, manifest, compose, project, docker):
                 "/snapshot/" + file]))
         for volume in present:
             file = volume + ".tar.gz"
-            # As root, since a volume's files belong to the service's user; the archive then passes to the runner's.
-            docker.run(["docker", "run", "--rm", "-v", volume + ":/volume:ro", "-v", str(folder) + ":/snapshot", image,
-                        "sh", "-c", "tar -czf /snapshot/" + file + " -C /volume . && chown " + owner + " /snapshot/" + file],
-                       "tar " + volume)
-            taken["volumes"].append({"volume": volume, "file": file,
-                                     "bytes": (folder / file).stat().st_size if (folder / file).exists() else None})
+            # A volume holding a file database is archived while the containers writing to it are paused, so the copy
+            # is consistent: a live SQLite file can otherwise be copied mid-write. Other volumes are archived live.
+            paused = writers_of(docker, project, volume) if holds_file_database(docker, volume, image) else []
+            began = time.monotonic()
+            with paused_containers(docker, paused):
+                # As root, since a volume's files belong to the service's user; the archive then passes to the runner's.
+                docker.run(["docker", "run", "--rm", "-v", volume + ":/volume:ro", "-v", str(folder) + ":/snapshot", image,
+                            "sh", "-c", "tar -czf /snapshot/" + file + " -C /volume . && chown " + owner + " /snapshot/" + file],
+                           "tar " + volume)
+            entry = {"volume": volume, "file": file,
+                     "bytes": (folder / file).stat().st_size if (folder / file).exists() else None,
+                     "consistency": "paused" if paused else "live"}
+            if paused:
+                entry["pausedSeconds"] = round(time.monotonic() - began, 1)
+                entry["pausedContainers"] = len(paused)
+            taken["volumes"].append(entry)
             taken["restore"].append(shlex.join([
                 "docker", "run", "--rm", "-v", volume + ":/volume", "-v", str(folder) + ":/snapshot:ro", image, "sh", "-c",
                 "find /volume -mindepth 1 -delete && tar -xzf /snapshot/" + file + " -C /volume"]))
@@ -773,6 +834,50 @@ def take_snapshot(base, job_id, target, manifest, compose, project, docker):
         raise
     prune_snapshots(base / "snapshots", keep, job_id)
     return taken
+
+
+def holds_file_database(docker, volume, image):
+    """Whether a named volume holds a SQLite database: a file that starts with SQLite's header, read in a throwaway
+    container without a network. Reads 15 bytes per file, never a file's contents."""
+    script = ('find /volume -type f -size +99c 2>/dev/null | while IFS= read -r file; do '
+              'if [ "$(head -c 15 "$file" 2>/dev/null)" = "' + SQLITE_HEADER + '" ]; then echo found; break; fi; done')
+    output = docker.execute(["docker", "run", "--rm", "--network", "none", "-v", volume + ":/volume:ro", image,
+                             "sh", "-c", script], "inspect " + volume, timeout=120)
+    return output.strip() == "found"
+
+
+def writers_of(docker, project, volume):
+    """The project's running containers that mount a volume: the ones to pause while it is archived."""
+    output = docker.execute(["docker", "ps", "--quiet", "--filter", "status=running",
+                             "--filter", "label=com.docker.compose.project=" + project, "--filter", "volume=" + volume],
+                            "docker ps", timeout=30)
+    return sorted(set(output.split()))
+
+
+@contextlib.contextmanager
+def paused_containers(docker, containers):
+    """Pauses containers for the duration, then resumes them, retrying a refused resume; a container that cannot be
+    resumed fails the snapshot, so the rollout stops and names it."""
+    paused = []
+    try:
+        for container in containers:
+            docker.execute(["docker", "pause", container], "docker pause", timeout=60)
+            paused.append(container)
+        yield
+    finally:
+        stuck = 0
+        for container in paused:
+            for attempt in range(3):
+                try:
+                    docker.execute(["docker", "unpause", container], "docker unpause", timeout=60)
+                    break
+                except CommandFailed:
+                    if attempt == 2:
+                        stuck += 1
+                    else:
+                        time.sleep(1)
+        if stuck:
+            raise CommandFailed("docker unpause failed for " + plural(stuck, "container") + "; resume it by hand")
 
 
 def prune_snapshots(folder, keep, current):
@@ -888,9 +993,39 @@ def base_environment(target):
     return environment
 
 
-def validate_settings(target, service, required):
-    require(service in target.get("settings", {}), "Provide settings for every service")
-    path = Path(target["settings"][service])
+def renders(target):
+    """Whether Wheelhouse renders the target's settings files at each deploy (its control plane marks the target);
+    otherwise each service mounts the host file its target names, as CI's own targets still do."""
+    return target.get("render") is True
+
+
+def settings_folder(target):
+    """Where a rendering target's settings live: <root>/config/<product>-<environment>/, or under the target's
+    `settingsRoot` where the Docker daemon resolves bind sources elsewhere (the local server)."""
+    root, project = validate_target(target)
+    base = target.get("settingsRoot")
+    if base is not None:
+        require(isinstance(base, str) and Path(base).is_absolute() and Path(base) != Path("/"), "Invalid settings root")
+        return Path(base) / project
+    return root / SETTINGS_FOLDER / project
+
+
+def rendered_path(target, service):
+    return settings_folder(target) / (service + RENDERED)
+
+
+def settings_file(target, service):
+    """The settings file a service mounts: the rendered one on a rendering target, else the host file its target names
+    (None when it names none)."""
+    if renders(target):
+        return rendered_path(target, service)
+    path = target.get("settings", {}).get(service)
+    return Path(path) if path else None
+
+
+def private_settings(path, service):
+    """Reads a settings file that only its owner can change: absolute, regular, never group- or world-writable, and
+    private itself or inside a private folder."""
     require(path.is_absolute() and path.is_file() and not path.is_symlink(),
             "Settings must be an absolute regular file: " + service)
     require(path.stat().st_mode & 0o022 == 0 and
@@ -900,9 +1035,17 @@ def validate_settings(target, service, required):
         configuration = read_json(path)
     except ValueError:
         raise Rejected("Settings are not valid JSON: " + service) from None
+    require(isinstance(configuration, dict), "Settings are not a JSON object: " + service)
+    return configuration
+
+
+def validate_settings(target, service, required):
+    path = settings_file(target, service)
+    require(path is not None, "Provide settings for every service")
+    configuration = private_settings(path, service)
     for key in required:
         require(configuration_value(configuration, key) not in (None, "", []), "Missing required setting: " + service + ":" + key)
-    hosts = configuration.get("AllowedHosts") if isinstance(configuration, dict) else None
+    hosts = configuration.get(HOSTS)
     if isinstance(hosts, str):
         # Health checks and smoke probes reach every service as http://localhost:<its port>.
         entries = {host.strip().lower() for host in hosts.split(";") if host.strip()}
@@ -916,11 +1059,282 @@ def validate_settings(target, service, required):
 
 def environment_for(target, manifest):
     environment = base_environment(target)
-    require(target.get("settings", {}).keys() == manifest["requiredConfiguration"].keys(),
-            "Provide settings for every service that takes them")
-    for service, required in manifest.get("requiredConfiguration", {}).items():
-        environment[service.upper().replace("-", "_") + "_SETTINGS"] = str(validate_settings(target, service, required))
+    required = manifest["requiredConfiguration"]
+    if renders(target):
+        # Host files are an optional layer of the render; a service without one renders from Wheelhouse alone.
+        require(set(target.get("settings", {})) <= set(required), "Settings name a service without a settings file")
+    else:
+        require(target.get("settings", {}).keys() == required.keys(), "Provide settings for every service that takes them")
+    for service, keys in required.items():
+        environment[service.upper().replace("-", "_") + "_SETTINGS"] = str(validate_settings(target, service, keys))
     return environment
+
+
+# ---- Settings render ----
+
+def is_secret_key(key):
+    """Whether a key reads as a secret by its name (`Billing:SecretKey`, `ConnectionStrings:Database`): its value
+    belongs in the vault. A release's own declaration wins over this guess."""
+    parts = key.split(":")
+    return parts[0].lower() == "connectionstrings" or SECRET_KEY.fullmatch(parts[-1]) is not None
+
+
+def connection_key(key):
+    """A key holding a connection string: `ConnectionStrings:<name>` or `<Section>:ConnectionString`."""
+    parts = key.split(":")
+    return (len(parts) == 2 and parts[0].lower() == "connectionstrings") or parts[-1].lower() == "connectionstring"
+
+
+def database_key(key, needs):
+    """A connection key the target's own PostgreSQL database fills: any connection key of a service that needs only
+    PostgreSQL among the platform services, else one that names a database."""
+    if "postgres" not in needs or not connection_key(key):
+        return False
+    return not (set(needs) - {"postgres"}) or re.search(r"database|postgres|npgsql|sql|db", key, re.IGNORECASE) is not None
+
+
+def service_needs(manifest, service):
+    needs = manifest.get("needs", {})
+    wanted = needs.get(service, []) if isinstance(needs, dict) else []
+    return [need for need in wanted if need in PLATFORM_SERVICES] if isinstance(wanted, list) else []
+
+
+def derived_settings(target, project, manifest, service):
+    """What a render derives for one service from its target and release, whatever any layer says: `AllowedHosts` (the
+    hosts of the sites it serves here, its platform name and localhost) and `Sites:<site>:Url` (the origin of every site
+    the product publishes here). Deployment:TrustedProxies comes from the ingress on the target, at deploy."""
+    _, published = ingress_routes(target, project, manifest)
+    hosts, sites = [], {}
+    for site in published:
+        parts = urllib.parse.urlsplit(site["url"])
+        if site["service"] == service and parts.hostname not in hosts:
+            hosts.append(parts.hostname)
+        sites.setdefault(site["name"], parts.scheme + "://" + parts.netloc)
+    # The platform name lets another service reach this one by its internal address; localhost serves the probes.
+    values = {HOSTS: ";".join(hosts + [project + "-" + service, "localhost"])}
+    for name in sorted(sites):
+        values["Sites:" + name + ":Url"] = sites[name]
+    return values
+
+
+def settings_declarations(target, manifest):
+    """Every setting a release's services take on this target, without a value that is secret: each required key, each
+    optional one with its default, and what the render derives (`hosts`, `proxies`, `sites`, `database`) with the value
+    when the control plane knows it. `secret` is the release's declaration, else a guess from the key's name."""
+    _, project = validate_target(target, manifest)
+    declared = release_settings(manifest)
+    network = target.get("variables", {}).get("PLATFORM_NETWORK")
+    services = []
+    for service, required in sorted((manifest.get("requiredConfiguration") or {}).items()):
+        entry = declared.get(service, {"optional": {}, "secrets": [], "allowed": {}})
+        needs = service_needs(manifest, service)
+        derived = derived_settings(target, project, manifest, service)
+        keys = {}
+        for key in [*required, *entry["optional"]]:
+            if key in keys:
+                continue
+            item = {"key": key, "required": key in required,
+                    "secret": key in entry["secrets"] or (key not in entry["optional"] and is_secret_key(key))}
+            if key in entry["optional"]:
+                item["default"] = entry["optional"][key]
+            if key in entry["allowed"]:
+                item["allowed"] = list(entry["allowed"][key])
+            keys[key] = item
+        for key, value in derived.items():
+            keys.setdefault(key, {"key": key, "required": False, "secret": False})
+            keys[key].update(derived="hosts" if key == HOSTS else "sites", value=value, secret=False)
+        if network:
+            keys.setdefault(PROXIES, {"key": PROXIES, "required": False, "secret": False})
+            keys[PROXIES].update(derived="proxies", secret=False)
+        for key, item in keys.items():
+            if "derived" not in item and database_key(key, needs):
+                item["derived"] = "database"
+        services.append({"name": service, "hostFile": bool(target.get("settings", {}).get(service)),
+                         "keys": sorted(keys.values(), key=lambda item: (not item["required"], item["key"]))})
+    return {"product": target["product"], "environment": target["environment"], "project": project,
+            "services": services}
+
+
+def set_value(document, key, value):
+    """Sets a `Section:Key` path in a nested settings document, replacing a value that stood where a section goes."""
+    *sections, last = key.split(":")
+    node = document
+    for section in sections:
+        if not isinstance(node.get(section), dict):
+            node[section] = {}
+        node = node[section]
+    node[last] = value
+
+
+def merge(document, layer):
+    """Lays one settings layer over a document: sections merge, values replace."""
+    for key, value in layer.items():
+        if isinstance(value, dict) and isinstance(document.get(key), dict):
+            merge(document[key], value)
+        else:
+            document[key] = json.loads(json.dumps(value))
+
+
+def flat_keys(document, prefix=""):
+    keys = []
+    for key, value in document.items():
+        path = prefix + key
+        keys.extend(flat_keys(value, path + ":") if isinstance(value, dict) and value else [path])
+    return keys
+
+
+def provided_values(provided):
+    """The control plane's layer: stored settings and vault secrets of the target's environment, by key (`values`), as
+    plain strings. Validated before any of it is used; never written anywhere but the rendered files."""
+    values = (provided or {}).get("values") or {}
+    require(isinstance(values, dict) and len(values) <= 500, "Invalid provided settings")
+    for key, value in values.items():
+        require(isinstance(key, str) and SETTING_KEY.fullmatch(key) and isinstance(value, str) and len(value) <= 65536,
+                "Invalid provided settings")
+    return values
+
+
+def delivered_to(service, key, required, declared):
+    """Whether a provided value goes to a service: to each service that declares its key, and a key no service declares
+    to every service that takes a settings file."""
+    declaring = {name for name, keys in required.items() if key in keys} | {
+        name for name, entry in declared.items() if key in entry["optional"] or key in entry["secrets"]}
+    return service in declaring or not declaring
+
+
+def ingress_address(docker, network):
+    """The ingress's address on the platform network: the container of the host kit's `ingress` service (a
+    `wheelhouse-*` Compose project). None when the network has none."""
+    if not network:
+        return None
+    try:
+        ids = docker.execute(["docker", "ps", "--quiet", "--filter", "network=" + network,
+                              "--filter", "label=com.docker.compose.service=" + INGRESS_SERVICE], "docker ps", timeout=30).split()
+        if not ids:
+            return None
+        details = json.loads(docker.execute(["docker", "inspect", *ids[:10]], "docker inspect", timeout=30))
+    except (CommandFailed, ValueError):
+        return None
+    for item in details if isinstance(details, list) else []:
+        labels = (item.get("Config") or {}).get("Labels") or {}
+        if not str(labels.get("com.docker.compose.project", "")).startswith("wheelhouse-"):
+            continue
+        address = (((item.get("NetworkSettings") or {}).get("Networks") or {}).get(network) or {}).get("IPAddress")
+        if isinstance(address, str) and re.fullmatch(r"[0-9]{1,3}(\.[0-9]{1,3}){3}", address):
+            return address
+    return None
+
+
+def target_database(folder):
+    """The connection string of the target's own database: database.json in its settings folder, written once by the
+    host kit (`prepare.py --database`). None when the product has no database there."""
+    path = folder / DATABASE_FILE
+    if not path.is_file() or path.is_symlink():
+        return None
+    require(path.stat().st_mode & 0o077 == 0 or folder.stat().st_mode & 0o077 == 0, "database.json must be private")
+    try:
+        value = read_json(path).get("ConnectionString")
+    except (ValueError, AttributeError):
+        raise RenderRefused("database.json is not readable") from None
+    require(isinstance(value, str) and value, "database.json names no connection string")
+    return value
+
+
+def private_folder(folder):
+    """The settings folder, created mode 0700 when missing; an existing one must be a private directory."""
+    if not folder.exists():
+        folder.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        folder.mkdir(mode=0o700)
+    require(folder.is_dir() and not folder.is_symlink() and folder.stat().st_mode & 0o077 == 0,
+            "The settings folder must be a private directory: " + SETTINGS_FOLDER + "/" + folder.name)
+
+
+def write_settings(path, document):
+    """Publishes a rendered settings file atomically, mode 0444 inside its mode-0700 folder (the container's own user
+    reads the bind-mounted file); an identical file stays as it is. Returns whether it changed."""
+    content = (json.dumps(document, indent=2) + "\n").encode()
+    require(not path.is_symlink(), "A rendered settings file cannot be a symlink")
+    if path.is_file() and path.read_bytes() == content and path.stat().st_mode & 0o777 == 0o444:
+        return False
+    temporary = path.with_name("." + path.name + "." + uuid.uuid4().hex + ".tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, 0o444)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    return True
+
+
+def render_settings(target, manifest, project, provided, docker):
+    """Renders every settings file a release mounts on this target, in layers: the host file the target names (if any),
+    then the control plane's stored settings and vault secrets, then what the render derives — AllowedHosts, site URLs
+    and the ingress as Deployment:TrustedProxies — and, for a required connection key no layer sets, the target's own
+    database. Refuses a required key no layer sets, before writing anything. Returns each service's keys by source; no
+    value leaves the target."""
+    required = manifest.get("requiredConfiguration") or {}
+    declared = release_settings(manifest)
+    values = provided_values(provided)
+    folder = settings_folder(target)
+    proxy = ingress_address(docker, target.get("variables", {}).get("PLATFORM_NETWORK"))
+    database = target_database(folder) if folder.is_dir() else None
+    documents, sources = {}, {}
+    for service in sorted(required):
+        document, used = {}, {"host": [], "provided": [], "derived": [], "database": []}
+        host = target.get("settings", {}).get(service)
+        if host and Path(host) != rendered_path(target, service) and Path(host).exists():
+            layer = private_settings(Path(host), service)
+            merge(document, layer)
+            used["host"] = sorted(flat_keys(layer))
+        for key in sorted(values):
+            if delivered_to(service, key, required, declared):
+                set_value(document, key, values[key])
+                used["provided"].append(key)
+        derived = derived_settings(target, project, manifest, service)
+        if proxy:
+            derived[PROXIES] = [proxy]
+        for key, value in derived.items():
+            set_value(document, key, value)
+            used["derived"].append(key)
+        needs = service_needs(manifest, service)
+        for key in [*required[service], *declared.get(service, {}).get("optional", {})]:
+            if database and database_key(key, needs) and configuration_value(document, key) in (None, "", []):
+                set_value(document, key, database)
+                used["database"].append(key)
+        for key in required[service]:
+            if configuration_value(document, key) in (None, "", []):
+                raise RenderRefused("Missing required setting: " + service + ":" + key)
+        documents[service], sources[service] = document, used
+    if documents:
+        private_folder(folder)
+    changed = [service for service in sorted(documents) if write_settings(rendered_path(target, service), documents[service])]
+    return {"services": sources, "changed": changed, "proxy": proxy is not None}
+
+
+def render_summary(rendered):
+    """One line on a render: how many services and keys, by source; never a value."""
+    services = rendered["services"]
+    count = {source: sum(len(used[source]) for used in services.values())
+             for source in ("derived", "provided", "host", "database")}
+    parts = [plural(count["derived"], "derived key")]
+    if count["provided"]:
+        parts.append(str(count["provided"]) + " from Wheelhouse")
+    if count["database"]:
+        parts.append(str(count["database"]) + " from the target's database")
+    if count["host"]:
+        parts.append(str(count["host"]) + " from host files")
+    changed = len(rendered["changed"])
+    return (plural(len(services), "service") + ": " + ", ".join(parts)
+            + ("; " + str(changed) + " changed" if changed else "; unchanged"))
 
 
 @contextlib.contextmanager
@@ -1010,9 +1424,42 @@ class Docker:
                                    else "unknown")
         return result
 
-    def pull(self, bundle):
+    def pull(self, bundle, registry=None):
+        """Fetches a release's images that the host lacks; digests make one already present exact. A missing image on
+        `registry`'s server pulls under a sign-in made for this pull only, in a temporary Docker config that is signed
+        out of and deleted straight after, so no registry credential stays on the host. Returns how many images were
+        fetched and the credential a sign-in used, if any."""
         self.compose(bundle, "config", "--quiet")
-        self.compose(bundle, "pull", "--policy", "always")
+        images = sorted(set(read_json(Path(bundle) / "release.json")["images"].values()))
+        missing = [image for image in images if not self.present(image)]
+        signed = None
+        private = [image for image in missing if registry and image.startswith(registry["server"] + "/")]
+        if private:
+            with registry_session(self, registry) as config:
+                for image in private:
+                    self.execute(["docker", "--config", config, "pull", "--quiet", image], "docker pull", timeout=1800)
+            signed = registry["credential"]
+        self.compose(bundle, "pull", "--policy", "missing")
+        return {"images": len(images), "fetched": len(missing), "signedIn": signed}
+
+    def present(self, image):
+        try:
+            self.execute(["docker", "image", "inspect", "--format", "{{.Id}}", image], "docker image inspect", timeout=30)
+            return True
+        except CommandFailed:
+            return False
+
+    def sign_in(self, config, registry):
+        """`docker login` into a temporary config with the password on stdin; its output is discarded."""
+        try:
+            result = subprocess.run(["docker", "--config", config, "login", registry["server"], "--username",
+                                     registry["username"], "--password-stdin"], env=self.environment,
+                                    input=registry["password"], capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            raise CommandFailed("registry sign-in timed out") from None
+        if result.returncode:
+            raise CommandFailed("registry sign-in to " + registry["server"] + " failed (exit " + str(result.returncode)
+                                + "); the credential was refused")
 
     def check(self, arguments, variables, timeout, container):
         """Runs a one-off check container whose environment also carries `variables` (passed by name, never as
@@ -1072,6 +1519,44 @@ class Docker:
                     + " returned " + status.strip()[:3] + ", expected " + str(expected))
 
 
+def registry_login(provided):
+    """The registry sign-in the control plane sent for one deploy: server, username, password and which credential it
+    is. None when it sent none (public images, or images the host already has)."""
+    login = (provided or {}).get("registry")
+    if login is None:
+        return None
+    require(isinstance(login, dict) and REGISTRY_HOST.fullmatch(str(login.get("server", "")))
+            and REGISTRY_USER.fullmatch(str(login.get("username", ""))) and login.get("credential") in CREDENTIALS
+            and isinstance(login.get("password"), str) and 0 < len(login["password"]) <= 4096
+            and not any(character.isspace() for character in login["password"]), "Invalid registry sign-in")
+    return {key: login[key] for key in ("server", "username", "password", "credential")}
+
+
+@contextlib.contextmanager
+def registry_session(docker, registry):
+    """A temporary Docker config signed in to the registry, in memory where the host offers /dev/shm; signed out of and
+    deleted on leaving, whatever happened inside."""
+    memory = "/dev/shm" if os.path.isdir("/dev/shm") and os.access("/dev/shm", os.W_OK) else None
+    config = tempfile.mkdtemp(prefix="wheelhouse-registry-", dir=memory)
+    try:
+        docker.sign_in(config, registry)
+        yield config
+    finally:
+        with contextlib.suppress(Exception):
+            docker.execute(["docker", "--config", config, "logout", registry["server"]], "docker logout", timeout=30)
+        shutil.rmtree(config, ignore_errors=True)
+
+
+def pull_summary(manifest, pulled):
+    """The pull step's detail: the images, how many were fetched and how a sign-in was made; never a credential."""
+    detail = plural(len(manifest["images"]), "image")
+    if isinstance(pulled, dict):
+        detail += "; " + (str(pulled["fetched"]) + " fetched" if pulled.get("fetched") else "all on the host")
+        if pulled.get("signedIn") in CREDENTIALS:
+            detail += ", signed in for this pull with " + CREDENTIALS[pulled["signedIn"]]
+    return detail
+
+
 def service_environment(environment, dotnet=False):
     """What the runner sets on every service of a release: DEPLOY_ENVIRONMENT, the environment it runs in; and for a
     release that opts in (`dotnet`, its `dotnetEnvironment`), ASPNETCORE_ENVIRONMENT and DOTNET_ENVIRONMENT as .NET
@@ -1104,7 +1589,10 @@ def environment_override(bundle, environment):
     return path
 
 
-def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=probe_sites):
+def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=probe_sites, provided=None):
+    """Applies a release to its target under the deployment lock. `provided` is what the control plane sent for this
+    deploy alone, never stored: its stored settings and vault secrets (`values`) for a rendering target, and a registry
+    sign-in for private images (`registry`)."""
     started = now()
     manifest = validate_bundle(bundle)
     root, project = validate_target(target, manifest)
@@ -1118,6 +1606,13 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
         require(not active or active["status"] in TERMINAL, "Interrupted deployment requires reconciliation")
         require(not active or not (active.get("mutationStarted") and active["status"] in ("failed", "rollback_failed")),
                 "Failed mutation requires reconciliation")
+        registry = registry_login(provided)
+        rendered, render_started = None, now()
+        if renders(target):
+            # Every settings file the release mounts, rendered before anything else reads it; a missing required key
+            # refuses the deploy here, before any file or container changes.
+            rendered = render_settings(target, manifest, project, provided,
+                                       docker_factory(target, base_environment(target)))
         environment = environment_for(target, manifest)
         routes = ingress_routes(target, project, manifest)
         require(shutil.disk_usage(root).free >= target.get("minimumFreeBytes", 1024 ** 3), "Insufficient free disk")
@@ -1154,6 +1649,11 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
             write_json(root / "jobs" / (job_id + ".json"), record)
             write_json(active_path, record)
         steps = Steps(record, save)
+        if rendered is not None:
+            # Key names by source, never a value: what the render derived, what Wheelhouse and the host files gave.
+            record["settings"] = {service: {source: keys for source, keys in used.items() if keys}
+                                  for service, used in rendered["services"].items()}
+            steps.add("Render settings", "succeeded", render_started, render_summary(rendered))
         steps.add("Check target", "succeeded", started, "Settings, disk, Docker and platform verified")
         mutation_started = False
         if target["environment"] == "prod":
@@ -1166,8 +1666,11 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                         step.update(status="skipped", detail="No database or volume to snapshot")
                     else:
                         record["snapshot"] = taken
+                        paused = [volume for volume in taken["volumes"] if volume.get("consistency") == "paused"]
                         step["detail"] = (plural(len(taken["databases"]), "database") + " and "
-                                          + plural(len(taken["volumes"]), "volume") + " in " + taken["path"])
+                                          + plural(len(taken["volumes"]), "volume") + " in " + taken["path"]
+                                          + ("; " + plural(len(paused), "file-database volume")
+                                             + " archived with its writers paused" if paused else ""))
             except (Exception, KeyboardInterrupt) as error:
                 record.update(status="failed", failure=type(error).__name__, completedAt=now())
                 record["reason"] = "Snapshot failed: " + (reason(error) or "the snapshot could not be taken")
@@ -1176,8 +1679,8 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                 return record
         try:
             with steps.run("Pull images") as step:
-                docker.pull(destination)
-                step["detail"] = plural(len(manifest["images"]), "image")
+                pulled = docker.pull(destination, registry) if registry else docker.pull(destination)
+                step["detail"] = pull_summary(manifest, pulled)
             mutation_started = True
             record["mutationStarted"] = True
             save()
@@ -1273,7 +1776,10 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                         prior_manifest = validate_bundle(prior_bundle)
                         prior_environment = environment_for(target, prior_manifest)
                         prior_docker = docker_factory(target, prior_environment)
-                        prior_docker.pull(prior_bundle)
+                        if registry:
+                            prior_docker.pull(prior_bundle, registry)
+                        else:
+                            prior_docker.pull(prior_bundle)
                         # The whole previous release: Compose replaces only what differs, so exactly the services
                         # this rollout touched return to their previous images.
                         prior_docker.up(prior_bundle)
@@ -1406,19 +1912,28 @@ def status(target, job_id):
     return read_json(root / project / "jobs" / (job_id + ".json"))
 
 
-def launch(bundle, target_path, actor):
+def launch(bundle, target_path, actor, provided=None):
+    """Queues a rollout and starts its worker detached. `provided` (the control plane's settings values and registry
+    sign-in for this deploy) reaches the worker over a pipe only: it is never written to the target's disk."""
     target = read_json(target_path)
     manifest = validate_bundle(bundle)
     root, project = validate_target(target, manifest)
+    if provided is not None:
+        provided_values(provided)
+        registry_login(provided)
     job_id = str(uuid.uuid4())
     jobs = root / project / "jobs"
     jobs.mkdir(parents=True, exist_ok=True, mode=0o700)
     write_json(jobs / (job_id + ".json"), {"id": job_id, "status": "queued", "actor": actor, "queuedAt": now()})
     # The target process owns the rollout across SSH/control-plane disconnects.
-    subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "apply", "--bundle", str(Path(bundle).resolve()),
-                      "--target", str(Path(target_path).resolve()), "--actor", actor, "--job", job_id],
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     start_new_session=True, close_fds=True)
+    worker = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "apply", "--bundle", str(Path(bundle).resolve()),
+                               "--target", str(Path(target_path).resolve()), "--actor", actor, "--job", job_id,
+                               *(["--stdin"] if provided is not None else [])],
+                              stdin=subprocess.PIPE if provided is not None else subprocess.DEVNULL,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+    if provided is not None:
+        with worker.stdin:
+            worker.stdin.write(json.dumps(provided).encode())
     return {"id": job_id, "status": "queued"}
 
 
@@ -1677,8 +2192,9 @@ def topology(target):
         return empty_topology("unavailable", "The current release topology could not be verified.")
 
 
-def check(target, manifest=None, docker_factory=None):
-    """Reads the target without changing it; every detail is operator-safe text."""
+def check(target, manifest=None, docker_factory=None, provided=None):
+    """Reads the target without changing it; every detail is operator-safe text. On a rendering target, `provided`
+    names the setting keys the control plane would send (`keys`); without it, required keys are left to the deploy."""
     checks = []
 
     def probe(name, action):
@@ -1739,13 +2255,55 @@ def check(target, manifest=None, docker_factory=None):
     probe("Network", network)
     probe("Ingress", ingress)
     services = manifest["requiredConfiguration"] if manifest else {name: [] for name in target.get("settings", {})}
-    for service, required in services.items():
-        probe("Settings: " + service, lambda service=service, required=required:
-              str(validate_settings(target, service, required).name) + " valid")
+    if renders(target):
+        keys = set((provided or {}).get("keys") or []) if isinstance(provided, dict) else set()
+        require(all(isinstance(key, str) for key in keys), "Invalid provided keys")
+        proxy = ingress_address(docker, target.get("variables", {}).get("PLATFORM_NETWORK")) if services else None
+        for service, required in services.items():
+            probe("Settings: " + service, lambda service=service, required=required:
+                  render_readiness(target, manifest, project, service, required, keys if provided is not None else None,
+                                   proxy))
+    else:
+        for service, required in services.items():
+            probe("Settings: " + service, lambda service=service, required=required:
+                  str(validate_settings(target, service, required).name) + " valid")
     current = state(target)
     checks.append({"name": "State", "ok": current["condition"] != "needs_reconciliation",
                    "detail": current["condition"].replace("_", " ")})
     return {"project": project, "ok": all(item["ok"] for item in checks), "checks": checks, "state": current}
+
+
+def render_readiness(target, manifest, project, service, required, provided, proxy):
+    """Whether a service's settings would render here: its host file (if named) is valid, and every required key has a
+    source — the host file, Wheelhouse (`provided` key names; None when unknown), what the render derives, or the
+    target's database. Reads files only; renders nothing."""
+    covered, sources = set(), []
+    host = target.get("settings", {}).get(service)
+    if host and Path(host).exists():
+        covered.update(flat_keys(private_settings(Path(host), service)))
+        sources.append("its host file")
+    if provided:
+        covered.update(provided)
+        sources.append("Wheelhouse")
+    derived = set(derived_settings(target, project, manifest, service)) if manifest else {HOSTS}
+    if proxy:
+        derived.add(PROXIES)
+    covered.update(derived)
+    folder = settings_folder(target)
+    if folder.exists():
+        require(folder.is_dir() and not folder.is_symlink() and folder.stat().st_mode & 0o077 == 0,
+                "The settings folder must be a private directory: " + SETTINGS_FOLDER + "/" + folder.name)
+    needs = service_needs(manifest, service) if manifest else []
+    database = target_database(folder) if folder.is_dir() and "postgres" in needs else None
+    if database:
+        covered.update(key for key in required if database_key(key, needs))
+        sources.append("its database")
+    if provided is not None:
+        for key in required:
+            require(key in covered or any(other.startswith(key + ":") for other in covered),
+                    "Missing required setting: " + service + ":" + key)
+    return "rendered at deploy from " + ", ".join(["derived keys", *sources]) + (
+        "" if provided is not None else "; required keys are checked at deploy")
 
 
 SIZE_UNITS = {"B": 1, "kB": 1000, "KB": 1000, "MB": 1000 ** 2, "GB": 1000 ** 3, "TB": 1000 ** 4,
@@ -1912,6 +2470,18 @@ def decode(value):
     return json.loads(base64.b64decode(value, validate=True))
 
 
+def read_provided(stream):
+    """The document a deploy's stdin carries, bounded; it holds secret values, so it is parsed and kept in memory."""
+    text = stream.read(4 * 1024 * 1024 + 1)
+    require(len(text) <= 4 * 1024 * 1024, "The provided settings are too large")
+    try:
+        document = json.loads(text) if text.strip() else {}
+    except ValueError:
+        raise Rejected("The provided settings are not JSON") from None
+    require(isinstance(document, dict), "The provided settings are not a JSON object")
+    return document
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["validate", "apply", "launch", "status", "acknowledge", "state", "check",
@@ -1924,13 +2494,17 @@ def main():
     parser.add_argument("--job")
     parser.add_argument("--service")
     parser.add_argument("--tail", type=int, default=200)
+    parser.add_argument("--stdin", action="store_true",
+                        help="launch, apply: read this deploy's settings values and registry sign-in from stdin")
+    parser.add_argument("--provided-json", help="check: the setting keys the control plane provides, base64 JSON")
     args = parser.parse_args()
     try:
         target = decode(args.target_json) if args.target_json else None
+        provided = read_provided(sys.stdin) if args.stdin else None
         if args.action == "validate":
             result = validate_bundle(args.bundle)
         elif args.action == "launch":
-            result = launch(args.bundle, args.target, args.actor)
+            result = launch(args.bundle, args.target, args.actor, provided)
         elif args.action == "status":
             result = status(target or read_json(args.target), args.job)
         elif args.action == "acknowledge":
@@ -1940,7 +2514,8 @@ def main():
         elif args.action == "topology":
             result = topology(target or read_json(args.target))
         elif args.action == "check":
-            result = check(target or read_json(args.target), decode(args.release_json) if args.release_json else None)
+            result = check(target or read_json(args.target), decode(args.release_json) if args.release_json else None,
+                           provided=decode(args.provided_json) if args.provided_json else None)
         elif args.action == "host":
             result = host(target)
         elif args.action == "vitals":
@@ -1952,7 +2527,7 @@ def main():
         elif args.action == "prune":
             result = prune(target or read_json(args.target))
         else:
-            result = apply(args.bundle, read_json(args.target), args.actor, args.job)
+            result = apply(args.bundle, read_json(args.target), args.actor, args.job, provided=provided)
         print(json.dumps(result))
         return 1 if args.action == "apply" and result.get("status") != "succeeded" else 0
     except Exception as error:
@@ -1961,7 +2536,7 @@ def main():
             try:
                 root, project = validate_target(read_json(args.target))
                 refused = rejection(error)
-                failed_step = {"name": "Check target", "status": "failed", "completedAt": now()}
+                failed_step = {"name": getattr(error, "step", "Check target"), "status": "failed", "completedAt": now()}
                 if refused.get("reason"):
                     failed_step["detail"] = refused["reason"]
                 write_json(root / project / "jobs" / (args.job + ".json"),

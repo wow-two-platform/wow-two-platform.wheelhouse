@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import runner
 
 
@@ -12,6 +13,10 @@ class SnapshotDocker:
     events = []
     volumes = {"pilot-prod_keys"}
     fail = None
+    # Volumes whose files start with SQLite's header, and the containers writing to them.
+    sqlite = set()
+    writers = ["c0ffee"]
+    refuse_unpause = 0
 
     def __init__(self, target, environment):
         pass
@@ -33,8 +38,27 @@ class SnapshotDocker:
             if arguments[-1] not in self.volumes:
                 raise runner.CommandFailed("docker volume inspect failed (exit 1)")
             return arguments[-1]
+        if step.startswith("inspect "):
+            # The file-database probe mounts the volume read-only, without a network, and reads headers only.
+            self.assertions(arguments)
+            return "found\n" if step.removeprefix("inspect ") in self.sqlite else ""
+        if arguments[:2] == ["docker", "ps"]:
+            self.events.append("ps " + next(item for item in arguments if item.startswith("volume=")))
+            return "\n".join(self.writers) + "\n"
+        if arguments[1] in ("pause", "unpause"):
+            if arguments[1] == "unpause" and SnapshotDocker.refuse_unpause:
+                SnapshotDocker.refuse_unpause -= 1
+                raise runner.CommandFailed("docker unpause failed (exit 1)")
+            self.events.append(arguments[1] + " " + arguments[2])
+            return ""
         self.events.append(" ".join(arguments[:3]))
         return ""
+
+    @staticmethod
+    def assertions(arguments):
+        assert "--network" in arguments and arguments[arguments.index("--network") + 1] == "none"
+        assert any(item.endswith(":/volume:ro") for item in arguments)
+        assert runner.SQLITE_HEADER in arguments[-1]
 
     def run(self, arguments, step, secrets=None, timeout=1800):
         self.events.append(("run", step, arguments, dict(secrets or {})))
@@ -73,6 +97,8 @@ class SnapshotTests(unittest.TestCase):
         self.save()
         SnapshotDocker.events = []
         SnapshotDocker.fail = None
+        SnapshotDocker.sqlite = set()
+        SnapshotDocker.refuse_unpause = 0
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -113,6 +139,40 @@ class SnapshotTests(unittest.TestCase):
         step = next(item for item in result["steps"] if item["name"] == "Snapshot data")
         self.assertEqual("succeeded", step["status"])
         self.assertIn("1 database and 1 volume", step["detail"])
+
+    def test_a_volume_holding_sqlite_is_archived_with_its_writers_paused(self):
+        SnapshotDocker.sqlite = {"pilot-prod_keys"}
+        result = self.apply()
+        self.assertEqual("succeeded", result["status"], result.get("reason"))
+        order = [event if isinstance(event, str) else event[1] for event in SnapshotDocker.events]
+        # Paused just around its archive, resumed before anything else happens.
+        self.assertEqual(["preflight", "pg_dump pilot_prod", "ps volume=pilot-prod_keys", "pause c0ffee",
+                          "tar pilot-prod_keys", "unpause c0ffee", "pull", "up", "verify"], order)
+        volume = result["snapshot"]["volumes"][0]
+        self.assertEqual(("paused", 1), (volume["consistency"], volume["pausedContainers"]))
+        self.assertIsInstance(volume["pausedSeconds"], float)
+        step = next(item for item in result["steps"] if item["name"] == "Snapshot data")
+        self.assertIn("1 file-database volume archived with its writers paused", step["detail"])
+
+    def test_a_volume_without_a_file_database_is_archived_live(self):
+        result = self.apply()
+        self.assertEqual("live", result["snapshot"]["volumes"][0]["consistency"])
+        self.assertFalse(any(isinstance(event, str) and event.startswith("pause") for event in SnapshotDocker.events))
+
+    def test_a_failed_archive_still_resumes_its_paused_writers(self):
+        SnapshotDocker.sqlite = {"pilot-prod_keys"}
+        SnapshotDocker.fail = "tar"
+        result = self.apply()
+        self.assertEqual("failed", result["status"])
+        self.assertIn("unpause c0ffee", SnapshotDocker.events)
+        # A refused resume is retried; one that keeps failing fails the snapshot and says so.
+        SnapshotDocker.fail, SnapshotDocker.events, SnapshotDocker.refuse_unpause = None, [], 1
+        self.assertEqual("succeeded", self.apply()["status"])
+        SnapshotDocker.refuse_unpause = 3
+        with patch.object(runner.time, "sleep"):
+            result = self.apply()
+        self.assertEqual("failed", result["status"])
+        self.assertIn("docker unpause failed for 1 container", result["reason"])
 
     def test_a_failed_snapshot_fails_the_rollout_before_anything_changes(self):
         SnapshotDocker.fail = "tar"

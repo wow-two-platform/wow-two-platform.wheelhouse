@@ -24,8 +24,9 @@ import fleet
 import artifacts
 import history
 import inventory
+import registry
 from runner import (PROXIES, SLUG, TERMINAL, CommandFailed, Rejected, now, reason, rejection, require, read_json,
-                    write_json, validate_bundle, validate_target, empty_topology)
+                    write_json, validate_bundle, validate_target, empty_topology, provided_values, settings_declarations)
 
 RUNNER = Path(__file__).with_name("runner.py")
 # A site address a rollout recorded: http(s), a host, an optional port and path.
@@ -243,9 +244,21 @@ def deploy_reason(value):
     return value.strip()
 
 
-def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False, reason=None, fleet_id=None):
-    """`fleet_id` names the fleet rollout this submission belongs to; it is kept on the job and listed in history."""
+def settings_plan(root, target_id, bundle_id):
+    """Every setting a release's services take on a target: required and optional keys, which read as secret, and what
+    the render derives (with the value where it is known here). No target is contacted and no value is secret."""
+    config = fleet.resolve_target(root, target_id)
+    manifest = validate_bundle(artifacts.prepare(root, bundle_id, import_bundle))
+    return {"targetId": target_id, "release": manifest["release"], **settings_declarations(config["target"], manifest)}
+
+
+def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False, reason=None, fleet_id=None,
+           provided=None):
+    """`fleet_id` names the fleet rollout this submission belongs to; it is kept on the job and listed in history.
+    `provided` is the control plane's settings layer for this deploy ({"values": {key: value}}: stored settings and
+    vault secrets); it travels to the target on SSH stdin with the registry sign-in, and is never written here."""
     reason = deploy_reason(reason)
+    values = provided_values(provided)
     require(fleet_id is None or (isinstance(fleet_id, str) and FLEET_ID.fullmatch(fleet_id)), "Invalid fleet id")
     config = fleet.resolve_target(root, target_id)
     require(not config["needsConfirmation"] or confirm == target_id,
@@ -260,6 +273,8 @@ def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False,
     target_root, _ = validate_target(config["target"], manifest)
     require(re.fullmatch(r"/[A-Za-z0-9/_-]+", str(target_root)), "SSH root requires a simple absolute path")
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
+    # The pull's registry sign-in, picked and checked here: the products host keeps no registry token.
+    login, attempt = registry.sign_in_for(manifest["images"].values())
     ssh = Ssh(config["ssh"])
     request_id = str(uuid.uuid4())
     remote = str(target_root / "incoming" / request_id)
@@ -277,10 +292,13 @@ def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False,
         record["deployReason"] = reason
     if fleet_id:
         record["fleetId"] = fleet_id
+    if attempt:
+        record["registry"] = attempt
     write_json(root / "jobs" / (request_id + ".json"), record)
     command = shlex.join(["python3", remote + "/runner.py", "launch", "--bundle", remote,
-                          "--target", remote + "/target.json", "--actor", actor])
-    remote_job = json.loads(ssh.run(command))
+                          "--target", remote + "/target.json", "--actor", actor, "--stdin"])
+    document = {"values": values, **({"registry": login} if login else {})}
+    remote_job = json.loads(ssh.run(command, json.dumps(document)))
     record.update(status=remote_job["status"], remoteJobId=remote_job["id"])
     write_json(root / "jobs" / (request_id + ".json"), record)
     return {"id": request_id, "targetId": target_id, "bundleId": bundle_id, "status": record["status"]}
@@ -690,7 +708,9 @@ def logs(root, target_id, service, tail=200):
     return result
 
 
-def check(root, target_id, bundle_id=None):
+def check(root, target_id, bundle_id=None, provided=None):
+    """`provided` names the setting keys Wheelhouse would send ({"keys": [...]}), so the target can tell which required
+    keys no layer sets."""
     config = fleet.resolve_target(root, target_id)
     manifest = validate_bundle(artifacts.prepare(root, bundle_id, import_bundle)) if bundle_id else None
     validate_target(config["target"], manifest)
@@ -706,7 +726,11 @@ def check(root, target_id, bundle_id=None):
         return {"targetId": target_id, "ok": False, "checks": [{"name": "SSH identity", "ok": False, "detail": str(error)}]}
     checks = [{"name": "SSH identity", "ok": True, "detail": "pinned key and known host present"}]
     try:
-        result = run_remote(ssh, "check", config["target"], release=manifest, timeout=90)
+        keys = (provided or {}).get("keys") if isinstance(provided, dict) else None
+        require(keys is None or (isinstance(keys, list) and all(isinstance(key, str) for key in keys)),
+                "Invalid provided keys")
+        extra = ["--provided-json", encode({"keys": sorted(set(keys))})] if keys is not None else []
+        result = run_remote(ssh, "check", config["target"], *extra, release=manifest, timeout=90)
     except Rejected as error:
         checks.append({"name": "Target runner", "ok": False, "detail": str(error)})
         return {"targetId": target_id, "ok": False, "checks": checks}
@@ -871,12 +895,25 @@ def summary_of(record):
     return {key: record[key] for key in ("id", "release", "status", "completedAt", "reason") if key in record}
 
 
+def read_stdin(stream):
+    """A JSON document from the control plane's stdin, bounded; it may hold secret values, so it stays in memory."""
+    text = stream.read(4 * 1024 * 1024 + 1)
+    require(len(text) <= 4 * 1024 * 1024, "The provided document is too large")
+    try:
+        document = json.loads(text) if text.strip() else {}
+    except ValueError:
+        raise Rejected("The provided document is not JSON") from None
+    require(isinstance(document, dict), "The provided document is not a JSON object")
+    return document
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["import", "sites", "fixtures", "servers", "targets", "vaults", "releases", "template", "submit",
                                            "status", "jobs", "follow", "state", "check", "reconcile", "vitals", "stats", "topology",
                                            "branches", "commits", "build", "logs", "history", "observation",
-                                           "latest", "facts", "changelog", "watch", "builds", "retention", "usage"])
+                                           "latest", "facts", "changelog", "watch", "builds", "retention", "usage",
+                                           "settings", "registry"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
@@ -897,9 +934,12 @@ def main():
     parser.add_argument("--to", dest="end", help="changelog: the release to promote")
     parser.add_argument("--skip-dev-pass", action="store_true",
                         help="submit: deploy to prod without a dev pass; needs --confirm with the target ID")
+    parser.add_argument("--stdin", action="store_true",
+                        help="submit: the settings values ({\"values\": …}) on stdin; check: the provided keys ({\"keys\": …})")
     args = parser.parse_args()
     root = Path(args.root).resolve()
     try:
+        provided = read_stdin(sys.stdin) if args.stdin else None
         inventory.install(root)
         if args.action == "import":
             result = import_bundle(root, args.archive, args.bundle)
@@ -934,7 +974,11 @@ def main():
             return 0
         elif args.action == "submit":
             result = submit(root, args.target, args.bundle, args.actor, args.confirm, args.skip_dev_pass, args.reason,
-                            args.fleet)
+                            args.fleet, provided)
+        elif args.action == "settings":
+            result = settings_plan(root, args.target, args.bundle)
+        elif args.action == "registry":
+            result = registry.probe(root, args.product)
         elif args.action == "branches":
             result = artifacts.branches(args.product)
         elif args.action == "commits":
@@ -954,7 +998,7 @@ def main():
         elif args.action == "topology":
             result = target_topology(root, args.target)
         elif args.action == "check":
-            result = check(root, args.target, args.bundle)
+            result = check(root, args.target, args.bundle, provided)
         elif args.action == "reconcile":
             result = reconcile(root, args.target, args.job, args.actor)
         elif args.action == "vitals":
