@@ -35,6 +35,13 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     /// <summary>The runner root the host exports its inventory snapshot to; a temporary folder per run.</summary>
     public string InventoryRoot { get; } = Directory.CreateTempSubdirectory("wheelhouse-inventory-").FullName;
 
+    /// <summary>The built-in vault's root key file, a fresh random key per run; tests may swap or remove it to seal the
+    /// vault, and each reset puts it back.</summary>
+    public string VaultKeyFile { get; } = Path.Combine(Directory.CreateTempSubdirectory("wheelhouse-vault-").FullName, "root.key");
+
+    /// <summary>The root key the run's vault was unsealed with, as the key file holds it.</summary>
+    public string VaultKey { get; } = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+
     /// <summary>The browser origin configured in <c>Mcp:AllowedOrigins</c>.</summary>
     public const string McpAllowedOrigin = "http://localhost:6274";
 
@@ -72,6 +79,7 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _postgres.StartAsync();
+        await File.WriteAllTextAsync(VaultKeyFile, VaultKey + "\n");
 
         // The identity allowlist binds at registration, before the host hook's configuration exists.
         Environment.SetEnvironmentVariable("Identity__AllowedGitHubLogins__0", "test-admin");
@@ -98,6 +106,9 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
                 ["Deployment:HistorySeconds"] = "0",
                 // A browser client the owner allowed, beside the console's own origin.
                 ["Mcp:AllowedOrigins:0"] = McpAllowedOrigin,
+                // The built-in vault reads the run's own root key; tests run scheduled settings applies themselves.
+                ["Vault:KeyFile"] = VaultKeyFile,
+                ["Deployment:ApplySeconds"] = "0",
             }),
             ConfigureServicesHook = services =>
             {
@@ -138,6 +149,7 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
         // Don't leak the allowlist into other test processes.
         Environment.SetEnvironmentVariable("Identity__AllowedGitHubLogins__0", null);
         Directory.Delete(InventoryRoot, recursive: true);
+        Directory.Delete(Path.GetDirectoryName(VaultKeyFile)!, recursive: true);
     }
 
     /// <summary>Truncates every data table between tests via Respawn (the migration history is preserved), and resets the stubs.</summary>
@@ -151,6 +163,16 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
         }
 
         await _postgres.ResetAsync();
+        // The vault schema sits outside Respawn's public schema: empty it too, and put the run's root key back.
+        await using (var connection = new Npgsql.NpgsqlConnection(_postgres.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var truncate = new Npgsql.NpgsqlCommand(
+                "TRUNCATE vault.vault_secret_versions, vault.vault_secrets, vault.vault_product_keys, vault.vault_canary CASCADE",
+                connection);
+            await truncate.ExecuteNonQueryAsync();
+        }
+        await File.WriteAllTextAsync(VaultKeyFile, VaultKey + "\n");
         ResetStubs();
     }
 

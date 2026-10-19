@@ -48,7 +48,9 @@ public sealed class StubVaultGateway : IVaultGateway
             : Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement<object>(resource switch
         {
             VaultResource.Vaults => new object[] { new { id = "pilot-vault", name = "Pilot vault", serverId = "pilot", status = "unsealed" } },
-            VaultResource.Namespaces => new object[] { new { slug = "billing", name = "Billing", createdAtUtc = "1990-01-01T00:00:00Z" } },
+            VaultResource.Namespaces => Values.Count == 0
+                ? new object[] { new { slug = "billing", name = "Billing", createdAtUtc = "1990-01-01T00:00:00Z" } }
+                : Values.Keys.Select(slug => (object)new { slug, name = slug, createdAtUtc = "1990-01-01T00:00:00Z" }).ToArray(),
             VaultResource.Secrets when ns is not null && Values.TryGetValue(ns, out var held) => held.Keys
                 .Select(key => (object)new { @namespace = ns, key, state = "active", version = 1, updatedAtUtc = "1990-01-01T00:00:00Z" }).ToArray(),
             VaultResource.Secrets => new object[]

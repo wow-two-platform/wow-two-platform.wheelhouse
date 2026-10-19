@@ -8,4 +8,8 @@ public enum DeploymentCause
 
     /// <summary>A release that passed its dev watch window, promoted to prod for a product that auto-promotes.</summary>
     AutoPromote = 1,
+
+    /// <summary>An apply of edited settings and secrets the owner scheduled for a set time: the running release deploys
+    /// again with the values of that moment.</summary>
+    SettingsApply = 2,
 }

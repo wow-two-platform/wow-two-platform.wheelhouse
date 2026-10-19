@@ -266,22 +266,24 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
         [FromQuery, Range(1, 1000)] int tail = 200, CancellationToken ct = default) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentLogsQuery(target, service, tail), ct));
 
-    /// <summary>Reads the settings a release takes on a target and where its next deploy's render takes each value from:
-    /// derived, the vault, the settings store, a release default or the target's host file. Key names and non-secret
-    /// values only; no target is contacted.</summary>
+    /// <summary>Reads the settings a release (by default the one the target runs) takes on a target and where its next
+    /// deploy's render takes each value from: derived, the vault, the settings store, a release default or the target's
+    /// host file; with the keys the owner added, secret metadata and what changed since the last deploy. Key names,
+    /// non-secret values and versions only; no target is contacted.</summary>
     [HttpGet("targets/{target}/settings")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> Settings(
-        [RegularExpression(Slug)] string target, [FromQuery, Required, RegularExpression(Slug)] string release, CancellationToken ct) =>
+        [RegularExpression(Slug)] string target, [FromQuery, RegularExpression(Slug)] string? release, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentSettingsQuery(target, release), ct));
 
-    /// <summary>Gives a target's environment setting values: secrets go to its vault namespace, the rest to the settings
-    /// store. Audited by key, never by value.</summary>
+    /// <summary>Gives a target's environment setting values: secrets become new vault versions, the rest go to the
+    /// settings store, in one transaction. Typed values are checked; a key that reads as a secret needs a confirmation to
+    /// be plain. Audited by key and version, never by value.</summary>
     [HttpPut("targets/{target}/settings")]
     [RequireActionHeader("settings")]
     public async Task<IActionResult> SaveSettings(
         [RegularExpression(Slug)] string target, DeploymentSettingsSaveRequest request, CancellationToken ct) =>
-        this.ToActionResult(await sender.SendAsync(new DeploymentSettingsSaveCommand(target, request.ToValues(), actor.Actor), ct));
+        this.ToActionResult(await sender.SendAsync(new DeploymentSettingsSaveCommand(target, request.ToValues(), actor.Actor, request.Release), ct));
 
     /// <summary>Reads the authoritative outcome from the target.</summary>
     [HttpGet("{id:guid}")]

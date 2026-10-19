@@ -14,7 +14,8 @@ public sealed class DeploymentHistoryService(
     ITargetsRepository targets,
     IProductsRepository products,
     IWorkspacesRepository workspaces,
-    IDeploymentAutomationStore intents)
+    IDeploymentAutomationStore intents,
+    IDeploymentRenders? renders = null)
 {
     /// <summary>Reads every recorded deployment with the inventory joined.</summary>
     /// <param name="ct">A cancellation token.</param>
@@ -39,6 +40,7 @@ public sealed class DeploymentHistoryService(
             .ToArray();
         var byTarget = facts.ToDictionary(fact => fact.Slug, StringComparer.Ordinal);
         var unapplied = (await intents.GetIntentsAsync(ct)).Select(FromIntent).ToList();
+        var settings = renders is null ? new Dictionary<string, string>() : await renders.GetChangesAsync(ct);
 
         // Oldest first, so each submission meets its target's previous success before it.
         var lastSuccess = new Dictionary<string, DeploymentRecord>(StringComparer.Ordinal);
@@ -50,13 +52,29 @@ public sealed class DeploymentHistoryService(
             var workspace = target?.Workspace ?? (product is null ? null : productWorkspaces.GetValueOrDefault(product));
             var previous = record.TargetId is { } key ? lastSuccess.GetValueOrDefault(key) : null;
             entries.Add(new DeploymentEntry(record, product, workspace, target?.Environment ?? record.Environment, previous,
-                Compare(record, previous)));
+                Compare(record, previous), settings.TryGetValue(record.Id, out var changes) ? Changes(changes) : null));
             if (record.TargetId is { } slug && DeploymentOutcome.Of(record.Status) == DeploymentOutcome.Succeeded)
                 lastSuccess[slug] = record;
         }
 
         entries.Reverse();
         return AppResult<DeploymentHistory>.Ok(new DeploymentHistory(entries, facts));
+    }
+
+    /// <summary>Reads a render's recorded changes; an unreadable record reads as none.</summary>
+    /// <param name="json">The changes as recorded.</param>
+    /// <returns>The changes, or null.</returns>
+    public static IReadOnlyList<Settings.Models.SettingChangeDto>? Changes(string json)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<Settings.Models.SettingChangeDto>>(json,
+                System.Text.Json.JsonSerializerOptions.Web);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>A deploy that never reached its target, as a record beside the runner's: it ended when it was dropped,

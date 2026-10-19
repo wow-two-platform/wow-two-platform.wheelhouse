@@ -11,6 +11,7 @@ using WoW.Two.Sdk.Beta.Be.Data.Migrations.Bespoke;
 using WoW.Two.Sdk.Beta.Be.Foundation.Audit;
 using WoW.Two.Sdk.Beta.Be.Foundation.Configuration;
 using WoW.Two.Sdk.Beta.Be.Foundation.Options;
+using WoW.Two.Sdk.Beta.Be.Foundation.Security;
 using WoW.Two.Sdk.Beta.Be.Foundation.Time;
 using WoW.Two.Sdk.Beta.Be.Foundation.Validation;
 using WoW.Two.Sdk.Beta.Be.Http.Safety;
@@ -117,6 +118,13 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddScoped<IDeployFreezesRepository, DeployFreezesRepository>();
         builder.Services.AddScoped<IFleetRolloutsRepository, FleetRolloutsRepository>();
         builder.Services.AddScoped<IVitalsHistory, EfVitalsHistory>();
+        // The built-in Secrets Vault's tables (schema vault), the keys owners add, renders and scheduled applies.
+        builder.Services.AddScoped<ISecretsVaultStore, SecretsVaultStore>();
+        builder.Services.AddScoped<ITransactions, EfTransactions>();
+        builder.Services.AddScoped<IProductSettingKeysRepository, ProductSettingKeysRepository>();
+        builder.Services.AddScoped<IDeploymentRenders, DeploymentRendersRepository>();
+        builder.Services.AddScoped<ISettingsApplies, SettingsAppliesRepository>();
+        builder.Services.AddScoped<IStandaloneVaultReader, StandaloneVaultDatabaseReader>();
         builder.Services.AddHashChain<Wheelhouse.Domain.Audit.Entities.AuditEntry,
             Wheelhouse.Persistence.Audit.AuditEntryCanonicalizer>();
 
@@ -164,6 +172,20 @@ public static partial class HostConfigurationExtensions
             });
         builder.Services.AddSingleton<Wheelhouse.Infrastructure.Vaults.VaultSessionCache>();
         builder.Services.AddScoped<IVaultGateway, Wheelhouse.Infrastructure.Vaults.VaultGateway>();
+
+        // The built-in Secrets Vault: its root key file (Vault:KeyFile, else {Deployment:Root}/vault/root.key), the SDK's
+        // AES-GCM envelope cipher, and the scheduled settings applies every Deployment:ApplySeconds.
+        builder.AddSecretsVaultSettings();
+        builder.Services.AddEnvelopeCryptography();
+        builder.Services.AddSingleton<IVaultKeySource>(services =>
+        {
+            var vault = services.GetRequiredService<Wheelhouse.Application.SecretsVault.SecretsVaultSettings>();
+            var deployment = services.GetRequiredService<DeploymentSettings>();
+            return new Wheelhouse.Infrastructure.SecretsVault.FileVaultKeySource(vault.KeyFile.Length > 0
+                ? vault.KeyFile
+                : Path.Combine(deployment.Root, "vault", "root.key"));
+        });
+        builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.SettingsApplyWorker>();
 
         // GitHub access, per call: the GitHub App's installation token for the owner the call addresses, else the
         // Deployment:GitHubTokenFile token, else the signed-in admin's OAuth token off the current request, else
@@ -225,6 +247,19 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Freezes.Services.DeployFreezeService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Fleets.Services.FleetRolloutService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Settings.Services.DeploymentSettingsService>();
+        builder.Services.AddScoped<Wheelhouse.Application.Deployments.Settings.Services.SettingsApplyService>();
+        builder.Services.AddSingleton<Wheelhouse.Application.SecretsVault.Services.SecretsVaultKeyCache>();
+        builder.Services.AddSingleton<Wheelhouse.Application.SecretsVault.Services.SecretsVaultCrypto>();
+        builder.Services.AddScoped<Wheelhouse.Application.SecretsVault.Services.SecretsVaultService>();
+        builder.Services.AddScoped<Wheelhouse.Application.SecretsVault.Services.SecretsVaultImporter>();
+        builder.Services.AddScoped<Wheelhouse.Application.Deployments.Settings.Services.BuiltInEnvironmentSecrets>();
+        builder.Services.AddScoped<Wheelhouse.Application.Deployments.Settings.Services.ExternalEnvironmentSecrets>();
+        // Deploys take secrets from the built-in vault; Vault:Mode external falls back to the standalone vaults for the
+        // one release after the merge.
+        builder.Services.AddScoped<Wheelhouse.Application.Deployments.Settings.Services.IEnvironmentSecrets>(services =>
+            services.GetRequiredService<Wheelhouse.Application.SecretsVault.SecretsVaultSettings>().IsExternal
+                ? services.GetRequiredService<Wheelhouse.Application.Deployments.Settings.Services.ExternalEnvironmentSecrets>()
+                : services.GetRequiredService<Wheelhouse.Application.Deployments.Settings.Services.BuiltInEnvironmentSecrets>());
         builder.Services.AddSingleton<Wheelhouse.Application.Deployments.Fleets.Services.FleetRolloutGate>();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<BackgroundActor>();
@@ -275,6 +310,27 @@ public static partial class HostConfigurationExtensions
                 : Resolve(settings.GitHubAppKeyFile);
             settings.RehearsalState = Resolve(settings.RehearsalState);
         });
+        return builder;
+    }
+
+    /// <summary>Binds the built-in Secrets Vault's settings from <c>Vault</c> when first resolved: <c>Mode</c>
+    /// <c>builtin</c> or <c>external</c>, and the root key file, resolved against the content root.</summary>
+    private static WebApplicationBuilder AddSecretsVaultSettings(this WebApplicationBuilder builder)
+    {
+        var configuration = builder.Configuration;
+        builder.Services.AddValidatedOptions<Wheelhouse.Application.SecretsVault.SecretsVaultSettings>(
+            settings => configuration.GetSection("Vault").Bind(settings),
+            options => options.Validate(
+                settings => settings.Mode is Wheelhouse.Application.SecretsVault.Constants.SecretsVaultModes.BuiltIn
+                    or Wheelhouse.Application.SecretsVault.Constants.SecretsVaultModes.External,
+                "Vault:Mode must be 'builtin' or 'external'."));
+        builder.Services.AddOptions<Wheelhouse.Application.SecretsVault.SecretsVaultSettings>().PostConfigure<IHostEnvironment>(
+            (settings, environment) =>
+            {
+                settings.Mode = settings.Mode.Trim().ToLowerInvariant();
+                if (settings.KeyFile.Length > 0 && !Path.IsPathRooted(settings.KeyFile))
+                    settings.KeyFile = Path.GetFullPath(Path.Combine(environment.ContentRootPath, settings.KeyFile));
+            });
         return builder;
     }
 

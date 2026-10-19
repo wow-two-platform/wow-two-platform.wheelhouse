@@ -55,7 +55,8 @@ internal sealed class EfAuditTrail(
             var services = product.ServicePrefix;
             entries = entries.Where(e =>
                 ((e.Action.StartsWith("product.") || e.Action.StartsWith("build.")) && e.Subject == slug)
-                || ((e.Action.StartsWith("deployment.") || e.Action.StartsWith("target.")) && targets.Contains(e.Subject))
+                || ((e.Action.StartsWith("deployment.") || e.Action.StartsWith("target.") || e.Action.StartsWith("settings."))
+                    && targets.Contains(e.Subject))
                 || (e.Action.StartsWith("vault.") && namespaces.Contains(e.Subject))
                 || (e.Action.StartsWith("service.") && e.Subject.StartsWith(services)));
         }

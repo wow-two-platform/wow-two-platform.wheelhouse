@@ -1,3 +1,5 @@
+using Wheelhouse.Application.SecretsVault.Models;
+
 namespace Wheelhouse.Application.Deployments.Settings.Models;
 
 /// <summary>Represents one setting a service takes on a target, and where the next deploy's render takes it from.</summary>
@@ -11,4 +13,21 @@ namespace Wheelhouse.Application.Deployments.Settings.Models;
 /// <param name="Allowed">The values the release allows, when it lists them.</param>
 public sealed record DeploySettingDto(
     string Key, bool Required, bool Secret, string Source, string? Value = null, string? Default = null,
-    string? Derived = null, IReadOnlyList<string>? Allowed = null);
+    string? Derived = null, IReadOnlyList<string>? Allowed = null)
+{
+    /// <summary>Gets what its value must look like: <c>text</c>, <c>number</c>, <c>boolean</c>, <c>choice</c>, <c>url</c>,
+    /// <c>cron</c>, <c>date</c> or <c>email</c>.</summary>
+    public string Type { get; init; } = "text";
+
+    /// <summary>Gets a date key's format, such as <c>yyyy-MM-dd</c>.</summary>
+    public string? Format { get; init; }
+
+    /// <summary>Gets whether the owner added the key in the console rather than a release declaring it.</summary>
+    public bool AdHoc { get; init; }
+
+    /// <summary>Gets whether its name reads as a secret, so saving it as a plain setting needs a confirmation.</summary>
+    public bool LooksSecret { get; init; }
+
+    /// <summary>Gets a vault secret's metadata — version, who and when, fingerprint, expiry; never its value.</summary>
+    public SecretMetadataDto? Vault { get; init; }
+}

@@ -10,13 +10,16 @@ namespace Wheelhouse.Application.Deployments.History.Models;
 /// <param name="Environment">The target's environment; for a removed target, the one the runner recorded, if any.</param>
 /// <param name="Previous">The target's last succeeded rollout submitted before this one.</param>
 /// <param name="Changes">Each service against <paramref name="Previous"/>; null when the bundle is unknown.</param>
+/// <param name="Settings">The setting and secret keys its render changed against the target's last good render; null
+/// when Wheelhouse recorded no render to compare.</param>
 public sealed record DeploymentEntry(
     DeploymentRecord Record,
     string? Product,
     string? Workspace,
     string? Environment,
     DeploymentRecord? Previous,
-    IReadOnlyList<ServiceChangeDto>? Changes)
+    IReadOnlyList<ServiceChangeDto>? Changes,
+    IReadOnlyList<Settings.Models.SettingChangeDto>? Settings = null)
 {
     /// <summary>Gets what the status amounts to, as the API answered before the status taxonomy; kept one release for
     /// integrations.</summary>

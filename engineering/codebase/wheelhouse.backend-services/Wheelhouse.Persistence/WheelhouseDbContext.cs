@@ -7,6 +7,7 @@ using Wheelhouse.Domain.Operations.Entities;
 using Wheelhouse.Domain.Pins.Entities;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Secrets.Entities;
+using Wheelhouse.Domain.SecretsVault.Entities;
 using Wheelhouse.Domain.Servers.Entities;
 using Wheelhouse.Domain.Settings.Entities;
 using Wheelhouse.Domain.Targets.Entities;
@@ -42,6 +43,27 @@ public sealed class WheelhouseDbContext(DbContextOptions<WheelhouseDbContext> op
 
     /// <summary>Gets products' non-secret setting values per environment; secret values live in the vault.</summary>
     public DbSet<EnvironmentSettingEntity> EnvironmentSettings => Set<EnvironmentSettingEntity>();
+
+    /// <summary>Gets the setting and secret keys owners added to products in the console.</summary>
+    public DbSet<ProductSettingKeyEntity> ProductSettingKeys => Set<ProductSettingKeyEntity>();
+
+    /// <summary>Gets what each deploy's settings render held, by fingerprint and without values.</summary>
+    public DbSet<DeploymentRenderEntity> DeploymentRenders => Set<DeploymentRenderEntity>();
+
+    /// <summary>Gets the scheduled applies of edited settings, one per target.</summary>
+    public DbSet<SettingsApplyEntity> SettingsApplies => Set<SettingsApplyEntity>();
+
+    /// <summary>Gets the built-in vault's canary row.</summary>
+    public DbSet<VaultCanaryEntity> VaultCanary => Set<VaultCanaryEntity>();
+
+    /// <summary>Gets each product's wrapped data key.</summary>
+    public DbSet<VaultProductKeyEntity> VaultProductKeys => Set<VaultProductKeyEntity>();
+
+    /// <summary>Gets the built-in vault's secrets, metadata only.</summary>
+    public DbSet<VaultSecretEntity> VaultSecrets => Set<VaultSecretEntity>();
+
+    /// <summary>Gets every encrypted value each secret has held.</summary>
+    public DbSet<VaultSecretVersionEntity> VaultSecretVersions => Set<VaultSecretVersionEntity>();
 
     /// <summary>Gets the cached manifests of the products' repositories — one row per product.</summary>
     public DbSet<ProductManifestEntity> ProductManifests => Set<ProductManifestEntity>();

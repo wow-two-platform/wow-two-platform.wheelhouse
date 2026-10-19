@@ -35,4 +35,19 @@ internal sealed class EnvironmentSettingsRepository(WheelhouseDbContext db) : IE
         }
         await db.SaveChangesAsync(ct);
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> RemoveAsync(
+        Guid productId, DeploymentEnvironment environment, IReadOnlyCollection<string> keys, CancellationToken ct = default)
+    {
+        if (keys.Count == 0)
+            return [];
+        var wanted = keys.ToList();
+        var rows = await db.EnvironmentSettings
+            .Where(entity => entity.ProductId == productId && entity.Environment == environment && wanted.Contains(entity.Key))
+            .ToListAsync(ct);
+        db.EnvironmentSettings.RemoveRange(rows);
+        await db.SaveChangesAsync(ct);
+        return [.. rows.Select(row => row.Key).Order(StringComparer.Ordinal)];
+    }
 }

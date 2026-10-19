@@ -30,6 +30,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "025-product-deploy-mode",
         "026-deployment-intents",
         "027-environment-settings",
+        "030-built-in-vault",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -758,6 +759,44 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: ordinal, CancellationToken.None));
         (await migrator.HasTableAsync("environment_settings")).Should().BeFalse();
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("027-environment-settings"));
+    }
+
+    [Fact]
+    public async Task BuiltInVault_ShouldKeepItsOwnSchema_OneSecretPerKey_AndGoWithItsProduct_WhenApplied()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        await using (var cleanup = await migrator.OpenConnectionAsync())
+            await Execute(cleanup, "DROP SCHEMA IF EXISTS vault CASCADE"); // the fixture's reset drops public only
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        (await Scalar(connection, "SELECT string_agg(table_name, ',' ORDER BY table_name) FROM information_schema.tables WHERE table_schema = 'vault'"))
+            .Should().Be("vault_canary,vault_product_keys,vault_secret_versions,vault_secrets");
+        foreach (var table in new[] { "product_setting_keys", "deployment_renders", "settings_applies" })
+            (await migrator.HasTableAsync(table)).Should().BeTrue($"030-built-in-vault creates {table}");
+
+        const string product = "00000000-0000-0000-0000-000000000001";
+        await Execute(connection, InsertProduct(product, "pilot"));
+        await Execute(connection, $"INSERT INTO vault.vault_product_keys VALUES ('{product}', '\\x01', '\\x02', '\\x03', now())");
+        const string secret = "INSERT INTO vault.vault_secrets (id, product_id, environment, key, current_version, created_at_utc, updated_at_utc) " +
+                              "VALUES ('{0}', '" + product + "', 'prod', 'Stripe:ApiKey', 1, now(), now())";
+        await Execute(connection, string.Format(secret, "00000000-0000-0000-0000-0000000000a1"));
+        await Execute(connection, "INSERT INTO vault.vault_secret_versions (id, secret_id, version, cipher_text, nonce, tag, fingerprint, created_by, created_at_utc) " +
+                                  "VALUES (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a1', 1, '\\x00', '\\x00', '\\x00', 'f', 'owner', now())");
+        var twice = async () => await Execute(connection, string.Format(secret, "00000000-0000-0000-0000-0000000000a2"));
+        await twice.Should().ThrowAsync<Npgsql.PostgresException>("a key holds one secret per product environment");
+        var canary = async () => await Execute(connection,
+            "INSERT INTO vault.vault_canary VALUES (2, '\\x00', '\\x00', '\\x00', '\\x00', '\\x00', '\\x00', '\\x00', now())");
+        await canary.Should().ThrowAsync<Npgsql.PostgresException>("the vault has one canary");
+        await Execute(connection, "DELETE FROM products");
+        (await Scalar(connection, "SELECT (SELECT count(*) FROM vault.vault_secrets) + (SELECT count(*) FROM vault.vault_secret_versions) " +
+                                  "+ (SELECT count(*) FROM vault.vault_product_keys)")).Should().Be(0L, "a product's keys and secrets go with it");
+
+        var ordinal = Ordinals[Array.IndexOf(Migrations, "030-built-in-vault") - 1];
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: ordinal, CancellationToken.None));
+        (await Scalar(connection, "SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'vault'")).Should().Be(0L);
+        (await migrator.HasTableAsync("deployment_renders")).Should().BeFalse();
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("030-built-in-vault"));
     }
 
     /// <summary>The SQL that stores one vitals reading of a target slug, or of its server's host for <c>NULL</c>.</summary>

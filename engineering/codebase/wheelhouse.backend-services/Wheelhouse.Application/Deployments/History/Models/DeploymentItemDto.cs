@@ -101,6 +101,14 @@ public sealed record DeploymentItemDto
     /// <summary>Gets the release's end-to-end check after its dev rollout; null when the rollout ran none.</summary>
     public DeploymentVerificationDto? Verification { get; init; }
 
+    /// <summary>Gets the setting and secret keys the deploy's render changed against the target's last good render (names
+    /// and versions, never values); null when none changed or none was recorded.</summary>
+    public IReadOnlyList<Settings.Models.SettingChangeDto>? SettingsChanged { get; init; }
+
+    /// <summary>Gets whether its changed settings are the likely cause: the deploy changed settings, then failed, rolled
+    /// back, regressed or failed its check.</summary>
+    public bool SettingsSuspect { get; init; }
+
     /// <summary>Maps an entry.</summary>
     /// <param name="entry">The joined submission.</param>
     /// <returns>The list item.</returns>
@@ -144,8 +152,16 @@ public sealed record DeploymentItemDto
             Watch = entry.Outcome == DeploymentOutcome.Succeeded ? record.Watch : null,
             Verifies = record.Verifies,
             Verification = record.Verification,
+            SettingsChanged = entry.Settings is { Count: > 0 } changed ? changed : null,
+            SettingsSuspect = entry.Settings is { Count: > 0 } && Suspect(entry),
         };
     }
+
+    /// <summary>Whether a deploy's outcome points at what it changed: it failed, rolled back, ended partial, regressed in
+    /// its watch or failed its dev check. @internal</summary>
+    private static bool Suspect(DeploymentEntry entry) =>
+        entry.State.State is DeploymentState.Failed or DeploymentState.RolledBack or DeploymentState.Partial or DeploymentState.Degraded
+        || entry.Record.Verification is { Status: DeploymentVerificationDto.Failed };
 
     /// <summary>Fills each service's versions from the comparison with the target's previous success where the runner did
     /// not record them. @internal</summary>

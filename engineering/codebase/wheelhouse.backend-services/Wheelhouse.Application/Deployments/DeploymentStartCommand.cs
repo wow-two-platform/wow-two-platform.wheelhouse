@@ -30,6 +30,7 @@ public sealed record DeploymentStartCommand(
         {
             DeploymentCause.AutoDev => ", automatic: a new release",
             DeploymentCause.AutoPromote => ", automatic: promoted after its dev watch",
+            DeploymentCause.SettingsApply => ", scheduled: applies edited settings",
             _ => "",
         } + (Fleet is { } fleet ? ", fleet " + fleet : "")
         + (string.IsNullOrWhiteSpace(Reason) ? "" : ", reason: " + Reason.Trim());

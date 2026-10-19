@@ -1,6 +1,9 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.SecretsVault;
+using Wheelhouse.Application.SecretsVault.Models;
+using Wheelhouse.Application.SecretsVault.Services;
 using Wheelhouse.Application.Workspaces.Services;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Servers.Entities;
@@ -24,7 +27,11 @@ public sealed partial class LocalRigSeedService(
     ITargetsRepository targets,
     IVaultsRepository vaults,
     DefaultWorkspaceService defaultWorkspace,
-    ILogger<LocalRigSeedService> logger)
+    ILogger<LocalRigSeedService> logger,
+    SecretsVaultService? vault = null,
+    ISecretsVaultStore? vaultStore = null,
+    SecretsVaultSettings? vaultSettings = null,
+    IVaultKeySource? vaultKey = null)
 {
     /// <summary>Writes the local server's fixtures into the database.</summary>
     /// <param name="ct">A cancellation token.</param>
@@ -60,7 +67,73 @@ public sealed partial class LocalRigSeedService(
             await SeedTargetAsync(fixture, ct);
         foreach (var fixture in fixtures.Vaults)
             await SeedVaultAsync(fixture, ct);
+        await SeedSecretsAsync(document, ct);
     }
+
+    /// <summary>Seeds the rig's test secrets into the built-in vault, each once: a secret the vault already holds keeps
+    /// its value. Skipped while the vault is sealed or the standalone fallback is on.</summary>
+    private async Task SeedSecretsAsync(JsonElement document, CancellationToken ct)
+    {
+        if (vault is null || vaultStore is null || vaultSettings?.IsExternal == true
+            || !document.TryGetProperty("secrets", out var items) || items.ValueKind != JsonValueKind.Array)
+            return;
+        WriteRigKey();
+        var seeded = 0;
+        foreach (var item in items.EnumerateArray())
+        {
+            if (Text(item, "product") is not { } slug || Text(item, "key") is not { } key || Text(item, "value") is not { } value
+                || !Enum.TryParse<Wheelhouse.Domain.Targets.Enums.DeploymentEnvironment>(Text(item, "environment"), true, out var environment)
+                || await products.GetBySlugAsync(slug, ct) is not { } product
+                || await vaultStore.GetSecretAsync(product.Id, environment, key, ct) is not null)
+                continue;
+            var written = await vault.StageWritesAsync(product.Id, environment, [new SecretWrite(key, value, "rig test value")],
+                "local-rig", "rig fixture", ct);
+            if (written is AppResult<IReadOnlyList<SecretWritten>>.Failure)
+                return; // sealed: the rig wrote no root key yet
+            seeded++;
+        }
+        if (seeded > 0)
+        {
+            await vaultStore.SaveAsync(ct);
+            LogSeededSecrets(logger, seeded);
+        }
+    }
+
+    /// <summary>Gives the rig's built-in vault a root key of its own when it has none: random, mode 0600, beside the
+    /// rig's other credentials. Only the rig reaches here; a deployed control plane's key is the owner's to place.</summary>
+    private void WriteRigKey()
+    {
+        if (vaultKey is null || vaultKey.Read().Problem != VaultKeyRead.Missing || vaultKey.Location.Length == 0)
+            return;
+        var folder = Path.GetDirectoryName(vaultKey.Location)!;
+        if (OperatingSystem.IsWindows())
+            Directory.CreateDirectory(folder);
+        else
+            Directory.CreateDirectory(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        try
+        {
+            using var stream = new FileStream(vaultKey.Location, new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew, Access = FileAccess.Write,
+                UnixCreateMode = OperatingSystem.IsWindows() ? null : UnixFileMode.UserRead | UnixFileMode.UserWrite,
+            });
+            using var writer = new StreamWriter(stream);
+            writer.WriteLine(Convert.ToBase64String(key));
+            LogRigKey(logger);
+        }
+        catch (IOException)
+        {
+            // Another start wrote it first.
+        }
+        finally
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(key);
+        }
+    }
+
+    private static string? Text(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
     private async Task SeedServerAsync(SnapshotServerModel fixture, CancellationToken ct)
     {
@@ -157,4 +230,10 @@ public sealed partial class LocalRigSeedService(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The local server's fixtures could not be read from the runner ({Reason}).")]
     private static partial void LogUnread(ILogger logger, string reason);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Seeded {Count} rig test secrets into the built-in vault")]
+    private static partial void LogSeededSecrets(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Wrote the rig's own root key for the built-in vault")]
+    private static partial void LogRigKey(ILogger logger);
 }
