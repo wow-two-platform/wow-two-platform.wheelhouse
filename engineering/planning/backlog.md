@@ -58,7 +58,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Ability to see an unreadable host in the attention list | feature | Servers shows the reason since v0.4; the attention list skips it |
 | Show the manifest's service names and descriptions on the product page | feature | They showed only on the old Products detail, removed in v0.5 |
 | Compact the product header on phones | fix | It pushes the tabs below the fold |
-| Preselect the product's targets when deploying from its Releases tab | feature | |
+| Preselect the product's targets when deploying from its Deployments tab's releases | feature | |
 | Point vault attention items at `/secrets?vault=…` | fix | |
 | Drop the duplicate "Host vitals are unavailable" line under an unreachable server's alert | fix | |
 

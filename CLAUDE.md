@@ -54,7 +54,7 @@ dotnet run --project Wheelhouse.Api --launch-profile https   # 8210 https / 8211
 # Frontend (pnpm workspace; the app lives in apps/web)
 cd engineering/codebase/wheelhouse.frontend-services && pnpm install && pnpm dev   # HTTPS 5174, proxies /api → HTTPS 8210; Node 24
 pnpm dev:http   # plain HTTP for headless previews (GitHub sign-in needs HTTPS)
-pnpm test       # routing, selection, status filter, pins, catalog, protocol and sensitive-form checks
+pnpm test       # routing, selection, history filter, pins, catalog, protocol and sensitive-form checks
 pnpm build      # vue-tsc + SFC compiler gate + route-split production bundle
 pnpm deploy     # build + copy apps/web/dist into Wheelhouse.Api/wwwroot
 
