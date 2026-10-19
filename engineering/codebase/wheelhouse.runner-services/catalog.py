@@ -41,6 +41,14 @@ PRODUCTS: tuple[Product, ...] = ()
 
 # The products the local server's fixture targets deploy. Used only on the local server, and only where the
 # inventory lacks the slug, so a database row always wins.
+# The rig's test secrets, which the console seeds into its built-in vault on the local server only: test values a
+# deployed control plane never sees, so the rig renders them like any environment's secrets.
+LOCAL_SECRETS: tuple[tuple[str, str, str, str], ...] = tuple(
+    (product, environment, key, value)
+    for product, values in (("foreverpin", (("Billing:SecretKey", "sk_test_local"), ("Billing:WebhookSecret", "whsec_local"))),)
+    for environment in ("dev", "prod")
+    for key, value in values)
+
 LOCAL_PRODUCTS: tuple[Product, ...] = (
     Product("foreverpin", "ForeverPin",
             "Styled QR codes and short links whose destination can change after printing.",

@@ -99,6 +99,9 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(catalog.LOCAL_PRODUCTS, catalog.PRODUCTS)
         self.assertEqual((fleet.LOCAL_SERVERS, fleet.LOCAL_TARGETS, fleet.LOCAL_VAULTS),
                          (fleet.SERVERS, fleet.TARGETS, fleet.VAULTS))
+        # The rig's test secrets ride along for the console to seed into its built-in vault; an install ignores them.
+        self.assertEqual({"product": "foreverpin", "environment": "dev", "key": "Billing:SecretKey", "value": "sk_test_local"},
+                         exported["secrets"][0])
 
     def test_a_database_row_wins_over_a_fixture_with_the_same_id(self):
         moved = json.loads(json.dumps(SNAPSHOT))

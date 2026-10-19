@@ -143,6 +143,23 @@ class BundleContractTests(unittest.TestCase):
         self.assertEqual(["https://admin-pilot.dev.example", "https://app-pilot.dev.example",
                           "https://app-pilot.dev.example/api"], [site["url"] for site in published])
 
+    @unittest.skipUnless(release is not None and hasattr(release, "SETTING_TYPES"), "the pinned generator predates typed keys")
+    def test_typed_setting_keys_reach_the_runners_declarations(self):
+        declared = copy.deepcopy(DESCRIPTOR)
+        declared["services"]["api"]["settings"]["keys"] = {
+            "Billing:Mode": {"type": "choice", "values": ["test", "live"], "default": "test"},
+            "Stripe:ApiKey": {"secret": True, "required": True},
+            "Jobs:Cleanup": {"type": "cron", "default": "0 3 * * *"},
+            "Promo:EndsOn": {"type": "date", "format": "dd.MM.yyyy"},
+        }
+        self.descriptor = release.validate(declared)
+        validated = self.bundle("main")
+        self.assertEqual({"api": ["Database:Connection", "Stripe:ApiKey"]}, validated["requiredConfiguration"])
+        settings = runner.release_settings(validated)["api"]
+        self.assertEqual(({"Billing:Mode": "test", "Jobs:Cleanup": "0 3 * * *"}, ["Stripe:ApiKey"]),
+                         (settings["optional"], settings["secrets"]))
+        self.assertEqual({"type": "date", "format": "dd.MM.yyyy"}, settings["types"]["Promo:EndsOn"])
+
     @unittest.skipUnless(HAS_YAML, "PyYAML is not installed for this interpreter")
     def test_wheelhouse_own_descriptor_parses(self):
         path = HERE.parents[1] / "deployment" / "deploy.yml"

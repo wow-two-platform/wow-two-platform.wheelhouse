@@ -41,7 +41,9 @@ def fixtures():
             "products": [product_json(item) for item in catalog.LOCAL_PRODUCTS],
             "servers": [server_json(item) for item in fleet.LOCAL_SERVERS],
             "targets": [target_json(item) for item in fleet.LOCAL_TARGETS],
-            "vaults": [vault_json(item) for item in fleet.LOCAL_VAULTS]}
+            "vaults": [vault_json(item) for item in fleet.LOCAL_VAULTS],
+            "secrets": [{"product": product, "environment": environment, "key": key, "value": value}
+                        for product, environment, key, value in catalog.LOCAL_SECRETS]}
 
 
 def listed(document, key):

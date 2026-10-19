@@ -260,6 +260,32 @@ class RenderTests(unittest.TestCase):
         # Required keys come first.
         self.assertEqual([True] * 4 + [False] * 3, [item["required"] for item in declared["services"][0]["keys"]])
 
+    def test_typed_keys_carry_their_type_and_format_and_count_as_declared(self):
+        self.manifest["settings"] = {"api": {
+            "optional": {"Billing:Mode": "test"}, "secrets": ["Stripe:ApiKey"], "allowed": {"Billing:Mode": ["test", "live"]},
+            "types": {"Billing:Mode": {"type": "choice"}, "Stripe:ApiKey": {"type": "text"},
+                      "Promo:EndsOn": {"type": "date", "format": "dd.MM.yyyy"}, "Support:TokenUrl": {"type": "url"}}}}
+        self.save()
+        declared = runner.settings_declarations(self.target, runner.validate_bundle(self.bundle))
+        api = {item["key"]: item for item in declared["services"][0]["keys"]}
+        self.assertEqual({"key": "Billing:Mode", "required": False, "secret": False, "default": "test",
+                          "allowed": ["test", "live"], "type": "choice"}, api["Billing:Mode"])
+        self.assertEqual({"key": "Promo:EndsOn", "required": False, "secret": False, "type": "date", "format": "dd.MM.yyyy"},
+                         api["Promo:EndsOn"])
+        # A declared secret stays one; a typed key the release calls plain is not guessed a secret from its name.
+        self.assertEqual((True, "text"), (api["Stripe:ApiKey"]["secret"], api["Stripe:ApiKey"]["type"]))
+        self.assertFalse(api["Support:TokenUrl"]["secret"])
+        # An untyped required key keeps the name guess and carries no type.
+        self.assertTrue(api["Billing:SecretKey"]["secret"])
+        self.assertNotIn("type", api["Billing:SecretKey"])
+
+    def test_setting_types_are_validated(self):
+        for types in ({"A:B": {"type": "colour"}}, {"A:B": "text"}, {"Bad Key": {"type": "text"}},
+                      {"A:B": {"type": "text", "format": "yyyy"}}, {"A:B": {"type": "date", "format": "%Y"}},
+                      {"A:B": {"type": "date", "extra": 1}}):
+            with self.subTest(types=types), self.assertRaises(ValueError):
+                runner.release_settings({**self.manifest, "settings": {"api": {"types": types}}})
+
     def test_derived_hosts_keep_a_host_files_other_hosts_once(self):
         self.assertEqual("a.example;p-api;B.example;localhost",
                          runner.with_hosts("a.example;p-api;localhost", "B.example;a.example;localhost; b.example"))
