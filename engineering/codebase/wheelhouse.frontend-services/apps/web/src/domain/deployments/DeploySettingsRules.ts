@@ -1,4 +1,4 @@
-import type { DeploySetting, DeploySettings, DeploySettingValue } from "./models/DeploySettings";
+import type { DeploySetting, DeploySettings, DeploySettingValue, SettingType } from "./models/DeploySettings";
 
 /** One key the deploy dialog asks for, once per product environment whatever the services declaring it. */
 export interface PromptedSetting {
@@ -10,6 +10,14 @@ export interface PromptedSetting {
   /** The release's default, shown as the field's placeholder. */
   default: string | null;
   allowed: string[] | null;
+  /** What its value must look like; text when the release types it not. */
+  type?: SettingType;
+  /** A date key's format. */
+  format?: string | null;
+  /** Whether its name reads as a secret, so a plain value needs a confirmation. */
+  looksSecret?: boolean;
+  /** Whether the release declares it a secret, or its name reads as one: it always goes to the vault. */
+  declaredSecret?: boolean;
 }
 
 /** The keys the render derives, named once each, for the dialog's summary. */
@@ -34,6 +42,10 @@ const merge = (prompted: Map<string, PromptedSetting>, service: string, key: Dep
     services: [service],
     default: key.default,
     allowed: key.allowed,
+    type: key.type ?? "text",
+    format: key.format ?? null,
+    looksSecret: key.looksSecret ?? false,
+    declaredSecret: key.secret,
   });
 };
 

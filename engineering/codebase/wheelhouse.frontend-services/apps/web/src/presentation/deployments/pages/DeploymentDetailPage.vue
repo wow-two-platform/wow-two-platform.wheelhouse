@@ -24,6 +24,7 @@ import ImpactList from "../components/ImpactList.vue";
 import ReconcileModal from "../components/ReconcileModal.vue";
 import ServiceLogsModal from "../components/ServiceLogsModal.vue";
 import { useDeployModal } from "../hooks/useDeployModal";
+import { EnvironmentSettingsRules } from "@/domain/settings";
 
 /**
  * One deployment on its own page, in the order the status design reads it: the state chip, then what the environment
@@ -42,6 +43,10 @@ const id = computed(() => {
 });
 const detail = useDeploymentDetail(id);
 const deployment = computed(() => detail.data.value?.deployment ?? null);
+/** The settings the deploy changed, named as the likely cause when it then failed; null when it changed none. */
+const settingsHint = computed(() =>
+  EnvironmentSettingsRules.hint(deployment.value?.settingsChanged, deployment.value?.settingsSuspect ?? false),
+);
 const isLive = computed(() => deployment.value?.outcome === DeploymentOutcome.Pending);
 const outcome = useDeploymentOutcome(
   () => (isLive.value ? id.value : null),
@@ -293,6 +298,12 @@ function rollBack(): void {
                         : "Its watch could not read the target."
                 }}
               </p>
+              <Alert
+                v-if="settingsHint"
+                :severity="deployment?.settingsSuspect ? 'warning' : 'info'"
+                :title="deployment?.settingsSuspect ? 'It changed settings, then failed' : 'It changed settings'"
+                :description="settingsHint"
+              />
               <Alert
                 v-if="needsReconciliation"
                 severity="warning"

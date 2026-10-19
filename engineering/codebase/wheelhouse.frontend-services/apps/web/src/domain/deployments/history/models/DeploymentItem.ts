@@ -1,3 +1,4 @@
+import type { SettingChange } from "@/domain/settings";
 import type { Attention, DeployState, ServiceResult } from '@/domain/common/StatusVocabulary';
 import type { JobStatus } from '../../enums/JobStatus';
 import type { ReleaseKind } from '../../models/ReleaseArtifact';
@@ -105,4 +106,8 @@ export interface DeploymentItem {
   currentStep: CurrentStep | null;
   /** The watch after a successful rollout; null when it was not watched. */
   watch: DeploymentWatch | null;
+  /** The setting and secret keys its render changed against the target's last good render; null when none. */
+  settingsChanged?: SettingChange[] | null;
+  /** Whether those changes are the likely cause: it failed, rolled back, regressed or failed its check. */
+  settingsSuspect?: boolean;
 }

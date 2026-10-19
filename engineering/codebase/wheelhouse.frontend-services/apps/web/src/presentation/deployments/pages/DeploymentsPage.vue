@@ -34,6 +34,7 @@ import ReconcileModal from "../components/ReconcileModal.vue";
 import DeploymentFilterScope from "../components/history/DeploymentFilterScope.vue";
 import DeploymentsPanel from "../components/history/DeploymentsPanel.vue";
 import IssuesPanel from "../components/history/IssuesPanel.vue";
+import VaultIssuesPanel from "@/presentation/settings/components/VaultIssuesPanel.vue";
 import RangeStatsTiles from "../components/history/RangeStatsTiles.vue";
 import ReadyToPromotePanel from "../components/history/ReadyToPromotePanel.vue";
 import RunningNowPanel from "../components/history/RunningNowPanel.vue";
@@ -162,6 +163,7 @@ function fleetStarted(): void {
       @redeploy="redeploy"
       @reconcile="reconcile"
     />
+    <VaultIssuesPanel />
     <RunningNowPanel
       v-if="running.data.value?.length || fleets.active.value"
       :items="running.data.value ?? []"

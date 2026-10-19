@@ -22,14 +22,15 @@ import ProductHeader from "./ProductHeader.vue";
 import ProductOverview from "./tabs/ProductOverview.vue";
 
 /* Overview ships with the page; the other tabs load the first time they open. @internal */
+const ProductSettings = defineAsyncComponent(() => import("./tabs/ProductSettings.vue"));
 const ProductSecrets = defineAsyncComponent(() => import("./tabs/ProductSecrets.vue"));
 const ProductActivity = defineAsyncComponent(() => import("./tabs/ProductActivity.vue"));
 const ProductDeployments = defineAsyncComponent(() => import("./tabs/ProductDeployments.vue"));
 
 /**
  * One product on its own page: the header — what it is and what applies to all of it — over its tabs: Overview
- * (environments, services, comparison, inspector), Deployments (the history and the releases it can deploy), Secrets
- * and Activity. Each tab has its own address,
+ * (environments, services, comparison, inspector), Deployments (the history and the releases it can deploy), Settings,
+ * Secrets and Activity. Each tab has its own address,
  * `/p/{product}/{tab}`, with Overview at `/p/{product}`; the tabs scroll sideways on phones. A tab's top-bar actions
  * come from its panel. A new tab adds its entry to `ProductTabs` (application/navigation) and its panel below. The page
  * it shows is remembered — product and tab — so the sidebar's Products returns to it; phones get "All products" at the
@@ -147,12 +148,20 @@ watch(
       <TabsGroupPanel :value="ProductTab.Deployments" class="min-w-0">
         <ProductDeployments :product="productKey" />
       </TabsGroupPanel>
+      <TabsGroupPanel :value="ProductTab.Settings" class="min-w-0">
+        <ProductSettings v-if="record" :product="record" />
+        <EmptyState
+          v-else-if="!firstLoad"
+          title="Not in the product catalog"
+          description="Settings belong to a product Wheelhouse holds; add this one in Products to manage them."
+        />
+      </TabsGroupPanel>
       <TabsGroupPanel :value="ProductTab.Secrets" class="min-w-0">
         <ProductSecrets v-if="record" :product="record" />
         <EmptyState
           v-else-if="!firstLoad"
           title="Not in the product catalog"
-          description="Secrets belong to a product Wheelhouse holds; add this one in Products to manage its namespaces."
+          description="Secrets belong to a product Wheelhouse holds; add this one in Products to manage them."
         />
       </TabsGroupPanel>
       <TabsGroupPanel :value="ProductTab.Activity" class="min-w-0">

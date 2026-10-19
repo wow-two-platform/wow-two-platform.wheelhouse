@@ -5,7 +5,9 @@ export const ProductTab = {
   /** The product's rollouts by day or newest first, under the shared deployments filter, and the releases and commit
    * builds it can deploy. */
   Deployments: 'deployments',
-  /** The product's vault namespace in each environment. */
+  /** The settings each environment renders: declared and added keys, typed, saved field by field. */
+  Settings: 'settings',
+  /** Each environment's secrets in the built-in vault: versions, history, expiry. */
   Secrets: 'secrets',
   /** The audit trail's entries about the product. */
   Activity: 'activity',
@@ -25,6 +27,7 @@ export interface ProductTabEntry {
 export const ProductTabs: readonly ProductTabEntry[] = [
   { value: ProductTab.Overview, label: 'Overview' },
   { value: ProductTab.Deployments, label: 'Deployments' },
+  { value: ProductTab.Settings, label: 'Settings' },
   { value: ProductTab.Secrets, label: 'Secrets' },
   { value: ProductTab.Activity, label: 'Activity' },
 ];

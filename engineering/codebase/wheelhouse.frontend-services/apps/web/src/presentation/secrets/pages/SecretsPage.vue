@@ -41,6 +41,7 @@ import { useListDetailRoute } from "@/presentation/common/hooks";
 import NamespaceList from "../components/NamespaceList.vue";
 import SecretsTable from "../components/SecretsTable.vue";
 import TokensTable from "../components/TokensTable.vue";
+import BuiltInVaultPanel from "@/presentation/settings/components/BuiltInVaultPanel.vue";
 
 /** Presents vault availability, namespace selection, write-only secrets, and token administration. */
 defineOptions({ name: "SecretsPage" });
@@ -131,14 +132,15 @@ function selectNamespace(slug: string): void {
   <PageHeaderActions>
     <RefreshButton size="md" :refreshing="refreshing" @refresh="refresh" />
   </PageHeaderActions>
+  <BuiltInVaultPanel class="mb-6" />
   <DataRegion
     :is-first-load="isFirstLoad"
     :is-refreshing="isRefreshing"
     :error="error"
     :has-data="vaults !== undefined"
     :is-empty="vaults !== undefined && !vaults.length"
-    empty-title="No vaults configured"
-    empty-description="Configured vaults appear here when they are available."
+    empty-title="No standalone vaults"
+    empty-description="Secrets live in the built-in vault; a standalone vault listed here can be imported, then retired."
     loading-label="Loading vaults"
   >
     <SkeletonStateGroup class="contents" :is-loading="refreshing" label="Refreshing vaults">

@@ -53,7 +53,6 @@ import {
   useProductCommits,
   useReleaseArtifacts,
   useRequestBuild,
-  useSaveDeploySettings,
   useStartDeployment,
   useTargetCheck,
   useTargetState,
@@ -177,7 +176,8 @@ const settings = useDeploySettings(
   () => (step.value === "confirm" ? target.value : null),
   () => (step.value === "confirm" ? release.value : null),
 );
-const saveSettings = useSaveDeploySettings();
+/** Whether a settings field's save is still on its way: the deploy waits for it. */
+const settingsSaving = ref(false);
 const prompted = computed(() => DeploySettingsRules.prompted(settings.data.value));
 const entered = ref<Record<string, string>>({});
 const secretKinds = ref<Record<string, boolean>>({});
@@ -189,6 +189,7 @@ const canDeploy = computed(
     (!freeze.value || overrideFreeze.value) &&
     (!reasonNeeded.value || reason.value.trim().length > 0) &&
     !settings.loading.value &&
+    !settingsSaving.value &&
     settingsBlock.value.length === 0,
 );
 const settled = computed(
@@ -233,7 +234,6 @@ watch(
     secretKinds.value = {};
     check.reset();
     start.reset();
-    saveSettings.reset();
     build.reset();
     void releases.refetch();
   },
@@ -327,16 +327,10 @@ function confirmSelection(): void {
   if (canChoose.value) step.value = "confirm";
 }
 
-/** Saves the values the owner gave (secrets to the vault, the rest to the store), then submits the confirmed bundle
- *  and follows only an acknowledged submission. */
+/** Submits the confirmed bundle — the settings step saved each value as it was given — and follows only an
+ *  acknowledged submission. */
 async function deploy(): Promise<void> {
-  if (!canDeploy.value || start.loading.value || saveSettings.loading.value) return;
-  const values = DeploySettingsRules.values(prompted.value, entered.value, secretKinds.value);
-  if (values.length) {
-    const saved = await saveSettings.mutateAsync({ target: target.value, values });
-    if (!saved.ok) return;
-    entered.value = {};
-  }
+  if (!canDeploy.value || start.loading.value || settingsSaving.value) return;
   const result = await start.mutateAsync({
     target: target.value,
     release: release.value,
@@ -655,15 +649,12 @@ function close(open: boolean): void {
             v-else-if="settings.data.value"
             v-model:entered="entered"
             v-model:secrets="secretKinds"
+            v-model:saving="settingsSaving"
             :settings="settings.data.value"
             :prompted="prompted"
-            :is-disabled="start.loading.value || saveSettings.loading.value"
-          />
-          <Alert
-            v-if="saveSettings.error.value"
-            severity="danger"
-            title="Settings not saved"
-            :description="failureReason(saveSettings.error.value)"
+            :target="target"
+            :release="release"
+            :is-disabled="start.loading.value"
           />
           <Alert
             v-if="selectedTarget?.self"
@@ -751,7 +742,7 @@ function close(open: boolean): void {
           <Button
             variant="solid"
             tone="primary"
-            :is-loading="start.loading.value || saveSettings.loading.value"
+            :is-loading="start.loading.value"
             :is-disabled="!canDeploy"
             @click="deploy"
           >

@@ -59,8 +59,10 @@ test("an old Workspace link keeps every other parameter and needs a product", ()
 
 test("a product's tabs are addressed by path, Overview by the product's own address", () => {
   assert.equal(ProductTabs[0].value, "overview");
-  // Releases joined Deployments (2026-10-19): one tab holds the history and the releases it can deploy.
-  assert.deepEqual(ProductTabs.map((tab) => tab.label), ["Overview", "Deployments", "Secrets", "Activity"]);
+  // Releases joined Deployments (2026-10-19): one tab holds the history and the releases it can deploy. Settings and
+  // Secrets are the two editors of the built-in vault's environment values (decision 16).
+  assert.deepEqual(ProductTabs.map((tab) => tab.label), ["Overview", "Deployments", "Settings", "Secrets", "Activity"]);
+  assert.equal(productTabOf("settings").label, "Settings");
   assert.equal(ConsolePaths.product("wheelhouse"), "/p/wheelhouse");
   assert.equal(ConsolePaths.product("wheelhouse", "overview"), "/p/wheelhouse");
   assert.equal(ConsolePaths.product("wheelhouse", "activity"), "/p/wheelhouse/activity");

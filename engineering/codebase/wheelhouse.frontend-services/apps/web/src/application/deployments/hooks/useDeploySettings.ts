@@ -10,17 +10,17 @@ import { DeploymentKeys } from '../DeploymentKeys';
 export function useDeploySettings(target: MaybeRefOrGetter<string | null>, release: MaybeRefOrGetter<string | null>) {
   return useAppQuery({
     key: () => DeploymentKeys.settings(toValue(target) ?? '', toValue(release) ?? ''),
-    queryFn: ({ signal }) => deploySettingsApi.get(toValue(target) ?? '', toValue(release) ?? '', signal),
+    queryFn: ({ signal }) => deploySettingsApi.get(toValue(target) ?? '', toValue(release) ?? null, signal),
     enabled: () => Boolean(toValue(target) && toValue(release)),
     meta: { suppressGlobalError: true },
   });
 }
 
-/** Saves an environment's values; the target's settings plans read again. */
+/** Saves an environment's values together, in one transaction; the target's settings plans read again. */
 export function useSaveDeploySettings() {
   return useAppMutation({
-    mutationFn: ({ target, values }: { target: string; values: readonly DeploySettingValue[] }, { signal }) =>
-      deploySettingsApi.save(target, values, signal),
+    mutationFn: ({ target, values, release }: { target: string; values: readonly DeploySettingValue[]; release?: string | null }, { signal }) =>
+      deploySettingsApi.save(target, values, release ?? null, signal),
     invalidates: ({ target }) => [DeploymentKeys.settingsOf(target)],
     meta: { suppressGlobalError: true },
   });

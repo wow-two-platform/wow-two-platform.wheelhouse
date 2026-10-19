@@ -27,6 +27,7 @@ import { Badge, RelativeTime } from "@wow-two-beta/fe/presentation/display";
 import { ConsolePaths } from "@/application/navigation";
 import { Attention } from "@/domain/common";
 import { DeploymentIssueKind, DeploymentIssues, DeploymentStates } from "@/domain/deployments";
+import { EnvironmentSettingsRules } from "@/domain/settings";
 import { Panel } from "@/presentation/common/components";
 
 import DeploymentStateChip from "../DeploymentStateChip.vue";
@@ -107,6 +108,14 @@ function describe(issue: DeploymentIssue): string {
               DeploymentIssues.headline(issue)
             }}</span>
             <span v-if="issue.deployment.reason" class="text-muted-foreground"> · {{ issue.deployment.reason }}</span>
+          </p>
+          <p
+            v-if="EnvironmentSettingsRules.hint(issue.deployment.settingsChanged, issue.deployment.settingsSuspect ?? false)"
+            class="mt-1 flex items-start gap-1.5 text-sm text-warning-soft-foreground"
+          >
+            <KeyRound :size="14" class="mt-0.5 shrink-0" aria-hidden="true" />{{
+              EnvironmentSettingsRules.hint(issue.deployment.settingsChanged, issue.deployment.settingsSuspect ?? false)
+            }}
           </p>
           <p class="mt-0.5 text-xs text-muted-foreground">
             <RelativeTime :value="issue.at" /><template v-if="issue.deployment.actor"> · {{ issue.deployment.actor }}</template

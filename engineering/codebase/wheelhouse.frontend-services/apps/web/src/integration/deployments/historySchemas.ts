@@ -83,6 +83,21 @@ const DeploymentItemFields = z.object({
     })
     .nullable()
     .default(null),
+  settingsChanged: z
+    .array(
+      z.object({
+        key: z.string(),
+        kind: z.enum(['setting', 'secret']).catch('setting'),
+        change: z.enum(['added', 'changed', 'removed']).catch('changed'),
+        from: z.number().int().nullable().optional().transform((value) => value ?? null),
+        to: z.number().int().nullable().optional().transform((value) => value ?? null),
+      }),
+    )
+    .nullable()
+    .optional()
+    .catch(null)
+    .transform((value) => value ?? null),
+  settingsSuspect: z.boolean().optional().catch(false).transform((value) => value ?? false),
 });
 
 /** A deployment as lists read it; an answer from before the status taxonomy reads its state from the runner status. */
