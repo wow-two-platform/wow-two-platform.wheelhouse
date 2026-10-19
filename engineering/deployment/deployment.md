@@ -201,6 +201,8 @@ inventory.json            ← written by the API; never edit by hand
 ssh/<server-id>/identity
 ssh/<server-id>/known_hosts
 vaults/<vault-id>/password
+github-app/private-key.pem ← the GitHub App key, optional (GitHub access below)
+github/                   ← GitHub reads kept briefly, the App's tokens for the runner, refused-call notes
 bundles/<artifact-id>/{release,compose,source}.json
 jobs/
 observed/
@@ -219,9 +221,7 @@ A product's release source on its inventory row names the approved public reposi
 The catalog lists only published versioned release assets with completed upload and checksum metadata.
 Wheelhouse validates the archive, bundle contents and tag/source commit when a release is selected.
 A GHCR pull remains the definitive image-availability check before container replacement.
-Use `Deployment:GitHubTokenFile` for a mounted read-only catalog token; the operator CLI reads the equivalent
-`WHEELHOUSE_GITHUB_TOKEN_FILE` environment variable. Anonymous GitHub requests have a lower shared-IP rate limit.
-The token is sent only to the API origin and is removed from CDN redirects. Private release downloads are not yet supported.
+GitHub credentials, private releases included: [GitHub access](#github-access).
 
 Registry login belongs to the target deployment account. Public GHCR images need no pull credential;
 private images require a read-only token and `docker login --password-stdin`.
@@ -246,6 +246,42 @@ The runner rejects a deployment before changing any container when a listed key 
 when `AllowedHosts` omits `localhost`, or when `Deployment:TrustedProxies` is not a JSON array.
 Health checks and smoke probes call `http://localhost:8080`, so use `"<public host>;localhost"`.
 A plain-string proxy value binds to no proxy; use `["<ingress IP>"]`.
+
+## GitHub access
+
+Every GitHub call — hub catalogs, manifests, icons, release listings and downloads, workflow runs, commits, branches
+and build dispatches — carries the first credential at hand for the owner its address names:
+
+1. The GitHub App's installation token for that owner (`Deployment:GitHubAppId`, `Deployment:GitHubAppKeyFile`).
+2. The single token file `Deployment:GitHubTokenFile` (`WHEELHOUSE_GITHUB_TOKEN_FILE` for the operator CLI).
+3. Console reads only: the signed-in owner's sign-in token.
+4. None: public repositories only, 60 calls an hour shared by the host's IP.
+
+- The API signs a 9-minute App token with the key, finds the owner's installation and exchanges it for an installation
+  token, kept per owner until 5 minutes before its hour runs out; one refresh runs at a time per owner.
+- Before each runner action that reaches GitHub, the API writes `<runner root>/github/tokens.json` (mode `0600`, one
+  token per inventory owner) and passes it as `WHEELHOUSE_GITHUB_TOKENS_FILE`; the runner picks by the owner in each
+  API address. Package versions take the token file only: an installation token cannot read packages.
+- With a credential, a release archive downloads through the API asset endpoint (`application/octet-stream`), so
+  private releases work; without one, through the public download URL. A credential goes only to `api.github.com` and
+  is stripped from the storage redirect.
+- A call refused with 401, 403 or 429, an owner without the App, or an App set up by half shows in Deployments ›
+  Issues as **GitHub access**, naming the owner and the cause; a later success clears it. Tokens, the key and response
+  bodies are never logged or returned.
+- The key defaults to `<runner root>/github-app/private-key.pem`. A missing key never stops the console: the App stays
+  off, Issues says so, and every call falls back.
+
+Owner steps, once:
+
+1. GitHub › Settings › Developer settings › GitHub Apps › New GitHub App; turn the webhook off.
+2. Repository permissions: Actions read and write, Contents read-only, Metadata read-only; nothing else.
+3. Installable on any account. Create it, note its App ID and generate a private key.
+4. Install it on `sulton-max`, `ocharo-hq` and `wow-two-platform` with all repositories, and on any other owner Issues
+   names (the wow2 hub is under `wow-two`).
+5. Place the key and set the App ID on each console: [VPS › GitHub access](vps/vps.md#github-access).
+
+Rotate by generating a new key, replacing the file and deleting the old key in GitHub; the key is read at each token
+issue, so no restart is needed.
 
 ## Operator and API commands
 
@@ -279,7 +315,7 @@ python3 $R build    --root /path/to/inventory --product foreverpin --commit <ful
 ```
 
 `commits` marks each commit that has a build. `build` starts the product's build workflow only for a commit without one;
-it needs `WHEELHOUSE_GITHUB_TOKEN_FILE` with Actions write access on the product repository.
+it needs Actions write on the product repository: the GitHub App on its owner, or `WHEELHOUSE_GITHUB_TOKEN_FILE`.
 `check` probes SSH, the deployment root, Docker architecture, Compose, disk, the shared network, the ingress,
 every settings file and the target's lock state; each failure names the rule or key it broke.
 
@@ -302,6 +338,7 @@ every settings file and the target's lock state; each failure names the rule or 
 | `GET /api/deployments/freezes` | The holds on deploys: everywhere, per product, per product environment |
 | `GET /api/deployments/products/{product}/usage` | Actions runs and minutes over 30 days, and GHCR package versions (a `read:packages` token); hourly |
 | `GET /api/deployments/issues/builds` | Products whose newest finished main build failed, linked to the run (read every two minutes at most) |
+| `GET /api/deployments/issues/github` | Owners GitHub refused, owners without the GitHub App, and an App set up by half |
 | `GET /api/deployments/releases/{release}/facts` | Whether a release can roll back automatically and declares migrations; reads only the bundle |
 | `GET /api/deployments/products/{product}/changelog?from=&to=` | Release notes and compare commits between what a target runs and a release |
 | `POST` / `DELETE /api/deployments/freezes` | `{"product":"…","environment":"prod","reason":"…"}` / `?product=&environment=` with `X-Wheelhouse-Action: freeze` |
@@ -319,7 +356,8 @@ every settings file and the target's lock state; each failure names the rule or 
 - Restarting the dashboard does not terminate a launched target worker.
 - Reconciling records who acknowledged the rollout under `<inventory>/reconciled/`.
 
-The API reads its runner settings from the `Deployment` section: `TransportPath`, `Root`, `Python` and `GitHubTokenFile`.
+The API reads its runner settings from the `Deployment` section: `TransportPath`, `Root`, `Python`, `GitHubTokenFile`,
+`GitHubAppId` and `GitHubAppKeyFile`.
 A background follower observes durable deployment submissions every `Deployment:FollowSeconds` (default 10;
 0 disables it). Each pass reads at most two due target journals, with a 30-second SSH limit per read. Transport
 failures retain the last outcome; failed or unknown reads back off up to five minutes. Retry timing survives a control-plane
@@ -340,8 +378,8 @@ A background automation worker runs every `Deployment:AutomationSeconds` (defaul
 auto-deploying product's newest published release and queues a new one for its dev targets, one slot per target with
 the latest release winning, and submits a queued deploy once its target runs no rollout, as actor `automation`
 ([architecture](../architecture/architecture.md#deployment-automation)). Each pass costs one GitHub API call per
-auto-deploying product; give the catalog token (`Deployment:GitHubTokenFile`) so the calls stay within the
-authenticated limit. Each pass also looks at the targets inside their watch window (`Deployment:WatchMinutes`, default
+auto-deploying product; the [GitHub App](#github-access) keeps the calls within the authenticated limit.
+Each pass also looks at the targets inside their watch window (`Deployment:WatchMinutes`, default
 10; 0 turns it off): one SSH read a minute per watched target, two per pass at most, recorded under
 `<runner root>/watching/` (preserve it with the runner root). A product that auto-promotes sends a release that
 passed its dev watch to prod.

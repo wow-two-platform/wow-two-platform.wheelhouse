@@ -1,6 +1,6 @@
 # Feature completeness — vectors, reliability and shipping Wheelhouse
 
-*Last updated: 2026-10-02*
+*Last updated: 2026-10-19*
 
 What Wheelhouse needs before it is complete and reliable enough to run the portfolio: the five vectors the product
 named (topology, secrets, domains, portfolio, service map), the reliability properties, how Wheelhouse ships itself,
@@ -188,7 +188,7 @@ Placement options:
 | S4 | Nothing requests a published site through the ingress | Smoke runs `compose exec <service> curl http://localhost:8080<path>` inside the container | v0.3 ✓ |
 | S5 | Smoke probes and the `AllowedHosts` check assume port 8080 | `runner.py` smoke and `validate_settings`; the descriptor allows any `port` | v0.3 ✓ |
 | S6 | No CI: tests never run on push and no image is published | No `.github/` in the repository | v0.3 ✓ |
-| S7 | GitHub sign-in requests `repo` and `read:packages`; the runner holds a second token | `AuthConfigurationExtensions.cs`; `WHEELHOUSE_GITHUB_TOKEN_FILE` | Point 9 |
+| S7 | GitHub sign-in requests `repo` and `read:packages`; the runner holds a second token | `AuthConfigurationExtensions.cs`; `WHEELHOUSE_GITHUB_TOKEN_FILE` | v0.5 ✓ App; the scopes drop once it is installed |
 | S8 | Wheelhouse's own credentials are plain files | Inventory `ssh/`, `vaults/` and the GitHub token file | Secrets |
 | S9 | The GitHub repository is public | `wow-two-platform/wow-two-platform.wheelhouse`, renamed from `drydock` on 2026-09-29 | Point 8 |
 | S10 | Settings files on a VPS are placed by hand | Target settings are host paths | Secrets |
@@ -261,7 +261,8 @@ Decide top to bottom; a parent settles before its children.
 6. [x] Alert channel: a Telegram bot for alerts and deploy outcomes.
 7. [ ] Wheelhouse host: a separate control VPS on Tailscale; the laptop CLI stays the break-glass path.
 8. [x] Repository visibility: private before `fleet.py` holds real host addresses.
-9. [ ] GitHub access: one GitHub App replaces the sign-in `repo` scope and the runner's token file.
+9. [x] GitHub access: one GitHub App serves every owner (v0.5); the token file stays a fallback, and the sign-in `repo`
+   scope drops once the App is installed.
 10. [ ] Real host timing: one hand-wired `linux/amd64` test host now, or only after the Topology wave.
 11. [ ] Next version: Adoption first as the dev cycle orders, or Operations first with the re-pins folded in.
 12. [ ] Outcome follower: the API follows every rollout to its end and keeps deployments in PostgreSQL; the target journal stays the authority.

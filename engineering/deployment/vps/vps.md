@@ -1,6 +1,6 @@
 # Wheelhouse dev VPS
 
-*Last updated: 2026-10-17*
+*Last updated: 2026-10-19*
 
 This bootstrap prepares the private control-plane host on Ubuntu 26.04 amd64: `wheelhouse-prod` and
 `wheelhouse-dev` side by side, each with its own database and sign-in. GitHub builds the image; the existing
@@ -207,6 +207,26 @@ Configure Wheelhouse's public release source and approved image repositories. Pl
 SSH identity and verified `known_hosts` under persistent `/data/deployments/ssh/<server-id>/`.
 The product image's Docker named volumes preserve `/data/keys` and `/data/deployments`, initially owned
 by UID `1654`; preserve them during updates and backups.
+
+## GitHub access
+
+Each console reaches GitHub through the GitHub App, then the token file, then anonymously
+([order and App setup](../deployment.md#github-access)). Without the App, both consoles run and fall back to anonymous
+reads. Once the App exists, for `wheelhouse-dev` and then `wheelhouse-prod`:
+
+```sh
+# The key, as the console's own user, into its persistent runner volume (a missing key leaves the App off).
+sudo docker exec -i wheelhouse-dev-console-1 sh -c \
+  'umask 077; mkdir -p /data/deployments/github-app; cat > /data/deployments/github-app/private-key.pem' < app.pem
+# The App ID, in the console's settings file: "Deployment": { …, "GitHubAppId": "<App ID>" }.
+sudoedit /srv/wheelhouse/config/console-dev.json
+sudo docker restart wheelhouse-dev-console-1
+```
+
+- The key sits in the `/data/deployments` volume beside the runner's SSH identities: a console's containers come from
+  its release bundle, whose descriptor mounts named volumes and the settings file only.
+- The settings file is read at startup, hence the restart; the key is read at each token issue.
+- Delete the downloaded `app.pem` once both consoles hold it; Deployments › Issues names any owner still without access.
 
 ## Canary
 

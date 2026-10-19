@@ -39,7 +39,9 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Sign in to the local console through a localhost GitHub OAuth app | feature | Local rig sign-in; the `rehearse.py console` check depends on it |
 | Tell dev from prod by an environment tag beside the version | feature | Dev and prod consoles run side by side |
 | Accept the hosted console: owner sign-in, restart persistence, authenticated MCP | check | After Wheelhouse prod is live (user 2026-10-13); dev already passed CI's rollout, HTTPS and anonymous-MCP checks |
-| Give Wheelhouse a GitHub App installed on every org | feature | User decision 2026-10-14: reads, commits (identity edits), workflow runs and repository renames. Today catalog reads are anonymous and icons use the operator's expiring sign-in token |
+| Install the GitHub App and place its key on both consoles | check | Owner steps in `deployment.md` § GitHub access; Deployments › Issues names any owner still without it |
+| Drop the sign-in `repo` and `read:packages` scopes | fix | Once the GitHub App serves every owner; package versions then need the token file |
+| Rename a product's repository through the GitHub App | feature | User decision 2026-10-14; needs Administration write, the App has Actions write and Contents and Metadata read |
 | Register the second OVH VPS for Ocharo as a server | check | User 2026-10-17: the owner buys it (`app-t-004` in the wow2 tasks); Wheelhouse wires it with v0.5's public-hosting iteration |
 | Deploy Ocharo to the products VPS | check | User 2026-10-17: Ocharo is the first product to go live, after v0.5's essential modules (`app-t-005`); ForeverPin follows |
 | Choose the shared preview domain for dev hosts | check | Topology point 25; one wildcard DNS record; `test` was retired 2026-10-17 |
@@ -96,7 +98,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Show the maintenance page in Uzbek, Russian and English at least | feature | Parked 2026-10-19 from Iteration 15: per-product copy in the manifest, chosen by `Accept-Language` |
 | Turn on `dotnetEnvironment` for ForeverPin, Haven, Ocharo Studio, Ocharo Desk and Secrets Vault | check | User 2026-10-19: later, when each product's chat works on it. Each keys behaviour on `Development` or holds localhost values; move those to `appsettings.Machine.json` first |
 | Run each app's migrations as a rollout step and show their state | feature | User decision 2026-10-14: apps own their SQL; the runner migrates with the new image between pull and start; prod waits for test. The app database's own migration journal stays the authority; Wheelhouse reads it at deploy and keeps what it saw in the job history, never a second table. Rollback scripts run only on a confirmed operator action |
-| Mount a GitHub token that can start product builds | check | `WHEELHOUSE_GITHUB_TOKEN_FILE` with Actions write on each product; the Build button needs it |
 | Pull private GHCR images on targets | check | Public images need no token (Wheelhouse's console is public since 2026-10-09); private ones need a read-only pull token per target |
 | Haven adopts `deploy.yml`, per-service versions and an edge health route | feature | Its Caddy edge has no health route; the runner requires one |
 | Show each service's version inside every product | feature | Haven shows its build version beside the logo; adopt across products |
@@ -123,7 +124,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Item | Type | Notes |
 |---|---|---|
 | Add `product/product.json` to ForeverPin, every other product repository and the product template | feature | Decided 2026-10-15: identity text is a manifest in the repository ([convention](../../../../../conventions/design/identity/product-manifest.md)); Wheelhouse and the canary carry one; until a repo does, its row supplies the name and description |
-| Edit a product's identity from the console by committing its manifest | feature | Needs the GitHub App (Hosting group); the console shows manifest-sourced name, description and homepage read-only meanwhile |
+| Edit a product's identity from the console by committing its manifest | feature | Needs Contents write on the GitHub App (it reads only); the console shows manifest-sourced name, description and homepage read-only meanwhile |
 | Refresh a product's manifest on push | feature | A GitHub App push webhook feeds the same commit-keyed row; the 5-minute head check and the Refresh action stay as fallbacks |
 | Add the icon set to ForeverPin and every other product repository | feature | Each product repo carries `product/brand/icons/` per the convention; until then Wheelhouse shows its web app favicon or a monogram |
 | Ship Wheelhouse's monochrome icon variants | check | The approved artwork keeps a gray fold in every variant; a one-ink export needs a brand decision |
@@ -178,6 +179,7 @@ Leftovers of the v0.4 sweep. Items marked *decision* wait on the owner.
 | Extract GitHub, image and hostname rules → SDK validation vocabulary | engineering | `InventoryPatternConstants.cs`, `InventoryRuleExtensions.cs`; the backend half of the shared vocabulary |
 | Adopt SDK token paging for the audit list | engineering | Wire change with the Activity page |
 | Extract atomic file write and an EF upsert → SDK | engineering | `InventorySnapshotExporter.cs`, `EfProductManifests.cs` |
+| Extract GitHub App credentials → SDK | engineering | `Infrastructure/GitHub/`: App token, per-owner installation tokens, the per-call credential handler; the SDK client takes one token for every owner |
 | Replace the local `Stub*` clients with SDK testing fakes | engineering | Waits on the vault and repository-reader extracts shipping fakes; the SDK fakes today cover clients Wheelhouse doesn't call |
 | Extract a selectable list → UI SDK | engineering | `ProductsPanel`, `WorkspacePage`, `NamespaceList`: leading, title, meta, trailing, skeleton rows |
 | Extract the rows field → UI SDK | engineering | `RowsField.vue` over `useFieldArray`; stacks on phones |

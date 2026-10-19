@@ -113,8 +113,9 @@ no build; it never pushes, tags or builds on a host.
 Images live in GitHub Container Registry, one repository per service; the digest is the deployment identity.
 Keep every deployed digest and declared rollback dependency, and at least the 10 newest releases; candidate
 bundle artifacts expire after 14 days. Deleting a release image needs a cross-host reference inventory first.
-A read-only GitHub token (`Deployment:GitHubTokenFile` / `WHEELHOUSE_GITHUB_TOKEN_FILE`) goes only to the GitHub API
-and is stripped from cross-origin redirects. Release rules for every product:
+Every GitHub call carries the GitHub App's installation token for the owner it addresses, else the fallback token file
+(`Deployment:GitHubTokenFile` / `WHEELHOUSE_GITHUB_TOKEN_FILE`), else none; a credential goes only to the GitHub API and
+is stripped from cross-origin redirects ([GitHub access](../deployment/deployment.md#github-access)). Release rules:
 [deploy descriptor](../../../../../conventions/deployment/descriptor/deploy-descriptor.md) § *Builds and versions*.
 
 ## Inventory
@@ -215,7 +216,7 @@ reach the audit trail and are not inventory.
 
 Wheelhouse reads one YAML catalog from each hub in `Catalog:Sources` — a list of `{ Repository, Path, Ref }`, default
 `wow-two/wow-two-ws`, `sulton-max/10x-ventures` and `ocharo-hq/ocharo-ws`, each `catalog.yml` at `main` (an empty
-list reads those three) — validated options, read with the signed-in owner's token through `GitHubRepositoryReader`
+list reads those three) — validated options, read with the owner's GitHub App token through `GitHubRepositoryReader`
 (`IRepositoryFileSource`). Each read checks every ref's head again, so a pushed catalog shows at once; a commit's file
 stays cached. The format (`catalog: 1`, `hub`, `workspaces`, `entries`) and which hub owns which entries are owned by
 wow-two-ws ([catalog convention](../../../../../conventions/development/repo/catalog/catalog.md)); Wheelhouse reads the
