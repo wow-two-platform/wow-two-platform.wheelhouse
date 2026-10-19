@@ -293,8 +293,8 @@ Prod console (control host) -> tailnet -> <products-tailnet-ip>:22 -> wheelhouse
 | `/srv/wheelhouse/platform/.secrets/postgres-password` | PostgreSQL's administrator password, created once |
 | `/srv/wheelhouse/platform/sites.json` · `sites/<node>/` | Site nodes and their fixed addresses (`172.30.0.64/26`); each node's tailnet state |
 | `/srv/wheelhouse/config/<product>-<environment>/database.json` | Owner-only role, password and connection string |
-| `/srv/wheelhouse/config/<product>-<environment>/<service>.json` | The settings files a target names; mode `0444` inside the mode-`0700` folder |
-| `/srv/wheelhouse/private/` | Owner-placed `tailscale-sites.env` (site nodes' auth key) and, briefly, `ghcr-token` |
+| `/srv/wheelhouse/config/<product>-<environment>/<service>.target.json` | Each service's settings, rendered by Wheelhouse at every deploy; mode `0444` inside the mode-`0700` folder |
+| `/srv/wheelhouse/private/` | Owner-placed `tailscale-sites.env` (site nodes' auth key) |
 | `/srv/wheelhouse/ingress/` | The runner's routes, read by Traefik |
 
 | Step | Who |
@@ -302,9 +302,9 @@ Prod console (control host) -> tailnet -> <products-tailnet-ip>:22 -> wheelhouse
 | Buy, verify the host key, administrator key, tailnet policy, auth key, GitHub token | Owner |
 | The administrator account and its sudo access, on a root-only image | `create-admin.sh`; the owner sets its password |
 | Packages, deploy account, kit, `platform` network, SSH policy, firewall, updates, tailnet join | `bootstrap-products.sh` |
-| PostgreSQL password, Compose file, databases, settings folders, site nodes, GHCR sign-in | `prepare.py --server products` |
+| PostgreSQL password, Compose file, databases, settings folders, site nodes | `prepare.py --server products` |
 | Prod's runner identity, its host-key pin, its authorization and the proof it connects | `authorize-runner.sh` |
-| Server and targets, settings values, deploys | Owner, in Wheelhouse prod |
+| Server and targets, settings values (asked for by the first deploy), deploys | Owner, in Wheelhouse prod |
 
 The local rehearsal (`python3 rehearse.py products`) proves every scripted step except packages, the firewall, updates
 and the tailnet, which need a real Ubuntu host ([Local server](../deployment.md#local-server)).
@@ -402,25 +402,25 @@ sudo -u wheelhouse-deploy docker compose --env-file /srv/wheelhouse/platform/hos
   each site's address, `https://<node>.<tailnet>.ts.net`. A repeated site keeps its node and address.
 - Each node appears under Machines as `tag:product-site`; HTTPS certificates must be enabled in the tailnet.
 
-### 6. GHCR read access (owner)
+### 6. GHCR read access (owner, on the control host)
 
-Ocharo's images are private. GHCR takes a classic personal access token: GitHub › Settings › Developer settings ›
-Personal access tokens (classic), scope `read:packages` only, with an expiry. It reads every package the account can,
-so a dedicated machine account narrows it.
+Ocharo's images are private, and the products host keeps no registry token: every deploy lends its pull a sign-in from
+prod's console, which signs in for that pull only and signs out at once
+([registry sign-in](../../architecture/architecture.md#registry-sign-in)). Prod offers the GitHub App's installation
+token for the images' owner first, then its token file, whichever GHCR accepts:
 
 ```sh
-# Paste the token, then Ctrl-D.
-sudo -u wheelhouse-deploy sh -c 'umask 077; cat > /srv/wheelhouse/private/ghcr-token'
-sudo -u wheelhouse-deploy -H python3 /srv/wheelhouse/bootstrap/prepare.py --server products \
-  --ghcr-user <github-login> --ghcr-token-file /srv/wheelhouse/private/ghcr-token
-sudo shred -u /srv/wheelhouse/private/ghcr-token
-sudo -u wheelhouse-deploy -H docker pull ghcr.io/ocharo-hq/<image>:<tag>
+# On the control host, once prod runs v0.5: which credential GHCR grants each Ocharo image.
+sudo docker exec wheelhouse-prod-console-1 python3 /app/runner/transport.py registry --root /data/deployments \
+  --product ocharo-platform
 ```
 
-`prepare.py` asks GitHub for the token's scopes and refuses anything but `read:packages`, then runs
-`docker login ghcr.io --password-stdin`; nothing prints the token. The credential lands in
-`/home/wheelhouse-deploy/.docker/config.json` (mode `0600`), which the runner's Docker reads over SSH. Rotate by placing a
-new token and running the same two commands.
+- The App's token: give the App Packages read-only (GitHub App settings › Permissions › Repository permissions) and
+  approve the change on each installation; each private package keeps "inherit access from source repository".
+- Else the token file: a classic token, scope `read:packages` only, with an expiry, from a dedicated machine account,
+  as prod's `Deployment:GitHubTokenFile` (inside its `/data/deployments` volume).
+- A host that took the earlier sign-in (`prepare.py --ghcr-user …`) drops it with
+  `sudo -u wheelhouse-deploy docker logout ghcr.io`.
 
 ### 7. Prod's runner key (owner runs the script on both hosts)
 
@@ -461,24 +461,22 @@ Servers › Add server:
 Products: import Ocharo from its hub catalog (the GitHub App on `ocharo-hq` gives prod its private releases), then add
 dev and prod environments for each product:
 
-- Server `<server-id>`, network `platform`, root `/srv/wheelhouse`.
-- Settings per service: `/srv/wheelhouse/config/<product>-<environment>/<service>.json`.
+- Server `<server-id>`, network `platform`, root `/srv/wheelhouse`; no host settings files.
 - Sites: `app` → `<node>-dev.<tailnet>.ts.net` (dev) or `<node>.<tailnet>.ts.net` (prod).
 
-Fill each settings file from the release's required keys (`transport.py template`, or the target's check, which
-names a missing one), then publish it read-only:
+No settings file is written by hand: Wheelhouse renders each service's at every deploy
+([settings at deploy](../../architecture/architecture.md#settings-at-deploy)).
 
-- The connection string from `database.json`; `AllowedHosts` `<site host>;localhost`.
-- `Deployment:TrustedProxies` `["172.30.0.2"]`, Traefik's `platform` address.
+- Derived: `AllowedHosts` (the site host, the service's platform name, `localhost`), `Sites:app:Url`,
+  `Deployment:TrustedProxies` (`["172.30.0.2"]`, the ingress's `platform` address) and `ConnectionStrings:Database` from
+  `database.json`.
+- Asked for on the first deploy: the remaining required keys, such as Desk's `DataProtection:*`, the image worker's
+  `ImageWorker:Key` (a secret: it goes to the vault) and Studio's `OcharoPlatform:BaseUrl` (Desk's address, such as
+  `http://ocharo-platform-<environment>-desk:8080` on the `platform` network).
 
-```sh
-sudo -u wheelhouse-deploy cat /srv/wheelhouse/config/ocharo-platform-dev/database.json
-sudo -u wheelhouse-deploy sh -c 'umask 077; f=/srv/wheelhouse/config/ocharo-platform-dev/desk.json;
-  [ ! -e "$f" ] || chmod 0600 "$f"; cat > "$f"; chmod 0444 "$f"'   # paste the JSON, then Ctrl-D
-```
-
-Deploy dev from Deployments: Check first, then Deploy. Open `https://ocharo-desk-dev.<tailnet>.ts.net` from an owner
-device. Promote to prod once dev passes.
+Deploy dev from Deployments: Check first, then Deploy, filling in what the dialog asks. Open
+`https://ocharo-desk-dev.<tailnet>.ts.net` from an owner device. Promote to prod once dev passes; prod's first deploy
+asks for its own values.
 
 ### Verify
 

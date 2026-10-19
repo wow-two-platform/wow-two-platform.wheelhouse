@@ -230,21 +230,35 @@ Wheelhouse validates the archive, bundle contents and tag/source commit when a r
 A GHCR pull remains the definitive image-availability check before container replacement.
 GitHub credentials, private releases included: [GitHub access](#github-access).
 
-Registry login belongs to the target deployment account. Public GHCR images need no pull credential;
-private images require a read-only token and `docker login --password-stdin`. On a products host,
-`prepare.py --server products --ghcr-user … --ghcr-token-file …` does it, refusing any token but a classic
-`read:packages` one ([VPS › Products host](vps/vps.md#products-host)).
-Verify first-publish package visibility explicitly; source-repository visibility does not prove image visibility.
+Products hosts keep no registry token: each deploy lends its pull a sign-in from the control host
+([registry sign-in](../architecture/architecture.md#registry-sign-in)). Public GHCR images need none; for private ones
+the control host offers the GitHub App's installation token for the images' owner, else the token file
+(`Deployment:GitHubTokenFile`, a classic `read:packages` token), whichever GHCR's token service accepts. The target
+signs in to a temporary Docker config for the pull only and signs out at once. Check which credential GHCR takes:
+
+```sh
+docker exec <console-container> python3 /app/runner/transport.py registry --root /data/deployments [--product <slug>]
+```
+
+A host that still holds the earlier sign-in (`prepare.py --ghcr-user …`) can drop it:
+`sudo -u wheelhouse-deploy docker logout ghcr.io`. Verify first-publish package visibility explicitly;
+source-repository visibility does not prove image visibility.
 
 The target requires Linux, Python 3, Docker Engine/Compose v2, private configuration files and the external `platform` network.
 A deployment account with Docker access can control the host; membership in the Docker group is privileged.
 
-Private settings can be mode `600` owned by the image UID (`1654`) with a runner account able to read them.
-Alternatively, use mode `644` inside a mode `700` directory owned by the deployment account:
-the directory protects host access, while the read-only file bind is readable by the container UID.
-Never use group/world-writable settings. Cookie key volumes must remain writable by UID `1654`.
+Wheelhouse renders every service's settings file at each deploy
+([settings at deploy](../architecture/architecture.md#settings-at-deploy)): `config/<product>-<environment>/<service>.target.json`,
+mode `0444` inside the mode-`0700` folder, from the environment's stored settings and vault secrets, what it derives
+(`AllowedHosts`, `Sites:<site>:Url`, `Deployment:TrustedProxies`) and the target's `database.json`. Nothing on the
+host is hand-edited: the deploy dialog asks for each required value no layer sets, and the deploy waits until it has
+one. A settings file a target still names is the render's bottom layer, so existing hosts keep working; to retire one,
+give its values in Wheelhouse, deploy, then clear the path on the target. Cookie key volumes must remain writable by
+UID `1654`.
 
-Generate each service's settings file from its release contract, then fill every value:
+Without a console (a CI-deployed console), hand-placed settings files still
+work: mode `600` owned by the image UID (`1654`), or mode `644`/`444` inside a mode-`700` directory owned by the
+deployment account; never group- or world-writable. Generate one from its release contract, then fill every value:
 
 ```sh
 python3 engineering/codebase/wheelhouse.runner-services/transport.py template \
@@ -287,7 +301,9 @@ and build dispatches — carries the first credential at hand for the owner its 
 Owner steps, once:
 
 1. GitHub › Settings › Developer settings › GitHub Apps › New GitHub App; turn the webhook off.
-2. Repository permissions: Actions read and write, Contents read-only, Metadata read-only; nothing else.
+2. Repository permissions: Actions read and write, Contents read-only, Metadata read-only, and Packages read-only
+   for private image pulls where GHCR takes the App's token ([registry sign-in](../architecture/architecture.md#registry-sign-in));
+   nothing else.
 3. Installable on any account. Create it, note its App ID and generate a private key.
 4. Install it with all repositories on every owner with private repositories (`sulton-max`, `ocharo-hq`,
    `wow-two-apps`, `wow-two-platform`), and on any other owner Issues names. A public-only owner (the wow2 hub's
@@ -440,9 +456,10 @@ Each rollout records its steps in its job record as they start and end, so the d
 
 | Step | Covers |
 |---|---|
+| Render settings | Each settings file the release mounts, from the host file, Wheelhouse's values and what is derived; names keys by source, never a value; a required key no layer sets refuses the deploy here |
 | Check target | Lock, settings files, routes, disk, Docker and the release snapshot |
-| Snapshot data | Prod only: dumps each database and archives each named volume before anything changes; a failure fails the rollout |
-| Pull images | Every image, before any container changes |
+| Snapshot data | Prod only: dumps each database and archives each named volume before anything changes, pausing the writers of a volume that holds a file database (SQLite, LiteDB, LMDB, DuckDB…); a failure fails the rollout |
+| Pull images | Every missing image, before any container changes; a private one under a sign-in made for this pull only |
 | Start `<services>` | Only when the release changes some services but not all, or its changed services span dependency waves: `compose up --no-deps --force-recreate --wait` of one wave of changed services, after the waves they depend on, so a settings-only change applies and no dependent restarts; a failure leaves later waves unstarted |
 | Start containers | `compose up --wait --remove-orphans` within the target's health timeout: the whole release, with `--no-recreate` after the waves (or when nothing changed), so unchanged services keep running untouched, and `--force-recreate` when every service changed in one wave; its detail names how many services changed and how many kept running |
 | Verify services | Exact image references, health, and the target's smoke checks |
@@ -479,7 +496,8 @@ active secrets older than 90 days, and tokens expired, expiring within 14 days o
 Servers in the console declare each vault's slug, host and private management URL; the browser never chooses the URL,
 and the status list never shows it.
 Wheelhouse signs in with the administrator password at `<inventory>/vaults/<vault-id>/password`, a protected mount,
-and keeps the one-hour session in memory. The console writes values and never reads them back.
+and keeps the one-hour session in memory. The console writes values and never reads them back; a deploy reads its
+environment's secrets through a namespace token that expires in 10 minutes and is revoked once read.
 A minted product token is returned once, with `Cache-Control: no-store`, and only its metadata remains afterwards.
 Wheelhouse logs the operator, vault and change for every write; values and tokens never reach logs.
 

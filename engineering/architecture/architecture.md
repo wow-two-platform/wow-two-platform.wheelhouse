@@ -86,9 +86,14 @@ The API accepts target and release IDs only. It cannot upload arbitrary Compose,
 
 1. Validate the manifest, digests, Compose hash and environment identity; refuse a commit build on prod.
 2. Take the target lock that the console and the runner CLI share; refuse an unresolved interrupted rollout.
-3. Check Docker, Compose, required settings, free disk and release platform.
-4. On prod, snapshot the product's databases and named volumes on the target; a failed snapshot fails the rollout.
-   Pull every image before replacing any running container.
+3. Render every settings file the release mounts ([settings at deploy](#settings-at-deploy)); a required key no layer
+   sets refuses the deploy before anything changes. Check Docker, Compose, the settings, free disk and release platform.
+4. On prod, snapshot the product's databases and named volumes on the target; a failed snapshot fails the rollout. A
+   volume holding a file database is archived while the containers writing to it are paused, so the copy is
+   consistent — a SQLite file by its header, whatever its name, or a file named as another embedded database (`*.db`,
+   `*.sqlite`, `*.litedb`, `*.mdb`, `*.duckdb`, `*.realm`, `*.wt`, `*.bdb`); other volumes are archived live. Pull
+   every missing image before replacing any running container, under a sign-in made for that pull only
+   ([registry sign-in](#registry-sign-in)).
 5. Save durable intent and the previous successful bundle on the target.
 6. Apply Compose service-aware: compare each service's definition (image digest included; `depends_on` left out), the
    environment override, its settings fingerprint (its settings file's contents) and the target's interpolation inputs
@@ -109,6 +114,54 @@ An SSH disconnect or control-plane restart does not stop the detached target wor
 needs explicit reconciliation, not a blind retry. SSH uses strict host-key checking against a pinned known-hosts file,
 batch authentication, explicit identities and a bounded timeout. Compose replacement has a restart window; there is
 no zero-downtime promise.
+
+## Settings at deploy
+
+A console-driven deploy renders each service's settings file on the target (`render` on every inventory target; CI's
+own targets keep their hand-placed files), into `<root>/config/<product>-<environment>/<service>.target.json`, mode
+`0444` inside the mode-`0700` folder (`settingsRoot` replaces `<root>/config` on the local server). Layers, last wins:
+
+| Layer | Source |
+|---|---|
+| Host file | The file the target names for the service, if any: the pre-render settings, kept as a layer |
+| Wheelhouse | The environment's stored settings (`environment_settings`) and its vault secrets, read at deploy |
+| Derived | `AllowedHosts` (the hosts of the sites the service serves, its platform name `<product>-<environment>-<service>`, `localhost`), `Sites:<site>:Url` (the origin of every site the product publishes there), `Deployment:TrustedProxies` (the address of the host kit's `ingress` on the target's network) |
+| Database | A required connection key (`ConnectionStrings:<name>`, `<Section>:ConnectionString`) no other layer sets, from `config/<product>-<environment>/database.json` (`prepare.py --database`), for a service that needs PostgreSQL |
+
+- A value goes to every service that declares its key (required, or a release's optional or secret declaration), and a
+  key no service declares to every service that takes a settings file.
+- The control plane sends the Wheelhouse layer on the submission's SSH stdin; the runner hands it to its worker over a
+  pipe and writes it nowhere but the rendered files. Job records keep key names by source (`settings`), never a value;
+  the render is the rollout's first step, `Render settings`.
+- An identical render keeps the file; a changed one changes the service's settings fingerprint, so only that service
+  restarts. A bind mount keeps the file a container started with until the container is recreated.
+- An environment's secrets live in the vault on its target's server, else the inventory's first vault (the control
+  host's), in namespace `<product>-<environment>`. A deploy mints a namespace token that expires in 10 minutes, reads
+  the enabled keys and revokes it; an unreachable vault holds the deploy rather than drop a secret.
+- `GET /api/deployments/targets/{target}/settings?release=` lists each service's keys with their source (`derived`,
+  `vault`, `stored`, `default`, `host`, `missing`, `unset`), whether each is required and secret (the release's
+  declaration, else a guess from the key's name), the vault namespace and whether it is the target's first deploy; key
+  names and non-secret values only. `PUT …/settings` (action `settings`) `{ values: [{ key, value, secret }] }` writes
+  secrets to the vault (creating the namespace) and settings to the store; derived keys are refused; audited as
+  `settings.save` by key, never by value.
+- A deploy, the owner's or an automatic one, is refused while a required key has no source on a service without a host
+  file; the refusal is kept as a deploy that changed nothing. The deploy dialog lists those keys and, on a first deploy,
+  the release's optional ones with their defaults; it saves what the owner fills in, then deploys.
+- `release.json` may carry `settings` per service — `optional` keys with defaults, `secrets` and `allowed` values —
+  which the runner validates and the dialog offers; the generator does not write it yet.
+- The target check weighs the keys Wheelhouse would send and names a required key no layer sets.
+
+## Registry sign-in
+
+Products hosts keep no registry token. For a release with GHCR images, the control host picks the first credential GHCR
+accepts for pulling all of them — the GitHub App's installation token for their owner, else the token file
+(`Deployment:GitHubTokenFile`) — by asking GHCR's token service first (`registry.py`). The chosen one travels on the
+submission's SSH stdin; the target signs in only when an image is missing, with `docker --config <temporary folder>
+login --password-stdin` (the folder in `/dev/shm` where the host offers it), pulls those images, signs out and deletes
+the folder, whatever happened. Compose then pulls with `--policy missing`: digests make a present image exact. The job
+keeps `registry` (`credential`: `installation` | `file` | null, and the ones GHCR `refused`), never a token.
+`transport.py registry --root <runner root> [--product <slug>]` asks GHCR, per product and credential, whether it
+grants each image repository a pull, and prints statuses only.
 
 ## Artifacts and registry
 
@@ -556,7 +609,9 @@ CI-deployed version there.
 
 Secrets Vault stays a separate service and repository; Wheelhouse is its central management console.
 The gateway resolves a vault id through the inventory, signs in with a mounted administrator credential,
-and forwards namespace, secret, state and token operations. It never requests secret values.
+and forwards namespace, secret, state and token operations. The console never reads a secret value; only a deploy's
+render does, through a namespace token that lives 10 minutes at most and is revoked once read
+([settings at deploy](#settings-at-deploy)).
 Products keep reading secrets from their own vault on the private network, so an unavailable Wheelhouse
 cannot interrupt runtime reads. See the vault's own security analysis for the global-console trust boundary.
 
@@ -579,7 +634,7 @@ runner withholds attribution when a rollout changes that state mid-read.
 ## Security and recovery
 
 Wheelhouse stays private through a tunnel or private network.
-Runtime secrets live in protected host files, mounted read-only into applications; cookie key volumes survive
+Runtime secrets reach applications in rendered settings files, mounted read-only; cookie key volumes survive
 container replacement. The dashboard receives safe failure categories; raw runtime logs stay on the target.
 A database backup and the cookie and recovery keys must be recoverable without Wheelhouse.
 
