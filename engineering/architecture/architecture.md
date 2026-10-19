@@ -64,6 +64,10 @@ image digests, Compose SHA-256, required setting names, sites and whether its sc
 environment-specific domains or database values; a target supplies its settings, so promotion changes settings, not
 image bytes. The shared publish workflow builds bundles from each product's `deploy.yml`
 ([descriptor convention](../../../../../conventions/deployment/descriptor/deploy-descriptor.md)).
+The runner reads two schemas: 1, from descriptor 1, keys `sites` by service with one path and an exposure each; 2,
+from descriptor 2 (pipelines `v0.8.0`), carries the product's `sites` (exposure, primary, environments) and `routes`,
+each service's port and paths per site. Both become one row per service site and one Traefik router per site path
+([sites](../deployment/deployment.md#sites)).
 
 Every service can read the environment it runs in from `DEPLOY_ENVIRONMENT` (`dev` or `prod`): the runner writes a
 Compose override beside the release's `compose.json` (`environment.json`, never part of the bundle or its hash) that
@@ -161,7 +165,8 @@ CI for a `ci` product it has no target for. No check names a slug; the migration
 hand.
 
 `/api/products` joins the inventory and the product identity: each product's environments come from its targets, each environment's sites from
-the newest rollout this control plane saw succeed (no target is contacted), and its vault namespace is
+the newest rollout this control plane saw succeed (no target is contacted; one address per site, the one nearest its
+root), and its vault namespace is
 `{product}-{environment}` on its server's first vault. The response carries no targets, releases or deployment state,
 so an integration reads products without deployment concepts. The runner read is cached for 30 seconds.
 
@@ -466,7 +471,8 @@ request acts as `automation`, so every automatic submission goes through the ord
   same worker, before the job completes and its watch window opens: step `Verify end to end` runs the command in a
   one-off container from the named service's release image (`docker run --rm --pull never`, the platform network,
   `no-new-privileges`, all capabilities dropped, 512 MB), with `DEPLOY_ENVIRONMENT`, `VERIFY_RELEASE`, `VERIFY_SITES`,
-  `VERIFY_SITE_<SITE>` and `VERIFY_SERVICE_<SERVICE>` passed by name and no settings file. Exit 0 passes; another exit,
+  `VERIFY_SITE_<SITE>` (the site's root, else its shortest path) and `VERIFY_SERVICE_<SERVICE>` passed by name and no
+  settings file. Exit 0 passes; another exit,
   the timeout (the container is removed) or a check that cannot start fails it as a step and deployment warning, never
   the rollout. The job keeps `verification` `{ status (passed | failed), service, startedAt, completedAt, seconds,
   exitCode (null on a timeout, -1 when it could not run), detail, summary (the last output line, 300 characters) }`;

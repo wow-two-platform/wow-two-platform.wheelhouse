@@ -104,6 +104,14 @@ class SitesTests(unittest.TestCase):
                                               'exposure': 'private'}]},
                          transport.latest_sites(self.root))
 
+    def test_a_site_shared_by_path_keeps_the_address_nearest_its_root(self):
+        self.record('00000000-0000-0000-0000-000000000005', 'pilot-dev', 'succeeded', '2026-10-19T00:00:00+00:00',
+                    [{'name': 'app', 'service': 'api', 'url': 'https://app.example.com/api', 'exposure': 'public'},
+                     {'name': 'app', 'service': 'web', 'url': 'https://app.example.com', 'exposure': 'public'},
+                     {'name': 'app', 'service': 'docs', 'url': 'https://app.example.com/docs', 'exposure': 'public'}])
+        self.assertEqual({'pilot-dev': [{'name': 'app', 'url': 'https://app.example.com', 'exposure': 'public'}]},
+                         transport.latest_sites(self.root))
+
     def test_a_target_without_a_succeeded_rollout_has_no_sites(self):
         self.record('00000000-0000-0000-0000-000000000004', 'foreverpin-prod', 'failed', '2026-09-30T00:00:00+00:00',
                     [{'name': 'app', 'url': 'https://broken.example.com'}])

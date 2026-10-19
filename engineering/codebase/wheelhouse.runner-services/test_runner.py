@@ -500,8 +500,8 @@ class RunnerTests(unittest.TestCase):
         result = self.apply()
         self.assertEqual("succeeded", result["status"])
         route = runner.read_json(self.root / "state/ingress/pilot-dev.yml")
-        self.assertEqual({"pilot-dev-app-api": {"rule": "Host(`app-pilot.dev.localhost`)",
-                                                 "service": "pilot-dev-api-8080", "entryPoints": ["web"]}},
+        self.assertEqual({"pilot-dev-app-api-root": {"rule": "Host(`app-pilot.dev.localhost`)", "priority": 101,
+                                                      "service": "pilot-dev-api-8080", "entryPoints": ["web"]}},
                          route["http"]["routers"])
         self.assertEqual("http://pilot-dev-api:8080",
                          route["http"]["services"]["pilot-dev-api-8080"]["loadBalancer"]["servers"][0]["url"])
@@ -517,9 +517,9 @@ class RunnerTests(unittest.TestCase):
         self.manifest["sites"] = {"api": {"app": {"path": "/api"}}}
         self.save()
         self.apply()
-        route = runner.read_json(self.root / "state/ingress/pilot-dev.yml")["http"]["routers"]["pilot-dev-app-api"]
-        self.assertEqual(("Host(`app.pilot.example`) && PathPrefix(`/api`)", {"certResolver": "letsencrypt"}),
-                         (route["rule"], route["tls"]))
+        route = runner.read_json(self.root / "state/ingress/pilot-dev.yml")["http"]["routers"]["pilot-dev-app-api-api"]
+        self.assertEqual(("Host(`app.pilot.example`) && (Path(`/api`) || PathPrefix(`/api/`))", 104,
+                          {"certResolver": "letsencrypt"}), (route["rule"], route["priority"], route["tls"]))
         self.assertEqual("https://app.pilot.example/api", runner.state(self.target)["current"]["sites"][0]["url"])
 
     def test_private_sites_route_only_on_private_entry_points(self):
@@ -561,6 +561,49 @@ class RunnerTests(unittest.TestCase):
         self.manifest["sites"]["api"]["app"] = {"path": "/api"}
         self.save()
         self.assertEqual(["api", "web"], [site["service"] for site in runner.release_sites(runner.validate_bundle(self.bundle))])
+
+    def test_a_schema_2_release_routes_each_path_of_its_sites(self):
+        self.target["ingress"] = self.local_ingress()
+        self.manifest.update(schemaVersion=2, sites={"app": {"exposure": "public", "primary": True,
+                                                             "environments": ["dev", "prod"]}},
+                             routes={"api": {"app": {"port": 8080, "paths": ["/", "/api"]}}})
+        self.save()
+        self.assertEqual("succeeded", self.apply()["status"])
+        routers = runner.read_json(self.root / "state/ingress/pilot-dev.yml")["http"]["routers"]
+        self.assertEqual({"pilot-dev-app-api-root": (101, "Host(`app-pilot.dev.localhost`)"),
+                          "pilot-dev-app-api-api": (104, "Host(`app-pilot.dev.localhost`) && (Path(`/api`) || "
+                                                         "PathPrefix(`/api/`))")},
+                         {name: (router["priority"], router["rule"]) for name, router in routers.items()})
+        self.assertEqual({"pilot-dev-api-8080"}, {router["service"] for router in routers.values()})
+        # One published address per service site: its root, probed once.
+        self.assertEqual([{"name": "app", "service": "api", "exposure": "public",
+                           "url": "http://app-pilot.dev.localhost:18080"}], runner.state(self.target)["current"]["sites"])
+
+    def test_invalid_schema_2_sites_are_refused_before_docker(self):
+        self.manifest["images"]["web"] = "ghcr.io/owner/web@sha256:" + "b" * 64
+        self.compose["services"]["web"] = {**self.compose["services"]["api"], "image": self.manifest["images"]["web"]}
+        role = {"exposure": "public", "primary": True, "environments": ["dev", "prod"]}
+        for sites, routes, message in (
+                ({"app": role}, {"api": {"web": {"paths": ["/"]}}}, "undeclared site"),
+                ({"app": role}, {"worker": {"app": {"paths": ["/"]}}}, "unknown service"),
+                ({"app": role}, {"api": {"app": {"paths": ["/api/"]}}}, "site path"),
+                ({"app": role}, {"api": {"app": {"paths": ["/../api"]}}}, "site path"),
+                ({"app": role}, {"api": {"app": {"paths": []}}}, "site path"),
+                ({"app": role}, {"api": {"app": {"paths": ["/", "/"]}}}, "site path"),
+                ({"app": role}, {"api": {"app": {"paths": ["/", "/api"]}}, "web": {"app": {"paths": ["/"]}}},
+                 "same site path"),
+                ({"app": {**role, "exposure": "world"}}, {"api": {"app": {"paths": ["/"]}}}, "site exposure"),
+                ({"app": {**role, "environments": []}}, {"api": {"app": {"paths": ["/"]}}}, "site environments"),
+                ({"App": role}, {}, "site declaration")):
+            with self.subTest(message=message, routes=routes):
+                self.manifest.update(schemaVersion=2, sites=sites, routes=routes)
+                self.save()
+                with self.assertRaisesRegex(ValueError, message):
+                    runner.validate_bundle(self.bundle)
+        self.manifest.update(schemaVersion=3, sites={}, routes={})
+        self.save()
+        with self.assertRaisesRegex(ValueError, "Unsupported release schema"):
+            runner.validate_bundle(self.bundle)
 
     def test_a_host_pattern_producing_an_invalid_host_refuses_before_docker(self):
         self.target["ingress"] = self.local_ingress(pattern="{site}_{product}.localhost")
@@ -1175,6 +1218,104 @@ class RunnerTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     runner.validate_bundle(self.bundle)
                 self.manifest = manifest
+
+
+def matches(rule, host, path):
+    """Evaluates the rules the runner writes: `Host(h)`, optionally `&& (Path(p) || PathPrefix(p/))`."""
+    parts = rule.split("`")
+    if parts[1] != host:
+        return False
+    return len(parts) == 3 or path == parts[3] or path.startswith(parts[5])
+
+
+def destination(routers, host, path):
+    """The router Traefik picks: the highest priority among those whose rule matches."""
+    found = [(router["priority"], name) for name, router in routers.items() if matches(router["rule"], host, path)]
+    return max(found)[1] if found else None
+
+
+class RouteRenderTests(unittest.TestCase):
+    """The Traefik routers a release's sites render: one per site path, the longest prefix first."""
+
+    def setUp(self):
+        self.target = {"product": "pilot", "environment": "dev", "root": "/srv/pilot",
+                       "ingress": {"scheme": "https", "entryPoints": ["websecure"], "privateEntryPoints": ["private"],
+                                   "certResolver": "letsencrypt", "hosts": {"app": "app.pilot.example"},
+                                   "pattern": "{site}-{product}.{environment}.example"}}
+        self.manifest = {"schemaVersion": 2, "images": {name: "ghcr.io/o/" + name for name in ("web", "api", "docs")},
+                         "sites": {"app": {"exposure": "public", "primary": True, "environments": ["dev", "prod"]},
+                                   "admin": {"exposure": "private", "primary": False, "environments": ["dev"]},
+                                   "status": {"exposure": "public", "primary": False, "environments": ["prod"]}},
+                         "routes": {"web": {"app": {"port": 80, "paths": ["/"]}, "status": {"port": 80, "paths": ["/"]}},
+                                    "api": {"app": {"port": 8080, "paths": ["/hubs", "/api"]},
+                                            "admin": {"port": 8080, "paths": ["/"]}},
+                                    "docs": {"app": {"port": 8080, "paths": ["/api/docs"]}}}}
+
+    def render(self):
+        return runner.ingress_routes(self.target, "pilot-" + self.target["environment"], self.manifest)
+
+    def test_priorities_follow_the_path_length(self):
+        config, _ = self.render()
+        routers = config["http"]["routers"]
+        self.assertEqual({"pilot-dev-app-web-root": 101, "pilot-dev-app-api-api": 104, "pilot-dev-app-api-hubs": 105,
+                          "pilot-dev-app-docs-api-docs": 109, "pilot-dev-admin-api-root": 101},
+                         {name: router["priority"] for name, router in routers.items()})
+        self.assertEqual("Host(`app.pilot.example`) && (Path(`/api/docs`) || PathPrefix(`/api/docs/`))",
+                         routers["pilot-dev-app-docs-api-docs"]["rule"])
+        self.assertEqual(({"certResolver": "letsencrypt"}, ["private"]),
+                         (routers["pilot-dev-admin-api-root"]["tls"], routers["pilot-dev-admin-api-root"]["entryPoints"]))
+
+    def test_the_longest_prefix_wins_and_a_path_serves_itself_and_below_never_a_longer_word(self):
+        routers = self.render()[0]["http"]["routers"]
+        host = "app.pilot.example"
+        for path, router in (("/", "pilot-dev-app-web-root"), ("/apiary", "pilot-dev-app-web-root"),
+                             ("/api", "pilot-dev-app-api-api"), ("/api/", "pilot-dev-app-api-api"),
+                             ("/api/pings", "pilot-dev-app-api-api"), ("/api/docsx", "pilot-dev-app-api-api"),
+                             ("/api/docs", "pilot-dev-app-docs-api-docs"),
+                             ("/api/docs/index.html", "pilot-dev-app-docs-api-docs"),
+                             ("/hubs/live", "pilot-dev-app-api-hubs"), ("/hubsy", "pilot-dev-app-web-root")):
+            with self.subTest(path=path):
+                self.assertEqual(router, destination(routers, host, path))
+        self.assertIsNone(destination(routers, "other.example", "/api"))
+
+    def test_each_service_site_publishes_its_shortest_path_the_site_root_first(self):
+        _, published = self.render()
+        self.assertEqual([("admin", "api", "https://admin-pilot.dev.example"), ("app", "web", "https://app.pilot.example"),
+                          ("app", "api", "https://app.pilot.example/api"),
+                          ("app", "docs", "https://app.pilot.example/api/docs")],
+                         [(site["name"], site["service"], site["url"]) for site in published])
+
+    def test_a_site_routes_only_in_its_environments(self):
+        config, published = self.render()
+        self.assertNotIn("status", {site["name"] for site in published})
+        self.target["environment"] = "prod"
+        config, published = self.render()
+        self.assertIn("pilot-prod-status-web-root", config["http"]["routers"])
+        self.assertNotIn("admin", {site["name"] for site in published})
+
+    def test_upstreams_are_shared_per_service_port(self):
+        config, _ = self.render()
+        self.assertEqual({"pilot-dev-web-80": "http://pilot-dev-web:80", "pilot-dev-api-8080": "http://pilot-dev-api:8080",
+                          "pilot-dev-docs-8080": "http://pilot-dev-docs:8080"},
+                         {name: upstream["loadBalancer"]["servers"][0]["url"]
+                          for name, upstream in config["http"]["services"].items()})
+
+    def test_a_schema_1_release_routes_its_one_path_per_service_site_the_same_way(self):
+        self.manifest = {"schemaVersion": 1, "images": {"web": "w", "api": "a"},
+                         "sites": {"web": {"app": {"port": 80, "path": "/", "exposure": "public"}},
+                                   "api": {"app": {"port": 8080, "path": "/api/", "exposure": "public"}}}}
+        config, published = self.render()
+        routers = config["http"]["routers"]
+        self.assertEqual({"pilot-dev-app-web-root": 101, "pilot-dev-app-api-api": 104},
+                         {name: router["priority"] for name, router in routers.items()})
+        self.assertEqual("pilot-dev-app-web-root", destination(routers, "app.pilot.example", "/apiary"))
+        self.assertEqual(["https://app.pilot.example", "https://app.pilot.example/api"], [site["url"] for site in published])
+
+    def test_router_names_stay_unique(self):
+        self.manifest["routes"]["api"]["app"]["paths"] = ["/a.b", "/a-b"]
+        routers = self.render()[0]["http"]["routers"]
+        self.assertEqual({"pilot-dev-app-api-a-b", "pilot-dev-app-api-a-b-2"},
+                         {name for name in routers if name.startswith("pilot-dev-app-api-a")})
 
 
 class IngressHandler(http.server.BaseHTTPRequestHandler):

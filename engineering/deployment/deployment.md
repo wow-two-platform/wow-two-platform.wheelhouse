@@ -34,11 +34,18 @@ project, platform-network alias, database, settings files and hostnames. No hard
 
 ## Sites
 
-- A release declares its sites: a named entry point on one service's port, optionally a path prefix, public or private.
-- A target names each site's host; dev may follow the server's pattern, prod names every host itself.
+- A release declares its sites: host roles, public or private, each published in some environments (all by default).
+- Each service serves paths of a site on its port; descriptor 2 lists several per site, descriptor 1 one
+  ([convention](../../../../../conventions/deployment/descriptor/deploy-descriptor.md#sites-and-routing)).
+- A target names each site's host; dev may follow the server's pattern, prod names every host itself. Domain
+  bindings replace both later; `site_host` in the runner is that seam.
 - After a verified rollout the runner writes `<root>/ingress/<product>-<environment>.yml`, a Traefik file-provider route.
-- The route maps the host to `<product>-<environment>-<service>:<port>` on the platform network.
-- The target records each site's URL; Wheelhouse shows Open site links on the target and after a deploy.
+- One router per site path maps the host and path to `<product>-<environment>-<service>:<port>` on the platform network.
+- `/` renders `` Host(`h`) ``; `/api` renders `` Host(`h`) && (Path(`/api`) || PathPrefix(`/api/`)) ``, never `/apiary`.
+- Priority is 100 plus the path's length, so the longest prefix wins whatever the rule's length (`/` 101, `/api` 104).
+- A site whose `environments` leave out the target's environment is not routed there.
+- The target records one URL per service site, its shortest path, the site's root first; Wheelhouse shows Open site
+  links on the target and after a deploy, one per site.
 - A release without sites removes the project's route file; a private site routes only on private entry points.
 - After publishing, the runner requests every site through the ingress by its host name, the way a visitor reaches it.
 - A site that does not answer within 20 seconds is a warning on the deploy and on its Open site link, not a failure.

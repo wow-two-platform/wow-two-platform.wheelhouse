@@ -18,6 +18,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import urllib.parse
 import uuid
 import fleet
 import artifacts
@@ -123,7 +124,8 @@ def targets(root):
 
 
 def latest_sites(root):
-    """Target ID -> the sites of the newest rollout this control plane saw succeed there; no target is contacted."""
+    """Target ID -> the sites of the newest rollout this control plane saw succeed there, one address per site; no
+    target is contacted."""
     result = {}
     for job in jobs(root, limit=None):
         target_id = job.get("targetId")
@@ -134,13 +136,17 @@ def latest_sites(root):
             observed = read_json(observed_path) if observed_path.is_file() else {}
         except (ValueError, OSError):
             continue
-        sites = []
+        sites = {}
         for site in observed.get("sites") or []:
             if (isinstance(site, dict) and SLUG.fullmatch(str(site.get("name", "")))
                     and SITE_URL.fullmatch(str(site.get("url", "")))):
-                sites.append({"name": site["name"], "url": site["url"],
-                              "exposure": "private" if site.get("exposure") == "private" else "public"})
-        result[target_id] = sites
+                # One address per site: where services share a site by path, the one nearest its root.
+                kept = sites.get(site["name"])
+                path, kept_path = (urllib.parse.urlsplit(url).path for url in (site["url"], (kept or site)["url"]))
+                if kept is None or len(path) < len(kept_path):
+                    sites[site["name"]] = {"name": site["name"], "url": site["url"],
+                                           "exposure": "private" if site.get("exposure") == "private" else "public"}
+        result[target_id] = list(sites.values())
     return result
 
 

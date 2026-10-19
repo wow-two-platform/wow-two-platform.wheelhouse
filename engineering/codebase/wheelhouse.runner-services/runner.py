@@ -30,6 +30,8 @@ VERSION = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+-]{0,63}")
 BRANCH = re.compile(r"[A-Za-z0-9._/-]{1,200}")
 HOST = re.compile(r"(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+")
 SITE_PATH = re.compile(r"/(?:[A-Za-z0-9._~-]+/)*(?:[A-Za-z0-9._~-]+)?")
+# A schema 2 site path: `/`, or segments without a trailing slash; `.` and `..` segments are refused apart.
+ROUTE_PATH = re.compile(r"/|(?:/[A-Za-z0-9._~-]+)+")
 ENTRY_POINT = re.compile(r"[a-z][a-z0-9-]{0,31}")
 PROBE_ADDRESS = re.compile(r"https?://[A-Za-z0-9.-]+(?::[0-9]{1,5})?")
 # Traefik's own answer for a host it has no router for; an application's 404 carries its own body.
@@ -44,6 +46,8 @@ KEEP_RELEASE_FOLDERS = 10
 KEEP_INCOMING = 10
 INCOMING_GRACE_SECONDS = 24 * 60 * 60
 KINDS = ("release", "candidate")
+# Release schemas: 1 from descriptor 1 (one path per service site), 2 from descriptor 2 (product sites + routes).
+SCHEMAS = (1, 2)
 # Host platform services a release may declare it needs; see the deploy descriptor convention.
 PLATFORM_SERVICES = ("postgres", "valkey", "broker")
 EXPOSURES = ("public", "private")
@@ -141,7 +145,7 @@ def validate_bundle(bundle):
     manifest = read_json(bundle / "release.json")
     compose_path = bundle / "compose.json"
     compose = read_json(compose_path)
-    require(manifest.get("schemaVersion") == 1, "Unsupported release schema")
+    require(manifest.get("schemaVersion") in SCHEMAS, "Unsupported release schema")
     require(SLUG.fullmatch(manifest.get("product", "")), "Invalid product")
     require(RELEASE.fullmatch(manifest.get("release", "")), "Invalid release")
     require(manifest.get("kind", "release") in KINDS, "Unsupported release kind")
@@ -325,24 +329,63 @@ def service_port(manifest, service):
 
 
 def release_sites(manifest):
-    """The entry points a release declares, one row per service site: port, path prefix and exposure."""
-    declared = manifest.get("sites", {})
-    require(isinstance(declared, dict) and set(declared) <= set(manifest.get("images", {})),
-            "Sites name an unknown service")
+    """The sites a release serves, one row per service site: its port, the path prefixes it serves there (shortest
+    first), the site's exposure, the environments that publish it (None: every one) and whether it is the primary site.
+    Schema 1 declares one path per service site, each with its own exposure; schema 2 declares the product's sites
+    (`sites`) and each service's paths per site (`routes`)."""
+    images = manifest.get("images", {})
+    if manifest.get("schemaVersion") == 2:
+        roles, declared = site_roles(manifest.get("sites", {})), manifest.get("routes", {})
+        require(isinstance(declared, dict) and set(declared) <= set(images), "Routes name an unknown service")
+    else:
+        roles, declared = None, manifest.get("sites", {})
+        require(isinstance(declared, dict) and set(declared) <= set(images), "Sites name an unknown service")
     result, claimed = [], set()
     for service, sites in sorted(declared.items()):
         require(isinstance(sites, dict), "Invalid site declaration")
         for name, site in sorted(sites.items()):
             require(isinstance(name, str) and SLUG.fullmatch(name) and isinstance(site, dict), "Invalid site declaration")
-            port, path, exposure = site.get("port", 8080), site.get("path", "/"), site.get("exposure", "public")
+            port = site.get("port", 8080)
             require(type(port) is int and 1 <= port <= 65535, "Invalid site port")
-            require(isinstance(path, str) and SITE_PATH.fullmatch(path), "Invalid site path")
-            require(exposure in EXPOSURES, "Invalid site exposure")
-            # One site may span services only by path prefix, so a request always has exactly one destination.
-            require((name, path) not in claimed, "Two services claim the same site path")
-            claimed.add((name, path))
-            result.append({"service": service, "site": name, "port": port, "path": path, "exposure": exposure})
+            if roles is None:
+                path, exposure = site.get("path", "/"), site.get("exposure", "public")
+                require(isinstance(path, str) and SITE_PATH.fullmatch(path), "Invalid site path")
+                require(exposure in EXPOSURES, "Invalid site exposure")
+                # `/api/` routes like `/api`: the path itself and everything below it.
+                paths, role = [path.rstrip("/") or "/"], {"exposure": exposure, "environments": None, "primary": False}
+            else:
+                require(name in roles, "Routes name an undeclared site")
+                paths, role = site.get("paths"), roles[name]
+                require(isinstance(paths, list) and paths and all(route_path(path) for path in paths)
+                        and len(set(paths)) == len(paths), "Invalid site path")
+            for path in paths:
+                # Each path of a site has one service, so a request always has exactly one destination.
+                require((name, path) not in claimed, "Two services claim the same site path")
+                claimed.add((name, path))
+            result.append({"service": service, "site": name, "port": port,
+                           "paths": sorted(paths, key=lambda path: (len(path), path)), **role})
     return result
+
+
+def site_roles(declared):
+    """A schema 2 release's sites: each one's exposure, the environments that publish it and whether it is primary."""
+    require(isinstance(declared, dict), "Invalid site declaration")
+    result = {}
+    for name, role in declared.items():
+        require(isinstance(name, str) and SLUG.fullmatch(name) and isinstance(role, dict), "Invalid site declaration")
+        exposure, primary, environments = role.get("exposure", "public"), role.get("primary", False), role.get("environments")
+        require(exposure in EXPOSURES, "Invalid site exposure")
+        require(type(primary) is bool, "Invalid site declaration")
+        require(environments is None or (isinstance(environments, list) and environments and all(
+            isinstance(environment, str) and SLUG.fullmatch(environment) for environment in environments)),
+            "Invalid site environments")
+        result[name] = {"exposure": exposure, "environments": environments, "primary": primary}
+    return result
+
+
+def route_path(path):
+    return (isinstance(path, str) and len(path) <= 200 and ROUTE_PATH.fullmatch(path) is not None
+            and not {".", ".."} & set(path.split("/")))
 
 
 def validate_target(target, manifest=None):
@@ -387,6 +430,9 @@ def target_ingress(target):
 
 
 def site_host(target, ingress, site):
+    """The host a site answers on in this target's environment: the target's named host, else the server's pattern.
+    The seam a domain binding (product, environment, site -> host) replaces; a binding may narrow a site's exposure,
+    never widen it."""
     host = ingress.get("hosts", {}).get(site)
     if host is None and ingress.get("pattern"):
         host = (ingress["pattern"].replace("{site}", site).replace("{product}", target["product"])
@@ -395,8 +441,28 @@ def site_host(target, ingress, site):
     return host
 
 
+def route_rule(host, path):
+    """The Traefik rule for one site path: the whole host for `/`; otherwise the path itself or anything below it, so
+    `/api` answers `/api` and `/api/…`, never `/apiary`."""
+    rule = "Host(`" + host + "`)"
+    return rule if path == "/" else rule + " && (Path(`" + path + "`) || PathPrefix(`" + path + "/`))"
+
+
+def route_priority(path):
+    """The longest path prefix wins, whatever each rule's length: 100 plus the path's length (`/` is 101)."""
+    return 100 + len(path)
+
+
+def route_label(path):
+    return "root" if path == "/" else re.sub(r"[^a-z0-9]+", "-", path.lower()).strip("-") or "path"
+
+
 def ingress_routes(target, project, manifest):
-    """Traefik dynamic configuration for a release's sites on this target, and the URL of each routed site."""
+    """Traefik dynamic configuration for a release's sites on this target, and the URL of each routed service site.
+
+    One router per site path, on the site's host, with the path's priority; every path of a service shares its
+    upstream `<product>-<environment>-<service>:<port>`. A site its environments leave out, or one without a host or an
+    entry point, stays unrouted. Each service site publishes the URL of its shortest path; a site's root comes first."""
     ingress = target_ingress(target)
     if ingress is None:
         return None, []
@@ -405,6 +471,8 @@ def ingress_routes(target, project, manifest):
     origin_port = ":" + str(port) if port and port != default_port else ""
     routers, upstreams, published = {}, {}, []
     for site in release_sites(manifest):
+        if site["environments"] is not None and target["environment"] not in site["environments"]:
+            continue
         host = site_host(target, ingress, site["site"])
         points = ingress.get("entryPoints" if site["exposure"] == "public" else "privateEntryPoints", [])
         if not host or not points:
@@ -413,14 +481,22 @@ def ingress_routes(target, project, manifest):
         upstream = project + "-" + site["service"] + "-" + str(site["port"])
         upstreams[upstream] = {"loadBalancer": {"servers": [
             {"url": "http://" + project + "-" + site["service"] + ":" + str(site["port"])}]}}
-        rule = "Host(`" + host + "`)" + ("" if site["path"] == "/" else " && PathPrefix(`" + site["path"] + "`)")
-        router = {"rule": rule, "service": upstream, "entryPoints": points}
-        if ingress["scheme"] == "https" and ingress.get("certResolver"):
-            router["tls"] = {"certResolver": ingress["certResolver"]}
-        routers[project + "-" + site["site"] + "-" + site["service"]] = router
-        published.append({"name": site["site"], "service": site["service"], "exposure": site["exposure"],
-                          "url": ingress["scheme"] + "://" + host + origin_port + ("" if site["path"] == "/" else site["path"])})
-    return {"http": {"routers": routers, "services": upstreams}}, published
+        for path in site["paths"]:
+            router = {"rule": route_rule(host, path), "priority": route_priority(path), "service": upstream,
+                      "entryPoints": points}
+            if ingress["scheme"] == "https" and ingress.get("certResolver"):
+                router["tls"] = {"certResolver": ingress["certResolver"]}
+            base = name = project + "-" + site["site"] + "-" + site["service"] + "-" + route_label(path)
+            suffix = 2
+            while name in routers:
+                name, suffix = base + "-" + str(suffix), suffix + 1
+            routers[name] = router
+        entry = site["paths"][0]
+        published.append(((site["site"], len(entry), entry, site["service"]),
+                          {"name": site["site"], "service": site["service"], "exposure": site["exposure"],
+                           "url": ingress["scheme"] + "://" + host + origin_port + ("" if entry == "/" else entry)}))
+    return ({"http": {"routers": routers, "services": upstreams}},
+            [record for _, record in sorted(published, key=lambda item: item[0])])
 
 
 def publish_routes(root, project, routes):
@@ -1534,7 +1610,8 @@ def compose_topology(compose, manifest):
 
 def release_facts(projected, manifest, current):
     """Adds what the release declares beside Compose: each service's version, the platform services it needs and
-    the sites it serves, with the URL and probe outcome the verified rollout recorded."""
+    the sites it serves, one entry per path, with the URL and probe outcome the verified rollout recorded. A service's
+    paths on one site share its published host and its probe."""
     versions, needs = manifest.get("versions", {}), manifest.get("needs", {})
     published = {(site.get("name"), site.get("service")): site for site in current.get("sites") or []
                  if isinstance(site, dict)}
@@ -1551,11 +1628,16 @@ def release_facts(projected, manifest, current):
                 continue
             record = published.get((site["site"], name), {})
             url = record.get("url")
+            origin = None
+            if isinstance(url, str) and url.startswith(("http://", "https://")):
+                parts = urllib.parse.urlsplit(url)
+                origin = parts.scheme + "://" + parts.netloc
             probe = record.get("probe") if isinstance(record.get("probe"), dict) else {}
-            service["sites"].append({"name": site["site"], "path": site["path"], "port": site["port"],
-                                     "exposure": site["exposure"],
-                                     "url": url if isinstance(url, str) and url.startswith(("http://", "https://")) else None,
-                                     "reachable": probe.get("ok") if type(probe.get("ok")) is bool else None})
+            for path in site["paths"]:
+                service["sites"].append({"name": site["site"], "path": path, "port": site["port"],
+                                         "exposure": site["exposure"],
+                                         "url": origin + ("" if path == "/" else path) if origin else None,
+                                         "reachable": probe.get("ok") if type(probe.get("ok")) is bool else None})
 
 
 def topology(target):

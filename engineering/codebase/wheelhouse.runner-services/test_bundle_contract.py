@@ -121,6 +121,28 @@ class BundleContractTests(unittest.TestCase):
         # Health-gated and never `restart: true`, so an api update leaves a running edge alone.
         self.assertEqual({"api": {"condition": "service_healthy"}}, compose["services"]["edge"]["depends_on"])
 
+    @unittest.skipUnless(release is not None and hasattr(release, "sites_of"), "the pinned generator predates descriptor 2")
+    def test_a_descriptor_2_bundle_routes_each_service_path(self):
+        declared = copy.deepcopy(DESCRIPTOR)
+        declared.update(descriptor=2, sites={"app": {"primary": True}, "admin": {"exposure": "private"}})
+        declared["services"]["api"]["sites"] = {"app": {"paths": ["/api", "/hubs"]}, "admin": {"paths": ["/"]}}
+        declared["services"]["edge"]["sites"] = {"app": None}
+        self.descriptor = release.validate(declared)
+        validated = self.bundle("main")
+        self.assertEqual(2, validated["schemaVersion"])
+        self.assertEqual([("api", "admin", ["/"], "private"), ("api", "app", ["/api", "/hubs"], "public"),
+                          ("edge", "app", ["/"], "public")],
+                         [(row["service"], row["site"], row["paths"], row["exposure"]) for row in runner.release_sites(validated)])
+        target = {"product": "pilot", "environment": "dev",
+                  "ingress": {"scheme": "https", "entryPoints": ["websecure"], "privateEntryPoints": ["private"],
+                              "pattern": "{site}-{product}.{environment}.example"}}
+        config, published = runner.ingress_routes(target, "pilot-dev", validated)
+        self.assertEqual({"pilot-dev-admin-api-root": 101, "pilot-dev-app-api-api": 104, "pilot-dev-app-api-hubs": 105,
+                          "pilot-dev-app-edge-root": 101},
+                         {name: router["priority"] for name, router in config["http"]["routers"].items()})
+        self.assertEqual(["https://admin-pilot.dev.example", "https://app-pilot.dev.example",
+                          "https://app-pilot.dev.example/api"], [site["url"] for site in published])
+
     @unittest.skipUnless(HAS_YAML, "PyYAML is not installed for this interpreter")
     def test_wheelhouse_own_descriptor_parses(self):
         path = HERE.parents[1] / "deployment" / "deploy.yml"

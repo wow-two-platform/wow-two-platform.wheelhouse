@@ -147,6 +147,21 @@ class TopologyTests(unittest.TestCase):
              "url": "http://app-pilot.dev.localhost:18080", "reachable": False}], api["sites"])
         self.assertEqual((None, []), (worker["version"], worker["sites"]))
 
+    def test_a_schema_2_service_lists_one_site_entry_per_path_on_its_published_host(self):
+        self.manifest.update(schemaVersion=2, sites={"app": {"exposure": "public", "primary": True,
+                                                             "environments": ["dev", "prod"]}},
+                             routes={"api": {"app": {"port": 8080, "paths": ["/api", "/"]}}})
+        self.save()
+        runner.write_json(self.base / "current.json", {"id": self.job, "release": "v1", "sites": [
+            {"name": "app", "service": "api", "exposure": "public", "url": "https://app.pilot.example",
+             "probe": {"ok": True, "status": 200}}]})
+        api = self.read()["services"][0]
+        self.assertEqual([
+            {"name": "app", "path": "/", "port": 8080, "exposure": "public", "url": "https://app.pilot.example",
+             "reachable": True},
+            {"name": "app", "path": "/api", "port": 8080, "exposure": "public", "url": "https://app.pilot.example/api",
+             "reachable": True}], api["sites"])
+
     def test_implicit_default_is_not_added_for_explicit_network_or_network_mode(self):
         self.compose["networks"] = {"private": None}
         self.compose["services"]["api"]["networks"] = ["private"]
