@@ -545,9 +545,6 @@ activity calendar's days do; a rollout whose product the inventory no longer hol
 contacts a target. `/api/system/status` also names the `environment` the console serves — its `DEPLOY_ENVIRONMENT`
 (`dev` or `prod`), else `prod` as Production and `dev` otherwise — so the Products page shows the console's own
 CI-deployed version there.
-`GET /api/system/peer`, for the owner's session only, names the other console's origin and environment from the host
-setting `Console:PeerUrl` (`{ url, environment }`, both null while unset); the environment tag's switch reads it, and
-the anonymous status never carries the address.
 
 ## Secrets vaults
 
