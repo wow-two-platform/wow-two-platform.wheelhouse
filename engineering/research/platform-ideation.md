@@ -68,6 +68,14 @@ written from it when the version opens.
 | 56 | A one-click move goes through backups, freezes writes 10 minutes at most and keeps the old host 7 days | 2026-10-19 |
 | 57 | v0.6 extracts code into the SDKs; one-click infrastructure (move job, fleet moves, decommission) is v0.7 | 2026-10-19 |
 | 58 | Builds spend no money: CI stays inside the free Actions quotas and is trimmed before anything is paid | 2026-10-19 |
+| 59 | Secrets Vault merges into Wheelhouse as a built-in module with its own schema; the standalone repo goes inactive | 2026-10-19 |
+| 60 | Products get secrets only from the deploy-time render; an edit applies by re-render and restart, now or at a set time | 2026-10-19 |
+| 61 | Secrets keep versions and an optional expiry with warnings; each product has its own master key; key files are root-only on the control host with an offline copy | 2026-10-19 |
+| 62 | Products declare their setting and secret keys with types (text, number, boolean, choice, link, cron, date format); owners may add more keys in the console | 2026-10-19 |
+| 63 | Dev Wheelhouse keeps its own vault and key with test values only | 2026-10-19 |
+| 64 | Wheelhouse deploys itself: CI only builds, prod deploys each release to dev, and prod promotes itself after a typed confirm; supersedes decision 3's CI promotion | 2026-10-19 |
+| 65 | Wheelhouse migrations only expand; a contract change takes two releases, so any release can roll back | 2026-10-19 |
+| 66 | Step-up 2FA ships before Ocharo's public launch and covers every prod promotion | 2026-10-19 |
 
 | Fact | Owner |
 |---|---|
