@@ -101,6 +101,9 @@ services:
     build:
       context: ../../codebase
       dockerfile: ../deployment/Dockerfile
+      # The products-host kit the image carries for enrollments, as deploy.yml names it.
+      additional_contexts:
+        kit: ../vps
     profiles: [console]
     environment:
       Deployment__Rehearsal: network
@@ -171,9 +174,65 @@ services:
       interval: 2s
       retries: 30
     restart: unless-stopped
+  # `rehearse.py enroll`: a fresh root-only Ubuntu 26.04 VPS that the console's own runner enrolls, from the console
+  # image, against a fake Tailscale API. rig-public stands in for the internet, rig-tailnet for the tailnet (the host's
+  # interface on it is named tailscale0, as UFW's rules expect).
+  fresh:
+    build:
+      context: .
+      dockerfile: Dockerfile.fresh
+    profiles: [enroll]
+    privileged: true
+    tmpfs: [/run, /run/lock]
+    volumes:
+      - ${REHEARSAL_STATE}/enroll/fresh-root-keys:/rig/authorized_keys:ro
+      - fresh-docker:/var/lib/docker
+      - fresh-containerd:/var/lib/containerd
+    networks:
+      rig-public:
+        ipv4_address: 172.31.250.10
+      rig-tailnet:
+        ipv4_address: 100.88.1.10
+        interface_name: tailscale0
+  fake-tailscale:
+    image: python:3.12-alpine
+    profiles: [enroll]
+    command: [python3, /rig/fake_tailscale.py, --port, "8080", --client-file, /rig-client/oauth-client.json,
+              --policy-file, /kit/tailnet-policy.hujson, --control-address, 100.88.1.2]
+    volumes:
+      - ./fake_tailscale.py:/rig/fake_tailscale.py:ro
+      - ${REHEARSAL_STATE}/enroll/root/providers/tailscale:/rig-client:ro
+      - ../vps:/kit:ro
+    networks:
+      rig-public:
+        ipv4_address: 172.31.250.5
+  # Wheelhouse's runner as it ships in the console image, with its own runner root; `rehearse.py enroll` runs its
+  # infra.py and transport.py actions here, the way the console runs them.
+  enroller:
+    image: wheelhouse:local
+    profiles: [enroll]
+    entrypoint: [python3]
+    environment:
+      WHEELHOUSE_REHEARSAL: network
+      WHEELHOUSE_TAILSCALE_API: http://fake-tailscale:8080
+    volumes:
+      - ${REHEARSAL_STATE}/enroll/root:/data/deployments
+    networks:
+      rig-public: {}
+      rig-tailnet:
+        ipv4_address: 100.88.1.2
 networks:
   platform:
     name: wheelhouse-rehearsal
+  rig-public:
+    name: wheelhouse-rig-public
+    ipam:
+      config: [{ subnet: 172.31.250.0/24 }]
+  rig-tailnet:
+    name: wheelhouse-rig-tailnet
+    internal: true
+    ipam:
+      config: [{ subnet: 100.88.1.0/24 }]
 volumes:
   deployments:
   database:
@@ -183,3 +242,5 @@ volumes:
   dev-db:
   products-docker:
   products-root:
+  fresh-docker:
+  fresh-containerd:

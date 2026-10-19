@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""The rig's stand-in for the tailscale CLI on a fresh host. `up` spends its auth key at the rig's fake Tailscale API,
+as tailscaled spends it at the control plane: the node's address is this host's tailscale0 (a rig network standing in
+for the tailnet), its endpoint is the public address. `status --json` and `ip -4` answer as the real CLI does."""
+import json
+import os
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+
+STATE = "/var/lib/rig-tailscale/state.json"
+API = os.environ.get("RIG_TAILSCALE_API", "http://172.31.250.5:8080")
+
+
+def address(device):
+    words = subprocess.run(["ip", "-4", "-o", "addr", "show", "dev", device], capture_output=True, text=True).stdout.split()
+    return words[words.index("inet") + 1].split("/")[0]
+
+
+def public():
+    words = subprocess.run(["ip", "-4", "route", "show", "default"], capture_output=True, text=True).stdout.split()
+    return address(words[words.index("dev") + 1])
+
+
+def state():
+    try:
+        return json.load(open(STATE))
+    except (OSError, ValueError):
+        return None
+
+
+def up(arguments):
+    options = dict(argument[2:].split("=", 1) for argument in arguments if argument.startswith("--") and "=" in argument)
+    if state():
+        return 0
+    key_file = options.get("auth-key", "")
+    if not key_file.startswith("file:"):
+        print("The rig joins only with --auth-key=file:", file=sys.stderr)
+        return 1
+    body = json.dumps({"authKey": open(key_file[5:]).read().strip(), "hostname": options["hostname"],
+                       "tags": [tag for tag in options.get("advertise-tags", "").split(",") if tag],
+                       "address": address("tailscale0"), "endpoints": [public() + ":41641"]}).encode()
+    request = urllib.request.Request(API + "/rig/join", data=body, method="POST",
+                                     headers={"Content-Type": "application/json"})
+    try:
+        answer = json.loads(urllib.request.urlopen(request, timeout=20).read())
+    except urllib.error.HTTPError as error:
+        print("backend error: " + json.loads(error.read() or b"{}").get("message", str(error.code)), file=sys.stderr)
+        return 1
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    json.dump({"address": answer["address"], "tags": json.loads(body)["tags"], "name": answer["name"]}, open(STATE, "w"))
+    return 0
+
+
+def main():
+    arguments = sys.argv[1:]
+    current = state()
+    if arguments[:1] == ["up"]:
+        return up(arguments[1:])
+    if arguments[:1] == ["status"]:
+        print(json.dumps({"BackendState": "Running", "Self": {"Tags": current["tags"],
+                                                              "TailscaleIPs": [current["address"]]}}
+                         if current else {"BackendState": "NeedsLogin", "Self": {}}))
+        return 0
+    if arguments[:2] == ["ip", "-4"]:
+        if not current:
+            return 1
+        print(current["address"])
+        return 0
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

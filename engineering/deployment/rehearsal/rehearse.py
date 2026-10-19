@@ -12,9 +12,18 @@ checkout, and the runner deploys it to the wheelhouse-dev target, at http://cons
 `products` proves the products-host kit on a second, local host with its own Docker daemon: bootstrap-products.sh's
 steps lay it out, prepare.py creates its platform, databases and site nodes, authorize-runner.sh pins and accepts a
 runner key, and the runner deploys ForeverPin dev to it, reached through its private entry point by site name.
+
+`networks` proves on that host that the platform network keeps its fixed addresses: containers that start before
+Traefik take dynamic ones from .128/25, and repair-networks.sh gives a network made without the range one.
+
+`enroll` enrolls a fresh root-only Ubuntu 26.04 host with the runner from the console image, as Wheelhouse prod does:
+the one-time key, the kit, a single-use key minted through the OAuth client, the node and host-key proofs, the seal.
+Then it places ForeverPin's databases and site on it and applies the tailnet policy after its review. Tailscale is the
+one stand-in: a fake API, and a stub CLI and site-node image on the host that spend the minted keys there.
 """
 import argparse
 import base64
+import io
 import json
 import os
 from pathlib import Path
@@ -22,6 +31,7 @@ import re
 import secrets
 import subprocess
 import sys
+import tarfile
 import time
 
 HERE = Path(__file__).resolve().parent
@@ -616,8 +626,193 @@ def products(bundle_id=None):
           "private image pull.")
 
 
+def prove_networks():
+    """On the local products host: dynamic containers that start before Traefik never take its .2, and a network made
+    before the reserved range gets it from repair-networks.sh with its fixed addresses kept, once."""
+    compose("--profile", "products", "up", "-d", "--build", "--wait", "products", capture=False)
+    as_deploy("python3 " + PRODUCTS_ROOT + "/bootstrap/prepare.py --server products")
+    platform = "cd " + PRODUCTS_ROOT + "/platform && docker compose --env-file host.env -f compose.yml "
+
+    def address(container, network):
+        return as_deploy("docker inspect -f '{{(index .NetworkSettings.Networks \"" + network + "\").IPAddress}}' "
+                         + container).stdout.strip()
+
+    names = ["rig-dynamic-" + str(index) for index in range(3)]
+    as_deploy(platform + "stop ingress >/dev/null 2>&1; docker rm -f " + " ".join(names) + " >/dev/null 2>&1; true")
+    for name in names:
+        as_deploy("docker run -d --name " + name + " --network platform alpine:3 sleep 600 >/dev/null")
+    dynamic = [address(name, "platform") for name in names]
+    as_deploy(platform + "up -d --force-recreate --wait ingress")
+    ingress = address("wheelhouse-products-ingress-1", "platform")
+    as_deploy("docker rm -f " + " ".join(names) + " >/dev/null")
+    print("Dynamic containers started first took " + ", ".join(dynamic) + "; Traefik then took " + ingress + ".")
+    if ingress != "172.30.0.2" or not all(item.startswith("172.30.0.") and int(item.rsplit(".", 1)[1]) >= 128
+                                          for item in dynamic):
+        sys.exit("A dynamic container could take a fixed platform address")
+
+    legacy = ("rig-legacy", "172.30.9.0/24", "172.30.9.1", "172.30.9.128/25")
+    repair = ". /kit/repair-networks.sh; repair_network " + " ".join(legacy)
+    on_products("sh", "-c", "docker rm -f rig-fixed rig-dynamic >/dev/null 2>&1; docker network rm rig-legacy "
+                "> /dev/null 2>&1; docker network create --subnet 172.30.9.0/24 --gateway 172.30.9.1 rig-legacy "
+                ">/dev/null && docker run -d --name rig-fixed --network rig-legacy --ip 172.30.9.2 --network-alias "
+                "edge alpine:3 sleep 600 >/dev/null && docker run -d --name rig-dynamic --network rig-legacy alpine:3 "
+                "sleep 600 >/dev/null")
+    before = on_products("docker", "inspect", "-f", "{{(index .NetworkSettings.Networks \"rig-legacy\").IPAddress}}",
+                         "rig-dynamic").stdout.strip()
+    first = on_products("bash", "-c", repair).stdout.strip()
+    second = on_products("bash", "-c", repair).stdout.strip()
+    config = json.loads(on_products("docker", "network", "inspect", "-f", "{{json .IPAM.Config}}", "rig-legacy").stdout)
+    fixed = json.loads(on_products("docker", "inspect", "-f", "{{json (index .NetworkSettings.Networks \"rig-legacy\")}}",
+                                   "rig-fixed").stdout)
+    moved = on_products("docker", "inspect", "-f", "{{(index .NetworkSettings.Networks \"rig-legacy\").IPAddress}}",
+                        "rig-dynamic").stdout.strip()
+    on_products("sh", "-c", "docker rm -f rig-fixed rig-dynamic >/dev/null; docker network rm rig-legacy >/dev/null")
+    print(first + "\n" + second)
+    print("Repair kept rig-fixed at " + fixed["IPAddress"] + " (alias edge: " + str("edge" in (fixed.get("Aliases") or []))
+          + ") and moved the dynamic container from " + before + " to " + moved + ".")
+    if (config != [{"Subnet": "172.30.9.0/24", "IPRange": "172.30.9.128/25", "Gateway": "172.30.9.1"}]
+            or fixed["IPAddress"] != "172.30.9.2" or "edge" not in (fixed.get("Aliases") or [])
+            or int(moved.rsplit(".", 1)[1]) < 128 or "reserves" not in second):
+        sys.exit("repair-networks.sh did not reserve the range with the fixed address kept")
+    print("Networks proven: fixed addresses reserved at creation and by repair, idempotently.")
+
+
+ENROLL_STATE = STATE / "enroll"
+ENROLL_ROOT = ENROLL_STATE / "root"
+FRESH = "fresh"
+FRESH_PUBLIC = "172.31.250.10"
+FRESH_TAILNET = "100.88.1.10"
+
+
+def enroller(*arguments, script="infra.py", check=True, entrypoint=None):
+    """One runner action as the console image runs it, on the rig's public and tailnet networks."""
+    command = ["docker", "compose", "-f", str(HERE / "compose.yml"), "--profile", "enroll", "run", "--rm", "-T",
+               "--no-deps", *(["--entrypoint", entrypoint] if entrypoint else []), "enroller"]
+    command += list(arguments) if entrypoint else ["/app/runner/" + script, *arguments, "--root", "/data/deployments"]
+    result = subprocess.run(command, capture_output=True, text=True, env=environment())
+    if check and result.returncode:
+        detail = (result.stderr or result.stdout).strip().splitlines()[-1:]
+        sys.exit("Failed: " + script + " " + arguments[0] + (" — " + detail[0] if detail else ""))
+    return json.loads(result.stdout) if check and not entrypoint else result
+
+
+def on_fresh(*command, stdin=None, check=True):
+    result = subprocess.run(["docker", "compose", "-f", str(HERE / "compose.yml"), "--profile", "enroll", "exec", "-T",
+                             FRESH, *command], input=stdin, capture_output=True, env=environment())
+    if check and result.returncode:
+        detail = (result.stderr or result.stdout or b"").decode("utf-8", "replace").strip().splitlines()[-1:]
+        sys.exit("Failed on the fresh host: " + " ".join(map(str, command[:3])) + (" — " + detail[0] if detail else ""))
+    return result
+
+
+def enroll_inventory(host):
+    """What the console would export for the fresh server: a Contabo VPS reached as the deploy account."""
+    private_file(ENROLL_ROOT / "inventory.json", json.dumps({
+        "version": 1, "products": [], "vaults": [], "targets": [],
+        "servers": [{"id": FRESH, "name": "Fresh Contabo VPS", "provider": "contabo", "host": host, "region": "eu",
+                     "sshUser": DEPLOY_USER, "sshPort": 22,
+                     "ingress": {"scheme": "https", "port": None, "entryPoints": ["private"],
+                                 "privateEntryPoints": ["private"], "certResolver": None, "pattern": None,
+                                 "probe": "http://127.0.0.1:18080", "privateProbe": "http://127.0.0.1:18080"}}],
+    }, indent=2) + "\n")
+
+
+def enroll_rig():
+    """Enrolls a fresh host end to end, places ForeverPin on it and applies the tailnet policy after its review."""
+    import shutil
+    compose("--profile", "enroll", "rm", "-sf", FRESH, "fake-tailscale", capture=False)
+    for volume in ("fresh-docker", "fresh-containerd"):
+        subprocess.run(["docker", "volume", "rm", "-f", "wheelhouse-rehearsal_" + volume], capture_output=True)
+    if ENROLL_STATE.exists():
+        shutil.rmtree(ENROLL_STATE)
+    for folder in (ENROLL_STATE, ENROLL_ROOT, ENROLL_ROOT / "providers" / "tailscale", ENROLL_ROOT / "rig-owner"):
+        private_dir(folder)
+    os.chmod(ENROLL_ROOT, 0o777)  # the console image's own user writes the runner root
+    owner = ENROLL_ROOT / "rig-owner" / "id_ed25519"
+    run("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "owner@rig", "-f", str(owner))
+    private_file(ENROLL_ROOT / "providers" / "tailscale" / "oauth-client.json", json.dumps(
+        {"clientId": "kRigClientCNTRL", "clientSecret": "tskey-client-kRigClientCNTRL-" + secrets.token_hex(16)}))
+    enroll_inventory(FRESH_PUBLIC)
+    # The console image as it ships, its kit from the `kit` build context deploy.yml names.
+    run("docker", "build", "-q", "-t", "wheelhouse:local", "-f", str(HERE.parent / "Dockerfile"),
+        "--build-context", "kit=" + str(HERE.parent / "vps"), str(HERE.parents[1] / "codebase"))
+
+    key = enroller("enrollment-key", "--server", FRESH)
+    (ENROLL_STATE / "fresh-root-keys").write_text(key["publicKey"] + "\n")
+    print("One-time key " + key["fingerprint"] + " placed on the fresh host's root, as at order time.")
+    compose("--profile", "enroll", "up", "-d", "--build", "fake-tailscale", FRESH, capture=False)
+    deadline = time.monotonic() + 180
+    while on_fresh("systemctl", "is-active", "ssh.socket", "ssh.service", check=False).returncode:
+        if time.monotonic() > deadline:
+            sys.exit("The fresh host's SSH never came up")
+        time.sleep(2)
+
+    enroller("enroll", "--server", FRESH, "--address", FRESH_PUBLIC, "--login-user", "root", "--admin", "ops",
+             "--admin-key", Path(str(owner) + ".pub").read_text().strip(), "--tailnet-hostname", "fresh-vps",
+             "--actor", "rig", "--no-launch")
+    result = enroller("enroll-run", "--server", FRESH)
+    for step in result["steps"]:
+        print("  " + step["status"].ljust(9) + " " + step["title"] + (" — " + step["detail"] if step["detail"] else ""))
+    if result["status"] != "succeeded":
+        sys.exit("The enrollment did not succeed: " + str(result.get("reason")))
+    print("Minted: " + ", ".join(mint["keyId"] + " " + "+".join(mint["tags"]) for mint in result["mints"]))
+
+    def owner_ssh(destination):
+        return enroller("-F", "/dev/null", "-i", "/data/deployments/rig-owner/id_ed25519", "-o", "BatchMode=yes",
+                        "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o",
+                        "ConnectTimeout=8", destination, "true", entrypoint="ssh", check=False).returncode
+    proofs = {"owner's admin over the tailnet": owner_ssh("ops@" + FRESH_TAILNET) == 0,
+              "root over the tailnet refused": owner_ssh("root@" + FRESH_TAILNET) != 0,
+              "public SSH closed": owner_ssh("ops@" + FRESH_PUBLIC) != 0}
+    for name, ok in proofs.items():
+        print("  " + ("ok" if ok else "FAILED").ljust(9) + " " + name)
+    if not all(proofs.values()):
+        sys.exit("The enrolled host is not sealed as it should be")
+
+    # What the console's follower does once the enrollment succeeds: the server moves to its tailnet address.
+    enroll_inventory(FRESH_TAILNET)
+    vitals = enroller("vitals", script="transport.py")
+    reading = next(item for item in vitals["servers"] if item["serverId"] == FRESH)
+    if not reading["ok"]:
+        sys.exit("The runner cannot read the enrolled host: " + str(reading.get("reason")))
+    print("The runner reads the enrolled host over the tailnet as " + DEPLOY_USER + ".")
+    prove_placement_and_policy()
+    print("Enrollment proven on the rig: fresh root-only host to sealed tailnet host, product placed, policy applied.")
+
+
+def prove_placement_and_policy():
+    """On the enrolled fresh host: ForeverPin's databases and site through the console's placement, then the tailnet
+    policy reviewed, applied and reverted."""
+    package = io.BytesIO()
+    with tarfile.open(fileobj=package, mode="w", format=tarfile.USTAR_FORMAT) as archive:
+        for name in ("Dockerfile", "site-node.py"):
+            archive.add(str(HERE / "fresh" / "site-node" / name), arcname=name)
+    on_fresh("docker", "build", "-q", "-t", "tailscale/tailscale:v1.104.1", "-", stdin=package.getvalue())
+    job = enroller("place", "--server", FRESH, "--product", PRODUCT, "--database", "--site", "app=foreverpin-app",
+                   "--actor", "rig", "--no-launch")
+    placed = enroller("place-run", "--job", job["id"])
+    for step in placed["steps"]:
+        print("  " + step["status"].ljust(9) + " " + step["title"] + (" — " + step["detail"] if step["detail"] else ""))
+    if placed["status"] != "succeeded":
+        sys.exit("The placement did not succeed: " + str(placed.get("reason")))
+    for site in placed["facts"]["sites"]:
+        print("  site " + site["node"] + " (" + site["environment"] + ") at " + str(site.get("tailnetAddress")))
+
+    review = enroller("policy")
+    if not (review["changed"] and review["validation"]["ok"] and review["guard"]["ok"]):
+        sys.exit("The policy review is not applicable: " + json.dumps(review["validation"]))
+    added = [line["text"].strip() for hunk in review["diff"] for line in hunk["lines"] if line["kind"] == "add"]
+    print("Policy diff adds: " + "; ".join(added))
+    enroller("policy-apply", "--etag", review["etag"], "--digest", review["renderedDigest"], "--actor", "rig")
+    if enroller("policy")["changed"]:
+        sys.exit("The applied policy does not match the rendered one")
+    reverted = enroller("policy-revert", "--etag", enroller("policy")["etag"], "--actor", "rig")
+    print("Policy applied after review, then reverted with one call (" + reverted["digest"][:12] + ").")
+
+
 def down(volumes):
-    profiles = ["--profile", "vault", "--profile", "console", "--profile", "dev", "--profile", "products"]
+    profiles = ["--profile", "vault", "--profile", "console", "--profile", "dev", "--profile", "products",
+                "--profile", "enroll"]
     # The runner names each product project <product>-<environment>.
     for project in (*(PRODUCT + "-" + name for name in (*ENVIRONMENTS, *RETIRED_ENVIRONMENTS)), SELF_TARGET):
         run("docker", "compose", "-p", project, "down", *(["--volumes"] if volumes else []),
@@ -628,7 +823,7 @@ def down(volumes):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("action", choices=["up", "console", "dev", "bundle", "settings", "check", "deploy", "state",
-                                           "run", "self", "products", "down"])
+                                           "run", "self", "products", "networks", "enroll", "down"])
     parser.add_argument("--env", default="dev", help="dev (default) or prod")
     parser.add_argument("--tag", help="bundle: a release tag such as v0.0.1-local.1; without it, a dev candidate")
     parser.add_argument("--bundle", help="the bundle ID to use; defaults to the checkout's candidate")
@@ -675,6 +870,10 @@ def main():
         deploy(bundle_id, "dev", target=SELF_TARGET, timeout=600)
     elif args.action == "products":
         products(args.bundle)
+    elif args.action == "networks":
+        prove_networks()
+    elif args.action == "enroll":
+        enroll_rig()
     else:
         down(args.volumes)
 

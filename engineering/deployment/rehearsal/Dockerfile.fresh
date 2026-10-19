@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+# A fresh Ubuntu 26.04 VPS for `rehearse.py enroll`, delivered the way a root-only image is (Contabo): systemd, OpenSSH
+# with keys only, and root signing in with the key added at order time. Docker, Tailscale and UFW are what the
+# enrollment installs. Tailscale itself is the one stand-in: its CLI talks to the rig's fake Tailscale API, and the
+# real tailscaled the enrollment installs stays idle. Never a production image.
+FROM ubuntu:26.04
+ENV container=docker DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends systemd systemd-sysv dbus openssh-server sudo python3 curl \
+       ca-certificates iproute2 iptables kmod \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+COPY fresh/05-keys-only.conf /etc/ssh/sshd_config.d/05-keys-only.conf
+COPY fresh/rig-root-keys /usr/local/sbin/rig-root-keys
+COPY fresh/tailscale /usr/local/bin/tailscale
+COPY fresh/tailscaled-rig.conf /etc/systemd/system/tailscaled.service.d/rig.conf
+RUN chmod 755 /usr/local/sbin/rig-root-keys /usr/local/bin/tailscale \
+    && systemctl enable ssh.service \
+    && systemctl mask systemd-resolved.service getty.target console-getty.service 2>/dev/null || true
+STOPSIGNAL SIGRTMIN+3
+ENTRYPOINT ["/usr/local/sbin/rig-root-keys"]
