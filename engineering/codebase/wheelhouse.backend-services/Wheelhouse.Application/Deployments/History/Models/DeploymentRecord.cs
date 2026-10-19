@@ -39,6 +39,9 @@ public sealed record DeploymentRecord
     /// <summary>Gets the owner's one-line why for the deploy, when one was given.</summary>
     public string? DeployReason { get; init; }
 
+    /// <summary>Gets the fleet rollout that submitted it; null for a deploy of its own.</summary>
+    public string? FleetId { get; init; }
+
     /// <summary>Gets the last observed status, such as <c>running</c>, <c>succeeded</c> or <c>rolled_back</c>.</summary>
     public required string Status { get; init; }
 

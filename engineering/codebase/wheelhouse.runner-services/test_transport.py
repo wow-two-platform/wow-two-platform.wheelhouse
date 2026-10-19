@@ -516,6 +516,30 @@ class TransportTests(unittest.TestCase):
         self.assertEqual("hotfix for the login loop", record["deployReason"])
         self.assertEqual("hotfix for the login loop", transport.jobs(self.root)[0]["deployReason"])
 
+    def test_a_fleet_submission_keeps_its_fleet_on_the_job_and_listed(self):
+        config = {**self.policy_config("dev", True, False), "requiresDevPass": False}
+        fleet_id = "66666666-6666-4666-8666-666666666666"
+
+        class FakeSsh:
+            def __init__(self, ssh_config):
+                pass
+
+            def run(self, command, stdin=None, timeout=30):
+                return json.dumps({"id": "55555555-5555-4555-8555-555555555555", "status": "queued"}) if "launch" in command else ""
+
+            def copy(self, files, destination):
+                pass
+
+        with patch.object(transport.fleet, "resolve_target", return_value=config), \
+                patch.object(transport.artifacts, "prepare", return_value=self.release_bundle()), \
+                patch.object(transport, "Ssh", FakeSsh):
+            submitted = transport.submit(self.root, "pilot-dev", "pilot-gh-1", "max", fleet_id=fleet_id)
+            with self.assertRaisesRegex(ValueError, "Invalid fleet id"):
+                transport.submit(self.root, "pilot-dev", "pilot-gh-1", "max", fleet_id="not-a-fleet")
+        record = json.loads((self.root / "jobs" / (submitted["id"] + ".json")).read_text())
+        self.assertEqual(fleet_id, record["fleetId"])
+        self.assertEqual(fleet_id, transport.jobs(self.root)[0]["fleetId"])
+
     def test_a_deploy_reason_is_one_short_line(self):
         for reason in ("", "   ", "two\nlines", "x" * 301):
             with self.subTest(reason=reason), self.assertRaisesRegex(ValueError, "one line of 300"):

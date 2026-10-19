@@ -108,6 +108,7 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<IAuditTrail, EfAuditTrail>();
         builder.Services.AddScoped<IDeploymentAutomationStore, DeploymentAutomationStore>();
         builder.Services.AddScoped<IDeployFreezesRepository, DeployFreezesRepository>();
+        builder.Services.AddScoped<IFleetRolloutsRepository, FleetRolloutsRepository>();
         builder.Services.AddScoped<IVitalsHistory, EfVitalsHistory>();
         builder.Services.AddHashChain<Wheelhouse.Domain.Audit.Entities.AuditEntry,
             Wheelhouse.Persistence.Audit.AuditEntryCanonicalizer>();
@@ -137,6 +138,8 @@ public static class HostConfigurationExtensions
         builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.DeploymentOutcomeFollower>();
         // Automatic deploys: the release watcher and the per-target queue, every Deployment:AutomationSeconds.
         builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.DeploymentAutomationWorker>();
+        // Fleet rollouts: the running fleet moves on every Deployment:FleetSeconds.
+        builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.FleetRolloutWorker>();
         // The runner-sites read holds briefly in the SDK cache, in process.
         builder.Services.AddHybridCaching();
         builder.Services.AddScoped<ITargetSites, Wheelhouse.Infrastructure.Products.RunnerTargetSites>();
@@ -191,7 +194,10 @@ public static class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.History.Services.DeploymentHistoryService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Automation.Services.DeploymentAutomationService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Freezes.Services.DeployFreezeService>();
+        builder.Services.AddScoped<Wheelhouse.Application.Deployments.Fleets.Services.FleetRolloutService>();
+        builder.Services.AddSingleton<Wheelhouse.Application.Deployments.Fleets.Services.FleetRolloutGate>();
         builder.Services.AddHttpContextAccessor();
+        builder.Services.AddScoped<BackgroundActor>();
         builder.Services.AddScoped<IActorContext, Wheelhouse.Api.Auth.HttpActorContext>();
         builder.Services.AddFluentValidatorsFromAssemblies(typeof(IApplicationMarker).Assembly);
 

@@ -12,6 +12,11 @@ public interface IDeploymentGateway
     Task<AppResult<JsonElement>> CheckAsync(string target, string? release, CancellationToken ct);
     /// <summary>Submits a trusted release to a configured target; <paramref name="confirm"/> is the typed target ID where the target asks for one, <paramref name="skipDevPass"/> lets prod take a release that has not succeeded on dev, and <paramref name="reason"/> is the owner's one-line why, stored on the job.</summary>
     Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, CancellationToken ct);
+    /// <summary>Submits a trusted release as part of the fleet rollout <paramref name="fleet"/>, which the runner keeps on
+    /// the job; otherwise as <see cref="StartAsync(string, string, string, string?, bool, string?, CancellationToken)"/>. A
+    /// gateway that keeps no fleet submits it as an ordinary deploy.</summary>
+    Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, Guid? fleet, CancellationToken ct) =>
+        StartAsync(target, release, actor, confirm, skipDevPass, reason, ct);
     /// <summary>Records the owner's reconciliation of an interrupted or failed rollout on its target.</summary>
     Task<AppResult<JsonElement>> ReconcileAsync(string target, string job, string actor, CancellationToken ct);
     /// <summary>Reads a branch's recent commits of a product, each with its build when one exists.</summary>

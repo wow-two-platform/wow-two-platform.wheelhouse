@@ -36,9 +36,17 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
 
     /// <inheritdoc />
     public Task<AppResult<JsonElement>> StartAsync(
-        string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, CancellationToken ct)
+        string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, CancellationToken ct) =>
+        StartAsync(target, release, actor, confirm, skipDevPass, reason, null, ct);
+
+    /// <inheritdoc />
+    public Task<AppResult<JsonElement>> StartAsync(
+        string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, Guid? fleet,
+        CancellationToken ct)
     {
         List<string> arguments = ["submit", "--target", target, "--bundle", release, "--actor", actor];
+        if (fleet is { } id)
+            arguments.AddRange(["--fleet", id.ToString("D")]);
         if (confirm is not null)
             arguments.AddRange(["--confirm", confirm]);
         if (skipDevPass)

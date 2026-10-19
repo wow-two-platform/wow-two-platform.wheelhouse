@@ -39,6 +39,9 @@ public sealed record DeploymentItemDto
     /// <summary>Gets the owner's one-line why for the deploy, when one was given.</summary>
     public string? DeployReason { get; init; }
 
+    /// <summary>Gets the fleet rollout that submitted it; null for a deploy of its own.</summary>
+    public string? FleetId { get; init; }
+
     /// <summary>Gets the runner status.</summary>
     public required string Status { get; init; }
 
@@ -94,6 +97,7 @@ public sealed record DeploymentItemDto
             SourceCommit = record.SourceCommit,
             Actor = record.Actor,
             DeployReason = record.DeployReason,
+            FleetId = record.FleetId,
             Status = record.Status,
             Outcome = entry.Outcome,
             Reason = record.Reason,

@@ -5,6 +5,9 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments;
 using Wheelhouse.Application.Deployments.Automation.Commands;
 using Wheelhouse.Application.Deployments.Automation.Queries;
+using Wheelhouse.Application.Deployments.Fleets.Commands;
+using Wheelhouse.Application.Deployments.Fleets.Models;
+using Wheelhouse.Application.Deployments.Fleets.Queries;
 using Wheelhouse.Application.Deployments.Freezes.Commands;
 using Wheelhouse.Application.Deployments.Freezes.Queries;
 using Wheelhouse.Application.Deployments.History.Queries;
@@ -72,6 +75,39 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
     [HttpGet("promotions")]
     public async Task<IActionResult> Promotions([FromQuery] DeploymentFilterApiRequest filter, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentPromotionsQuery(filter.ToFilter()), ct));
+
+    /// <summary>Lists the newest fleet rollouts with each product's outcome, newest first.</summary>
+    [HttpGet("fleets")]
+    public async Task<IActionResult> Fleets([FromQuery, Range(1, 50)] int limit = 10, CancellationToken ct = default) =>
+        this.ToActionResult(await sender.SendAsync(new FleetRolloutsQuery(limit), ct));
+
+    /// <summary>Reads one fleet rollout with each product's outcome.</summary>
+    [HttpGet("fleets/{id:guid}")]
+    public async Task<IActionResult> Fleet(Guid id, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new FleetRolloutQuery(id), ct));
+
+    /// <summary>Promotes several releases Ready to promote to prod in one run, in the order given: one product at a time,
+    /// each through the ordinary deploy gates, stopping at the first failure. Submits the first product at once.</summary>
+    [HttpPost("fleets")]
+    [RequireActionHeader("deploy")]
+    public async Task<IActionResult> StartFleet(FleetRolloutStartRequest request, CancellationToken ct)
+    {
+        var created = await sender.SendAsync(new FleetRolloutStartCommand
+        {
+            Items = [.. request.Items.Select(item => new FleetRolloutItemRequest(item.Target, item.Release, item.Confirm))],
+            Actor = actor.Actor, Reason = request.Reason, OverrideFreeze = request.OverrideFreeze,
+        }, ct);
+        if (created is not WoW.Two.Sdk.Beta.Be.Mediator.Result.AppResult<FleetRolloutDto>.Success { Data: var fleet })
+            return this.ToActionResult(created);
+        var advanced = await sender.SendAsync(new FleetRolloutAdvanceCommand(fleet.Id), ct);
+        return this.ToActionResult(advanced, envelope => AcceptedAtAction(nameof(Fleet), new { id = fleet.Id }, envelope));
+    }
+
+    /// <summary>Cancels a running fleet rollout between products: the product it is on finishes, the rest are not started.</summary>
+    [HttpPost("fleets/{id:guid}/cancel")]
+    [RequireActionHeader("deploy")]
+    public async Task<IActionResult> CancelFleet(Guid id, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new FleetRolloutCancelCommand(id, actor.Actor), ct));
 
     /// <summary>Lists every product's automation choices — auto-deploy each new release to dev, auto-promote to prod —
     /// and the automatic deploys waiting for their targets.</summary>

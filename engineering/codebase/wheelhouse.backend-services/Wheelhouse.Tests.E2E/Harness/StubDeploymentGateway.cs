@@ -92,8 +92,18 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
             new { targetId = target, ok = false, checks = new[] { new { name = "Settings: management", ok = false, detail = "Missing required setting: management:Billing:SecretKey" } } })));
     }
 
-    public Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, CancellationToken ct)
+    public Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, CancellationToken ct) =>
+        StartAsync(target, release, actor, confirm, skipDevPass, reason, null, ct);
+
+    /// <summary>The fleet rollout the last start belonged to, if any.</summary>
+    public Guid? LastFleet { get; private set; }
+
+    /// <summary>When set, a start of this target fails with this runner refusal, as a gate would refuse it.</summary>
+    public (string Target, string Refusal)? RefuseTarget { get; set; }
+
+    public Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, Guid? fleet, CancellationToken ct)
     {
+        LastFleet = fleet;
         LastReason = reason;
         LastTarget = target;
         LastRelease = release;
@@ -102,9 +112,11 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
         LastSkipDevPass = skipDevPass;
         Starts.Add((target, release, actor));
         if (Runner is not null)
-            return Runner.StartAsync(target, release, actor, confirm, skipDevPass, reason, ct);
+            return Runner.StartAsync(target, release, actor, confirm, skipDevPass, reason, fleet, ct);
         if (StartRefusal is not null)
             return Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(StartRefusal)));
+        if (RefuseTarget is { } refused && refused.Target == target)
+            return Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(refused.Refusal)));
         return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(
             new { id = Guid.NewGuid(), status = "queued" })));
     }

@@ -29,6 +29,8 @@ from runner import (PROXIES, SLUG, TERMINAL, CommandFailed, Rejected, now, reaso
 RUNNER = Path(__file__).with_name("runner.py")
 # A site address a rollout recorded: http(s), a host, an optional port and path.
 SITE_URL = re.compile(r"https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[^\s]*)?")
+# A fleet rollout's identifier, as the control plane writes a GUID.
+FLEET_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 FOLLOW_SECONDS = 10
 FOLLOW_MAX_BACKOFF = 300
 FOLLOW_BATCH_SIZE = 2  # Each SSH read is bounded at 30 seconds; leave room inside the API's 110-second budget.
@@ -235,8 +237,10 @@ def deploy_reason(value):
     return value.strip()
 
 
-def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False, reason=None):
+def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False, reason=None, fleet_id=None):
+    """`fleet_id` names the fleet rollout this submission belongs to; it is kept on the job and listed in history."""
     reason = deploy_reason(reason)
+    require(fleet_id is None or (isinstance(fleet_id, str) and FLEET_ID.fullmatch(fleet_id)), "Invalid fleet id")
     config = fleet.resolve_target(root, target_id)
     require(not config["needsConfirmation"] or confirm == target_id,
             "Type the target ID to deploy prod to the local server")
@@ -265,6 +269,8 @@ def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False,
               "ssh": config["ssh"], "serverId": config["serverId"]}
     if reason:
         record["deployReason"] = reason
+    if fleet_id:
+        record["fleetId"] = fleet_id
     write_json(root / "jobs" / (request_id + ".json"), record)
     command = shlex.join(["python3", remote + "/runner.py", "launch", "--bundle", remote,
                           "--target", remote + "/target.json", "--actor", actor])
@@ -636,6 +642,8 @@ def jobs(root, limit=50):
                 "release": record.get("release") or observed.get("release") or record.get("bundleId"),
                 "actor": record.get("actor"), "deployReason": record.get("deployReason"), "submittedAt": submitted,
                 "status": observed.get("status") or record.get("status")}
+        if isinstance(record.get("fleetId"), str):
+            item["fleetId"] = record["fleetId"]
         for key in ("reason", "failure", "startedAt", "completedAt", "mutationStarted", "sourceCommit", "warnings"):
             if key in observed:
                 item[key] = observed[key]
@@ -876,6 +884,7 @@ def main():
     parser.add_argument("--commit")
     parser.add_argument("--confirm", help="submit: the target ID, typed, for prod on the local server")
     parser.add_argument("--reason", help="submit: the owner's one-line why, kept on the job")
+    parser.add_argument("--fleet", help="submit: the fleet rollout the submission belongs to, kept on the job")
     parser.add_argument("--from", dest="start", help="changelog: the release the target runs now")
     parser.add_argument("--to", dest="end", help="changelog: the release to promote")
     parser.add_argument("--skip-dev-pass", action="store_true",
@@ -916,7 +925,8 @@ def main():
             print(json.dumps(template(root, args.bundle, args.service), indent=2))
             return 0
         elif args.action == "submit":
-            result = submit(root, args.target, args.bundle, args.actor, args.confirm, args.skip_dev_pass, args.reason)
+            result = submit(root, args.target, args.bundle, args.actor, args.confirm, args.skip_dev_pass, args.reason,
+                            args.fleet)
         elif args.action == "branches":
             result = artifacts.branches(args.product)
         elif args.action == "commits":

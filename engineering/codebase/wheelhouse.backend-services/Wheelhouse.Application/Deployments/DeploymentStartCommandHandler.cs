@@ -32,6 +32,6 @@ public sealed class DeploymentStartCommandHandler(
 
         var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
         return await gateway.StartAsync(request.Target, request.Release, request.Actor, request.Confirm, request.SkipDevPass,
-            reason, cancellationToken);
+            reason, request.Fleet, cancellationToken);
     }
 }

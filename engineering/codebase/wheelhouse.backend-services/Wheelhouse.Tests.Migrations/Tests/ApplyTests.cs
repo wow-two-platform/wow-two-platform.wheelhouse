@@ -26,6 +26,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "011-product-status", "012-pins", "013-drop-test-environment", "015-product-pins-only",
         "016-deploy-automation", "017-deploy-freezes",
         "018-auto-promotions",
+        "022-fleet-rollouts",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -680,6 +681,31 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 17, CancellationToken.None));
         (await migrator.HasTableAsync("auto_promotions")).Should().BeFalse();
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("018-auto-promotions"));
+    }
+
+    [Fact]
+    public async Task FleetRollouts_ShouldRunOneAtATime_AndTakeTheirProductsAlong_WhenApplied()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        const string fleet = "INSERT INTO fleet_rollouts (id, actor, status, created_at_utc) VALUES ('{0}', 'max', '{1}', now())";
+        await Execute(connection, string.Format(fleet, "00000000-0000-0000-0000-0000000000f1", "running"));
+        await Execute(connection,
+            "INSERT INTO fleet_rollout_items (fleet_id, position, product, target, bundle_id, status) " +
+            "VALUES ('00000000-0000-0000-0000-0000000000f1', 0, 'pilot', 'pilot-prod', 'pilot-gh-2', 'waiting')");
+        var second = async () => await Execute(connection, string.Format(fleet, "00000000-0000-0000-0000-0000000000f2", "running"));
+        await second.Should().ThrowAsync<Npgsql.PostgresException>("one fleet runs at a time");
+        await Execute(connection, string.Format(fleet, "00000000-0000-0000-0000-0000000000f3", "failed"));
+        await Execute(connection, "DELETE FROM fleet_rollouts WHERE id = '00000000-0000-0000-0000-0000000000f1'");
+        (await Scalar(connection, "SELECT count(*) FROM fleet_rollout_items")).Should().Be(0L);
+
+        var ordinal = Ordinals[Array.IndexOf(Migrations, "022-fleet-rollouts") - 1];
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: ordinal, CancellationToken.None));
+        (await migrator.HasTableAsync("fleet_rollouts")).Should().BeFalse();
+        (await migrator.HasTableAsync("fleet_rollout_items")).Should().BeFalse();
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("022-fleet-rollouts"));
     }
 
     /// <summary>The SQL that stores one vitals reading of a target slug, or of its server's host for <c>NULL</c>.</summary>
