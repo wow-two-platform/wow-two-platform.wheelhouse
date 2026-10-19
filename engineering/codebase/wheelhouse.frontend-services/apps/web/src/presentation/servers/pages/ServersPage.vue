@@ -55,6 +55,10 @@ import ResourceMeter from '../components/ResourceMeter.vue';
 import TrendLine from '../components/TrendLine.vue';
 import ServerFormModal from '../components/ServerFormModal.vue';
 import VaultFormModal from '../components/VaultFormModal.vue';
+import AddServerMenu from '@/presentation/infrastructure/components/AddServerMenu.vue';
+import ServerEnrollment from '@/presentation/infrastructure/components/ServerEnrollment.vue';
+import ServerTailnetNode from '@/presentation/infrastructure/components/ServerTailnetNode.vue';
+import TailnetPanel from '@/presentation/infrastructure/components/TailnetPanel.vue';
 
 /**
  * Presents the inventory's servers: the products each hosts, their vaults and their current, timestamped resource
@@ -132,11 +136,10 @@ const trendWindow = computed(() => {
   <div class="space-y-6">
     <PageHeaderActions>
       <RefreshButton size="md" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
-      <Button :is-disabled="serverForm.open" @click="serverForm = { open: true, server: null }">
-        <template #leading><Plus :size="16" /></template>Add server
-      </Button>
+      <AddServerMenu :is-disabled="serverForm.open" @register="serverForm = { open: true, server: null }" />
     </PageHeaderActions>
     <PortfolioAttention />
+    <TailnetPanel />
     <div class="flex flex-wrap items-center justify-between gap-3">
       <p class="text-sm text-muted-foreground">
         <template v-if="vitals.data.value"
@@ -227,6 +230,7 @@ const trendWindow = computed(() => {
               </ul>
             </template>
           </div>
+          <ServerEnrollment v-if="server" :server="server" class="mb-5" />
           <DataRegion :is-first-load="vitals.isFirstLoad.value" loading-label="Reading host vitals" class="mb-5">
             <div v-if="hostOf(server) || !server || vitals.isFirstLoad.value" class="grid gap-3 sm:grid-cols-2">
               <ResourceMeter
@@ -252,6 +256,7 @@ const trendWindow = computed(() => {
               >Host vitals are unavailable{{ hostReason(server) ? `: ${hostReason(server)}` : '' }}.</Text
             >
           </DataRegion>
+          <ServerTailnetNode v-if="server" :server="server" class="mb-5" />
           <section class="mb-5" :aria-label="`${server?.name ?? 'Server'} products`">
             <h3 class="mb-2 text-xs font-medium text-muted-foreground">Products</h3>
             <DataRegion :is-first-load="targets.isFirstLoad.value || products.isFirstLoad.value" loading-label="Reading products">

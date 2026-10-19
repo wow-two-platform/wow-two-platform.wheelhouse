@@ -76,6 +76,7 @@ import {
 import { InfoPopover, RefreshButton } from "@/presentation/common/components";
 import { ResourceMeter } from "@/presentation/servers";
 import BuildUsagePanel from "../BuildUsagePanel.vue";
+import HostingPanel from "@/presentation/infrastructure/components/HostingPanel.vue";
 import EnvironmentCompare from "../EnvironmentCompare.vue";
 import ServiceActions from "../ServiceActions.vue";
 import ServiceMap from "../ServiceMap.vue";
@@ -515,6 +516,7 @@ function openDeploy(job?: DeploymentJob): void {
               @promote="deploy.openDeploy($event)"
             />
             <BuildUsagePanel v-if="productKey" :product="productKey" />
+            <HostingPanel v-if="record" :product="record" />
             <section
               class="wh-glass rounded-2xl border border-border p-5"
               aria-labelledby="services-heading"
