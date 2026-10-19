@@ -46,6 +46,7 @@ export {
   useDeploymentAutomation,
   useFleetRollouts,
   useFreezeDeploys,
+  useGitHubAccessIssues,
   useProductAutomation,
   useReleaseChangelog,
   useReleaseFacts,

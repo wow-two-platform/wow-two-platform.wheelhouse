@@ -5,6 +5,7 @@ import type {
   DeploymentAutomation,
   FleetRollout,
   FleetSelection,
+  GitHubAccessIssue,
   ProductAutomation,
   ReleaseChangelog,
   ReleaseFacts,
@@ -16,6 +17,7 @@ import {
   DeployFreezeSchema,
   DeploymentAutomationSchema,
   FleetRolloutSchema,
+  GitHubAccessIssueSchema,
   ProductAutomationSchema,
   ReleaseChangelogSchema,
   ReleaseFactsSchema,
@@ -57,6 +59,10 @@ export const deploymentAutomationApi = {
       signal,
     });
   },
+
+  /** What keeps the control plane from reaching GitHub, per owner; never filtered. */
+  listGitHubAccess: (signal?: AbortSignal) =>
+    requestData<GitHubAccessIssue[]>('/api/deployments/issues/github', GitHubAccessIssueSchema.array(), { signal }),
 
   /** What a product's builds cost over the last 30 days; read from GitHub at most once an hour. */
   getUsage: (product: string, signal?: AbortSignal) =>

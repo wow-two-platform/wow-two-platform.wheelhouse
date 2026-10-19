@@ -6,7 +6,7 @@ import { bundleModule } from "./BundleModule.mjs";
 // The real rules of automatic deploys and freezes, and their wire decoding.
 const automation = await bundleModule(`
   export { DefaultAutomation, DeployFreezes, rollbackRisks, DeploymentIssues, automationLockOf, DevCheckRules } from './src/domain/deployments';
-  export { BuildFailureSchema, DeploymentAutomationSchema, DeployFreezeSchema, ReleaseChangelogSchema } from './src/integration/deployments/automationSchemas';
+  export { BuildFailureSchema, DeploymentAutomationSchema, DeployFreezeSchema, GitHubAccessIssueSchema, ReleaseChangelogSchema } from './src/integration/deployments/automationSchemas';
   export { DeploymentPromotionSchema, DeploymentItemSchema } from './src/integration/deployments/historySchemas';
 `);
 after(() => stop());
@@ -131,6 +131,14 @@ test("a rollout that regressed while watched names its first finding", () => {
   });
   assert.equal(automation.DeploymentIssues.headline({ kind: "degraded", deployment }), "Regressed after the deploy: api restarted 2 times since the deploy");
   assert.equal(automation.DeploymentItemSchema.parse({ id: "x", status: "succeeded", outcome: "succeeded", submittedAt: "x", watch: { status: "odd" } }).watch.status, "unverified");
+});
+
+test("a GitHub access problem names its owner, or the App itself when it has none", () => {
+  const owner = automation.GitHubAccessIssueSchema.parse({ owner: "ocharo-hq", cause: "Not installed.", status: 404, at: "2026-10-19T09:00:00Z" });
+  assert.deepEqual([owner.owner, owner.status], ["ocharo-hq", 404]);
+  const app = automation.GitHubAccessIssueSchema.parse({ cause: "The key is missing.", at: "2026-10-19T09:00:00Z" });
+  assert.deepEqual([app.owner, app.status], [null, null]);
+  assert.throws(() => automation.GitHubAccessIssueSchema.parse({ owner: "ocharo-hq", at: "2026-10-19T09:00:00Z" }));
 });
 
 test("a failed build links only to GitHub", () => {

@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { BuildFailure, DeploymentIssue } from "@/domain/deployments";
+import type { BuildFailure, DeploymentIssue, GitHubAccessIssue } from "@/domain/deployments";
 
 /** Defines the targets that need attention. */
 export interface IssuesPanelProps {
@@ -11,13 +11,15 @@ export interface IssuesPanelProps {
   readonly checkingTarget?: string | null;
   /** The products whose newest finished main build failed. */
   readonly builds?: readonly BuildFailure[];
+  /** What keeps the control plane from reaching GitHub, per owner. */
+  readonly access?: readonly GitHubAccessIssue[];
 }
 </script>
 
 <script setup lang="ts">
 import { computed } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import { ArrowUpRight, Hammer, RotateCcw, TriangleAlert, Wrench } from "lucide-vue-next";
+import { ArrowUpRight, Hammer, KeyRound, RotateCcw, TriangleAlert, Wrench } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge, RelativeTime } from "@wow-two-beta/fe/presentation/display";
@@ -34,8 +36,8 @@ import FrozenBadge from "../automation/FrozenBadge.vue";
  * likely locked come first.
  */
 defineOptions({ name: "IssuesPanel" });
-const props = withDefaults(defineProps<IssuesPanelProps>(), { checkingTarget: null, builds: () => [] });
-const total = computed(() => props.items.length + props.builds.length);
+const props = withDefaults(defineProps<IssuesPanelProps>(), { checkingTarget: null, builds: () => [], access: () => [] });
+const total = computed(() => props.items.length + props.builds.length + props.access.length);
 const emit = defineEmits<{ redeploy: [issue: DeploymentIssue]; reconcile: [issue: DeploymentIssue] }>();
 const router = useRouter();
 
@@ -174,6 +176,21 @@ function describe(issue: DeploymentIssue): string {
               ><ArrowUpRight :size="14" aria-hidden="true" />Run</a
             >
           </Button>
+        </div>
+      </li>
+      <li
+        v-for="problem in props.access"
+        :key="`github-${problem.owner ?? 'app'}-${problem.cause}`"
+        class="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-3 py-3 first:pt-0 last:pb-0"
+      >
+        <KeyRound :size="18" class="mt-0.5 text-warning" aria-hidden="true" />
+        <div class="min-w-0">
+          <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span class="font-medium">GitHub access</span>
+            <Badge variant="neutral">{{ problem.owner ?? "GitHub App" }}</Badge>
+          </p>
+          <p class="mt-1 text-sm text-warning">{{ problem.cause }}</p>
+          <p class="mt-0.5 text-xs text-muted-foreground"><RelativeTime :value="problem.at" /></p>
         </div>
       </li>
     </ul>

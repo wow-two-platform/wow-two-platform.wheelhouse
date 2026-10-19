@@ -13,6 +13,7 @@ export const AutomationKeys = {
   facts: (release: string) => ['deployments', 'facts', release] as const,
   changelog: (product: string, from: string, to: string) => ['deployments', 'changelog', product, from, to] as const,
   builds: ['deployments', 'builds'] as const,
+  githubAccess: ['deployments', 'github-access'] as const,
   usage: (product: string) => ['deployments', 'usage', product] as const,
   fleets: ['deployments', 'fleets'] as const,
 };
@@ -111,6 +112,16 @@ export function useBuildFailures() {
   return useAppQuery({
     key: () => AutomationKeys.builds,
     queryFn: ({ signal }) => deploymentAutomationApi.listBuildFailures([], signal),
+    refetchInterval: 60_000,
+    meta: { suppressGlobalError: true },
+  });
+}
+
+/** What keeps the control plane from reaching GitHub, read every minute while the page is visible. */
+export function useGitHubAccessIssues() {
+  return useAppQuery({
+    key: () => AutomationKeys.githubAccess,
+    queryFn: ({ signal }) => deploymentAutomationApi.listGitHubAccess(signal),
     refetchInterval: 60_000,
     meta: { suppressGlobalError: true },
   });

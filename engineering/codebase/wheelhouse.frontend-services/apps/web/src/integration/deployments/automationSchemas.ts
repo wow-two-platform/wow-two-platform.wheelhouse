@@ -71,6 +71,13 @@ export const BuildFailureSchema = z.object({
   url: githubUrl,
 });
 
+export const GitHubAccessIssueSchema = z.object({
+  owner: z.string().nullable().default(null),
+  cause: z.string(),
+  status: z.number().int().nullable().default(null),
+  at: z.string(),
+});
+
 export const BuildUsageSchema = z.object({
   product: z.string(),
   since: z.string(),
