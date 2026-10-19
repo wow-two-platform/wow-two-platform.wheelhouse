@@ -3,6 +3,8 @@ import type {
   BuildUsage,
   DeployFreeze,
   DeploymentAutomation,
+  FleetRollout,
+  FleetSelection,
   ProductAutomation,
   ReleaseChangelog,
   ReleaseFacts,
@@ -13,6 +15,7 @@ import {
   BuildUsageSchema,
   DeployFreezeSchema,
   DeploymentAutomationSchema,
+  FleetRolloutSchema,
   ProductAutomationSchema,
   ReleaseChangelogSchema,
   ReleaseFactsSchema,
@@ -59,6 +62,31 @@ export const deploymentAutomationApi = {
   getUsage: (product: string, signal?: AbortSignal) =>
     requestData<BuildUsage>(`/api/deployments/products/${encodeURIComponent(product)}/usage`, BuildUsageSchema, { signal }),
 
+  /** The newest fleet rollouts with each product's outcome, newest first. */
+  listFleets: (limit = 10, signal?: AbortSignal) =>
+    requestData<FleetRollout[]>(`/api/deployments/fleets?limit=${limit}`, FleetRolloutSchema.array(), { signal }),
+
+  /** Promotes releases Ready to promote to prod in one run, in this order; the host submits the first at once. */
+  startFleet: (fleet: FleetStart, signal?: AbortSignal) =>
+    requestData<FleetRollout>('/api/deployments/fleets', FleetRolloutSchema, {
+      signal,
+      method: 'POST',
+      action: 'deploy',
+      body: {
+        items: fleet.items.map((item) => ({ target: item.target, release: item.release, ...(item.confirm ? { confirm: item.confirm } : {}) })),
+        ...(fleet.reason?.trim() ? { reason: fleet.reason.trim() } : {}),
+        ...(fleet.overrideFreeze ? { overrideFreeze: true } : {}),
+      },
+    }),
+
+  /** Stops a running fleet between products: the product it is on finishes, the rest are not started. */
+  cancelFleet: (id: string, signal?: AbortSignal) =>
+    requestData<FleetRollout>(`/api/deployments/fleets/${encodeURIComponent(id)}/cancel`, FleetRolloutSchema, {
+      signal,
+      method: 'POST',
+      action: 'deploy',
+    }),
+
   /** Every hold on deploys. */
   listFreezes: (signal?: AbortSignal) =>
     requestData<DeployFreeze[]>('/api/deployments/freezes', DeployFreezeSchema.array(), { signal }),
@@ -91,4 +119,11 @@ export interface FreezeRequest {
   readonly product?: string | null;
   readonly environment?: string | null;
   readonly reason?: string | null;
+}
+
+/** A fleet to start: its releases in order, the reason every deploy carries and whether they go through freezes. */
+export interface FleetStart {
+  readonly items: readonly FleetSelection[];
+  readonly reason?: string | null;
+  readonly overrideFreeze?: boolean;
 }

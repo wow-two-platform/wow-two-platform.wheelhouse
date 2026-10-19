@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, ref, shallowRef } from "vue";
 import { Rocket } from "lucide-vue-next";
 
 import { notify } from "@wow-two-beta/fe/feedback";
@@ -9,6 +9,8 @@ import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
 import {
   buildEntityTree,
   useBuildFailures,
+  useCancelFleet,
+  useFleetRollouts,
   useDeploymentIssues,
   useDeploymentPromotions,
   useRunningDeployments,
@@ -16,9 +18,17 @@ import {
 } from "@/application/deployments";
 import { usePortfolio } from "@/application/portfolio";
 import { ProductStatus } from "@/domain/products";
-import { TargetCondition, type DeploymentIssue, type DeploymentPromotion } from "@/domain/deployments";
+import {
+  FleetRollouts,
+  FleetStatus,
+  TargetCondition,
+  type DeploymentIssue,
+  type DeploymentPromotion,
+} from "@/domain/deployments";
 
 import DeployModal from "../components/DeployModal.vue";
+import FleetPromoteModal from "../components/automation/FleetPromoteModal.vue";
+import FleetRolloutsPanel from "../components/history/FleetRolloutsPanel.vue";
 import ReconcileModal from "../components/ReconcileModal.vue";
 import DeploymentFilterScope from "../components/history/DeploymentFilterScope.vue";
 import DeploymentsPanel from "../components/history/DeploymentsPanel.vue";
@@ -42,6 +52,18 @@ const issues = useDeploymentIssues();
 const running = useRunningDeployments();
 const promotions = useDeploymentPromotions();
 const deploy = useDeployModal();
+const fleets = useFleetRollouts();
+const cancelFleet = useCancelFleet();
+/** The prod targets the running fleet still holds: their Ready to promote rows wait for it. */
+const heldTargets = computed(() => FleetRollouts.heldTargets(fleets.active.value));
+/** The fleets that ended in the last day, newest first. */
+const recentFleets = computed(() =>
+  (fleets.fleets.data.value ?? []).filter(
+    (fleet) => fleet.status !== FleetStatus.Running && Date.now() - Date.parse(fleet.completedAt ?? fleet.createdAt) < 24 * 3600_000,
+  ),
+);
+const fleetItems = shallowRef<DeploymentPromotion[]>([]);
+const fleetOpen = ref(false);
 const tree = computed(() => buildEntityTree(portfolio.groups.value, portfolio.showInactive.value));
 const productNames = computed(
   () => new Map(portfolio.products.products.value.map((product) => [product.slug, product.name] as const)),
@@ -105,6 +127,18 @@ async function reconcile(issue: DeploymentIssue): Promise<void> {
 function promote(item: DeploymentPromotion): void {
   deploy.openDeploy({ target: item.prodTargetId, release: item.bundleId });
 }
+
+/** Opens the fleet dialog on the chosen releases, in the order the panel lists them. */
+function promoteMany(items: DeploymentPromotion[]): void {
+  if (!items.length) return;
+  fleetItems.value = items;
+  fleetOpen.value = true;
+}
+
+function fleetStarted(): void {
+  notify({ tone: "success", title: "Fleet rollout started", description: "Running now follows it product by product." });
+  void fleets.fleets.refetch();
+}
 </script>
 
 <template>
@@ -124,16 +158,26 @@ function promote(item: DeploymentPromotion): void {
       @redeploy="redeploy"
       @reconcile="reconcile"
     />
-    <RunningNowPanel v-if="running.data.value?.length" :items="running.data.value" :product-names="productNames" />
+    <RunningNowPanel
+      v-if="running.data.value?.length || fleets.active.value"
+      :items="running.data.value ?? []"
+      :fleet="fleets.active.value"
+      :cancelling-fleet="cancelFleet.loading.value"
+      :product-names="productNames"
+      @cancel-fleet="cancelFleet.mutateAsync($event)"
+    />
     <ReadyToPromotePanel
       v-if="offers?.length || promotions.error.value"
       :items="offers"
       :product-names="productNames"
       :is-first-load="promotions.isFirstLoad.value"
       :error="promotions.error.value"
+      :held-targets="heldTargets"
       @promote="promote"
+      @promote-many="promoteMany"
       @retry="promotions.refetch()"
     />
+    <FleetRolloutsPanel v-if="recentFleets.length" :items="recentFleets" :product-names="productNames" />
     <div class="flex min-w-0 flex-col gap-4">
       <DeploymentFilterScope :filter="route.filter.value" :tree="tree" @change="route.setFilter" />
       <RangeStatsTiles :filter="route.filter.value" />
@@ -145,6 +189,13 @@ function promote(item: DeploymentPromotion): void {
       :active="reconcileState.data.value.active"
       :open="reconcileOpen"
       @update:open="reconcileOpen = $event"
+    />
+    <FleetPromoteModal
+      :open="fleetOpen"
+      :items="fleetItems"
+      :product-names="productNames"
+      @update:open="fleetOpen = $event"
+      @started="fleetStarted"
     />
     <DeployModal
       :key="deploy.session.value"

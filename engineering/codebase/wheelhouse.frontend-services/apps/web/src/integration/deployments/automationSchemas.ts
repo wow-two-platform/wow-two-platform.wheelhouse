@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DeploymentCause, FreezeScope } from '@/domain/deployments';
+import { DeploymentCause, FleetItemStatus, FleetStatus, FreezeScope } from '@/domain/deployments';
 
 export const ProductAutomationSchema = z.object({
   product: z.string(),
@@ -98,4 +98,31 @@ export const DeployFreezeSchema = z.object({
   actor: z.string(),
   at: z.string(),
   covers: z.string(),
+});
+
+export const FleetRolloutItemSchema = z.object({
+  position: z.number().int(),
+  product: z.string(),
+  target: z.string(),
+  bundleId: z.string(),
+  release: z.string().nullable().default(null),
+  fromRelease: z.string().nullable().default(null),
+  status: z.enum(FleetItemStatus).catch(FleetItemStatus.Waiting),
+  deploymentId: z.string().nullable().default(null),
+  detail: z.string().nullable().default(null),
+  startedAt: z.string().nullable().default(null),
+  completedAt: z.string().nullable().default(null),
+});
+
+export const FleetRolloutSchema = z.object({
+  id: z.string(),
+  actor: z.string(),
+  reason: z.string().nullable().default(null),
+  overrideFreeze: z.boolean().default(false),
+  status: z.enum(FleetStatus).catch(FleetStatus.Failed),
+  createdAt: z.string(),
+  completedAt: z.string().nullable().default(null),
+  cancelRequestedBy: z.string().nullable().default(null),
+  cancelRequestedAt: z.string().nullable().default(null),
+  items: z.array(FleetRolloutItemSchema),
 });

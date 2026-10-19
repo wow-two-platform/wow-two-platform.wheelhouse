@@ -1,10 +1,14 @@
 <script lang="ts">
-import type { DeploymentItem } from "@/domain/deployments";
+import type { DeploymentItem, FleetRollout } from "@/domain/deployments";
 
 /** Defines the live rollouts strip. */
 export interface RunningNowPanelProps {
-  /** The live rollouts; the panel is left out while there are none. */
+  /** The live rollouts; the panel is left out while there are none and no fleet runs. */
   readonly items: readonly DeploymentItem[];
+  /** The fleet rollout that runs, shown above the live rollouts with its progress. */
+  readonly fleet?: FleetRollout | null;
+  /** Whether a cancel request for the fleet is on its way. */
+  readonly cancellingFleet?: boolean;
   /** Product names by slug. */
   readonly productNames: ReadonlyMap<string, string>;
 }
@@ -21,11 +25,13 @@ import { ConsolePaths } from "@/application/navigation";
 import { Measures } from "@/domain/common";
 import { Panel } from "@/presentation/common/components";
 
+import FleetRolloutCard from "../automation/FleetRolloutCard.vue";
 import FrozenBadge from "../automation/FrozenBadge.vue";
 
 /** Shows each live rollout with the step it is on and how long it has run; the time ticks every second. */
 defineOptions({ name: "RunningNowPanel" });
 const props = defineProps<RunningNowPanelProps>();
+const emit = defineEmits<{ cancelFleet: [id: string] }>();
 const now = ref(Date.now());
 let timer: ReturnType<typeof setInterval> | undefined;
 
@@ -42,6 +48,15 @@ function elapsed(item: DeploymentItem): string {
 
 <template>
   <Panel title="Running now" :description="`${props.items.length} ${props.items.length === 1 ? 'rollout' : 'rollouts'} in progress.`">
+    <FleetRolloutCard
+      v-if="props.fleet"
+      :fleet="props.fleet"
+      :product-names="props.productNames"
+      :cancelling="props.cancellingFleet"
+      class="mb-4 border-b border-border pb-4"
+      aria-live="polite"
+      @cancel="emit('cancelFleet', $event)"
+    />
     <ul class="flex flex-col divide-y divide-border" aria-live="polite">
       <li v-for="item in props.items" :key="item.id">
         <RouterLink

@@ -1,8 +1,10 @@
-import { computed, toValue, type MaybeRefOrGetter } from 'vue';
+import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue';
 
-import { useAppMutation, useAppQuery } from '@/bootstrap/query';
-import { DefaultAutomation, DeployFreezes, type ProductAutomation } from '@/domain/deployments';
-import { deploymentAutomationApi, type FreezeRequest } from '@/integration/deployments/automationApi';
+import { useAppMutation, useAppQuery, useInvalidate } from '@/bootstrap/query';
+import { DefaultAutomation, DeployFreezes, FleetRollouts, type ProductAutomation } from '@/domain/deployments';
+import { deploymentAutomationApi, type FleetStart, type FreezeRequest } from '@/integration/deployments/automationApi';
+
+import { DeploymentKeys } from '../DeploymentKeys';
 
 /** Query keys for what the control plane deploys on its own. */
 export const AutomationKeys = {
@@ -12,6 +14,7 @@ export const AutomationKeys = {
   changelog: (product: string, from: string, to: string) => ['deployments', 'changelog', product, from, to] as const,
   builds: ['deployments', 'builds'] as const,
   usage: (product: string) => ['deployments', 'usage', product] as const,
+  fleets: ['deployments', 'fleets'] as const,
 };
 
 /** How often the automation choices and the queue are read while a view shows them. */
@@ -120,5 +123,55 @@ export function useBuildUsage(product: MaybeRefOrGetter<string | null>) {
     queryFn: ({ signal }) => deploymentAutomationApi.getUsage(toValue(product) ?? '', signal),
     enabled: () => Boolean(toValue(product)),
     meta: { suppressGlobalError: true },
+  });
+}
+
+/** How often fleets are read while one runs, and while none does. */
+const FleetPollMilliseconds = { running: 3000, idle: 30_000 } as const;
+
+/**
+ * The newest fleet rollouts, read every 3 seconds while one runs and every half minute otherwise. When a product of the
+ * running fleet ends, the history views and promotions are read again.
+ */
+export function useFleetRollouts() {
+  const invalidate = useInvalidate();
+  const running = ref(false);
+  const fleets = useAppQuery({
+    key: () => AutomationKeys.fleets,
+    queryFn: ({ signal }) => deploymentAutomationApi.listFleets(10, signal),
+    refetchInterval: () => (running.value ? FleetPollMilliseconds.running : FleetPollMilliseconds.idle),
+    meta: { suppressGlobalError: true },
+  });
+  watch(
+    () => FleetRollouts.active(fleets.data.value) !== null,
+    (value) => (running.value = value),
+    { immediate: true },
+  );
+  watch(
+    () => fleets.data.value?.flatMap((fleet) => fleet.items.map((item) => `${fleet.id}:${item.position}:${item.status}`)).join(',') ?? null,
+    (now, before) => {
+      if (now === null || before === null || now === before) return;
+      void invalidate(DeploymentKeys.historyViews);
+      void invalidate(DeploymentKeys.statsAll);
+    },
+  );
+  const active = computed(() => FleetRollouts.active(fleets.data.value));
+  return { fleets, active };
+}
+
+/** Starts a fleet rollout; a refusal shows in the dialog that started it. */
+export function useStartFleet() {
+  return useAppMutation({
+    mutationFn: (fleet: FleetStart, { signal }) => deploymentAutomationApi.startFleet(fleet, signal),
+    invalidates: () => [AutomationKeys.fleets, DeploymentKeys.historyViews],
+    meta: { suppressGlobalError: true },
+  });
+}
+
+/** Cancels a running fleet between products; a refusal shows as a toast. */
+export function useCancelFleet() {
+  return useAppMutation({
+    mutationFn: (id: string, { signal }) => deploymentAutomationApi.cancelFleet(id, signal),
+    invalidates: () => [AutomationKeys.fleets],
   });
 }
