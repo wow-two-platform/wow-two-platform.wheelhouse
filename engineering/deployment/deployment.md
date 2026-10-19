@@ -52,7 +52,9 @@ Local image builds use the current working tree; publishing requires all intende
 ## Wheelhouse's own releases
 
 Wheelhouse ships like the products it deploys. `engineering/deployment/deploy.yml` declares one service, `console`,
-with its settings keys, `keys` and `deployments` volumes, a private `console` site and `needs: [postgres]`.
+with its settings keys, `keys` and `deployments` volumes, a private `console` site and `needs: [postgres]`, and
+`dotnetEnvironment: true`: `wheelhouse-dev` runs as `Development`, `wheelhouse-prod` as `Production`. Its workflows pin
+pipelines `v0.5.0`, the first generator that writes that key.
 
 | Workflow | Runs on | Does |
 |---|---|---|
@@ -352,7 +354,9 @@ A fleet survives a restart: the next pass continues it.
 Every rollout records `serviceRollout` in its job record — each service's change against the release the target ran,
 the waves it started them in and how each ended — and `interpolation`, a hash of the target variables and settings
 paths Compose interpolates; a changed hash counts every service as changed. Each Compose call also takes the
-runner-written override `releases/<job>/environment.json`, which gives every service `DEPLOY_ENVIRONMENT`.
+runner-written override `releases/<job>/environment.json`, which gives every service `DEPLOY_ENVIRONMENT`, and, when the
+release sets `dotnetEnvironment`, `ASPNETCORE_ENVIRONMENT` and `DOTNET_ENVIRONMENT` (dev `Development`, prod
+`Production`).
 
 A background sampler reads the vitals each `Operations:VitalsSampleMinutes` (default 5; 0 turns it off), stores each
 server's load, memory and fullest disk (a row with no target) and each target's container health in `vitals_samples`,
@@ -372,6 +376,7 @@ Each rollout records its steps in its job record as they start and end, so the d
 | Verify services | Exact image references, health, and the target's smoke checks |
 | Publish sites | The route file for the release's sites |
 | Probe sites | Each site through the ingress; a site that does not answer is a warning |
+| Verify end to end | Dev only, when the release declares `verify`: its check in a one-off container from the service's release image; a failure is a warning and holds auto-promote |
 | Remove unused images | Images only releases older than the newest three used; skipped when there are none |
 | Remove old files | Release folders beyond the newest ten whose images are gone, and this project's uploads beyond the newest ten once a day old |
 | Roll back to … | The previous release, only for a failed rollout that declared rollback compatibility |
@@ -444,9 +449,11 @@ python3 rehearse.py down --volumes
 
 ### From an IDE
 
-`python3 rehearse.py dev` starts the server plus a loopback database (`127.0.0.1:15432`) that
-`appsettings.Development.json` points at, with `Deployment:Rehearsal` = `host` and the runner paths resolved from the
-project folder. Run `Wheelhouse.Api` with the `https` launch profile and open `https://localhost:8210`; the header's
+`python3 rehearse.py dev` starts the server plus a loopback database (`127.0.0.1:15432`) and, when it is missing,
+writes `Wheelhouse.Api/appsettings.Machine.json` (gitignored, never in the image) pointing at it, with
+`Deployment:Rehearsal` = `host` and the runner paths resolved from the project folder. Only a run whose launch profile
+sets `MACHINE_SETTINGS=true` reads that file; `appsettings.Development.json` holds no local value, since deployed dev
+reads it too. Run `Wheelhouse.Api` with the `https` launch profile and open `https://localhost:8210`; the header's
 `Local server` badge marks an instance that deploys to the local server, not real hosts. Sign-in uses the API
 project's user-secrets (`Identity:GitHub`, callback `https://localhost:8210/api/identity/callback`).
 The build compiles the SPA with the Node pinned in `wheelhouse.frontend-services/.nvmrc` when nvm has it, so a Rider

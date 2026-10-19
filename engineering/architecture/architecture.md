@@ -7,7 +7,14 @@
 A .NET 10 host serves the private administration API and Vue workspace.
 PostgreSQL stores the inventory (products, servers, targets, vaults), integration keys, the audit trail and vitals;
 bespoke SQL migrations run on startup. GitHub cookie authentication and an owner allowlist protect administration; a scoped integration key reads
-the product catalog and nothing else. Production requires a nonempty owner allowlist.
+the product catalog and nothing else. A deployed console (the runner sets `DEPLOY_ENVIRONMENT`) and Production require a
+nonempty owner allowlist.
+
+Deployed dev runs as .NET `Development` and prod as `Production` (`dotnetEnvironment: true` in `deploy.yml`), so
+`appsettings.Development.json` holds defaults only. The IDE run's rig wiring — database `127.0.0.1:15432`, runner
+paths, `Deployment:Rehearsal` — lives in the gitignored `appsettings.Machine.json`, which the host reads right after
+`appsettings.Development.json` only on a local run whose launch profile sets `MACHINE_SETTINGS=true` (`LocalRun`):
+tests and containers never read it. OpenAPI and an empty allowlist are local-run only, never `Development` alone.
 
 ```mermaid
 flowchart LR
@@ -59,7 +66,13 @@ image bytes. The shared publish workflow builds bundles from each product's `dep
 
 Every service can read the environment it runs in from `DEPLOY_ENVIRONMENT` (`dev` or `prod`): the runner writes a
 Compose override beside the release's `compose.json` (`environment.json`, never part of the bundle or its hash) that
-sets it on each service, and passes it to every Compose call, so a product needs no descriptor change to know it.
+sets it on each service, and passes it to every Compose call, so a product needs no descriptor change to know it. A
+release whose descriptor sets `dotnetEnvironment: true` also gets `ASPNETCORE_ENVIRONMENT` and `DOTNET_ENVIRONMENT` —
+dev `Development`, prod `Production` — in the same override; it is opt-in because a product's
+`appsettings.Development.json` may still hold machine-local values. A changed override counts as a changed service.
+
+A release may declare a dev check (`verify` in `deploy.yml`: a service, a command and a timeout, default 5 minutes,
+10 seconds to 30 minutes), which the generator writes into `release.json` (pipelines `v0.5.0`).
 
 Bundles are privileged owner inputs: hashes bind files together, not publishers to identities.
 The API accepts target and release IDs only. It cannot upload arbitrary Compose, run shell commands or disclose SSH keys.
@@ -78,7 +91,8 @@ The API accepts target and release IDs only. It cannot upload arbitrary Compose,
    leaves its dependents unstarted; then converge the whole release with one `up --wait --remove-orphans`, which keeps
    unchanged services running untouched. Wait for every declared health check, then request each site through the
    ingress. A `depends_on` naming an unknown service or forming a cycle is refused before anything changes.
-7. Record the outcome with release, source commit, actor and previous release.
+7. Record the outcome with release, source commit, actor and previous release. On dev, a release that declares a dev
+   check then runs it ([deployment automation](#deployment-automation)); the outcome stays what the rollout was.
 8. On failure, keep the attempted release; restore previous images only under a declared schema-compatibility
    guarantee. Never restore a database or delete volumes automatically.
 
@@ -391,8 +405,19 @@ request acts as `automation`, so every automatic submission goes through the ord
   findings, and the Issues list raises it (`kind: degraded`). A clean window ends `passed`; a rollout replaced meanwhile
   is `superseded`, and one no look could read `unverified`. The record lives in `<runner root>/watching/<job>.json` and
   history items carry it as `watch`.
+- **Dev check:** once a dev rollout of a release that declares `verify` succeeds, the runner runs the check in the
+  same worker, before the job completes and its watch window opens: step `Verify end to end` runs the command in a
+  one-off container from the named service's release image (`docker run --rm --pull never`, the platform network,
+  `no-new-privileges`, all capabilities dropped, 512 MB), with `DEPLOY_ENVIRONMENT`, `VERIFY_RELEASE`, `VERIFY_SITES`,
+  `VERIFY_SITE_<SITE>` and `VERIFY_SERVICE_<SERVICE>` passed by name and no settings file. Exit 0 passes; another exit,
+  the timeout (the container is removed) or a check that cannot start fails it as a step and deployment warning, never
+  the rollout. The job keeps `verification` `{ status (passed | failed), service, startedAt, completedAt, seconds,
+  exitCode (null on a timeout, -1 when it could not run), detail, summary (the last output line, 300 characters) }`;
+  history items and the deployment page carry it with `verifies` (whether the bundle declares one), and so do Ready to
+  promote rows, so a manual promote shows it. Prod never runs it.
 - **Auto-promote** is off per product until the owner turns it on. A release whose dev rollout `passed` its watch in
-  the last hour is queued for each prod target that neither runs nor tried it (`auto_promotions`, migration
+  the last hour — and its dev check, when its bundle declares one; a declared check with no result holds it too — is
+  queued for each prod target that neither runs nor tried it (`auto_promotions`, migration
   `018-auto-promotions`: each release is tried once per target) and submitted with cause `automatic: promoted after its
   dev watch`. A frozen prod target and a prod on the local server, which needs its ID typed, are left to the owner;
   the dev-pass gate holds by construction.
