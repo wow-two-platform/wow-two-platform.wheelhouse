@@ -209,6 +209,9 @@ ssh/<server-id>/identity
 ssh/<server-id>/known_hosts
 vaults/<vault-id>/password
 github-app/private-key.pem ← the GitHub App key, optional (GitHub access below)
+providers/tailscale/oauth-client.json ← prod only: the Tailscale OAuth client (Tailscale below)
+providers/tailscale/policy/ ← the tailnet policy before Wheelhouse's last change, for one-click revert
+infra/                    ← enrollment and placement journals, one-time enrollment keys while a host needs them
 github/                   ← GitHub reads kept briefly, the App's tokens for the runner, refused-call notes
 bundles/<artifact-id>/{release,compose,source}.json
 jobs/
@@ -312,6 +315,51 @@ Owner steps, once:
 
 Rotate by generating a new key, replacing the file and deleting the old key in GitHub; the key is read at each token
 issue, so no restart is needed.
+
+## Tailscale and enrollment
+
+Wheelhouse prod brings a fresh server online and onto the tailnet itself, places a product's databases and private
+sites on it, and applies the tailnet policy after the owner reviews its diff ([vps.md § Products host](vps/vps.md#products-host)).
+The runner's `infra.py` does the work beside `transport.py`; the API starts it, follows its journals and audits each
+start and finish. Dev never does any of it: its Servers page reads "prod only".
+
+- **OAuth client:** one owner file, `<runner root>/providers/tailscale/oauth-client.json`, mode `0600`, owned by the
+  console's user: `{"clientId": "...", "clientSecret": "tskey-client-..."}`. Its secret is read at each token
+  exchange, goes only to `api.tailscale.com`, and is never logged, audited, exported or shown.
+- **Keys:** each host and each site node joins with its own single-use, pre-approved, non-ephemeral key, tagged
+  `tag:products` or `tag:product-site`, valid 15 minutes. A key travels on SSH stdin into a file under `/run` on the host
+  and is removed at once; jobs and audit keep its ID, tag and expiry only.
+- **Enrollment:** a one-time Ed25519 key per server (Servers › Add server › Enroll a fresh server) that the owner adds
+  to the account the image delivers. Its steps, each recorded live: first contact (host key pinned, checked against the
+  owner's fingerprint when given), kit upload (`/app/kit`, its digest recorded), administrator, packages, host layout,
+  tailnet join, node check (its endpoints must hold the public address), prod's runner key proven over the tailnet
+  against the first-seen host key, platform, seal (keys-only SSH, no root, public SSH closed, one-time key removed) and
+  verify. A rerun continues from the first step that has not succeeded; every step converges.
+- **Placement:** Products › a product › Hosting › Place on a server: the platform converges, dev and prod databases are
+  created once (passwords stay in `database.json` on the host), and each site gets a node per environment.
+- **Policy:** Servers › Tailnet › Review policy renders `tailnet-policy.hujson` with one host alias and one
+  control-path test per products host, diffs it against the live policy and runs Tailscale's validation. Apply sends
+  the reviewed ETag and digest; the policy it replaces is kept for revert. A policy whose tests no longer accept
+  `tag:control` to `tag:products:22` is refused, whatever Tailscale would save.
+- **Recording:** every `Infra:FollowSeconds` (10) the API records finished jobs in the audit trail as the owner who
+  started them (`server.enrollment.finish`, `product.placement.finish`), and moves an enrolled server's host to its
+  tailnet address and `wheelhouse-deploy`.
+
+Owner steps, once (Tailscale admin console):
+
+1. Access controls: paste [tailnet-policy.hujson](vps/tailnet-policy.hujson) once, so `tag:wheelhouse` exists. From then
+   on Wheelhouse applies it.
+2. Settings › OAuth clients › Generate: scopes `auth_keys` (write), `devices:core:read` and `policy_file` (write, which
+   reads too), tag `tag:wheelhouse`. Nothing else: no device writes, DNS or users.
+3. On the control host, as the prod console's own user:
+
+```sh
+sudo docker exec -i wheelhouse-prod-console-1 sh -c 'umask 077; mkdir -p /data/deployments/providers/tailscale;
+  cat > /data/deployments/providers/tailscale/oauth-client.json'   # paste the JSON, then Ctrl-D
+```
+
+Rotate by generating a new client, replacing the file and revoking the old one. The rig rehearses all of it against a
+fake Tailscale API: `rehearse.py enroll` ([Local server](#local-server)).
 
 ## Operator and API commands
 
@@ -522,6 +570,8 @@ python3 rehearse.py bundle --tag v0.0.1-broken.1 --broken     # a release that f
 python3 rehearse.py state --env dev
 python3 rehearse.py self                                      # Wheelhouse builds and deploys itself to wheelhouse-dev
 python3 rehearse.py products                                  # the products-host kit on a second local host
+python3 rehearse.py networks                                  # fixed platform addresses survive dynamic containers
+python3 rehearse.py enroll                                    # a fresh Ubuntu 26.04 host enrolled, placed, policy applied
 python3 rehearse.py down --volumes
 ```
 
@@ -545,7 +595,18 @@ python3 rehearse.py down --volumes
   proves `authorize-runner.sh --remote` and `--accept` at a stand-in tailnet address.
 - A password-protected local registry stands in for GHCR: the deploy account signs in through `prepare.py`'s GHCR
   sign-in, and the runner's SSH session pulls a private image that root, without a sign-in, cannot.
-- Packages, the firewall, unattended updates and the tailnet need a real Ubuntu host; the rehearsal leaves them out.
+- Packages, the firewall, unattended updates and the tailnet need a real Ubuntu host; `products` leaves them out, and
+  `enroll` covers them.
+- `networks` starts dynamic containers on the products host's `platform` before Traefik, which still gets `.2`, and has
+  `repair-networks.sh` give a scratch network made without the dynamic range one, its fixed address kept.
+- `enroll` builds the console image and runs its own runner (`enroller`, on stand-in public and tailnet networks)
+  against `fresh`: Ubuntu 26.04 with systemd, root signing in with the one-time key only, as a root-only image is
+  ordered. The enrollment installs Docker, Tailscale and UFW for real, then seals the host; the rig then checks that the
+  owner's administrator signs in over the tailnet, root and public SSH do not, and the runner reads the host. It places
+  ForeverPin's databases and site, and reviews, applies and reverts the tailnet policy.
+- Tailscale is the one stand-in there: `fake_tailscale.py` answers the OAuth client, keys, devices and policy calls,
+  and the host's stub CLI and site-node image (`fresh/`) spend each minted key at it, once. On an arm64 machine the
+  host is arm64, which only the rig's switch lets the kit accept; real hosts stay amd64.
 
 ### From an IDE
 

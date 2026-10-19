@@ -14,6 +14,8 @@ A second VPS that runs products only is wired by [§ Products host](#products-ho
 | [Host bootstrap](bootstrap.sh) | Verified VPS, administrator | Docker/Compose/Python/OpenSSH, deploy account, network, platform files |
 | [Administrator script](create-admin.sh) | Root-only products VPS, root, once | A sudo administrator that signs in with root's SSH keys; sets no password |
 | [Products bootstrap](bootstrap-products.sh) | Verified products VPS, administrator | The same, plus SSH keys only, firewall, unattended security updates and the tailnet |
+| [Enrollment phases](enroll-products.sh) | Fresh products VPS, as root, run by Wheelhouse prod | The bootstrap's steps one phase at a time, a minted key's tailnet join, the seal |
+| [Network repair](repair-networks.sh) | Either host, administrator, in a maintenance step | Recreates `control`/`platform` with the dynamic range `.128/25`, fixed addresses kept |
 | [Configuration generator](prepare.py) | VPS, deployment account | Each console's database credentials, settings and target JSON; with `--server products`, a products host's platform, databases, site nodes and GHCR sign-in |
 | [Canary generator](prepare_canary.py) | VPS, deployment account | The canary's dev and prod databases and settings files |
 | [Runner authorization](authorize-runner.sh) | VPS, administrator | A console's own runner SSH identity for this host; with `--remote` and `--accept`, prod's identity for a products host |
@@ -133,7 +135,8 @@ The one tagged path is the control host to a products host's SSH ([§ Products h
 tagged node reaches nothing. Paste the policy under Access controls first (a tag must be defined before a machine can
 carry it), then tag the control-plane machine `tag:control` (Machines › Edit ACL tags). The policy's tests refuse a
 save that would let a canary, products or site node reach the control host, or the control host reach more than a
-products host's SSH.
+products host's SSH. Once Wheelhouse prod holds the Tailscale OAuth client, later changes go through its reviewed diff
+(Servers › Tailnet › Review policy) instead of a paste.
 Verify from a canary node afterwards:
 
 
@@ -281,6 +284,9 @@ A second VPS runs products only, Ocharo first: PostgreSQL, a private Traefik ent
 private site. No console and no Wheelhouse database run there. Only Wheelhouse prod deploys to it, over the tailnet;
 dev never receives its key. Until public ingress ships (v0.5 Iteration 11), every site answers on the tailnet only.
 
+Wheelhouse prod wires it from the console ([§ From the console](#from-the-console)); the hand-run steps after it stay
+the fallback and the reference for what each console step does.
+
 ```text
 Owner device -> https://<site-node>.<tailnet>.ts.net -> site node Serve :443 -> Traefik private 172.30.0.2:8080
   -> <product>-<environment>-<service>:<port> on `platform`
@@ -308,6 +314,30 @@ Prod console (control host) -> tailnet -> <products-tailnet-ip>:22 -> wheelhouse
 
 The local rehearsal (`python3 rehearse.py products`) proves every scripted step except packages, the firewall, updates
 and the tailnet, which need a real Ubuntu host ([Local server](../deployment.md#local-server)).
+
+### From the console
+
+Once per tailnet, the owner connects Tailscale ([deployment.md § Tailscale and enrollment](../deployment.md#tailscale-and-enrollment)):
+the policy pasted once, an OAuth client with `auth_keys`, `devices:core:read` and `policy_file` on `tag:wheelhouse`,
+its file placed in prod's volume. Then, in Wheelhouse prod:
+
+1. **Servers › Add server › Enroll a fresh server:** slug, name, provider, region, public IP. Wheelhouse shows a
+   one-time public key (`wheelhouse-enroll-<slug>`).
+2. **Give the key to the image's account:** at order time (Contabo's SSH key field), or once to an image already
+   delivered: `ssh root@<public-ip> 'cat >> ~/.ssh/authorized_keys'` with the key on stdin (`ubuntu@` on OVH). The
+   owner's own key may stay there too.
+3. **Enroll:** sign-in account (`root`, or `ubuntu` on OVH), administrator (`ubuntu` where it exists, kept as it is;
+   a new one needs your public key and gets no password), tailnet hostname, and, best, the host key fingerprint from the
+   provider's console (Contabo VNC: `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`). Without it the tailnet proves
+   the host instead.
+4. **Watch the steps.** The job runs from first contact to the seal, about five minutes; a failed step names why, and
+   Rerun continues from it. Afterwards the server's host is its tailnet address, root and public SSH are refused, the
+   one-time key is gone from both hosts, and your administrator signs in over the tailnet.
+5. **Products › the product › Hosting › Place on a server:** databases and private sites (`app` → `ocharo-desk`), as
+   steps 4–5 below do by hand; each site node joins with its own single-use key.
+6. **Servers › Tailnet › Review policy:** the diff adds the new host's alias and control-path test; Apply once
+   Tailscale's validation passes.
+7. Continue with [step 8](#8-register-and-deploy-owner-wheelhouse-prod) for targets, settings and the first deploy.
 
 ### 1. Buy and first sign-in (owner)
 
@@ -489,6 +519,26 @@ sudo -u wheelhouse-deploy docker network inspect platform -f '{{json .IPAM.Confi
 - From outside the tailnet, the public address answers on no port, IPv4 and IPv6, once SSH is tailnet-only.
 - From an owner device, each site answers at its node; Traefik's own 404 means the target names another host.
 - In prod, Servers shows the host's vitals and each target's check passes.
+
+## Network repair
+
+Every kit network reserves its fixed addresses: Docker hands out dynamic ones only from `.128/25`, so a container that
+starts first after a reboot can never take Traefik's `.2`, PostgreSQL's `.3` or a tailnet node's address (the products
+host's `Deployment:TrustedProxies` is `172.30.0.2`). `bootstrap.sh`, `bootstrap-products.sh` and Wheelhouse's
+enrollment create them that way; a network created before 2026-10-19 lacks the range, and `bootstrap.sh` then refuses
+with this section's name. Repair it in a short maintenance step:
+
+```sh
+sudo bash repair-networks.sh --check   # control: repair, platform: repair (or ok)
+sudo bash repair-networks.sh           # recreates each network that lacks the range; a rerun changes nothing
+```
+
+- Each container is disconnected (its processes keep running), the network is created again with the range, and each
+  reconnects with its aliases: fixed-address ones first at their own address, dynamic ones after, from `.128`.
+- Traffic on that network pauses for a few seconds; the consoles' sessions survive. Run it outside a deploy.
+- A network whose subnet or gateway differ is refused, untouched: that is an address review, not a repair.
+- `rehearse.py networks` proves both: dynamic containers first, Traefik still at `.2`; and a repair that keeps a fixed
+  address and moves a dynamic one into the range.
 
 ## GitHub-hosted CI access
 

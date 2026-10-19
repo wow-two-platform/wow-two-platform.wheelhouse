@@ -31,7 +31,10 @@ port. Serve is tailnet-only; never use Funnel.
 
 ## Tailnet policy
 
-[tailnet-policy.hujson](tailnet-policy.hujson) is the whole policy, pasted under Access controls in the Tailscale admin.
+[tailnet-policy.hujson](tailnet-policy.hujson) is the whole policy. Pasted once under Access controls in the Tailscale
+admin, it is then applied by Wheelhouse prod after the owner reviews the diff (Servers › Tailnet › Review policy):
+Wheelhouse adds one host alias and one `tag:control` → `<host>:22` test per products host, keeps the policy it replaces
+for one-click revert, and refuses any policy whose tests no longer accept `tag:control` to `tag:products:22`.
 
 | Node | Tag | Reaches |
 |---|---|---|
@@ -40,6 +43,7 @@ port. Serve is tailnet-only; never use Funnel.
 | Canary nodes (`canary-dev`, `canary`: one per environment) | `tag:canary` | Nothing on the tailnet |
 | Products host | `tag:products` | Nothing on the tailnet |
 | Product site nodes (`<node>-dev`, `<node>`: one per site and environment) | `tag:product-site` | Nothing on the tailnet |
+| Wheelhouse prod's OAuth client (no machine) | `tag:wheelhouse` | Nothing: it owns `tag:products` and `tag:product-site`, the tags its single-use keys give |
 
 - A tag must exist in the policy before a machine can carry it: save the policy first, then tag the machine.
 - Tagging changes a machine's ownership from the user to the tag. Tagged machines don't appear in `autogroup:self`.
@@ -49,8 +53,9 @@ port. Serve is tailnet-only; never use Funnel.
   host reach more than a products host's SSH.
 - Both consoles share the control host's tailnet identity, so dev could open the products host's port 22 too. Only
   prod's console volume holds a key the products host accepts; `authorize-runner.sh` refuses a remote key for dev.
-- The products host joins as `tag:products` (bootstrap-products.sh); site nodes join with a reusable auth key tagged
-  `tag:product-site`. Tagged at sign-in, neither key expires.
+- The products host joins as `tag:products`, site nodes as `tag:product-site`, each with its own single-use,
+  pre-approved key that Wheelhouse prod mints through its OAuth client and that expires after 15 minutes unused. By hand,
+  bootstrap-products.sh prints a sign-in link and site nodes take a reusable key. Tagged at sign-in, no node expires.
 - Tailscale SSH stays in check mode between owner devices only; the host uses ordinary OpenSSH.
 - After a node rename, `sudo tailscale serve reset` and add both console ports again, or TLS fails with "no webserver
   configured for name/port".
@@ -82,6 +87,9 @@ CI onto the tailnet first (Hosting backlog).
 - Consoles trust forwarded headers only from Traefik's `control` address `172.30.1.2`.
 - PostgreSQL and both bridges sit on fixed addresses so forwarded-header trust stays explicit; [bootstrap.sh](bootstrap.sh)
   refuses a network whose subnet differs.
+- Docker hands out dynamic addresses only from `.128/25` on both networks, so no container that starts first after a
+  reboot can take a fixed one. A network made before that is repaired with [repair-networks.sh](repair-networks.sh)
+  ([vps.md § Network repair](vps.md#network-repair)).
 
 Verify:
 
