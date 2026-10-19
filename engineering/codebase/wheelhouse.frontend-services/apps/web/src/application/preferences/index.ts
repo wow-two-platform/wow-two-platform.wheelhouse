@@ -9,7 +9,6 @@ export const PreferenceKeys = {
   collapsedGroups: "wheelhouse.products-collapsed-workspaces",
   productsView: "wheelhouse.products-view",
   lastProduct: "wheelhouse.last-product",
-  sidebarProductsOpen: "wheelhouse.sidebar-products-open",
 } as const;
 
 /** Reads a remembered value; storage that is blocked or full reads as nothing remembered. @internal */
@@ -138,15 +137,4 @@ const lastProduct = preference<LastProduct | null>(
 /** The product page last opened; null before any, or after it was forgotten. */
 export function useLastProduct(): Ref<LastProduct | null> {
   return lastProduct;
-}
-
-const sidebarProductsOpen = preference(
-  PreferenceKeys.sidebarProductsOpen,
-  (raw) => raw !== "false",
-  (value) => String(value),
-);
-
-/** Whether the sidebar's Products tree is unfolded; it starts unfolded. */
-export function useSidebarProductsOpen(): Ref<boolean> {
-  return sidebarProductsOpen;
 }

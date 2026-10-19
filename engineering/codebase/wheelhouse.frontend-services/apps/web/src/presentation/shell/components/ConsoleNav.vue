@@ -10,15 +10,15 @@ import { computed } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import { SidebarMenu, SidebarMenuItem } from '@wow-two-beta/fe/presentation/nav';
 import { ConsolePaths, primaryDestinationOf } from '@/application/navigation';
+import PinnedNav from './PinnedNav.vue';
 import { PrimaryDestinations } from './PrimaryDestinations';
-import ProductsNavTree from './ProductsNavTree.vue';
+import ProductsNavItem from './ProductsNavItem.vue';
 
 /**
- * Lists the destinations without a heading — Home, Products, Deployments, Servers — with Products as a tree of the
- * products kept one click away: "All products", the product last opened and the pinned ones, each unfolding to its
- * tabs. There is no workspace tree: workspaces live on the Products page. Everything else (activity, vault
- * administration, settings, "Show inactive") sits in the profile menu. The rail keeps the same order, the kept
- * products as icons after Products.
+ * Lists the destinations without a heading — Home, Products, Deployments, Servers — with Products unfolding to the
+ * open product's Workspace › Product while a product page shows; then, under a divider, the pinned products. There is
+ * no workspace tree: workspaces live on the Products page. Everything else (activity, vault administration, settings,
+ * "Show inactive") sits in the profile menu. The rail keeps the same order as icons.
  */
 defineOptions({ name: 'ConsoleNav' });
 const props = withDefaults(defineProps<ConsoleNavProps>(), { collapsed: false });
@@ -45,7 +45,7 @@ const labelClass = computed(() => (props.collapsed ? 'sr-only' : 'min-w-0 flex-1
       class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:thin]"
     >
       <template v-for="place in PrimaryDestinations" :key="place.path">
-        <ProductsNavTree
+        <ProductsNavItem
           v-if="place.path === ConsolePaths.products"
           :collapsed="props.collapsed"
           @navigate="emit('navigate')"
@@ -57,6 +57,7 @@ const labelClass = computed(() => (props.collapsed ? 'sr-only' : 'min-w-0 flex-1
           >
         </SidebarMenuItem>
       </template>
+      <PinnedNav :collapsed="props.collapsed" @navigate="emit('navigate')" />
     </SidebarMenu>
   </div>
 </template>
