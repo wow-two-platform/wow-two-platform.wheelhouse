@@ -168,6 +168,28 @@ promote-prod (release tag, from main)
 - Migrations still run forward on start; a schema change that cannot roll back needs a reviewed recovery.
 - The `prod` environment allows only `main` and carries the same SSH secrets as `dev`: one host, one deploy account.
 
+## Console settings
+
+Host facts a console reads from the settings file its target mounts (`appsettings.Target.json`). None is committed, so
+the public repository names no host.
+
+| Setting | Meaning |
+|---|---|
+| `Console:PeerUrl` | The other console's address, `https://host[:port]`. Empty (the default) leaves the tag beside the logo as the console version. Set, the tag reads `dev` or `prod` and opens a menu with one link to the same page — path, query and hash — on the other console. |
+
+Set it on both consoles, each naming the other (placeholder hosts):
+
+```json
+// dev's settings file
+{ "Console": { "PeerUrl": "https://wheelhouse.example.net" } }
+// prod's settings file
+{ "Console": { "PeerUrl": "https://wheelhouse-dev.example.net:8443" } }
+```
+
+- Only the origin: an address with another scheme, a path, a query or credentials fails the boot and names the setting.
+- The console reads it for the signed-in owner at `GET /api/system/peer`; the anonymous `/api/system/status` never carries it.
+- Restart the console after changing it; settings bind once per boot.
+
 ## Local packaging
 
 From this repository root:
