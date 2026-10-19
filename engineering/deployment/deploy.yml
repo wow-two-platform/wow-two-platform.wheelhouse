@@ -12,10 +12,18 @@ services:
   console:
     build:
       dockerfile: deployment/Dockerfile
+      # The products-host kit, copied into the image at /app/kit for enrollments.
+      contexts:
+        kit: deployment/vps
     paths:
       - codebase/wheelhouse.backend-services/**
       - codebase/wheelhouse.frontend-services/**
       - codebase/wheelhouse.runner-services/**
+      - deployment/vps/*.sh
+      - deployment/vps/prepare.py
+      - deployment/vps/products.compose.yml
+      - deployment/vps/tailscale-serve-products.json
+      - deployment/vps/tailnet-policy.hujson
     health: /api/system/ready
     memory: 512m
     settings:

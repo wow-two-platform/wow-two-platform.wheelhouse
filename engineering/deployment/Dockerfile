@@ -29,7 +29,14 @@ WORKDIR /app
 COPY --from=build /app ./
 COPY wheelhouse.runner-services/runner.py wheelhouse.runner-services/transport.py wheelhouse.runner-services/fleet.py \
      wheelhouse.runner-services/artifacts.py wheelhouse.runner-services/catalog.py wheelhouse.runner-services/inventory.py \
-     wheelhouse.runner-services/history.py wheelhouse.runner-services/registry.py /app/runner/
+     wheelhouse.runner-services/history.py wheelhouse.runner-services/registry.py \
+     wheelhouse.runner-services/infra.py wheelhouse.runner-services/infra_jobs.py wheelhouse.runner-services/tailnet.py \
+     wheelhouse.runner-services/enroll.py wheelhouse.runner-services/placement.py wheelhouse.runner-services/kit.py \
+     /app/runner/
+# The products-host kit an enrollment uploads, from the `kit` build context (deploy.yml): it ships with the release, so
+# an enrollment never fetches it, and its digest is recorded on each job.
+COPY --from=kit enroll-products.sh bootstrap-products.sh create-admin.sh repair-networks.sh authorize-runner.sh prepare.py \
+     products.compose.yml tailscale-serve-products.json tailnet-policy.hujson /app/kit/
 RUN mkdir -p /data/keys /data/deployments && chown -R app:app /data
 ENV ASPNETCORE_HTTP_PORTS=8080 DataProtection__KeyPath=/data/keys
 USER app
