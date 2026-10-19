@@ -1,8 +1,12 @@
 using System.Text.Json;
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Infrastructure.Deployments;
 using Wheelhouse.Infrastructure.Deployments.Parsers;
+using Wheelhouse.Infrastructure.GitHub;
 using Wheelhouse.Infrastructure.Settings;
+using Wheelhouse.Tests.Unit.Fakes;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
@@ -83,4 +87,42 @@ public sealed class DeploymentGatewayTests : IDisposable
         (await RunWith(new DeploymentSettings { Rehearsal = DeploymentSettings.RigNetwork, RehearsalState = "/host/state" }))
             .Should().Be(("network", "/host/state"));
     }
+
+    [Fact]
+    public async Task GitHub_actions_get_the_per_owner_tokens_and_every_action_the_access_notes_file()
+    {
+        using var rig = new GitHubAppRig();
+        rig.Install("sulton-max", 11);
+        var products = new InMemoryProductsRepository();
+        products.Rows.Add(new ProductEntity
+        {
+            Id = Guid.NewGuid(), Slug = "foreverpin", Name = "ForeverPin", Description = "",
+            Repository = "sulton-max/10x-venture-forever-pin", DefaultBranch = "main",
+        });
+        var settings = rig.Settings with { TransportPath = _transport, Root = _root };
+        var tokens = new GitHubRunnerTokens(rig.Tokens, products, settings, NullLogger<GitHubRunnerTokens>.Instance);
+        var gateway = new DeploymentGateway(settings, new RunnerFailureParser(), tokens);
+        File.WriteAllText(_transport,
+            "import json, os\nprint(json.dumps({'tokens': os.environ.get('WHEELHOUSE_GITHUB_TOKENS_FILE'), " +
+            "'access': os.environ.get('WHEELHOUSE_GITHUB_ACCESS_FILE')}))\n");
+        var inherited = Environment.GetEnvironmentVariable("WHEELHOUSE_GITHUB_TOKENS_FILE");
+        Environment.SetEnvironmentVariable("WHEELHOUSE_GITHUB_TOKENS_FILE", "/elsewhere/tokens.json");
+        try
+        {
+            var releases = Data(await gateway.ReadAsync("releases", null, CancellationToken.None));
+            var jobs = Data(await gateway.ReadAsync("jobs", null, CancellationToken.None));
+
+            releases.GetProperty("tokens").GetString().Should().Be(GitHubRunnerFiles.TokensPath(_root));
+            File.ReadAllText(GitHubRunnerFiles.TokensPath(_root)).Should().Contain("ghs_sulton-max_1");
+            jobs.GetProperty("tokens").ValueKind.Should().Be(JsonValueKind.Null, "only actions that reach GitHub get tokens");
+            jobs.GetProperty("access").GetString().Should().Be(GitHubRunnerFiles.AccessPath(_root));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("WHEELHOUSE_GITHUB_TOKENS_FILE", inherited);
+        }
+    }
+
+    private static JsonElement Data(AppResult<JsonElement> result) =>
+        result.Should().BeOfType<AppResult<JsonElement>.Success>().Subject.Data;
 }

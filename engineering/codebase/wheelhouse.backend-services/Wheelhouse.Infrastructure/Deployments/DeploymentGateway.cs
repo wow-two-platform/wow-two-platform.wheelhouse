@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Infrastructure.Deployments.Parsers;
+using Wheelhouse.Infrastructure.GitHub;
 using Wheelhouse.Infrastructure.Settings;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
@@ -10,8 +11,17 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Infrastructure.Deployments;
 
 /// <summary>Runs the same bounded SSH adapter used by manual recovery.</summary>
-public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailureParser failures) : IDeploymentGateway
+/// <remarks>A runner action that reaches GitHub first gets the GitHub App's per-owner tokens written for it
+/// (<see cref="GitHubRunnerTokens"/>); every action may note refused GitHub calls for the Issues panel.</remarks>
+public sealed class DeploymentGateway(
+    DeploymentSettings settings, RunnerFailureParser failures, GitHubRunnerTokens? github = null) : IDeploymentGateway
 {
+    /// <summary>Holds the runner actions that call GitHub: release and build listings, downloads, dispatches.</summary>
+    private static readonly HashSet<string> GitHubActions = new(StringComparer.Ordinal)
+    {
+        "releases", "latest", "builds", "usage", "branches", "commits", "changelog", "build", "submit", "facts", "check",
+    };
+
     /// <inheritdoc />
     public Task<AppResult<JsonElement>> ReadAsync(string resource, string? id, CancellationToken ct) =>
         resource switch
@@ -77,6 +87,21 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
     public Task<AppResult<JsonElement>> LogsAsync(string target, string service, int tail, CancellationToken ct) =>
         RunAsync(["logs", "--target", target, "--service", service, "--tail", tail.ToString(CultureInfo.InvariantCulture)], ct);
 
+    /// <summary>Writes the per-owner tokens for an action that reaches GitHub; without them the runner falls back.</summary>
+    private async Task<string?> GitHubTokensAsync(string action, CancellationToken ct)
+    {
+        if (github is null || !GitHubActions.Contains(action))
+            return null;
+        try
+        {
+            return await github.PrepareAsync(ct);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return null; // The inventory could not be read: the token file or anonymous access still serves.
+        }
+    }
+
     private async Task<AppResult<JsonElement>> RunAsync(string[] arguments, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -96,6 +121,13 @@ public sealed class DeploymentGateway(DeploymentSettings settings, RunnerFailure
             }
         };
         process.StartInfo.Environment["WHEELHOUSE_GITHUB_TOKEN_FILE"] = settings.GitHubTokenFile;
+        // Only the API names the per-owner tokens and the access notes; ambient values never reach the runner.
+        process.StartInfo.Environment.Remove("WHEELHOUSE_GITHUB_TOKENS_FILE");
+        process.StartInfo.Environment.Remove("WHEELHOUSE_GITHUB_ACCESS_FILE");
+        if (await GitHubTokensAsync(arguments[0], ct) is { } tokens)
+            process.StartInfo.Environment["WHEELHOUSE_GITHUB_TOKENS_FILE"] = tokens;
+        if (settings.Root.Length > 0)
+            process.StartInfo.Environment["WHEELHOUSE_GITHUB_ACCESS_FILE"] = GitHubRunnerFiles.AccessPath(settings.Root);
         // Only configuration exposes the local rig; a stray environment variable cannot.
         process.StartInfo.Environment.Remove("WHEELHOUSE_REHEARSAL");
         process.StartInfo.Environment.Remove("REHEARSAL_STATE");

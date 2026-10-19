@@ -71,6 +71,12 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
     public async Task<IActionResult> BuildFailures([FromQuery] DeploymentFilterApiRequest filter, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentBuildFailuresQuery(filter.ToFilter()), ct));
 
+    /// <summary>Lists what keeps Wheelhouse from reaching GitHub, per owner: an owner without the GitHub App, a refused
+    /// credential, a spent rate limit, or an App set up by half. Read from what the console and the runner noted.</summary>
+    [HttpGet("issues/github")]
+    public async Task<IActionResult> GitHubAccess(CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentGitHubAccessQuery(), ct));
+
     /// <summary>Lists, per product, the newest release that succeeded on dev and is not what prod runs.</summary>
     [HttpGet("promotions")]
     public async Task<IActionResult> Promotions([FromQuery] DeploymentFilterApiRequest filter, CancellationToken ct) =>

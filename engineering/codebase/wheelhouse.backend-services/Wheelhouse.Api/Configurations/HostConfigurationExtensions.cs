@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Wheelhouse.Application;
 using Wheelhouse.Application.Abstractions;
@@ -27,7 +28,7 @@ using WoW.Two.Sdk.Beta.Be.Web.ProblemDetails;
 namespace Wheelhouse.Api.Configurations;
 
 /// <summary>Per-concern host registration extensions for the Wheelhouse API.</summary>
-public static class HostConfigurationExtensions
+public static partial class HostConfigurationExtensions
 {
     /// <summary>Holds the name that isolates Wheelhouse's Data Protection keys; sign-in cookies depend on it.</summary>
     private const string DataProtectionApplicationName = "Wheelhouse";
@@ -122,8 +123,8 @@ public static class HostConfigurationExtensions
     }
 
     /// <summary>Registers the infrastructure layer — the SDK time provider, the runner gateway, the inventory snapshot and
-    /// its startup export, the vault client, the OAuth-token source, the GitHub repository reader the icon, manifest and
-    /// catalog reads share, and the catalog settings.</summary>
+    /// its startup export, the vault client, GitHub access (the App's per-owner tokens, the fallbacks, the access issues),
+    /// the GitHub repository reader the icon, manifest and catalog reads share, and the catalog settings.</summary>
     public static WebApplicationBuilder AddInfrastructureLayer(this WebApplicationBuilder builder)
     {
         builder.Services.AddTimeProviders();
@@ -161,10 +162,29 @@ public static class HostConfigurationExtensions
         builder.Services.AddSingleton<Wheelhouse.Infrastructure.Vaults.VaultSessionCache>();
         builder.Services.AddScoped<IVaultGateway, Wheelhouse.Infrastructure.Vaults.VaultGateway>();
 
-        // The integration clients read the signed-in admin's OAuth token off the current request; the repository reads
-        // share the SDK cache.
+        // GitHub access, per call: the GitHub App's installation token for the owner the call addresses, else the
+        // Deployment:GitHubTokenFile token, else the signed-in admin's OAuth token off the current request, else
+        // anonymous. The runner gets the same tokens through a file; refusals reach the Issues panel.
+        builder.Services.AddHttpClient(Wheelhouse.Infrastructure.GitHub.GitHubAppTokens.ClientName, client =>
+        {
+            client.BaseAddress = new Uri("https://api.github.com/");
+            client.Timeout = TimeSpan.FromSeconds(10);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Wheelhouse");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+            client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+        });
+        builder.Services.AddSingleton<Wheelhouse.Infrastructure.GitHub.GitHubAccessMonitor>();
+        builder.Services.AddSingleton<IGitHubAccessIssues>(services =>
+            services.GetRequiredService<Wheelhouse.Infrastructure.GitHub.GitHubAccessMonitor>());
+        builder.Services.AddSingleton<Wheelhouse.Infrastructure.GitHub.GitHubAppTokens>();
+        builder.Services.AddSingleton<Wheelhouse.Infrastructure.GitHub.GitHubCredentials>();
+        builder.Services.AddTransient<Wheelhouse.Infrastructure.GitHub.GitHubCredentialHandler>();
+        builder.Services.AddScoped<Wheelhouse.Infrastructure.GitHub.GitHubRunnerTokens>();
+
+        // The repository reads share the SDK cache.
         builder.Services.AddHttpContextAccessTokenProvider();
-        builder.Services.AddGitHubIntegration(Wheelhouse.Infrastructure.Products.GitHubRepositoryReader.ConfigureClient);
+        builder.Services.AddGitHubIntegration(Wheelhouse.Infrastructure.Products.GitHubRepositoryReader.ConfigureClient)
+            .AddHttpMessageHandler<Wheelhouse.Infrastructure.GitHub.GitHubCredentialHandler>();
         builder.Services.AddScoped<Wheelhouse.Infrastructure.Products.GitHubRepositoryReader>();
         builder.Services.AddScoped<IProductIconSource, Wheelhouse.Infrastructure.Products.GitHubProductIconSource>();
         builder.Services.AddScoped<IProductManifestSource, Wheelhouse.Infrastructure.Products.GitHubProductManifestSource>();
@@ -229,9 +249,13 @@ public static class HostConfigurationExtensions
         var configuration = builder.Configuration;
         builder.Services.AddValidatedOptions<DeploymentSettings>(
             settings => configuration.GetSection("Deployment").Bind(settings),
-            options => options.Validate(
-                settings => settings.Rehearsal is DeploymentSettings.RigOff or DeploymentSettings.RigHost or DeploymentSettings.RigNetwork,
-                "Deployment:Rehearsal must be empty, 'host' or 'network'."));
+            options => options
+                .Validate(
+                    settings => settings.Rehearsal is DeploymentSettings.RigOff or DeploymentSettings.RigHost or DeploymentSettings.RigNetwork,
+                    "Deployment:Rehearsal must be empty, 'host' or 'network'.")
+                .Validate(
+                    settings => settings.GitHubAppId.Length == 0 || GitHubAppIdPattern().IsMatch(settings.GitHubAppId),
+                    "Deployment:GitHubAppId must be empty, the GitHub App's ID or its client ID."));
         builder.Services.AddOptions<DeploymentSettings>().PostConfigure<IHostEnvironment>((settings, environment) =>
         {
             string Resolve(string path) => path.Length == 0 || Path.IsPathRooted(path)
@@ -240,8 +264,17 @@ public static class HostConfigurationExtensions
             settings.TransportPath = Resolve(settings.TransportPath);
             settings.Root = Resolve(settings.Root);
             settings.GitHubTokenFile = Resolve(settings.GitHubTokenFile);
+            settings.GitHubAppId = settings.GitHubAppId.Trim();
+            // The key sits beside the runner's other owner-placed credentials unless the host names another path.
+            settings.GitHubAppKeyFile = settings.GitHubAppKeyFile.Length == 0
+                ? settings.Root.Length == 0 ? "" : Path.Combine(settings.Root, "github-app", "private-key.pem")
+                : Resolve(settings.GitHubAppKeyFile);
             settings.RehearsalState = Resolve(settings.RehearsalState);
         });
         return builder;
     }
+
+    /// <summary>Matches a GitHub App ID (digits) or client ID (<c>Iv…</c>).</summary>
+    [GeneratedRegex("^[A-Za-z0-9.]{1,64}$", RegexOptions.CultureInvariant)]
+    private static partial Regex GitHubAppIdPattern();
 }

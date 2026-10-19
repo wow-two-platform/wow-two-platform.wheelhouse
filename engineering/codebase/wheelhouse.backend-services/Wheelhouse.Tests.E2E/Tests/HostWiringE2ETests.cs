@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using Wheelhouse.Infrastructure.GitHub;
 using Wheelhouse.Infrastructure.Products;
 using Wheelhouse.Infrastructure.Settings;
 using Wheelhouse.Infrastructure.Vaults;
@@ -140,5 +141,18 @@ public sealed class HostWiringE2ETests(WheelhouseAppFixture fixture) : Wheelhous
         var settings = Fixture.Host.Services.GetRequiredService<DeploymentSettings>();
 
         settings.Root.Should().Be(Fixture.InventoryRoot);
+    }
+
+    [Fact]
+    public void GitHubApp_ShouldStayOffWithoutAnId_AndLookForItsKeyBesideTheRunnersCredentials()
+    {
+        var settings = Fixture.Host.Services.GetRequiredService<DeploymentSettings>();
+
+        (settings.GitHubAppId, settings.GitHubAppKeyFile).Should().Be(
+            ("", Path.Combine(Fixture.InventoryRoot, "github-app", "private-key.pem")));
+        Fixture.Host.Services.GetRequiredService<GitHubAppTokens>().IsConfigured.Should().BeFalse();
+        using var scope = Fixture.Host.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<GitHubRunnerTokens>().Should().NotBeNull();
+        scope.ServiceProvider.GetRequiredService<GitHubCredentialHandler>().Should().NotBeNull();
     }
 }

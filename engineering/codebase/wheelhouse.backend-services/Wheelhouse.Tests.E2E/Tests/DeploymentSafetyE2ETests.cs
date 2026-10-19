@@ -109,6 +109,33 @@ public sealed class DeploymentSafetyE2ETests(WheelhouseAppFixture fixture) : Whe
     }
 
     [Fact]
+    public async Task GitHubAccess_ShouldListEachOwnerTheRunnerWasRefusedFor_ForTheOwnerOnly()
+    {
+        (await AnonymousClient.GetAsync("/api/deployments/issues/github")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await DataAsync("/api/deployments/issues/github")).GetArrayLength().Should().Be(0);
+        var notes = Path.Combine(Fixture.InventoryRoot, "github", "access.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(notes)!);
+        File.WriteAllText(notes, JsonSerializer.Serialize(new
+        {
+            owners = new Dictionary<string, object>
+            {
+                ["ocharo-hq"] = new { status = 403, authenticated = false, rateLimited = true, at = Fixture.Host.Clock.GetUtcNow().AddMinutes(-2) },
+            },
+        }));
+        try
+        {
+            var issue = (await DataAsync("/api/deployments/issues/github")).EnumerateArray().Single();
+
+            (issue.GetProperty("owner").GetString(), issue.GetProperty("status").GetInt32()).Should().Be(("ocharo-hq", 403));
+            issue.GetProperty("cause").GetString().Should().Contain("anonymous rate limit");
+        }
+        finally
+        {
+            File.Delete(notes);
+        }
+    }
+
+    [Fact]
     public async Task Usage_ShouldReadOneProductsBuildCost_ForTheOwnerOnly()
     {
         (await AnonymousClient.GetAsync("/api/deployments/products/foreverpin/usage")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);

@@ -17,8 +17,14 @@ public sealed record DeploymentSettings
     public string Python { get; set; } = "python3";
     /// <summary>Gets or sets the installed SSH adapter path.</summary>
     public string TransportPath { get; set; } = "/app/runner/transport.py";
-    /// <summary>Gets or sets an optional mounted read-only GitHub catalog token path.</summary>
+    /// <summary>Gets or sets an optional mounted GitHub token path: the fallback credential for an owner without the
+    /// GitHub App.</summary>
     public string GitHubTokenFile { get; set; } = "";
+    /// <summary>Gets or sets the GitHub App's ID (or client ID); empty leaves the App off. Host configuration only.</summary>
+    public string GitHubAppId { get; set; } = "";
+    /// <summary>Gets or sets the GitHub App's private key (PEM) path; empty means <c>{Root}/github-app/private-key.pem</c>.
+    /// A missing file leaves the App off and says so in the Issues panel.</summary>
+    public string GitHubAppKeyFile { get; set; } = "";
     /// <summary>Gets or sets the protected inventory, release and audit root.</summary>
     public string Root { get; set; } = "/data/deployments";
     /// <summary>Gets or sets how the local rehearsal rig is exposed: empty (off, always in a deployed control plane), <c>host</c> or <c>network</c>.</summary>
@@ -29,6 +35,9 @@ public sealed record DeploymentSettings
     /// <summary>Gets or sets how many seconds one read of the runner's deployment history serves the console's reads;
     /// zero reads it every time.</summary>
     public int HistorySeconds { get; set; } = 3;
+
+    /// <summary>Gets whether a GitHub App ID is configured; its key file may still be missing.</summary>
+    public bool HasGitHubApp => GitHubAppId.Length > 0;
 
     /// <summary>Gets whether the local rehearsal rig is exposed.</summary>
     public bool IsLocalRig => Rehearsal is RigHost or RigNetwork;

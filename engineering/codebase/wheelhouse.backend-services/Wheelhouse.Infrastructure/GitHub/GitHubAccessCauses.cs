@@ -1,0 +1,44 @@
+namespace Wheelhouse.Infrastructure.GitHub;
+
+/// <summary>Words the Issues panel shows for each GitHub access problem; the owner is shown beside them.</summary>
+public static class GitHubAccessCauses
+{
+    /// <summary>The App is configured but not installed on the owner.</summary>
+    public const string NotInstalled =
+        "The GitHub App is not installed on this owner; its calls fall back to the token file or anonymous access.";
+
+    /// <summary>GitHub refused the App's own token.</summary>
+    public const string AppRefused = "GitHub refused the GitHub App's credentials; check the App ID and the private key.";
+
+    /// <summary>The key file is set but cannot be read.</summary>
+    public const string KeyUnreadable = "The GitHub App private key could not be read.";
+
+    /// <summary>The key file holds no usable RSA key.</summary>
+    public const string KeyInvalid = "The GitHub App private key is not a valid RSA key in PEM form.";
+
+    /// <summary>The App ID is set but no key is in place.</summary>
+    public const string KeyMissing =
+        "The GitHub App ID is set, but its private key is missing; every call falls back to the token file or anonymous access.";
+
+    /// <summary>A key is in place but no App ID is set.</summary>
+    public const string AppIdMissing = "The GitHub App private key is in place, but Deployment:GitHubAppId is not set.";
+
+    /// <summary>Describes a refused GitHub call.</summary>
+    /// <param name="status">The HTTP status: 401, 403 or 429.</param>
+    /// <param name="authenticated">Whether the call carried a credential.</param>
+    /// <param name="rateLimited">Whether GitHub said the rate limit ran out.</param>
+    public static string Refused(int status, bool authenticated, bool rateLimited) => (status, authenticated, rateLimited) switch
+    {
+        (401, _, _) => "GitHub refused the credential (HTTP 401).",
+        (_, false, true) or (429, false, _) =>
+            $"The anonymous rate limit ran out (HTTP {status}): 60 calls an hour, shared by this host. Install the GitHub App here.",
+        (_, true, true) or (429, true, _) => $"The credential's rate limit ran out (HTTP {status}); calls resume when it resets.",
+        (_, false, _) => $"GitHub refused an anonymous call (HTTP {status}). Install the GitHub App here.",
+        _ => $"GitHub denied access (HTTP {status}): the credential lacks permission for this call.",
+    };
+
+    /// <summary>Describes a refused installation token.</summary>
+    /// <param name="status">The HTTP status.</param>
+    public static string InstallationRefused(int status) =>
+        $"GitHub refused a token for this installation (HTTP {status}); it may be suspended or lack a permission.";
+}
