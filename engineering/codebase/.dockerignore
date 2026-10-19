@@ -7,7 +7,7 @@
 **/.git
 **/.env*
 **/appsettings.Local.json
-**/appsettings.Development.json
+**/appsettings.Machine.json
 **/*.pfx
 **/*.pem
 **/*.key

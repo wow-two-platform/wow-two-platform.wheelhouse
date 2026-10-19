@@ -129,7 +129,7 @@ services:
       interval: 2s
       retries: 30
     restart: unless-stopped
-  # The database for Wheelhouse run from an IDE (appsettings.Development.json); loopback-only dev credentials.
+  # The database for Wheelhouse run from an IDE (appsettings.Machine.json); loopback-only dev credentials.
   dev-db:
     image: postgres:16-alpine
     profiles: [dev]

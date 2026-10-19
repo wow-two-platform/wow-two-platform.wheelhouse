@@ -11,6 +11,8 @@ obj/
 
 # ---- Local settings overrides ----
 appsettings.Local.json
+# This machine's settings, read by an IDE run only (rehearse.py dev writes Wheelhouse's)
+appsettings.Machine.json
 
 # ---- Node / frontend ----
 node_modules/

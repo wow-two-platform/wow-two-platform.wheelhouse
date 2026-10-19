@@ -46,8 +46,11 @@ public static class AuthConfigurationExtensions
 
         var gitHub = ConfigurationMapper.Load<GitHubOAuthSettings>(builder.Configuration, "Identity:GitHub");
         var authSettings = ConfigurationMapper.Load<AuthSettings>(builder.Configuration, "Identity");
-        if (builder.Environment.IsProduction() && !authSettings.AllowedGitHubLogins.Any(login => !string.IsNullOrWhiteSpace(login)))
-            throw new InvalidOperationException("Production requires Identity:AllowedGitHubLogins.");
+        // An empty allowlist admits any GitHub user: only a local run may have one. Deployed dev runs as Development, so
+        // the runner's DEPLOY_ENVIRONMENT, not the environment name, tells a deployed console.
+        if ((builder.Environment.IsProduction() || Configurations.LocalRun.IsDeployed(builder.Configuration))
+            && !authSettings.AllowedGitHubLogins.Any(login => !string.IsNullOrWhiteSpace(login)))
+            throw new InvalidOperationException("A deployed console requires Identity:AllowedGitHubLogins.");
 
         // Cookie holds the session; API mode returns 401/403 (not a 302) so the SPA renders its own sign-in.
         builder.Services.AddCookieAuthentication(o =>

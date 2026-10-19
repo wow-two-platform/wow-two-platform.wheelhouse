@@ -46,6 +46,9 @@ INGRESS = "http://{site}-" + PRODUCT + ".{environment}.localhost:18080"
 REGISTRY = "localhost:15000"
 VAULT_IMAGE = "secrets-vault:local"
 CONSOLE = STATE / "console"
+# What an IDE run of Wheelhouse.Api reads on this machine only: the launch profile sets MACHINE_SETTINGS=true. Never
+# appsettings.Development.json, which a deployed dev console reads too.
+MACHINE_SETTINGS = HERE.parents[1] / "codebase" / "wheelhouse.backend-services" / "Wheelhouse.Api" / "appsettings.Machine.json"
 CONSOLE_URL = "http://localhost:18210"
 # The GitHub login that may sign in to the local console; change it in the generated settings if needed.
 CONSOLE_ADMIN = os.environ.get("WHEELHOUSE_ADMIN", "sulton-max")
@@ -143,6 +146,22 @@ def console_files():
     return bool(json.loads(settings.read_text()).get("Identity", {}).get("GitHub", {}).get("ClientId"))
 
 
+def machine_settings():
+    """Points an IDE run at the local server: its database on 127.0.0.1:15432 and the runner over this checkout, paths
+    relative to the API project. Written once; an edited file is left as it is."""
+    if MACHINE_SETTINGS.exists():
+        return
+    MACHINE_SETTINGS.write_text(json.dumps({
+        "//Machine": "This machine's settings for an IDE run (the https launch profile sets MACHINE_SETTINGS=true); "
+                     "gitignored and never in the image. Written by `python3 rehearse.py dev`.",
+        "ConnectionStrings": {"Wheelhouse": "Host=localhost;Port=15432;Database=wheelhouse;Username=wheelhouse;"
+                                            "Password=wheelhouse"},
+        "Deployment": {"Rehearsal": "host", "Root": "../../../deployment/rehearsal/state/inventory",
+                       "TransportPath": "../../wheelhouse.runner-services/transport.py"},
+    }, indent=2) + "\n")
+    print("Wrote " + str(MACHINE_SETTINGS))
+
+
 def databases():
     """One database per environment on the local server's Postgres, as a VPS gives each product-environment."""
     for name in ENVIRONMENTS:
@@ -194,8 +213,9 @@ def up(console=False, dev=False):
               " — sign-in is off until " + str(CONSOLE / "appsettings.Local.json") + " holds a GitHub OAuth app"
               " (callback " + CONSOLE_URL + "/api/identity/callback)"))
     if dev:
+        machine_settings()
         print("IDE: run Wheelhouse.Api with the `https` launch profile, then open https://localhost:8210"
-              " (database 127.0.0.1:15432; sign-in uses the API project's user-secrets)")
+              " (database 127.0.0.1:15432 from appsettings.Machine.json; sign-in uses the API project's user-secrets)")
 
 
 def yaml_python():

@@ -35,9 +35,13 @@ public static class HostConfigurationExtensions
     /// <summary>Holds the header every owner write carries its action name in; the console sends it.</summary>
     public const string ActionHeaderName = "X-Wheelhouse-Action";
 
-    /// <summary>Loads optional local settings overrides (gitignored) and keeps the cookie key ring on disk.</summary>
+    /// <summary>Loads this machine's settings on a local run, then the optional settings file a deployed target mounts
+    /// (<c>appsettings.Local.json</c>, gitignored), and keeps the cookie key ring on disk.</summary>
     public static WebApplicationBuilder AddSettings(this WebApplicationBuilder builder)
     {
+        // The local rig's database, runner paths and switch: never appsettings.Development.json, which deployed dev reads.
+        if (LocalRun.ReadsMachineSettings(builder.Environment, builder.Configuration))
+            LocalRun.AddMachineSettings(builder.Configuration, builder.Environment);
         builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
 
         // Sign-in survives restarts and container replacement: keys live in DataProtection:KeyPath (the image sets
@@ -51,7 +55,7 @@ public static class HostConfigurationExtensions
         return builder;
     }
 
-    /// <summary>Configures the SDK boot floor for a single-user control plane — output cache, rate limiting, and OTLP export off; OpenAPI in development only;
+    /// <summary>Configures the SDK boot floor for a single-user control plane — output cache, rate limiting, and OTLP export off; OpenAPI on a local run only;
     /// the SPA served inside the pipeline; forwarded headers trusted only from loopback and <c>Deployment:TrustedProxies</c> —
     /// and the opt-in HTTP ProblemDetails boundary, so every error the host writes is a problem document.</summary>
     public static WebApplicationBuilder AddPlatformDefaults(this WebApplicationBuilder builder)
@@ -63,7 +67,8 @@ public static class HostConfigurationExtensions
             o.EnableOutputCache = false;
             o.EnableRateLimiting = false;
             o.EnableOtlpExporters = false;
-            o.ExposeOpenApi = builder.Environment.IsDevelopment();
+            // Deployed dev runs as Development too; the API's shape stays on the developer's machine.
+            o.ExposeOpenApi = LocalRun.IsLocal(builder.Environment, builder.Configuration);
             o.SpaHosting = static _ => { };
             foreach (var proxy in proxies)
                 o.TrustedProxies.Add(proxy);
