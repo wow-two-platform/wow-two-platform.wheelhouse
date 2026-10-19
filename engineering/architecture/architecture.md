@@ -343,27 +343,56 @@ database ownership or mutation MCP tools.
 
 The runner's `history` action (`history.py`) returns every submission with its last observation, what its cached bundle
 declares (product, kind, branch, rollback compatibility, each service's image digest and version, when its source
-published it) and, while it is live, the step it is on; `observation --job` returns one submission's steps, sites
-and warnings. Both read local files only. `RunnerDeploymentRecords` holds one history read for
+published it), how its rollout treated each service (`serviceRollout`, read from the observation) and, while it is
+live, the step it is on; `observation --job` returns one submission's steps, sites and warnings. Both read local files only. `RunnerDeploymentRecords` holds one history read for
 `Deployment:HistorySeconds` (3) so a page's concurrent reads share one runner process, and skips a malformed record.
 `DeploymentHistoryService` joins it with the inventory: target → product and environment (a removed target keeps the
 bundle's product and the environment recorded at submission), product → workspace, the target's previous success, and each service against
-it (changed when the image digest differs; every service is new on a target's first rollout). The API filters and
-aggregates; nothing is stored.
+it (changed when the image digest differs; every service is new on a target's first rollout). Deploys that never
+reached their target — refused by a freeze, a promotion gate or the runner's validation, replaced in the queue by a
+newer release, dropped when their automation was turned off, and (once schedules exist) expired or aborted — are
+`deployment_intents` rows the control plane writes (migration `026`, slugs rather than keys so a row outlives its
+target); the history joins them beside the runner's records with the runner's `rejected` status, so integrations
+reading the status see they changed nothing. The API filters and aggregates; nothing else is stored.
+
+`DeploymentStateRules.Of(record, watch, intent)` reads every deployment into the status taxonomy, carried on every item
+beside the old `status` and `outcome` (kept one release for integrations): `state` — `in_progress` | `succeeded` |
+`degraded` | `rolled_back` | `partial` | `failed` | `not_applied` | `unknown`, by what the environment runs because of
+it; `substate` (closed lists: queued, checking, draining, starting, verifying, rolling_back · watching, passed,
+unverified, replaced · at_deploy, in_watch, side_effect · automatic, together · stopped_mid_rollout,
+partly_rolled_back · rollback_failed, rollback_not_allowed, interrupted, first_deploy_unhealthy · refused, cancelled,
+superseded, expired, aborted, check_failed, interrupted · no_receipt, unreadable); `attention` — `none` | `info` |
+`look` | `act` | `muted`, which the console colours by; `cause` `{ kind, origin, message, at }` (kind service, step,
+gate, freeze, validation, platform, busy, runner or operator); `effects` `[{ service, finding, via, at }]`; and
+`services` `[{ service, result, origin, from, to, health, reason }]` in rollout order (result updated, new, unchanged,
+not_reached, restored, failed, affected, waiting, starting or unknown). From the runner: `succeeded` is Succeeded,
+or Degraded with warnings, an unhealthy service or a regression in its watch; `failed` before containers changed is
+Not applied · check_failed, after it Partial (some services on the new release, some not) or Failed; `rolled_back` is
+Rolled back; `rollback_failed` is Partial · partly_rolled_back when some services were restored, else Failed;
+`interrupted` is Failed after changes and Not applied before; `rejected` is Not applied · refused. A failing service
+is an effect of another only when it declares a path to it and settled unhealthy after it; otherwise every failing
+service is an origin — never a guessed edge.
 
 - Filters, on every read below: repeated `workspace`, `product` and `service` (`product/service`) combine as a union —
   a service matches a deployment that changed it, or any deployment of its product whose bundle the runner no longer
-  holds; `status` `all` | `succeeded` (warnings included) | `failed` (failed, rolled back, rollback failed,
-  interrupted); `from` inclusive and `to` exclusive (ISO-8601). Malformed values are 400.
+  holds; `status` `all` | `needs-action` (attention act) | `look` (attention look) | `succeeded` (state succeeded) |
+  `not-applied`, and the old `failed` (the old outcome: failed, rolled back, rollback failed, interrupted, a failed
+  check included) and `refused` (as not-applied); `notApplied=true` lists the deploys that changed nothing beside the
+  others, which every status but `not-applied` and `failed` leaves out by default; `from` inclusive and `to` exclusive
+  (ISO-8601). Malformed values are 400.
 - `GET /api/deployments/history` pages newest first: `limit` 1-100 (25), and an opaque `cursor` of the last item's
   submission instant and id, so a new submission never shifts a later page. Each item carries product, workspace,
-  environment, release, bundle, status and outcome (`succeeded` | `failed` | `refused` | `pending` | `unknown`),
-  duration, changed services (null when the bundle is unknown) and, while live, the current step.
-- `GET /api/deployments/history/activity?tz=` counts finished rollouts per local day in an IANA zone (default `UTC`,
-  range six months, at most 731 days); only days with a rollout are listed, and the status filter applies. The same
-  rollouts name the range's five busiest products (`products`: succeeded and failed per product, most first).
+  environment, release, bundle, status and outcome (`succeeded` | `failed` | `refused` | `pending` | `unknown`), the
+  taxonomy above, duration, changed services (null when the bundle is unknown) and, while live, the current step.
+- `GET /api/deployments/history/activity?tz=` counts per local day in an IANA zone (default `UTC`, range six months,
+  at most 731 days) the finished rollouts that changed the environment, by attention (`calm`, `look`, `act`, beside the
+  old `succeeded` and `failed`), and, with `notApplied=true`, the deploys that changed nothing (`notApplied`); only days
+  with one are listed, and the status filter applies. The same applied rollouts name the range's five busiest products
+  (`products`: succeeded and failed per product, most first).
 - `GET /api/deployments/history/stats` measures the entities over the range (30 days by default) beside the range of
-  equal length before it, as the runner's statistics always have; the status filter does not apply.
+  equal length before it, as the runner's statistics always have, with `look` and `act` counts; the status filter does
+  not apply, and the deploys that changed nothing count only with `notApplied=true` — while `notApplied` always counts
+  them, so the console can say how many it hides.
 - `GET /api/deployments/running` lists live rollouts with their step; `GET /api/deployments/promotions` lists, per
   product and prod target, the newest release (never a commit build) that succeeded on dev and is not what prod runs —
   left out while a prod rollout of it runs or prod runs it or a later release.
@@ -388,9 +417,12 @@ aggregates; nothing is stored.
 - `GET /api/deployments/{id}/detail` answers one deployment: each service from and to, the previous success, the
   observation's steps, sites and warnings (`observed` false when unreadable), `rollback`, the previous release,
   only when this rollout is what its target runs and its release declares the previous images compatible, and
-  `serviceRollout` — `{ staged, waves, removed, services: [{ name, change, outcome, dependsOn }] }`, change `added` |
-  `updated` | `unchanged`, outcome `unchanged` (kept running) | `updated` | `failed` | `not_started` | `rolled_back`;
-  null for a rollout the runner did not report it for. The deployment page shows each service's outcome and wave.
+  `serviceRollout` — `{ staged, waves, removed, services: [{ name, change, outcome, dependsOn, from, to, reason,
+  health, at }] }`, change `added` | `updated` | `unchanged`, outcome `unchanged` (kept running) | `updated` | `failed`
+  | `not_started` | `rolled_back`, `from` and `to` each a version (else the 12-hex image digest), reason `added` |
+  `image` | `definition` | `settings`, health `healthy` | `unhealthy` | `unknown` (fields the runner did not record are
+  null); null for a rollout the runner did not report it for. A deploy that never reached its target answers with
+  `observed` false and no steps. The deployment page reads the item's state, cause, effects and per-service results.
   History items carry `fleetId` when a fleet rollout submitted them.
 - `GET /api/deployments` (50 newest) and `GET /api/deployments/stats?days=` stay for Home, the product overview and the
   MCP `list_deployments` tool.
@@ -411,7 +443,9 @@ request acts as `automation`, so every automatic submission goes through the ord
   published after the watermark is queued for each dev target. A webhook can feed the same watermark later.
 - **Queue:** one slot per target (`deployment_queue`), latest wins: a newer release replaces a queued older one. A
   queued deploy waits while its target runs a rollout, and is dropped when the owner turned its automation off, or the
-  target already ran that release. A refused submission is dropped too; the audit trail keeps why.
+  target already ran that release. A refused submission is dropped too; the audit trail keeps why. A release replaced
+  in its slot and one dropped because its automation was turned off are kept as intents (Not applied · superseded or
+  cancelled), as is every refusal of an inventory target (Not applied · refused, with the freeze, gate or validation).
 - `GET /api/deployments/automation` lists every product's `{ product, autoDeployDev, autoPromote, ciDeployed, deploy }` and the
   queue; `PUT /api/deployments/automation/{product}` `{ autoDeployDev?, autoPromote? }` (action header `automation`,
   audited `product.automation`) changes the choices it names.
@@ -420,7 +454,8 @@ request acts as `automation`, so every automatic submission goes through the ord
   containers and request again every site that answered at the deploy. The first look is the baseline; a container
   that stopped, turned unhealthy or restarted since, or a site gone silent, marks the rollout `degraded` with its
   findings, and the Issues list raises it (`kind: degraded`). A clean window ends `passed`; a rollout replaced meanwhile
-  is `superseded`, and one no look could read `unverified`. The record lives in `<runner root>/watching/<job>.json` and
+  is `replaced` (records written before the rename say `superseded`, which reads as `replaced`), and one no look could
+  read `unverified`. The record lives in `<runner root>/watching/<job>.json` and
   history items carry it as `watch`.
 - **Dev check:** once a dev rollout of a release that declares `verify` succeeds, the runner runs the check in the
   same worker, before the job completes and its watch window opens: step `Verify end to end` runs the command in a
@@ -495,9 +530,11 @@ request acts as `automation`, so every automatic submission goes through the ord
 IANA zone, optional `to` the instant the current week contains) serves the Products page from the joined deployment
 history (`DeploymentHistoryService`), as of `to`. Weeks start on Monday in `tz`, oldest first, the current one last.
 Per product with a target or a recorded rollout — `{ product, workspace, succeeded, failed, environments }` — each
-environment, dev before prod, carries `lastDeploy` (the newest rollout the runner accepted: refused submissions changed
-nothing and are skipped), `running` (the newest success, so the release serving) — each `{ id, release, status,
-outcome, actor, submittedAt, completedAt, reason }` — and `weekly`, finished rollouts per week. Per workspace —
+environment, dev before prod, carries `lastDeploy` (the newest rollout that changed or tried to change it: deploys
+that changed nothing are skipped), `running` (the newest success, so the release serving), `lastAttempt` (a newer
+deploy that changed nothing but needs a look, such as a failed check, which marks the pill's corner) — each `{ id,
+release, status, outcome, actor, submittedAt, completedAt, reason, state, substate, attention, servicesOnRelease,
+serviceCount, watch }` — and `weekly`, finished rollouts per week that changed the environment. Per workspace —
 `{ workspace, succeeded, failed, weekly: [{ succeeded, failed }] }`. Only finished rollouts count in weeks, as the
 activity calendar's days do; a rollout whose product the inventory no longer holds counts nowhere. Read-only; never
 contacts a target. `/api/system/status` also names the `environment` the console serves — its `DEPLOY_ENVIRONMENT`
