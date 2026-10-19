@@ -1,14 +1,18 @@
-# Builds and publishes Wheelhouse like every product, through the shared workflow in wow-two-platform.pipelines:
+# Verifies, builds and publishes Wheelhouse like every product, through the shared delivery workflow in
+# wow-two-platform.pipelines (current → plan → ci → publish), then deploys a published main push to dev:
 #   main          → release vX.Y.Z (X.Y from the newest version-track folder), bundle on the GitHub release
 #   other branches → candidate sha-<commit>; work happens on main only (no test branch or environment since 2026-10-17)
 #   workflow_dispatch → a candidate for one commit that has no build yet
+#   pull request  → ci only
+# A push that changes only docs, planning or markdown runs no build, test, publish or deploy; its gate still passes.
 # One push event tests/builds its final SHA once, regardless of its commit count.
 # Dev deployment is enabled only after the VPS and environment secrets are provisioned.
 name: publish-docker-image
 
 on:
   push:
-    branches: ['**']
+    branches: ['**', '!renovate/**']
+  pull_request:
   workflow_dispatch:
     inputs:
       commit:
@@ -22,49 +26,40 @@ permissions:
 
 concurrency:
   group: delivery-${{ github.repository }}-${{ inputs.commit || github.ref }}
-  cancel-in-progress: false
+  # main queues, so a newer push never cancels an active target operation; other refs cancel a superseded run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main') }}
   queue: max
 
 jobs:
-  verify:
-    uses: ./.github/workflows/ci.yml
-    with:
-      commit: ${{ inputs.commit || github.sha }}
-
-  current:
-    needs: verify
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      eligible: ${{ steps.head.outputs.eligible }}
-    steps:
-      - name: Skip superseded main pushes and old reruns
-        id: head
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-          COMMIT: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          eligible=true
-          if [ "$EVENT" = push ] && [ "$REF" = refs/heads/main ]; then
-            head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
-            [ "$COMMIT" = "$head" ] || eligible=false
-          fi
-          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
-          [ "$eligible" = true ] || echo 'Superseded main push: publication and deployment skipped.' >> "$GITHUB_STEP_SUMMARY"
-
-  publish:
-    needs: current
-    if: needs.current.outputs.eligible == 'true'
-    uses: wow-two-platform/wow-two-platform.pipelines/.github/workflows/publish.yml@v0.8.0
+  delivery:
+    uses: wow-two-platform/wow-two-platform.pipelines/.github/workflows/delivery.yml@v0.9.0
     with:
       commit: ${{ inputs.commit }}
+      # Backend: unit, integration, E2E and migration tiers (Testcontainers on the runner's Docker); it also builds
+      # the SPA into wwwroot, which the SPA-serving E2E tests read. Runner: the runner and CI contracts (the bundle
+      # contract test runs the release generator at this pipelines tag) and the VPS kit, checked without a host.
+      backends: |
+        [{"name": "Backend", "dotnet": "engineering/codebase/wheelhouse.backend-services/global.json",
+          "node": "engineering/codebase/wheelhouse.frontend-services/.nvmrc",
+          "run": "dotnet test engineering/codebase/wheelhouse.backend-services/Wheelhouse.BackendServices.slnx",
+          "paths": ["engineering/codebase/wheelhouse.backend-services/**",
+                    "engineering/codebase/wheelhouse.frontend-services/**",
+                    "engineering/codebase/wheelhouse.runner-services/**"]},
+         {"name": "Runner and VPS kit", "python": "3.12", "pip": "pyyaml", "history": true, "pipelines": true,
+          "timeout": 10,
+          "run": ["WHEELHOUSE_PIPELINES=\"$PIPELINES_DIR\" python -m unittest discover -s engineering/codebase/wheelhouse.runner-services -v",
+                  "python -m unittest discover -s engineering/deployment/vps -v",
+                  "for script in engineering/deployment/vps/*.sh; do bash -n \"$script\"; done",
+                  "command -v shellcheck >/dev/null || sudo apt-get install --yes --no-install-recommends shellcheck",
+                  "shellcheck --severity=warning engineering/deployment/vps/*.sh",
+                  "WHEELHOUSE_DEPLOY_UID=1000 WHEELHOUSE_DEPLOY_GID=1000 docker compose -f engineering/deployment/vps/platform.compose.yml config --quiet"],
+          "paths": ["engineering/codebase/wheelhouse.runner-services/**", "engineering/deployment/**"]}]
+      frontends: |
+        [{"name": "Frontend", "dir": "engineering/codebase/wheelhouse.frontend-services", "scripts": ["test", "build"],
+          "paths": ["engineering/codebase/wheelhouse.frontend-services/**"]}]
 
   deploy-dev:
-    needs: publish
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: delivery
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.delivery.outputs.published == 'true'
     uses: ./.github/workflows/deploy-dev.yml
     secrets: inherit

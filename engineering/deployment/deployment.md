@@ -61,12 +61,12 @@ Local image builds use the current working tree; publishing requires all intende
 Wheelhouse ships like the products it deploys. `engineering/deployment/deploy.yml` declares one service, `console`,
 with its settings keys, `keys` and `deployments` volumes, a private `console` site and `needs: [postgres]`, and
 `dotnetEnvironment: true`: `wheelhouse-dev` runs as `Development`, `wheelhouse-prod` as `Production`. Its workflows pin
-pipelines `v0.5.0`, the first generator that writes that key.
+pipelines `v0.9.0` (`v0.5.0` was the first generator that writes that key).
 
 | Workflow | Runs on | Does |
 |---|---|---|
-| `.github/workflows/ci.yml` | Called by delivery; directly on pull requests | Backend tiers, runner/CI contracts, host-bootstrap checks and frontend tests/build |
-| `.github/workflows/publish-docker-image.yml` | Every push, or a dispatched commit | Tests the selected SHA, calls shared publication, then calls dev deployment for a main push |
+| `.github/workflows/publish-docker-image.yml` | Every push, pull request, or a dispatched commit | Calls the shared `delivery.yml` with Wheelhouse's checks (backend tiers; runner, CI contracts and VPS kit; frontend), then dev deployment for a published main push; a docs-only push runs nothing |
+| `.github/workflows/codeql.yml` | Main pushes beyond markdown, and weekly | The shared CodeQL scan, beside delivery |
 | `.github/workflows/deploy-dev.yml` | Called after successful main publication | Resolves the tested bundle and deploys over pinned SSH when host wiring is enabled |
 | `.github/workflows/promote-prod.yml` | Dispatched with a release tag | Waits for the owner's approval, then deploys that dev-proven release to prod |
 
@@ -84,9 +84,9 @@ Use the reviewed [VPS bootstrap](vps/vps.md) for Ubuntu 26.04 and private HTTPS.
 
 ```text
 one main push (one or many commits)
-  -> verify its final SHA: backend, runner, frontend
-  -> check that SHA is still main
-  -> shared publish@v0.1.0 builds changed services once and publishes the immutable bundle
+  -> check that SHA is still main; skip it if only docs changed since the last delivered commit
+  -> verify its final SHA: the checks whose paths changed (backend, runner and VPS kit, frontend)
+  -> shared publish (pipelines v0.9.0) builds changed services once and publishes the immutable bundle
   -> resolve that tested bundle, check main again
   -> pinned SSH -> existing durable runner -> container/digest + trusted HTTPS checks
 ```
