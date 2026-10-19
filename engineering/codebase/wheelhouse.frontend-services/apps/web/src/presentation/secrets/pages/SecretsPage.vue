@@ -36,7 +36,7 @@ import {
   ListDetailLayout,
   PageHeaderActions,
 } from "@wow-two-beta/fe/presentation/layout";
-import { Panel, RefreshButton } from "@/presentation/common/components";
+import { InfoPopover, Panel, RefreshButton } from "@/presentation/common/components";
 import { useListDetailRoute } from "@/presentation/common/hooks";
 import NamespaceList from "../components/NamespaceList.vue";
 import SecretsTable from "../components/SecretsTable.vue";
@@ -142,10 +142,15 @@ function selectNamespace(slug: string): void {
     loading-label="Loading vaults"
   >
     <SkeletonStateGroup class="contents" :is-loading="refreshing" label="Refreshing vaults">
-    <Panel
-      :title="selected?.name ?? 'Vault'"
-      description="Select a namespace to manage its write-only secrets and product access tokens."
-    >
+    <Panel :title="selected?.name ?? 'Vault'">
+      <template #info>
+        <InfoPopover :title="selected?.name ?? 'Vault'">
+          <p>
+            Choose a namespace to manage its secrets and the access tokens products read them with. Values are
+            write-only: once saved, this console never shows them again.
+          </p>
+        </InfoPopover>
+      </template>
       <template #actions>
         <SkeletonStateSlot shape="circle"
           ><Badge :variant="selected ? VaultTone[selected.status] : 'success'">{{

@@ -14,12 +14,12 @@ export interface DeploymentFilterScopeProps {
 import { ListFilter } from "lucide-vue-next";
 
 import type { DeploymentFilterState as Filter } from "@/domain/deployments";
-import { InfoPopover, type InfoStep } from "@/presentation/common/components";
+import { InfoPopover, type InfoSection } from "@/presentation/common/components";
 
 import DeploymentFilterBar from "./DeploymentFilterBar.vue";
 
 /** What the filter's info button explains: its reach, and what the outcome choice changes. @internal */
-const Steps: readonly InfoStep[] = [
+const Sections: readonly InfoSection[] = [
   { key: "reach", title: "What it filters" },
   { key: "outcome", title: "Outcome" },
 ];
@@ -37,13 +37,14 @@ const emit = defineEmits<{ change: [filter: Partial<Filter>] }>();
   <div class="sticky top-1 z-sticky md:top-2">
     <section
       aria-labelledby="deployments-filter-heading"
+      data-info-scope
       class="wh-glass min-w-0 rounded-2xl border border-(--wh-glass-edge) bg-(--wh-glass-fill) px-3 py-2.5 shadow-(--wh-glass-shadow) md:px-4 md:py-3"
     >
       <div class="mb-2 flex items-center gap-1">
         <h2 id="deployments-filter-heading" class="flex items-center gap-1.5 text-sm font-semibold">
           <ListFilter :size="14" aria-hidden="true" />Filter
         </h2>
-        <InfoPopover title="Filter" :steps="Steps">
+        <InfoPopover title="Filter" :sections="Sections">
           <template #reach>
             <p>
               The measures and the deployments below follow it. Issues, Running now and Ready to promote above always

@@ -26,13 +26,16 @@ export const DeploymentExtensions = {
   /** Whether the outcome is still changing on the target. */
   isPending: (status: JobStatus) => PENDING.has(status),
 
-  /** The badge palette for a deployment status. */
+  /**
+   * The badge palette for a deployment status, in the console's vocabulary (`DeploymentStatusRules`): a roll back is
+   * degraded (amber); a failure, a failed roll back and an interruption are red; a refusal changed nothing (neutral).
+   */
   statusVariant: (status: JobStatus): StatusVariant =>
     status === JobStatus.Succeeded
       ? 'success'
-      : status === JobStatus.RolledBack || status === JobStatus.Interrupted
+      : status === JobStatus.RolledBack
         ? 'warning'
-        : status === JobStatus.Failed || status === JobStatus.RollbackFailed || status === JobStatus.Rejected
+        : status === JobStatus.Failed || status === JobStatus.RollbackFailed || status === JobStatus.Interrupted
           ? 'danger'
           : PENDING.has(status)
             ? 'info'

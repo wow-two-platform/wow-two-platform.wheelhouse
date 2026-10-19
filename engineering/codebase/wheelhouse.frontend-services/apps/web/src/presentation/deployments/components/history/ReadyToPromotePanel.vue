@@ -22,7 +22,7 @@ import { DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feed
 
 import { ConsolePaths } from "@/application/navigation";
 import { rollbackRisks } from "@/domain/deployments";
-import { Panel } from "@/presentation/common/components";
+import { InfoPopover, Panel } from "@/presentation/common/components";
 
 import FrozenBadge from "../automation/FrozenBadge.vue";
 import ReleaseChangelog from "../automation/ReleaseChangelog.vue";
@@ -35,7 +35,15 @@ const rows = useSkeletonItems(() => props.items, 2);
 </script>
 
 <template>
-  <Panel title="Ready to promote" description="The newest release that succeeded on dev and is not what prod runs.">
+  <Panel title="Ready to promote">
+    <template #info>
+      <InfoPopover title="Ready to promote">
+        <p>
+          Per product, the newest release that succeeded on dev and is not what prod runs. Promote opens the deploy
+          dialog on its prod target with that release; nothing deploys before you confirm there.
+        </p>
+      </InfoPopover>
+    </template>
     <DataRegion
       :is-first-load="props.isFirstLoad"
       :error="props.error"

@@ -6,7 +6,7 @@ import { bundleModule } from "./BundleModule.mjs";
 // The real rules: the activity calendar, the entity picker's selection model, the filter's address round trip and the
 // history wire decoding.
 const history = await bundleModule(`
-  export { ActivityCalendar, EntitySelection, EntityKeys, DeploymentFilters, StatusFilter, RangePreset, DeploymentIssues } from './src/domain/deployments';
+  export { ActivityCalendar, EntitySelection, EntityKeys, DeploymentFilters, StatusFilter, RangePreset, DeploymentIssues, DeploymentStatusRules } from './src/domain/deployments';
   export { readDeploymentQuery, writeDeploymentQuery, mergeDeploymentQuery, buildEntityTree } from './src/application/deployments';
   export { DeploymentItemSchema, DeploymentDetailSchema, DeploymentIssueSchema, DeploymentActivitySchema } from './src/integration/deployments/historySchemas';
   export { scopeOf } from './src/application/navigation/Scope';
@@ -243,18 +243,35 @@ test("an older activity answer without busiest products still decodes", () => {
   assert.deepEqual(activity.products, []);
 });
 
-test("a chosen day counts its deployments with running ones among them, and a filtered view its one outcome", () => {
-  const counts = (stats) => stats.map((stat) => `${stat.value} ${stat.label}`);
-  assert.deepEqual(counts(ActivityCalendar.dayStats({ succeeded: 1, failed: 0 })), ["1 Deployment", "1 Succeeded", "0 Failed"]);
-  assert.deepEqual(counts(ActivityCalendar.dayStats({ succeeded: 2, failed: 1 }, "all", 1)), [
-    "4 Deployments",
-    "2 Succeeded",
-    "1 Failed",
-    "1 Running",
+test("a deployment's status reads in the console's vocabulary: a roll back and a watched regression are degraded", () => {
+  const { DeploymentStatusRules } = history;
+  const of = (fields) => DeploymentStatusRules.of({ status: "succeeded", ...fields });
+  assert.deepEqual(of({}), { state: "succeeded", word: "succeeded", cause: null });
+  assert.deepEqual(of({ status: "rolled_back", reason: "health check failed" }), {
+    state: "degraded", word: "degraded", cause: "rolled back to the previous release · health check failed",
+  });
+  assert.equal(of({ status: "rolled_back", restored: "v1.2.0" }).cause, "rolled back to v1.2.0");
+  assert.deepEqual(of({ watch: { status: "degraded", findings: ["api restarted 3 times"] } }), {
+    state: "degraded", word: "degraded", cause: "regressed after the deploy: api restarted 3 times",
+  });
+  assert.equal(of({ watch: { status: "passed", findings: [] } }).state, "succeeded");
+  assert.deepEqual(of({ status: "failed", reason: "image pull failed" }), { state: "failed", word: "failed", cause: "image pull failed" });
+  assert.equal(of({ status: "rollback_failed" }).state, "failed");
+  assert.deepEqual(of({ status: "interrupted" }), { state: "interrupted", word: "interrupted", cause: "stopped mid-way" });
+  assert.equal(of({ status: "rejected" }).state, "refused");
+  for (const status of ["submitting", "queued", "running"]) assert.equal(of({ status }).state, "deploying");
+  assert.equal(of({ status: "unknown" }).state, "unknown");
+});
+
+test("a chosen day counts only the statuses that occurred, in one order from calm to still running", () => {
+  const { DeploymentStatusRules } = history;
+  const counts = DeploymentStatusRules.counts(
+    ["running", "rejected", "succeeded", "rolled_back", "failed", "succeeded", "interrupted"].map((status) => ({ status })),
+  );
+  assert.deepEqual(counts.map((count) => `${count.count} ${count.word}`), [
+    "2 succeeded", "1 failed", "1 degraded", "1 interrupted", "1 deploying", "1 refused",
   ]);
-  assert.deepEqual(counts(ActivityCalendar.dayStats(undefined)), ["0 Deployments", "0 Succeeded", "0 Failed"]);
-  assert.deepEqual(counts(ActivityCalendar.dayStats({ succeeded: 0, failed: 1 }, "failed", 2)), ["1 Failed"]);
-  assert.deepEqual(counts(ActivityCalendar.dayStats({ succeeded: 5, failed: 0 }, "succeeded")), ["5 Succeeded"]);
+  assert.deepEqual(DeploymentStatusRules.counts([]), []);
 });
 
 test("the day tooltip sits above its cell, flips below at the top edge and slides inside the screen's sides", () => {

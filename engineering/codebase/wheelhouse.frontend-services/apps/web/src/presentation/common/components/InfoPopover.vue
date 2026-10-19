@@ -1,29 +1,21 @@
 <script lang="ts">
-import type { InfoStep } from "./InfoPopoverContent.vue";
+import type { InfoSection } from "./InfoPopoverContent.vue";
 
 /** Defines an info button and the explanation it opens. */
 export interface InfoPopoverProps {
   /** What the content explains: names the button (`About {title}`) and heads the panel. */
   readonly title: string;
-  /** The sections, in reading order; each body is the slot named by its `key`. */
-  readonly steps: readonly InfoStep[];
-  /**
-   * The first-run intro's id. When set, the panel opens by itself once — the first time it renders ready — and walks
-   * the sections one page at a time; the id is then remembered as seen.
-   */
-  readonly intro?: string;
-  /** Whether what the intro explains has rendered; the intro waits for it. Default `true`. */
-  readonly isReady?: boolean;
+  /** The sections, in reading order; each body is the slot named by its `key`. Without any, the default slot is the body. */
+  readonly sections?: readonly InfoSection[];
 }
 </script>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef, useId, useTemplateRef, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, useId, useTemplateRef } from "vue";
 import { Info } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { TailwindBreakpoints, useBreakpoint } from "@wow-two-beta/fe/foundation/device";
-import { useInView } from "@wow-two-beta/fe/foundation/observers";
 import {
   BottomSheet,
   BottomSheetTitle,
@@ -32,83 +24,80 @@ import {
   PopoverTrigger,
 } from "@wow-two-beta/fe/presentation/overlays";
 
-import { introMemory } from "@/application/intros";
+import InfoPopoverContent from "./InfoPopoverContent.vue";
 
-import InfoPopoverContent, { InfoMode } from "./InfoPopoverContent.vue";
-
-/** The top of the screen a sticky strip may cover; the button counts as met only below it. @internal */
-const AnchorBand = "-15% 0px 0px 0px";
-/** How much of the first page's target must show before the intro opens. @internal */
-const TargetShare = 0.6;
-/** How long the intro waits once both are in view, so it never pops with a paint or a passing scroll. @internal */
-const IntroDelayMs = 700;
-/** How often, and how many times, the intro tries again while the owner is busy in a field or a dialog. @internal */
-const IntroRetryMs = 3000;
-const IntroAttempts = 5;
-/** Focus inside one of these means the owner is busy; the intro waits rather than take focus. @internal */
-const BusySelector =
-  "input, textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox']";
+/** The region an info button belongs to; the nearest one reveals it. */
+const ScopeSelector = "[data-info-scope]";
 
 /**
- * An info ("i") button beside a title, holding explanation that is read once: a legend, what a control reaches, how
- * to read a chart. Pressed, it opens every section — a popover from `md`, a bottom sheet on a phone. With an `intro`
- * id it also opens once by itself, the first time the owner meets the feature (rendered, its button in view, most of
- * the first page's target on screen), as a short stepped intro in a popover anchored to the button it will live behind,
- * on a phone too, so the page it explains stays in sight: one section per page with its target ringed, Back, Next and
- * Done; Escape, the close button or a click outside end it. The intro is remembered as seen the moment it opens, so
- * it never returns; it waits while focus is in a field, a menu or a dialog, and gives up for the visit after a few tries.
+ * An info ("i") button beside a title, holding the context a region needs once: a legend, what a control applies to,
+ * the gestures it takes, the period and units of its figures. Pressed, it opens every section — a popover from `md`,
+ * a bottom sheet on a phone — and it never opens by itself.
+ *
+ * The button is dimmed. On a device that hovers with a fine pointer it stays hidden until the pointer is over its
+ * region (the nearest `[data-info-scope]` ancestor) or focus is inside it, so it is always reachable by keyboard; on a
+ * touch device it is always shown, dimmed, since nothing hovers there. Outside any region it always shows.
  */
 defineOptions({ name: "InfoPopover" });
-const props = withDefaults(defineProps<InfoPopoverProps>(), { isReady: true });
+const props = withDefaults(defineProps<InfoPopoverProps>(), { sections: () => [] });
 defineSlots<Record<string, (() => unknown) | undefined>>();
 
 const open = ref(false);
-const mode = ref<InfoMode>(InfoMode.Reference);
-const step = ref(0);
 const titleId = `info-${useId()}`;
 const breakpoint = useBreakpoint(TailwindBreakpoints);
 const isPhone = computed(() => breakpoint.value === null || breakpoint.value === "sm");
-const stepKeys = computed(() => props.steps.map((item) => item.key));
+const sectionKeys = computed(() => props.sections.map((item) => item.key));
 const anchor = useTemplateRef<HTMLElement>("anchor");
-const isPending = computed(() => Boolean(props.intro) && !open.value);
-/** The first page's target, looked up once the feature has rendered. */
-const introTarget = shallowRef<Element | null>(null);
-watch(
-  () => [props.isReady, props.steps[0]?.target] as const,
-  ([isReady, selector]) => {
-    introTarget.value = isReady && selector ? document.querySelector(selector) : null;
-  },
-  { immediate: true, flush: "post" },
-);
-const anchorView = useInView(anchor, () => ({
-  rootMargin: AnchorBand,
-  threshold: 1,
-  disabled: !isPending.value,
-  fallbackInView: false,
-}));
-const targetView = useInView(introTarget, () => ({
-  threshold: TargetShare,
-  disabled: !isPending.value || !introTarget.value,
-  fallbackInView: false,
-}));
-/** The owner meets the feature: its button shows whole, and most of what the first page points at shows too. */
-const inView = computed(() => anchorView.inView.value && (!introTarget.value || targetView.inView.value));
 
-/** Every section on a phone opens in a bottom sheet; the intro and everything from `md` open in the popover. */
-const isSheet = computed(() => isPhone.value && mode.value === InfoMode.Reference);
-/** The intro sits above its button, leaving what it explains in sight below; the sections open beneath it. */
-const placement = computed(() => (mode.value === InfoMode.Intro ? "top-start" : "bottom-start"));
+/* ---- Reveal while the pointer or focus is in the region ---- */
 
-/**
- * The button opens every section; pressed while the panel is open, it closes it. On a phone it opens the sheet, and
- * keeps the popover's own toggle out of it. @internal
- */
+const scope = ref<HTMLElement | null>(null);
+const isPointerIn = ref(false);
+const isFocusIn = ref(false);
+/** Shown at full strength: no region to wait for, the pointer or focus inside it, or the panel open. */
+const isRevealed = computed(() => !scope.value || isPointerIn.value || isFocusIn.value || open.value);
+
+function enter(): void {
+  isPointerIn.value = true;
+}
+function leave(): void {
+  isPointerIn.value = false;
+}
+function focusIn(): void {
+  isFocusIn.value = true;
+}
+function focusOut(event: FocusEvent): void {
+  if (!scope.value?.contains(event.relatedTarget as Node | null)) isFocusIn.value = false;
+}
+
+onMounted(() => {
+  const region = anchor.value?.parentElement?.closest<HTMLElement>(ScopeSelector) ?? null;
+  if (!region) return;
+  scope.value = region;
+  isPointerIn.value = region.matches(":hover");
+  isFocusIn.value = region.contains(document.activeElement);
+  region.addEventListener("pointerenter", enter);
+  region.addEventListener("pointerleave", leave);
+  region.addEventListener("focusin", focusIn);
+  region.addEventListener("focusout", focusOut);
+});
+
+onBeforeUnmount(() => {
+  const region = scope.value;
+  if (!region) return;
+  region.removeEventListener("pointerenter", enter);
+  region.removeEventListener("pointerleave", leave);
+  region.removeEventListener("focusin", focusIn);
+  region.removeEventListener("focusout", focusOut);
+});
+
+/* ---- Open and close ---- */
+
+/** On a phone the button opens the sheet, and keeps the popover's own toggle out of it. @internal */
 function press(event: MouseEvent): void {
-  if (isPhone.value) {
-    event.preventDefault();
-    mode.value = InfoMode.Reference;
-    open.value = true;
-  } else if (!open.value) mode.value = InfoMode.Reference;
+  if (!isPhone.value) return;
+  event.preventDefault();
+  open.value = true;
 }
 
 function setPopover(isOpen: boolean): void {
@@ -122,150 +111,75 @@ function setSheet(isOpen: boolean): void {
 function close(): void {
   open.value = false;
 }
-
-function goTo(index: number): void {
-  step.value = Math.min(Math.max(index, 0), props.steps.length - 1);
-  void focusPrimary();
-}
-
-/** Puts focus on the intro's Next or Done, once the panel has mounted and its own focus has settled. @internal */
-async function focusPrimary(): Promise<void> {
-  await nextTick();
-  requestAnimationFrame(() =>
-    document.querySelector<HTMLElement>(`[data-info-content="${titleId}"] [data-info-primary]`)?.focus(),
-  );
-}
-
-/* ---- First-run intro ---- */
-
-let timer = 0;
-let attempts = 0;
-
-function isBusy(): boolean {
-  if (document.activeElement?.closest(BusySelector)) return true;
-  return document.querySelector("[role='dialog'][aria-modal='true']") !== null;
-}
-
-function startIntro(): void {
-  const id = props.intro;
-  if (!id || !props.isReady || !inView.value || open.value || introMemory.hasSeen(id) || !props.steps.length) return;
-  if (isBusy()) {
-    if (++attempts < IntroAttempts) timer = window.setTimeout(startIntro, IntroRetryMs);
-    return;
-  }
-  introMemory.markSeen(id);
-  mode.value = InfoMode.Intro;
-  step.value = 0;
-  open.value = true;
-  void focusPrimary();
-}
-
-watch(
-  () => [props.intro, props.isReady, inView.value] as const,
-  ([id, isReady, isInView]) => {
-    window.clearTimeout(timer);
-    if (id && isReady && isInView && !introMemory.hasSeen(id)) timer = window.setTimeout(startIntro, IntroDelayMs);
-  },
-  { immediate: true },
-);
-
-/* ---- The ring on the intro page's target ---- */
-
-let spot: Element | null = null;
-
-function clearSpot(): void {
-  spot?.removeAttribute("data-intro-spot");
-  spot = null;
-}
-
-watch(
-  [open, mode, step],
-  () => {
-    clearSpot();
-    const target = open.value && mode.value === InfoMode.Intro ? props.steps[step.value]?.target : undefined;
-    if (!target) return;
-    spot = document.querySelector(target);
-    spot?.setAttribute("data-intro-spot", "");
-  },
-  { flush: "post" },
-);
-
-onBeforeUnmount(() => {
-  window.clearTimeout(timer);
-  clearSpot();
-});
 </script>
 
 <template>
-  <span ref="anchor" class="inline-flex shrink-0 align-middle">
-    <Popover :open="open && !isSheet" :placement="placement" @update:open="setPopover">
+  <span
+    ref="anchor"
+    class="wh-info inline-flex shrink-0 align-middle"
+    :data-scoped="scope ? '' : undefined"
+    :data-revealed="isRevealed ? '' : undefined"
+  >
+    <Popover :open="open && !isPhone" placement="bottom-start" @update:open="setPopover">
       <PopoverTrigger as-child @click="press">
         <Button
           variant="ghost"
           tone="neutral"
           size="sm"
           shape="square"
-          class="-my-1.5 shrink-0 text-muted-foreground max-md:-my-3 max-md:size-11"
+          class="wh-info-trigger -my-1.5 shrink-0 max-md:-my-3 max-md:size-11"
           :aria-label="`About ${props.title}`"
+          :aria-expanded="open"
         >
           <Info :size="16" aria-hidden="true" />
         </Button>
       </PopoverTrigger>
       <PopoverContent :aria-labelledby="titleId" class="w-[min(22rem,calc(100vw-2rem))] p-4">
-        <InfoPopoverContent
-          :title="props.title"
-          :title-id="titleId"
-          :steps="props.steps"
-          :mode="mode"
-          :step="step"
-          @close="close"
-          @step="goTo"
-        >
-          <template v-for="key in stepKeys" :key="key" #[key]><slot :name="key" /></template>
+        <InfoPopoverContent :title="props.title" :title-id="titleId" :sections="props.sections" @close="close">
+          <template v-for="key in sectionKeys" :key="key" #[key]><slot :name="key" /></template>
+          <template v-if="!sectionKeys.length" #default><slot /></template>
         </InfoPopoverContent>
       </PopoverContent>
     </Popover>
-    <BottomSheet v-if="isPhone" :open="open && isSheet" :snap-points="['55vh', '92vh']" @update:open="setSheet">
-      <InfoPopoverContent
-        :title="props.title"
-        :title-id="titleId"
-        :steps="props.steps"
-        :mode="mode"
-        :step="step"
-        @close="close"
-        @step="goTo"
-      >
+    <BottomSheet v-if="isPhone" :open="open" :snap-points="['55vh', '92vh']" @update:open="setSheet">
+      <InfoPopoverContent :title="props.title" :title-id="titleId" :sections="props.sections" @close="close">
         <template #heading="{ title }">
           <BottomSheetTitle class="text-base font-semibold">{{ title }}</BottomSheetTitle>
         </template>
-        <template v-for="key in stepKeys" :key="key" #[key]><slot :name="key" /></template>
+        <template v-for="key in sectionKeys" :key="key" #[key]><slot :name="key" /></template>
+        <template v-if="!sectionKeys.length" #default><slot /></template>
       </InfoPopoverContent>
     </BottomSheet>
   </span>
 </template>
 
 <style>
-/* The intro page's target: a primary ring set off from it, breathing unless motion is reduced. Global, since the
-   target belongs to another component. */
-[data-intro-spot] {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 4px;
-  border-radius: 6px;
+/* The info button reads as secondary: dimmed until pointed at, focused or open. Global, since the reveal rules key on
+   the region the button sits in. */
+.wh-info-trigger {
+  color: var(--color-subtle-foreground);
+  transition:
+    opacity 120ms ease,
+    color 120ms ease;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  [data-intro-spot] {
-    animation: wh-intro-spot 1.8s ease-in-out infinite;
+.wh-info-trigger:hover,
+.wh-info-trigger:focus-visible,
+.wh-info-trigger[aria-expanded="true"] {
+  color: var(--color-foreground);
+}
+
+/* A device that hovers with a fine pointer hides the button until the pointer or focus is in its region; a touch
+   device (no hover) always shows it, dimmed. Focus always reveals it, so the keyboard reaches it. */
+@media (hover: hover) and (pointer: fine) {
+  .wh-info[data-scoped]:not([data-revealed]) .wh-info-trigger:not(:focus-visible) {
+    opacity: 0;
   }
 }
 
-@keyframes wh-intro-spot {
-  0%,
-  100% {
-    outline-color: var(--color-primary);
-  }
-  50% {
-    outline-color: color-mix(in oklab, var(--color-primary) 35%, transparent);
+@media (prefers-reduced-motion: reduce) {
+  .wh-info-trigger {
+    transition: none;
   }
 }
 </style>

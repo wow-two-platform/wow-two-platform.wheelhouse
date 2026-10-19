@@ -153,7 +153,7 @@ async function move(event: KeyboardEvent, cell: CalendarCell): Promise<void> {
 </script>
 
 <template>
-  <div ref="surface" class="relative w-max max-w-full min-w-0" data-intro-target="calendar">
+  <div ref="surface" class="relative w-max max-w-full min-w-0">
     <div ref="scroller" class="overflow-x-auto overscroll-x-contain pb-1" tabindex="-1">
       <!-- Fixed day cells: 22px with 3px gaps on a phone, for touch; 20px with 4px gaps from md. -->
       <div

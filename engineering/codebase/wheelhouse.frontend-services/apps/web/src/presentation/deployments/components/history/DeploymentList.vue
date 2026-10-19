@@ -41,7 +41,7 @@ import { ConsolePaths } from "@/application/navigation";
 import { Measures } from "@/domain/common";
 import { DeploymentOutcome } from "@/domain/deployments";
 
-import JobStatusIndicator from "../JobStatusIndicator.vue";
+import DeploymentStatusPill from "../DeploymentStatusPill.vue";
 
 /**
  * Lists deployments with what changed and how it went; a row opens the deployment's own page. Below `md` the SDK
@@ -106,7 +106,7 @@ function open(item: DeploymentItem | undefined, event: MouseEvent): void {
             <span class="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">{{ durationOf(item) }}</span>
           </span>
           <span class="min-w-0 text-sm">
-            <JobStatusIndicator :status="item.status" :reason="item.reason" />
+            <DeploymentStatusPill :status="item.status" :reason="item.reason" :watch="item.watch" />
             <span v-if="item.warnings.length && item.outcome === DeploymentOutcome.Succeeded" class="mt-0.5 block text-xs text-warning">
               {{ item.warnings.length }} {{ item.warnings.length === 1 ? "warning" : "warnings" }}
             </span>
@@ -167,7 +167,7 @@ function open(item: DeploymentItem | undefined, event: MouseEvent): void {
           </TableCell>
           <TableCell>
             <span v-if="item" class="block min-w-0">
-              <JobStatusIndicator :status="item.status" :reason="item.reason" />
+              <DeploymentStatusPill :status="item.status" :reason="item.reason" :watch="item.watch" />
               <span v-if="item.warnings.length && item.outcome === DeploymentOutcome.Succeeded" class="mt-1 block text-xs text-warning">
                 {{ item.warnings.length }} {{ item.warnings.length === 1 ? "warning" : "warnings" }}
               </span>

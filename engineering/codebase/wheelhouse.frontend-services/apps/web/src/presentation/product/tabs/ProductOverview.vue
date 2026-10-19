@@ -63,17 +63,20 @@ import { EnvironmentOrder, type DeploymentEnvironment } from "@/domain/targets";
 import { withoutServices } from "@/domain/topology";
 import {
   DeployModal,
+  DeploymentStatusPill,
   DeploymentSteps,
   ReconcileModal,
   ServiceLogsModal,
   TargetSites,
   useDeployModal,
 } from "@/presentation/deployments";
-import { RefreshButton } from "@/presentation/common/components";
+import { InfoPopover, RefreshButton } from "@/presentation/common/components";
 import { ResourceMeter } from "@/presentation/servers";
+import BuildUsagePanel from "../BuildUsagePanel.vue";
 import EnvironmentCompare from "../EnvironmentCompare.vue";
 import ServiceActions from "../ServiceActions.vue";
 import ServiceMap from "../ServiceMap.vue";
+import ServicesInfo from "../ServicesInfo.vue";
 
 /**
  * A product's Overview tab: its environments, services and deployments, scoped by the environment the top bar's
@@ -174,13 +177,6 @@ const mapContainers = computed(() =>
     ? (targetVitals.value.containers ?? null)
     : null,
 );
-/** The verified release's service versions without the hidden services. */
-const visibleVersions = computed(() => {
-  const versions = state.data.value?.current?.versions;
-  return versions && hiddenServices.value.length
-    ? Object.fromEntries(Object.entries(versions).filter(([service]) => !hiddenServices.value.includes(service)))
-    : versions;
-});
 /** The map's declaration and readings without the hidden services. */
 const visibleTopology = computed(() =>
   topology.data.value ? withoutServices(topology.data.value, hiddenServices.value) : null,
@@ -193,6 +189,13 @@ const targetHistory = computed(() =>
 );
 const inspected = computed(() =>
   selection.value.status === "ready" ? selection.value.inspector : null,
+);
+const inspectorTitle = computed(() =>
+  inspected.value?.kind === "service"
+    ? "Service details"
+    : inspected.value?.kind === "deployment"
+      ? "Deployment details"
+      : "Environment details",
 );
 const outcome = useDeploymentOutcome(
   () => (inspected.value?.kind === "deployment" ? inspected.value.job.id : null),
@@ -226,6 +229,10 @@ const drift = computed(() =>
         target.value.product,
       )
     : null,
+);
+/** Reads the services again: the map's declaration and the containers' vitals. */
+const servicesRefresh = useRefresh(() =>
+  Promise.all([vitals.refetch(), ...(target.value ? [topology.refetch()] : [])]),
 );
 const refresh = useRefresh(() =>
   Promise.all([
@@ -297,19 +304,6 @@ function read<T>(
 ): SelectionRead<T> {
   if (data !== undefined) return { status: "ready", data };
   return { status: loading ? "loading" : error ? "error" : "loading" };
-}
-/** Maps semantic outcome roles to the miniature navigation strip. @internal */
-function outcomeColor(job: DeploymentJob): string {
-  const variant = DeploymentExtensions.statusVariant(job.status);
-  return variant === "success"
-    ? "bg-success"
-    : variant === "danger"
-      ? "bg-destructive"
-      : variant === "warning"
-        ? "bg-warning"
-        : variant === "info"
-          ? "bg-info"
-          : "bg-muted-foreground";
 }
 /** Writes scoped selection while preserving unrelated URL parameters. @internal */
 async function select(
@@ -482,10 +476,7 @@ function openDeploy(job?: DeploymentJob): void {
                 </button>
               </SkeletonStateGroup>
             </DataRegion>
-            <TargetSites
-              :sites="state.data.value?.current?.sites"
-              :versions="visibleVersions"
-            />
+            <TargetSites :sites="state.data.value?.current?.sites" />
             <EnvironmentCompare
               v-if="product"
               :targets="product.targets"
@@ -493,16 +484,30 @@ function openDeploy(job?: DeploymentJob): void {
               :hidden-services="hiddenServices"
               @promote="deploy.openDeploy($event)"
             />
+            <BuildUsagePanel v-if="productKey" :product="productKey" />
             <section
               class="wh-glass rounded-2xl border border-border p-5"
-              aria-label="Environment services"
+              aria-labelledby="services-heading"
+              data-info-scope
             >
               <div
                 class="mb-4 flex flex-wrap items-center justify-between gap-2"
               >
-                <h3 class="flex items-center gap-2 text-sm font-semibold">
-                  <Box :size="16" />Services
-                </h3>
+                <div class="flex items-center gap-1">
+                  <h3 id="services-heading" class="flex items-center gap-2 text-sm font-semibold">
+                    <Box :size="16" aria-hidden="true" />Services
+                  </h3>
+                  <ServicesInfo />
+                </div>
+                <span class="flex items-center gap-2">
+                <RefreshButton
+                  variant="ghost"
+                  icon-only
+                  label="Refresh services"
+                  class="max-md:size-11"
+                  :refreshing="servicesRefresh.refreshing.value"
+                  @refresh="servicesRefresh.refresh"
+                />
                 <ToggleGroup
                   variant="segmented"
                   aria-label="Service view"
@@ -516,6 +521,7 @@ function openDeploy(job?: DeploymentJob): void {
                     ><List :size="14" />List</ToggleInput
                   >
                 </ToggleGroup>
+                </span>
               </div>
               <!-- The map cannot be drawn without its topology, so its first load shows the map's frame. -->
               <DataRegion
@@ -700,10 +706,7 @@ function openDeploy(job?: DeploymentJob): void {
                   "
                   @click="job && inspect('deployment', job.id)"
                 >
-                  <span
-                    class="size-2 shrink-0 rounded-full"
-                    :class="job ? outcomeColor(job) : 'bg-muted'"
-                  /><span class="min-w-0 flex-1"
+                  <span class="min-w-0 flex-1"
                     ><Text as="span" class="block truncate text-sm font-medium text-inherit" skeleton-width="8rem">{{
                       job ? (job.release ?? job.bundleId ?? "Submitted release") : ""
                     }}</Text
@@ -715,10 +718,13 @@ function openDeploy(job?: DeploymentJob): void {
                         ></template
                       ></Text
                     ></span
-                  ><Text as="span" class="text-xs capitalize text-muted-foreground">{{
-                    job ? DeploymentExtensions.label(job.status) : ""
-                  }}</Text
-                  ><ChevronRight
+                  ><DeploymentStatusPill
+                    v-if="job"
+                    :status="job.status"
+                    :reason="job.reason"
+                    :has-cause="false"
+                    class="shrink-0"
+                  /><ChevronRight
                     :size="14"
                     class="shrink-0 text-muted-foreground"
                   />
@@ -731,21 +737,24 @@ function openDeploy(job?: DeploymentJob): void {
         ref="inspectorElement"
         tabindex="-1"
         aria-label="Context inspector"
+        data-info-scope
         class="wh-glass min-w-0 rounded-2xl border border-border outline-none xl:sticky xl:top-6"
       >
         <header
           class="flex items-center gap-2 border-b border-border px-5 py-4"
         >
-          <Layers :size="16" class="text-muted-foreground" />
-          <h2 class="text-sm font-semibold">
-            {{
-              inspected?.kind === "service"
-                ? "Service details"
-                : inspected?.kind === "deployment"
-                  ? "Deployment details"
-                  : "Environment details"
-            }}
-          </h2>
+          <Layers :size="16" class="text-muted-foreground" aria-hidden="true" />
+          <h2 class="text-sm font-semibold">{{ inspectorTitle }}</h2>
+          <InfoPopover v-if="inspected?.kind !== 'deployment'" :title="inspectorTitle">
+            <p v-if="inspected?.kind === 'service'">
+              One container's readings, from the host every minute. Readings are observational: a deploy always updates
+              the whole environment, never one service.
+            </p>
+            <p v-else>
+              The environment's host and the release last verified on it. Check a release reads the target's readiness
+              against the release you pick; no rollout starts without your confirmation.
+            </p>
+          </InfoPopover>
         </header>
         <!-- A selection waiting on its read draws the inspector's copy as a placeholder. -->
         <DataRegion
@@ -797,13 +806,7 @@ function openDeploy(job?: DeploymentJob): void {
                   is-full-width
                   @click="logsService = inspected.service.service"
                   >Read logs</Button
-                >
-                <p
-                  class="border-t border-border pt-4 text-xs text-muted-foreground"
-                >
-                  Deployments update the entire environment. Service readings
-                  are observational.
-                </p></template
+                ></template
               >
               <template v-else-if="inspectedJob"
                 ><div>
@@ -811,15 +814,7 @@ function openDeploy(job?: DeploymentJob): void {
                   <h3 class="break-all text-lg font-semibold">
                     {{ inspectedJob.release ?? "Deployment" }}
                   </h3>
-                  <Badge
-                    class="mt-2"
-                    :variant="
-                      DeploymentExtensions.statusVariant(inspectedJob.status)
-                    "
-                    >{{
-                      DeploymentExtensions.label(inspectedJob.status)
-                    }}</Badge
-                  >
+                  <DeploymentStatusPill class="mt-2" :status="inspectedJob.status" />
                 </div>
                 <p
                   v-if="outcome.error.value"
@@ -924,11 +919,7 @@ function openDeploy(job?: DeploymentJob): void {
                   @click="openDeploy()"
                   >Check a release<template #trailing
                     ><ArrowRight :size="14" /></template
-                ></Button>
-                <p class="text-xs text-muted-foreground">
-                  Readiness is checked against the release you select. No
-                  rollout starts without confirmation.
-                </p></template
+                ></Button></template
               >
               <div class="border-t border-border pt-4">
                 <p class="text-xs text-muted-foreground">Environment</p>

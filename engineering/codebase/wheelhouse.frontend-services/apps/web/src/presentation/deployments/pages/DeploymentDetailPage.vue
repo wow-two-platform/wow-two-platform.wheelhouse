@@ -13,13 +13,13 @@ import { ConsolePaths } from "@/application/navigation";
 import { useProducts } from "@/application/products";
 import { useRefresh } from "@/bootstrap/query";
 import { Measures } from "@/domain/common";
-import { DeploymentExtensions, DeploymentOutcome, TargetCondition } from "@/domain/deployments";
-import { Panel, RefreshButton } from "@/presentation/common/components";
+import { DeploymentExtensions, DeploymentOutcome, DeploymentStatusRules, TargetCondition } from "@/domain/deployments";
+import { InfoPopover, Panel, RefreshButton } from "@/presentation/common/components";
 import { ProductIcon } from "@/presentation/products";
 
 import DeployModal from "../components/DeployModal.vue";
 import DeploymentSteps from "../components/DeploymentSteps.vue";
-import JobStatusIndicator from "../components/JobStatusIndicator.vue";
+import DeploymentStatusPill from "../components/DeploymentStatusPill.vue";
 import ReconcileModal from "../components/ReconcileModal.vue";
 import ServiceLogsModal from "../components/ServiceLogsModal.vue";
 import { useDeployModal } from "../hooks/useDeployModal";
@@ -58,6 +58,19 @@ const targetExists = computed(() => Boolean(targets.data.value?.some((item) => i
 const steps = computed(() => (isLive.value && outcome.data.value?.steps?.length ? outcome.data.value.steps : (detail.data.value?.steps ?? [])));
 const status = computed(() => (isLive.value ? (outcome.data.value?.status ?? deployment.value?.status) : deployment.value?.status));
 const services = computed(() => detail.data.value?.services ?? null);
+/** The release a roll back restored: the target's previous success. */
+const restored = computed(() => detail.data.value?.previous?.release ?? null);
+/** The failure alert's tone and title: a roll back is degraded (amber) and names what it restored. */
+const failure = computed(() => {
+  const item = deployment.value;
+  if (!item) return null;
+  const reading = DeploymentStatusRules.of({ status: item.status, restored: restored.value });
+  const cause = reading.cause ?? DeploymentExtensions.label(item.status);
+  return {
+    severity: reading.state === "degraded" ? ("warning" as const) : ("danger" as const),
+    title: cause.charAt(0).toUpperCase() + cause.slice(1),
+  };
+});
 const logServices = computed(() => (services.value ?? []).filter((item) => item.to !== null).map((item) => item.service));
 const needsReconciliation = computed(
   () => state.data.value?.condition === TargetCondition.NeedsReconciliation && state.data.value.active !== null,
@@ -161,15 +174,21 @@ function rollBack(): void {
             </template>
             <div class="flex min-w-0 flex-col gap-4">
               <div class="flex flex-wrap items-center gap-3">
-                <JobStatusIndicator v-if="status" :status="status" />
+                <DeploymentStatusPill
+                  v-if="status"
+                  :status="status"
+                  :watch="deployment?.watch"
+                  :restored="restored"
+                  :has-cause="false"
+                />
                 <span v-if="deployment" class="text-sm text-muted-foreground">
                   submitted <RelativeTime :value="deployment.submittedAt" /> by {{ deployment.actor ?? "someone" }}
                 </span>
               </div>
               <Alert
-                v-if="deployment?.reason && deployment.outcome !== DeploymentOutcome.Succeeded"
-                severity="danger"
-                :title="DeploymentExtensions.label(deployment.status)"
+                v-if="deployment?.reason && failure && deployment.outcome !== DeploymentOutcome.Succeeded"
+                :severity="failure.severity"
+                :title="failure.title"
                 :description="deployment.reason"
               />
               <Alert
@@ -205,7 +224,7 @@ function rollBack(): void {
               <DescriptionGroup layout="stacked" density="md" class="grid grid-cols-2 gap-x-6 sm:grid-cols-4 [&_dt]:text-xs" :items="facts" />
             </div>
           </Panel>
-          <Panel title="Rollout steps" :description="isLive ? 'Following the target live.' : 'As the target recorded them.'">
+          <Panel title="Rollout steps" v-bind="isLive ? { description: 'Following the target live.' } : {}">
             <DeploymentSteps v-if="steps.length" :steps="steps" />
             <p v-else class="text-sm text-muted-foreground">
               {{
@@ -258,7 +277,15 @@ function rollBack(): void {
           </Panel>
         </div>
         <div class="flex min-w-0 flex-col gap-6">
-          <Panel title="Sites" description="Probed through the ingress right after the rollout.">
+          <Panel title="Sites">
+            <template #info>
+              <InfoPopover title="Sites">
+                <p>
+                  Each site this rollout published, probed once through the ingress right after the services turned
+                  healthy. A site that did not answer then says why; it may answer now.
+                </p>
+              </InfoPopover>
+            </template>
             <ul v-if="detail.data.value?.sites.length" class="flex flex-col gap-3">
               <li v-for="site in detail.data.value.sites" :key="site.name + site.url" class="min-w-0 text-sm">
                 <span class="flex items-center justify-between gap-2">
@@ -284,11 +311,16 @@ function rollBack(): void {
               {{ isLive ? "Sites are published and probed once the services are healthy." : "No sites were published by this rollout." }}
             </p>
           </Panel>
-          <Panel
-            v-if="detail.data.value?.snapshot"
-            title="Snapshot"
-            description="Taken on the target before this rollout changed anything. Restoring is never automatic."
-          >
+          <Panel v-if="detail.data.value?.snapshot" title="Snapshot">
+            <template #info>
+              <InfoPopover title="Snapshot">
+                <p>
+                  The databases and volumes a prod rollout saves on the target before it changes anything, with their
+                  sizes. Restoring is never automatic: run the restore commands on the target, in order, after
+                  inspecting what failed.
+                </p>
+              </InfoPopover>
+            </template>
             <div class="flex flex-col gap-3 text-sm">
               <p class="break-all font-mono text-xs">{{ detail.data.value.snapshot.path }}</p>
               <ul class="flex flex-col gap-1 text-xs">

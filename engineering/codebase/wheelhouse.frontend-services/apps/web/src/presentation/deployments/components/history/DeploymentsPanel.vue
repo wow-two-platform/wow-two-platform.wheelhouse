@@ -27,27 +27,30 @@ import {
 } from "@/application/deployments";
 import { usePortfolio } from "@/application/portfolio";
 import { useRefresh } from "@/bootstrap/query";
-import { DeploymentFilters } from "@/domain/deployments";
 import { Panel, RefreshButton } from "@/presentation/common/components";
 
 import { useDeploymentViewRoute } from "../../hooks/useDeploymentViewRoute";
 import ActivityGrid from "./ActivityGrid.vue";
-import ActivityGridInfo from "./ActivityGridInfo.vue";
 import DeploymentDayStats from "./DeploymentDayStats.vue";
 import DeploymentFilterBar from "./DeploymentFilterBar.vue";
 import DeploymentList from "./DeploymentList.vue";
+import DeploymentsInfo from "./DeploymentsInfo.vue";
 import RangeStatsTiles from "./RangeStatsTiles.vue";
 
 /** The day panel's narrowest width beside the calendar, with the gap before it: 18rem + 1.5rem. @internal */
 const SidePanelRoom = 312;
+/** The most deployments one read of a day takes (the API's page limit), so its counts are whole on any real day. @internal */
+const DayPageSize = 100;
 
 /**
  * Deployments under one shared filter, shown two ways: a calendar of outcomes per day (Grid), whose day expands into
  * that day's deployments, or every deployment newest first (List). From `lg`, where the panel has room beside the
  * calendar, a day panel sits to its right: the chosen day's counts and deployments, or one line asking for a day;
- * narrower, the chosen day stacks under the calendar. The range's totals are the measures above, never repeated here;
- * where the panel holds its own filter bar (a product's tab), the measures sit under it. The calendar's key is behind
- * the info button beside the title. The filter, the view and the expanded day live in the address.
+ * narrower, the chosen day stacks under the calendar. The day's counts are tiles for each status that occurred, read
+ * from its deployments, whose rows carry the same status pills. The range's totals are the measures above, never
+ * repeated here; where the panel holds its own filter bar (a product's tab), the measures sit under it. The calendar's
+ * key and the statuses are behind the info button beside the title. The filter, the view and the expanded day live in
+ * the address.
  */
 defineOptions({ name: "DeploymentsPanel" });
 const props = withDefaults(defineProps<DeploymentsPanelProps>(), { lockedProduct: null, hasFilterBar: true });
@@ -61,17 +64,15 @@ const isGrid = computed(() => route.view.value === DeploymentView.Grid);
 
 const activity = useDeploymentActivity(route.filter, isGrid);
 const list = useDeploymentPages(route.filter, { enabled: () => !isGrid.value });
-const dayList = useDeploymentPages(route.filter, { day: route.day, enabled: () => isGrid.value && route.day.value !== null });
+const dayList = useDeploymentPages(route.filter, {
+  day: route.day,
+  limit: DayPageSize,
+  enabled: () => isGrid.value && route.day.value !== null,
+});
 const running = useRunningDeployments(() => route.filter.value.entities);
 const isLive = computed(() => (running.data.value?.length ?? 0) > 0);
 const refresh = useRefresh(() =>
   Promise.all(isGrid.value ? [activity.refetch(), ...(route.day.value ? [dayList.refetch()] : [])] : [list.refetch()]),
-);
-/** The chosen day's finished rollouts, from the calendar's read. */
-const chosenDay = computed(() => activity.data.value?.days.find((day) => day.date === route.day.value));
-/** Live rollouts belong to today; any other day has none. */
-const runningThatDay = computed(() =>
-  route.day.value === DeploymentFilters.localDate(new Date()) ? (running.data.value?.length ?? 0) : 0,
 );
 
 const breakpoint = useBreakpoint(TailwindBreakpoints);
@@ -108,13 +109,8 @@ function setView(value: unknown): void {
 
 <template>
   <Panel title="Deployments">
-    <template #title>
-      <span class="inline-flex items-center gap-1"
-        >Deployments<ActivityGridInfo
-          v-if="isGrid"
-          :status="route.filter.value.status"
-          :is-ready="!activity.isFirstLoad.value && Boolean(activity.data.value)"
-      /></span>
+    <template #info>
+      <DeploymentsInfo :status="route.filter.value.status" :is-grid="isGrid" />
     </template>
     <template #actions>
       <ToggleGroup variant="segmented" aria-label="View" :model-value="route.view.value" @update:model-value="setView">
@@ -173,7 +169,10 @@ function setView(value: unknown): void {
               <template #leading><X :size="14" aria-hidden="true" /></template>Close
             </Button>
           </div>
-          <DeploymentDayStats :day="chosenDay" :status="route.filter.value.status" :running="runningThatDay" />
+          <DeploymentDayStats
+            :items="dayList.loading.value ? undefined : dayList.items.value"
+            :has-more="dayList.hasNextPage.value"
+          />
           <DataRegion
             :is-first-load="dayList.loading.value"
             :error="dayList.error.value"

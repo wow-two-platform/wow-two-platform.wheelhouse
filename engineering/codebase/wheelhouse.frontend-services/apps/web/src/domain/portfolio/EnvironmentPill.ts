@@ -1,38 +1,35 @@
+import { StatusState, StatusWords } from '@/domain/common/StatusVocabulary';
 import { EnvironmentHealth, type EnvironmentReading } from '@/domain/overview/EnvironmentHealth';
 import { RolloutOutcome, type PortfolioDeploy, type PortfolioEnvironment } from './PortfolioSummary';
 
-/** What one environment of a product looks like on its pill. Every state differs by icon; colour is never alone. */
+/**
+ * What one environment of a product looks like on its pill: a subset of the console's status vocabulary
+ * (`StatusVocabulary`), so the pill's words, tones and icons match every other status. Rolled back is not a state of
+ * its own: it is degraded, and the pill's details name the cause.
+ */
 export const PillState = {
   /** Serving its release, with nothing to look at. Neutral, with only the check icon green. */
-  Healthy: 'healthy',
+  Healthy: StatusState.Healthy,
   /** A rollout is running. */
-  Deploying: 'deploying',
+  Deploying: StatusState.Deploying,
   /** Unreachable, failing, or its latest rollout failed with no success since. */
-  Failed: 'failed',
-  /** Its latest rollout rolled back, so the previous release serves. */
-  RolledBack: 'rolled-back',
-  /** Serving, with something to look at: restarts or host pressure. */
-  Degraded: 'degraded',
+  Failed: StatusState.Failed,
+  /** Serving, but not as intended: its latest rollout rolled back, or restarts or host pressure. */
+  Degraded: StatusState.Degraded,
   /** No target, or a target with nothing deployed: one state. */
-  None: 'none',
+  None: StatusState.None,
   /** Deployed by its own CI rather than by Wheelhouse, as Wheelhouse itself is. */
-  Ci: 'ci',
+  Ci: StatusState.Ci,
   /** No reading of the target. */
-  Unknown: 'unknown',
+  Unknown: StatusState.Unknown,
 } as const;
 export type PillState = (typeof PillState)[keyof typeof PillState];
 
 /** Each state's words, for the pill's assistive label and its details. */
-export const PillStateWords: Readonly<Record<PillState, string>> = {
-  healthy: 'healthy',
-  deploying: 'deploying',
-  failed: 'failed',
-  'rolled-back': 'rolled back',
-  degraded: 'degraded',
-  none: 'not deployed',
-  ci: 'deployed by CI',
-  unknown: 'no reading',
-};
+export const PillStateWords: Readonly<Record<PillState, string>> = StatusWords;
+
+/** The cause a degraded pill names when the vitals say no more. @internal */
+const StrainCause = 'restarts or host pressure';
 
 /** One environment's pill: its state, what it shows and what its details say. */
 export interface EnvironmentPill {
@@ -40,6 +37,8 @@ export interface EnvironmentPill {
   readonly state: PillState;
   /** What follows the environment's name: the serving version for a calm state, the state word otherwise. */
   readonly detail: string | null;
+  /** Why the state holds, for its details: `rolled back to v1.2.0`, `restarts or host pressure`; null when calm. */
+  readonly cause: string | null;
   /** The release serving, in full; null when none is known. */
   readonly release: string | null;
   /** The newest rollout the runner accepted. */
@@ -77,8 +76,8 @@ export const EnvironmentPillRules = {
     const release = running?.release ?? input.reportedRelease ?? null;
     const health = input.reading?.health;
     const hasTarget = health !== undefined && health !== EnvironmentHealth.Missing;
-    const pill = (state: PillState, detail: string | null = PillStateWords[state]): EnvironmentPill => ({
-      environment: input.environment, state, detail, release, lastDeploy, running, hasTarget,
+    const pill = (state: PillState, detail: string | null = PillStateWords[state], cause: string | null = null): EnvironmentPill => ({
+      environment: input.environment, state, detail, cause, release, lastDeploy, running, hasTarget,
     });
 
     if (input.ci) return { ...pill(PillState.Ci, shortRelease(input.ci.version)), release: input.ci.version };
@@ -86,8 +85,10 @@ export const EnvironmentPillRules = {
     if (lastDeploy?.outcome === RolloutOutcome.Pending) return pill(PillState.Deploying);
     if (health === EnvironmentHealth.Failing) return pill(PillState.Failed);
     if (lastDeploy?.outcome === RolloutOutcome.Failed && !supersedes(running, lastDeploy))
-      return pill(lastDeploy.status === 'rolled_back' ? PillState.RolledBack : PillState.Failed);
-    if (health === EnvironmentHealth.Warning) return pill(PillState.Degraded);
+      return lastDeploy.status === 'rolled_back'
+        ? pill(PillState.Degraded, undefined, release ? `rolled back to ${release}` : 'rolled back to the previous release')
+        : pill(PillState.Failed, undefined, lastDeploy.reason);
+    if (health === EnvironmentHealth.Warning) return pill(PillState.Degraded, undefined, StrainCause);
     if (health === EnvironmentHealth.Idle) return pill(PillState.None, null);
     if (health === EnvironmentHealth.Unknown || health === undefined) return pill(PillState.Unknown);
     return pill(PillState.Healthy, shortRelease(release));

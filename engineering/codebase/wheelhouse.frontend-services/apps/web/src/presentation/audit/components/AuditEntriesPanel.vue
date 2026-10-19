@@ -3,7 +3,6 @@
 export interface AuditEntriesPanelProps {
   /** Keeps the entries about one product, by slug; every entry without it. */
   readonly product?: string | null;
-  readonly description?: string;
 }
 </script>
 <script setup lang="ts">
@@ -29,7 +28,7 @@ import {
 } from "@wow-two-beta/fe/presentation/forms";
 import { useAuditEntries } from "@/application/audit";
 import { AuditArea, AuditExtensions, AuditOutcome } from "@/domain/audit";
-import { Panel } from "@/presentation/common/components";
+import { InfoPopover, Panel } from "@/presentation/common/components";
 
 /**
  * Lists actions newest first, a hundred at a time, with an area filter and paging back. The Activity page
@@ -80,7 +79,16 @@ function newer(): void {
 </script>
 
 <template>
-  <Panel title="Actions" :description="props.description">
+  <Panel title="Actions">
+    <template #info>
+      <InfoPopover title="Actions">
+        <p>
+          Every audited action{{ props.product ? " about this product" : "" }} — edits, environments, deployments,
+          builds and secret changes — newest first, with who took it: a signed-in owner, or an integration key. The
+          trail is hash-chained, so an entry cannot change unseen, and it never holds a secret's value.
+        </p>
+      </InfoPopover>
+    </template>
     <template #actions>
       <SelectPicker v-model="area" :get-option-label="(value) => AreaLabels[value as AuditArea]"
         ><SelectPickerTrigger aria-label="Area" width="14rem"><SelectPickerValue /></SelectPickerTrigger

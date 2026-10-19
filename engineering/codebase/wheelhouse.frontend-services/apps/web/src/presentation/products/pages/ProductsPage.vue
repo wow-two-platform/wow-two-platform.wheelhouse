@@ -264,12 +264,12 @@ function emptyTextOf(group: PortfolioGroup): string {
         </ul>
       </section>
 
-      <section aria-labelledby="products-heading" class="flex min-w-0 flex-col gap-3">
+      <section aria-labelledby="products-heading" data-info-scope class="flex min-w-0 flex-col gap-3">
         <div class="flex items-center gap-1">
           <h2 id="products-heading" class="text-sm font-semibold text-muted-foreground">
             Products<span v-if="narrowed && !firstLoad" class="font-normal"> · {{ matchCount }} match</span>
           </h2>
-          <ProductsInfo :is-ready="!firstLoad && !facts.isLoading.value && matchCount > 0" />
+          <ProductsInfo />
         </div>
         <EmptyState
           v-if="narrowed && !firstLoad && !matchCount"

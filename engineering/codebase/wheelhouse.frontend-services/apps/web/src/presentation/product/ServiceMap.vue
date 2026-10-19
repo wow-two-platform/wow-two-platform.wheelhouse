@@ -37,7 +37,10 @@ import {
 import { describeServiceObservation } from "./serviceMap/ServiceObservation";
 import { describeServiceVersion } from "./serviceMap/ServiceVersion";
 
-/** Maps saved Compose services to their shared resources and declared startup dependencies. */
+/**
+ * Maps saved Compose services to their shared resources and declared startup dependencies. Its line legend and how to
+ * move around it sit behind the Services panel's info button (`ServicesInfo`), not under the map.
+ */
 defineOptions({ name: "ServiceMap" });
 const props = defineProps<ServiceMapProps>();
 const emit = defineEmits<{ select: [name: string] }>();
@@ -182,17 +185,8 @@ function condition(value: string | null): string {
       "
     />
     <template v-else>
-      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div class="min-w-0 text-xs text-muted-foreground">
-          <p class="font-medium text-foreground">
-            {{ props.topology.services.length }} declared services
-          </p>
-          <p class="mt-1 break-all">
-            {{ props.topology.release ?? "Verified release" }} · Read
-            <RelativeTime :value="props.topology.collectedAt" is-live />
-          </p>
-        </div>
-        <div class="flex flex-wrap gap-1.5" aria-label="Map layers">
+      <div class="mb-4 flex flex-wrap items-center gap-3">
+        <div class="flex flex-wrap gap-1.5" role="group" aria-label="Map layers">
           <Button
             size="sm"
             variant="outline"
@@ -241,31 +235,6 @@ function condition(value: string | null): string {
         description="The saved Compose declaration contains no services."
       />
       <template v-else>
-        <div
-          class="mb-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground"
-          aria-label="Map legend"
-        >
-          <span class="inline-flex items-center gap-2"
-            ><span class="h-px w-5 bg-primary" />Shared network</span
-          >
-          <span v-if="showDependencies" class="inline-flex items-center gap-2">
-            <span class="w-5 border-t border-dashed border-accent" />A → B: A
-            waits for B</span
-          >
-          <span v-if="showVolumes" class="inline-flex items-center gap-2"
-            ><Database :size="12" />Named volume</span
-          >
-          <span v-if="showSites && hasSites" class="inline-flex items-center gap-2"
-            ><span class="h-px w-5 bg-success" />Site the ingress routes</span
-          >
-          <span v-if="showPlatform && hasNeeds" class="inline-flex items-center gap-2"
-            ><span class="h-px w-5 bg-muted-foreground" />Platform service it needs</span
-          >
-        </div>
-        <p class="mb-2 text-xs text-muted-foreground">
-          Drag to move · Pinch or Ctrl + scroll to zoom · Select a service for
-          details
-        </p>
         <CanvasArea
           class="wh-map-surface rounded-xl bg-card"
           :style="{ height: `${mapHeight}px` }"
@@ -473,13 +442,9 @@ function condition(value: string | null): string {
             </button>
           </div>
         </CanvasArea>
-        <p class="mt-2 text-xs text-muted-foreground">
-          Lines show Compose membership and startup order; application traffic
-          is not measured.
-        </p>
         <p
           v-if="!props.topology.dependencies.length"
-          class="mt-1 text-xs text-muted-foreground"
+          class="mt-2 text-xs text-muted-foreground"
         >
           No startup dependencies are declared.
         </p>

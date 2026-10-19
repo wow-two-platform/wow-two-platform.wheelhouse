@@ -1,55 +1,58 @@
 <script lang="ts">
 import type { StatusFilter } from "@/domain/deployments";
 
-/** Defines the calendar's info button and first-run intro. */
-export interface ActivityGridInfoProps {
+/** Defines the deployments panel's info button. */
+export interface DeploymentsInfoProps {
   /** The status filter: a filtered calendar's scale runs in that outcome's colour. */
   readonly status: StatusFilter;
-  /** Whether the calendar has drawn its first read; the intro waits for it. */
-  readonly isReady: boolean;
+  /** Whether the calendar shows; the List view needs only the statuses. */
+  readonly isGrid: boolean;
 }
 </script>
 
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { DeploymentFilters } from "@/domain/deployments";
-import { InfoPopover, type InfoStep } from "@/presentation/common/components";
+import { StatusState, StatusWords } from "@/domain/common";
+import { InfoPopover, StatusPill, type InfoSection } from "@/presentation/common/components";
 
 import { CellFills } from "./CellFills";
 
 /**
- * The key to the deployment calendar behind an info button: what a square is, what its colour and marks say, and how
- * today and the chosen day are told apart. Shown once by itself, step by step, the first time the calendar renders.
+ * What the deployments panel's info button holds: the calendar's key — what a square is and how to move between days,
+ * what its colour and marks say, how today and the chosen day are told apart — while the calendar shows, and always
+ * the statuses a deployment's pill and the day's counts use.
  */
-defineOptions({ name: "ActivityGridInfo" });
-const props = defineProps<ActivityGridInfoProps>();
+defineOptions({ name: "DeploymentsInfo" });
+const props = defineProps<DeploymentsInfoProps>();
 
-const today = DeploymentFilters.localDate(new Date());
-const steps = computed<InfoStep[]>(() => [
-  {
-    key: "days",
-    title: "One square per day",
-    target: "[data-intro-target='calendar']",
-  },
-  {
-    key: "outcomes",
-    title: "Colour is the outcome",
-    target: "[data-intro-target='calendar']",
-  },
-  {
-    key: "marks",
-    title: "Today and the chosen day",
-    target: `[data-intro-target='calendar'] [data-date='${today}']`,
-  },
-]);
+const CalendarSections: readonly InfoSection[] = [
+  { key: "days", title: "One square per day" },
+  { key: "outcomes", title: "Colour is the outcome" },
+  { key: "marks", title: "Today and the chosen day" },
+];
+const StatusSection: InfoSection = { key: "statuses", title: "Statuses" };
+const sections = computed(() => (props.isGrid ? [...CalendarSections, StatusSection] : [StatusSection]));
 const scale = computed(() => CellFills[props.status === "failed" ? "danger" : "success"].slice(1));
+
+/** Each status a deployment can end in, and what it means. @internal */
+const Statuses: ReadonlyArray<{ readonly state: StatusState; readonly text: string }> = [
+  { state: StatusState.Succeeded, text: "Finished as intended." },
+  { state: StatusState.Failed, text: "Failed, or restoring the previous release failed too." },
+  { state: StatusState.Degraded, text: "Rolled back to the previous release, or regressed while watched; the row names the cause." },
+  { state: StatusState.Interrupted, text: "Stopped mid-way, then reconciled." },
+  { state: StatusState.Deploying, text: "Submitted, queued or running." },
+  { state: StatusState.Refused, text: "Refused by the runner before it changed anything." },
+];
 </script>
 
 <template>
-  <InfoPopover title="Deployment calendar" :steps="steps" intro="deployments.calendar" :is-ready="props.isReady">
+  <InfoPopover title="Deployments" :sections="sections">
     <template #days>
-      <p>Weeks run left to right, Monday on top. Point at a day for its counts; choose it to list its deployments.</p>
+      <p>
+        Weeks run left to right, Monday on top; finished rollouts count on the day they were submitted. Point at a day
+        for its counts, choose it to list its deployments, and move between days with the arrow keys.
+      </p>
     </template>
     <template #outcomes>
       <ul class="flex flex-col gap-1.5" aria-label="Colours">
@@ -71,6 +74,7 @@ const scale = computed(() => CellFills[props.status === "failed" ? "danger" : "s
           Some succeeded, some failed — a dash marks it
         </li>
       </ul>
+      <p class="mt-2.5">Rolled back and interrupted rollouts count as failed here.</p>
       <p class="mt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
         <span>A deeper fill means more:</span>
         <span class="flex items-center gap-1 text-xs text-muted-foreground" aria-hidden="true">
@@ -95,6 +99,15 @@ const scale = computed(() => CellFills[props.status === "failed" ? "danger" : "s
           The chosen day: a solid ring
         </li>
       </ul>
+    </template>
+    <template #statuses>
+      <ul class="flex flex-col gap-2" aria-label="Statuses">
+        <li v-for="item in Statuses" :key="item.state" class="flex items-start gap-2.5">
+          <span class="w-28 shrink-0"><StatusPill :state="item.state" :label="StatusWords[item.state]" /></span
+          ><span class="pt-0.5 text-xs text-muted-foreground">{{ item.text }}</span>
+        </li>
+      </ul>
+      <p class="mt-2.5 text-xs text-muted-foreground">A chosen day's tiles count each status that occurred that day.</p>
     </template>
   </InfoPopover>
 </template>

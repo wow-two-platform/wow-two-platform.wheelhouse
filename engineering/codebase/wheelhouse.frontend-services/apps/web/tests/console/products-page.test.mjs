@@ -43,15 +43,17 @@ test("no target and nothing deployed are one dashed state that names nothing mor
   assert.equal(pillOf("idle").hasTarget, true);
 });
 
-test("a live rollout is deploying, a failure with no success since is failed, and a roll back is its own state", () => {
+test("a live rollout is deploying, a failure with no success since is failed, and a roll back is degraded", () => {
   const running = deploy({ id: "ok", submittedAt: "2026-10-01T10:00:00+00:00" });
   assert.equal(pillOf("healthy", { lastDeploy: deploy({ outcome: "pending", status: "running" }), running }).state, "deploying");
   assert.equal(pillOf("healthy", { lastDeploy: deploy({ outcome: "failed", status: "failed" }), running }).state, "failed");
   const rolledBack = pillOf("healthy", { lastDeploy: deploy({ outcome: "failed", status: "rolled_back", release: "v1.3.0" }), running });
-  assert.equal(rolledBack.state, "rolled-back");
-  assert.equal(rolledBack.detail, "rolled back");
-  // The previous release still serves, and the details say which.
+  assert.equal(rolledBack.state, "degraded");
+  assert.equal(rolledBack.detail, "degraded");
+  // The previous release still serves, and the details name the cause with it.
   assert.equal(rolledBack.release, "v1.2.0");
+  assert.equal(rolledBack.cause, "rolled back to v1.2.0");
+  assert.equal(pillOf("healthy", { lastDeploy: deploy({ outcome: "failed", status: "rolled_back" }) }).cause, "rolled back to the previous release");
   // A success after the failure clears it.
   const later = deploy({ id: "later", submittedAt: "2026-10-07T10:00:00+00:00" });
   assert.equal(pillOf("healthy", { lastDeploy: deploy({ outcome: "failed", status: "failed" }), running: later }).state, "healthy");
@@ -59,7 +61,8 @@ test("a live rollout is deploying, a failure with no success since is failed, an
 
 test("vitals decide failing, degraded and unread; a host that cannot be read outranks a calm rollout", () => {
   assert.equal(pillOf("failing", { lastDeploy: deploy(), running: deploy() }).state, "failed");
-  assert.equal(pillOf("warning", { lastDeploy: deploy(), running: deploy() }).state, "degraded");
+  const strained = pillOf("warning", { lastDeploy: deploy(), running: deploy() });
+  assert.deepEqual([strained.state, strained.cause], ["degraded", "restarts or host pressure"]);
   assert.equal(pillOf("unknown").detail, "no reading");
 });
 

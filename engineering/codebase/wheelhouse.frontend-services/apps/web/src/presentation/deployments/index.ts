@@ -1,6 +1,9 @@
 export { default as ConditionBadge } from "./components/ConditionBadge.vue";
 export { default as JobStatusBadge } from "./components/JobStatusBadge.vue";
-export { default as JobStatusIndicator } from "./components/JobStatusIndicator.vue";
+export {
+  default as DeploymentStatusPill,
+  type DeploymentStatusPillProps,
+} from "./components/DeploymentStatusPill.vue";
 export {
   default as DeployModal,
   type DeployModalProps,

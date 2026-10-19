@@ -5,7 +5,7 @@ import type { PortfolioProduct } from './PortfolioSummary';
 export const ProductCondition = {
   /** An environment failed. */
   Failing: 'failing',
-  /** An environment rolled back or is degraded. */
+  /** An environment is degraded: rolled back, or serving under strain. */
   Attention: 'attention',
   /** A rollout is running and nothing is wrong. */
   Deploying: 'deploying',
@@ -21,7 +21,7 @@ export type ProductCondition = (typeof ProductCondition)[keyof typeof ProductCon
 /** Each condition's words. */
 export const ProductConditionWords: Readonly<Record<ProductCondition, string>> = {
   failing: 'failing',
-  attention: 'needs a look',
+  attention: 'degraded',
   deploying: 'deploying',
   healthy: 'healthy',
   unknown: 'no reading',
@@ -53,7 +53,7 @@ export interface ProductFacts {
 export function conditionOf(pills: readonly EnvironmentPill[]): ProductCondition {
   const has = (...states: PillState[]) => pills.some((pill) => states.includes(pill.state));
   if (has(PillState.Failed)) return ProductCondition.Failing;
-  if (has(PillState.RolledBack, PillState.Degraded)) return ProductCondition.Attention;
+  if (has(PillState.Degraded)) return ProductCondition.Attention;
   if (has(PillState.Deploying)) return ProductCondition.Deploying;
   if (has(PillState.Healthy, PillState.Ci)) return ProductCondition.Healthy;
   if (has(PillState.Unknown)) return ProductCondition.Unknown;
@@ -82,8 +82,8 @@ export function factsOf(slug: string, pills: readonly EnvironmentPill[], summary
 
 /**
  * A product's condition from its latest rollouts alone — no host vitals — for places that must stay cheap to keep
- * current, such as the sidebar: a live rollout is deploying, a failure with no success since is failing, or needs a
- * look when it rolled back. Anything else reads healthy once something succeeded, else idle.
+ * current, such as the sidebar: a live rollout is deploying, a failure with no success since is failing, or degraded
+ * when it rolled back. Anything else reads healthy once something succeeded, else idle.
  */
 export function rolloutConditionOf(summary: PortfolioProduct | undefined): ProductCondition {
   const environments = summary?.environments ?? [];

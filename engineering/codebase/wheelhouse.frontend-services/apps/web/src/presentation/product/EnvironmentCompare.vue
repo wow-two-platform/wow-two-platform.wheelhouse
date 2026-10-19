@@ -28,9 +28,10 @@ import {
 
 import { useTargetStates } from "@/application/deployments";
 import { compareEnvironments } from "@/domain/deployments";
+import { InfoPopover } from "@/presentation/common/components";
 
 /** Lays a product's environments side by side: each service's version per environment, and the release each
- * environment could hand to the next one along dev → prod. */
+ * environment could hand to the next one along dev → prod. How to read it sits behind the info button. */
 defineOptions({ name: "EnvironmentCompare" });
 const props = withDefaults(defineProps<EnvironmentCompareProps>(), { hiddenServices: () => [] });
 const emit = defineEmits<{ promote: [selection: { target: string; release: string }] }>();
@@ -47,13 +48,18 @@ const rows = computed(() => comparison.value.rows.filter((row) => !props.hiddenS
   <section
     v-if="props.targets.length > 1"
     class="wh-glass rounded-2xl border border-border p-5"
-    aria-label="Environments compared"
+    aria-labelledby="environments-heading"
+    data-info-scope
   >
-    <div class="mb-3">
-      <h3 class="text-sm font-semibold">Environments</h3>
-      <p class="mt-1 text-xs text-muted-foreground">
-        Each service's version per environment. A highlighted version has not reached the next environment yet.
-      </p>
+    <div class="mb-3 flex items-center gap-1">
+      <h3 id="environments-heading" class="text-sm font-semibold">Environments</h3>
+      <InfoPopover title="Environments">
+        <p>
+          Each service's version per environment, from the release last verified there; a column's head names that
+          release. A highlighted version has not reached the next environment along dev → prod yet, and Promote takes
+          it there. Point at a version for the release it last changed in.
+        </p>
+      </InfoPopover>
     </div>
     <Table density="compact" phone-layout="scroll" container-class-name="overflow-auto">
       <TableHead>

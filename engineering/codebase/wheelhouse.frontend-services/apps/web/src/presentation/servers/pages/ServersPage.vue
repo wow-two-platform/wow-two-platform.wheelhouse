@@ -48,7 +48,7 @@ import {
 import type { VaultDefinition } from '@/domain/secrets';
 import { Measures } from '@/domain/common';
 import { AttentionRules, type AttentionItem } from '@/domain/overview';
-import { Panel, RefreshButton } from '@/presentation/common/components';
+import { InfoPopover, Panel, RefreshButton } from '@/presentation/common/components';
 import { ProductIcon } from '@/presentation/products';
 import PortfolioAttention from '../components/PortfolioAttention.vue';
 import ResourceMeter from '../components/ResourceMeter.vue';
@@ -403,7 +403,15 @@ const trendWindow = computed(() => {
         </Panel>
       </div>
     </DataRegion>
-    <Panel title="Environment bindings" description="Each environment connects one product to one configured host.">
+    <Panel title="Environment bindings">
+      <template #info>
+        <InfoPopover title="Environment bindings">
+          <p>
+            Each environment connects one product to one configured host: the target a deploy goes to. Add or edit one
+            from the product's Manage menu.
+          </p>
+        </InfoPopover>
+      </template>
       <DataRegion
         :is-first-load="targets.isFirstLoad.value"
         :is-refreshing="targets.isRefreshing.value"

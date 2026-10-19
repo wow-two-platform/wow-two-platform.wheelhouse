@@ -8,66 +8,33 @@ export interface EnvironmentPillProps {
   /** The environment a placeholder names. */
   readonly environment?: string;
 }
-
-/** @internal Each state's outline, fill and text. Healthy and CI stay neutral, so problems stand out. */
-const StateClass = {
-  healthy: "border-border bg-card text-foreground [&_svg]:text-success",
-  ci: "border-border bg-card text-foreground [&_svg]:text-muted-foreground",
-  deploying:
-    "border-info/40 bg-info-soft text-info-soft-foreground [&_svg]:text-info-soft-foreground [&_[data-detail]]:text-info-soft-foreground",
-  failed:
-    "border-destructive/45 bg-destructive-soft text-destructive-soft-foreground [&_svg]:text-destructive-soft-foreground [&_[data-detail]]:text-destructive-soft-foreground",
-  "rolled-back":
-    "border-warning/45 bg-warning-soft text-warning-soft-foreground [&_svg]:text-warning-soft-foreground [&_[data-detail]]:text-warning-soft-foreground",
-  degraded:
-    "border-warning/45 bg-warning-soft text-warning-soft-foreground [&_svg]:text-warning-soft-foreground [&_[data-detail]]:text-warning-soft-foreground",
-  none: "border-dashed border-border-strong bg-transparent text-subtle-foreground [&_svg]:text-subtle-foreground [&_[data-env]]:font-medium",
-  unknown: "border-border bg-transparent text-muted-foreground [&_svg]:text-muted-foreground",
-} as const;
 </script>
 <script setup lang="ts">
 import { computed } from "vue";
-import {
-  CircleCheck,
-  CircleDashed,
-  CircleHelp,
-  CircleX,
-  LoaderCircle,
-  TriangleAlert,
-  Undo2,
-  Workflow,
-} from "lucide-vue-next";
 import { RelativeTime } from "@wow-two-beta/fe/presentation/display";
 import { SkeletonState } from "@wow-two-beta/fe/presentation/feedback";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@wow-two-beta/fe/presentation/overlays";
 import { PillState, PillStateWords } from "@/domain/portfolio";
+import { statusClass, StatusIcons, statusIconClass } from "@/presentation/common/components";
 
 /**
  * An outlined pill per environment: a status icon, the environment's name, then its serving version when calm or its
  * state word when not; "not deployed" is dashed and names nothing more. Every state differs by icon shape and the
- * non-calm ones by a word, so colour is never the only signal. Hovering or focusing it opens its details: the release
- * serving, and the latest rollout's release, status, time and actor.
+ * non-calm ones by a word, so colour is never the only signal; states, words, tones and icons are the console's status
+ * vocabulary, shared with every deployment's pill. Hovering or focusing it opens its details: the cause of a degraded
+ * or failed state (`rolled back to v1.2.0`), the release serving, and the latest rollout's release, status, time and
+ * actor.
  */
 defineOptions({ name: "EnvironmentPill" });
 const props = withDefaults(defineProps<EnvironmentPillProps>(), { environment: "" });
 defineSlots<{}>();
 
-const Icons = {
-  healthy: CircleCheck,
-  ci: Workflow,
-  deploying: LoaderCircle,
-  failed: CircleX,
-  "rolled-back": Undo2,
-  degraded: TriangleAlert,
-  none: CircleDashed,
-  unknown: CircleHelp,
-} as const;
-
 const word = computed(() => (props.pill ? PillStateWords[props.pill.state] : ""));
 const label = computed(() => {
   const pill = props.pill;
   if (!pill) return "";
-  return pill.release && pill.state !== PillState.None ? `${pill.environment}: ${word.value} · ${pill.release}` : `${pill.environment}: ${word.value}`;
+  const state = pill.state === PillState.Degraded && pill.cause ? `${word.value}, ${pill.cause}` : word.value;
+  return pill.release && pill.state !== PillState.None ? `${pill.environment}: ${state} · ${pill.release}` : `${pill.environment}: ${state}`;
 });
 /** The line that explains a calm or empty state in the details. @internal */
 const note = computed(() => {
@@ -79,7 +46,7 @@ const note = computed(() => {
       : "Deployed by its own CI; this console reads only the instance it runs as.";
   if (pill.state === PillState.None) return pill.hasTarget ? "Nothing deployed yet." : "No target in this environment.";
   if (pill.state === PillState.Unknown) return "The target could not be read.";
-  if (pill.state === PillState.Degraded) return "Serving, with restarts or host pressure to look at.";
+  if (pill.cause) return pill.cause.charAt(0).toUpperCase() + pill.cause.slice(1);
   return null;
 });
 const showsLatest = computed(
@@ -100,14 +67,14 @@ const showsLatest = computed(
         tabindex="0"
         :aria-label="label"
         class="relative z-10 inline-flex h-6 max-w-full shrink-0 cursor-default items-center gap-1.5 rounded-full border ps-1.5 pe-2.5 text-xs whitespace-nowrap outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
-        :class="StateClass[props.pill.state]"
+        :class="statusClass(props.pill.state)"
       >
         <component
-          :is="Icons[props.pill.state]"
+          :is="StatusIcons[props.pill.state]"
           :size="14"
           aria-hidden="true"
           class="shrink-0"
-          :class="props.pill.state === PillState.Deploying ? 'animate-spin [animation-duration:2s]' : ''"
+          :class="statusIconClass(props.pill.state)"
         />
         <span data-env aria-hidden="true" class="font-semibold">{{ props.pill.environment }}</span>
         <span
@@ -121,7 +88,7 @@ const showsLatest = computed(
     </HoverCardTrigger>
     <HoverCardContent class="w-72 p-3 text-xs">
       <p class="flex items-center gap-1.5 text-sm font-semibold">
-        <component :is="Icons[props.pill.state]" :size="14" aria-hidden="true" />{{ props.pill.environment }}
+        <component :is="StatusIcons[props.pill.state]" :size="14" aria-hidden="true" />{{ props.pill.environment }}
         <span class="font-normal text-muted-foreground">{{ word }}</span>
       </p>
       <p v-if="note" class="mt-1 text-muted-foreground">{{ note }}</p>

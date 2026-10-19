@@ -33,7 +33,7 @@ import {
 
 import { useRefresh } from "@/bootstrap/query";
 import { useReleaseArtifacts } from "@/application/deployments";
-import { Panel, RefreshButton } from "@/presentation/common/components";
+import { InfoPopover, Panel, RefreshButton } from "@/presentation/common/components";
 
 /**
  * Lists the deployable catalog: published releases and commit builds from approved repositories, newest first. A
@@ -69,10 +69,15 @@ const rows = useSkeletonItems(() => (releases.data.value ? visible.value : undef
 </script>
 
 <template>
-  <Panel
-    title="Releases"
-    description="Published releases go anywhere; a commit's build goes to dev only and expires after 14 days."
-  >
+  <Panel title="Releases">
+    <template #info>
+      <InfoPopover title="Releases">
+        <p>
+          A published release deploys to any environment. A commit's build deploys to dev only and expires after 14
+          days.
+        </p>
+      </InfoPopover>
+    </template>
     <template #actions>
       <SelectPicker v-if="!props.product" v-model="picked" is-clearable clear-label="All products"
         ><SelectPickerTrigger aria-label="Product" width="11rem"

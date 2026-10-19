@@ -28,9 +28,6 @@ const refresh = useRefresh(() => invalidate(AuditKeys.all));
     <PageHeaderActions>
       <RefreshButton size="md" icon-only :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
     </PageHeaderActions>
-    <AuditEntriesPanel
-      :product="props.product"
-      description="Edits, environments, deployments, builds and secret changes for this product, newest first."
-    />
+    <AuditEntriesPanel :product="props.product" />
   </div>
 </template>

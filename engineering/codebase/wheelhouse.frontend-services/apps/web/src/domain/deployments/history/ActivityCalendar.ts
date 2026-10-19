@@ -37,13 +37,6 @@ export interface CalendarMonth {
   readonly column: number;
 }
 
-/** One of a chosen day's counts. */
-export interface DayStat {
-  readonly key: 'deployments' | 'succeeded' | 'failed' | 'running';
-  readonly label: string;
-  readonly value: number;
-}
-
 /** The calendar: week columns over weekday rows, month labels above. */
 export interface Calendar {
   readonly weeks: readonly CalendarWeek[];
@@ -154,26 +147,6 @@ export const ActivityCalendar = {
     const spaced = months.filter((month, index) => (months[index + 1]?.column ?? Infinity) - month.column >= 3);
     const weekdays = Array.from({ length: 7 }, (_, row) => WEEKDAY.format(new Date(Date.UTC(2026, 0, 4 + weekStart + row))));
     return { weeks, months: spaced, weekdays };
-  },
-
-  /**
-   * A chosen day's counts: deployments, with the day's running ones among them, succeeded, failed, and running only
-   * while any run. A filtered view counts its one outcome.
-   */
-  dayStats(day: Pick<ActivityDay, 'succeeded' | 'failed'> | undefined, status: StatusFilter = StatusFilter.All, running = 0): DayStat[] {
-    const succeeded = day?.succeeded ?? 0;
-    const failed = day?.failed ?? 0;
-    if (status === StatusFilter.Failed) return [{ key: 'failed', label: 'Failed', value: failed }];
-    if (status === StatusFilter.Succeeded) return [{ key: 'succeeded', label: 'Succeeded', value: succeeded }];
-    const live = Math.max(0, running);
-    const total = succeeded + failed + live;
-    const stats: DayStat[] = [
-      { key: 'deployments', label: total === 1 ? 'Deployment' : 'Deployments', value: total },
-      { key: 'succeeded', label: 'Succeeded', value: succeeded },
-      { key: 'failed', label: 'Failed', value: failed },
-    ];
-    if (live > 0) stats.push({ key: 'running', label: 'Running', value: live });
-    return stats;
   },
 
   /** The date an arrow key moves the focus to: a week (one column) for left and right, a day (one row) for up and down. */

@@ -9,17 +9,13 @@ export interface JobStatusBadgeProps {
 </script>
 
 <script setup lang="ts">
-import { Badge } from "@wow-two-beta/fe/presentation/display";
+import DeploymentStatusPill from "./DeploymentStatusPill.vue";
 
-import { DeploymentExtensions } from "@/domain/deployments";
-
-/** Renders a deployment status as a semantic badge. */
+/** Renders a deployment status as the console's status pill, without its cause. */
 defineOptions({ name: "JobStatusBadge" });
 const props = defineProps<JobStatusBadgeProps>();
 </script>
 
 <template>
-  <Badge :variant="DeploymentExtensions.statusVariant(props.status)">
-    {{ DeploymentExtensions.label(props.status) }}
-  </Badge>
+  <DeploymentStatusPill :status="props.status" :has-cause="false" />
 </template>
