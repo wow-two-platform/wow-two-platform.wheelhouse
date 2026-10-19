@@ -394,7 +394,27 @@ the waves it started them in and how each ended — and `interpolation`, a hash 
 paths Compose interpolates; a changed hash counts every service as changed. Each Compose call also takes the
 runner-written override `releases/<job>/environment.json`, which gives every service `DEPLOY_ENVIRONMENT`, and, when the
 release sets `dotnetEnvironment`, `ASPNETCORE_ENVIRONMENT` and `DOTNET_ENVIRONMENT` (dev `Development`, prod
-`Production`).
+`Production`). Beside it the runner keeps `releases/<job>/fingerprints.json`: one hash per service of its settings
+file's contents and that environment, compared on the next rollout and never copied into a job record.
+
+The job record's `serviceRollout` (the status lane projects it; fields are only ever added):
+
+```json
+{ "staged": true, "waves": [["db"], ["api"]], "removed": [],
+  "services": [{ "name": "api", "change": "updated", "reason": "image", "dependsOn": ["db"],
+                 "from": { "version": "0.5.2", "digest": "3f1c2a9b7d10" }, "to": { "version": "0.5.3", "digest": "9e0d4c1f2a35" },
+                 "outcome": "updated", "health": "healthy", "at": "2026-10-19T09:12:03+00:00" }] }
+```
+
+| Field | Values |
+|---|---|
+| `change` | `added` · `updated` · `unchanged` |
+| `reason` | Why it changed: `added` · `image` · `definition` (memory, health check, mounts; a `depends_on` change alone is none) · `settings` (its settings file's contents, the environment the runner gives it, or the target's variables or settings paths) · `null` when unchanged |
+| `dependsOn` | The services it starts after (Compose `depends_on`) |
+| `from` · `to` | The release it ran and runs: `version` (null when the bundle has none) and `digest`, the image digest's first 12 hex digits; `from` is null for an added service |
+| `outcome` | `unchanged` (kept running) · `pending` (only while live) · `updated` · `failed` · `not_started` · `rolled_back` |
+| `health` | At the end: `healthy` · `unhealthy` · `unknown` (no container, still starting, or the rollout failed before changing anything) |
+| `at` | When its outcome was last set, ISO 8601; an unchanged service's is when the converging step that checked it ended; null when no step reached it |
 
 A background sampler reads the vitals each `Operations:VitalsSampleMinutes` (default 5; 0 turns it off), stores each
 server's load, memory and fullest disk (a row with no target) and each target's container health in `vitals_samples`,
@@ -409,8 +429,8 @@ Each rollout records its steps in its job record as they start and end, so the d
 | Check target | Lock, settings files, routes, disk, Docker and the release snapshot |
 | Snapshot data | Prod only: dumps each database and archives each named volume before anything changes; a failure fails the rollout |
 | Pull images | Every image, before any container changes |
-| Start `<services>` | Only when the release changes some services but not all, or its changed services span dependency waves: `compose up --no-deps --wait` of one wave of changed services, after the waves they depend on; a failure leaves later waves unstarted |
-| Start containers | `compose up --wait --remove-orphans` within the target's health timeout: the whole release, so unchanged services keep running untouched; its detail names how many services changed and how many kept running |
+| Start `<services>` | Only when the release changes some services but not all, or its changed services span dependency waves: `compose up --no-deps --force-recreate --wait` of one wave of changed services, after the waves they depend on, so a settings-only change applies and no dependent restarts; a failure leaves later waves unstarted |
+| Start containers | `compose up --wait --remove-orphans` within the target's health timeout: the whole release, with `--no-recreate` after the waves (or when nothing changed), so unchanged services keep running untouched, and `--force-recreate` when every service changed in one wave; its detail names how many services changed and how many kept running |
 | Verify services | Exact image references, health, and the target's smoke checks |
 | Publish sites | The route file for the release's sites |
 | Probe sites | Each site through the ingress; a site that does not answer is a warning |

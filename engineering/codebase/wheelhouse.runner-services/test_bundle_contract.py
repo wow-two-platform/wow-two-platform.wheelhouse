@@ -107,6 +107,20 @@ class BundleContractTests(unittest.TestCase):
         self.assertEqual({"service": "api", "command": ["sh", "-c", "curl --fail $VERIFY_SITE_APP"], "timeoutSeconds": 120},
                          runner.release_verification(validated))
 
+    @unittest.skipUnless(release is not None and hasattr(release, "dependency_order"),
+                         "the pinned generator predates dependsOn")
+    def test_declared_dependencies_order_the_runner_waves(self):
+        declared = copy.deepcopy(DESCRIPTOR)
+        declared["services"]["edge"]["dependsOn"] = ["api"]
+        self.descriptor = release.validate(declared)
+        self.bundle("main")
+        compose = runner.read_json(self.repo / "bundle-main" / "compose.json")
+        dependencies = runner.service_dependencies(compose)
+        self.assertEqual({"api": set(), "edge": {"api"}}, dependencies)
+        self.assertEqual([["api"], ["edge"]], runner.dependency_waves(compose["services"], dependencies))
+        # Health-gated and never `restart: true`, so an api update leaves a running edge alone.
+        self.assertEqual({"api": {"condition": "service_healthy"}}, compose["services"]["edge"]["depends_on"])
+
     @unittest.skipUnless(HAS_YAML, "PyYAML is not installed for this interpreter")
     def test_wheelhouse_own_descriptor_parses(self):
         path = HERE.parents[1] / "deployment" / "deploy.yml"

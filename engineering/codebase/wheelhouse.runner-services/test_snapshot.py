@@ -22,7 +22,7 @@ class SnapshotDocker:
     def pull(self, bundle):
         self.events.append("pull")
 
-    def up(self, bundle):
+    def up(self, bundle, recreate=None):
         self.events.append("up")
 
     def verify(self, bundle, manifest):

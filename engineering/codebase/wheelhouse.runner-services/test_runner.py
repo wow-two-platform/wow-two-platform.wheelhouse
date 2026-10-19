@@ -20,6 +20,9 @@ import transport
 class FakeDocker:
     events = []
     fail = None
+    # How each whole-release `up` recreated (None for a roll back), and what `service_health` reports.
+    modes = []
+    health = {}
 
     def __init__(self, target, environment):
         pass
@@ -32,9 +35,10 @@ class FakeDocker:
         if self.fail == "pull":
             raise RuntimeError("password=DO_NOT_LOG")
 
-    def up(self, bundle):
+    def up(self, bundle, recreate=None):
         release = runner.read_json(Path(bundle) / "release.json")["release"]
         self.events.append("up:" + release)
+        self.modes.append(recreate)
         if self.fail == release:
             raise RuntimeError("password=DO_NOT_LOG")
 
@@ -49,6 +53,9 @@ class FakeDocker:
 
     def unhealthy(self, bundle):
         return ["api (unhealthy)"]
+
+    def service_health(self, bundle):
+        return dict(self.health)
 
     def execute(self, arguments, step, timeout=600):
         self.events.append(" ".join(arguments[:3]) + ":" + arguments[-1].rsplit(":", 1)[-1][:4])
@@ -116,6 +123,8 @@ class RunnerTests(unittest.TestCase):
         self.save()
         FakeDocker.events = []
         FakeDocker.fail = None
+        FakeDocker.modes = []
+        FakeDocker.health = {}
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -886,11 +895,14 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual((None, ""), runner.Docker(self.target, {}).check(["docker", "run"], {"A": "b"}, 10, "box"))
         self.assertEqual(["docker", "rm", "--force", "box"], calls[-1])
 
-    def stack(self, release, images, depends=None):
+    def stack(self, release, images, depends=None, versions=None):
         """A release of db, api (needs db), web (needs api) and an independent worker, each on its own image."""
         depends = {"api": ["db"], "web": ["api"]} if depends is None else depends
         self.manifest["release"] = release
         self.manifest["images"] = {}
+        if versions:
+            self.manifest["versions"] = {name: {"version": version, "changedIn": "v" + version}
+                                         for name, version in versions.items()}
         self.compose = {"services": {}}
         for name in ("db", "api", "web", "worker"):
             image = "ghcr.io/owner/" + name + "@sha256:" + images.get(name, "a") * 64
@@ -916,6 +928,8 @@ class RunnerTests(unittest.TestCase):
                           "worker": ("added", "updated")}, self.outcomes(result))
         names = [step["name"] for step in result["steps"]]
         self.assertEqual(["Start db, worker", "Start api", "Start web", "Start containers"], names[2:6])
+        # The waves started everything, so the converging `up` recreates nothing.
+        self.assertEqual(["never"], FakeDocker.modes)
 
     def test_a_redeploy_starts_only_the_services_whose_definition_changed(self):
         self.stack("v1", {})
@@ -950,27 +964,38 @@ class RunnerTests(unittest.TestCase):
         self.apply()
         self.stack("v2", {"api": "b", "web": "b"})
         FakeDocker.fail = "api"
+        FakeDocker.health = {"db": "healthy", "api": "unhealthy", "web": "healthy"}
         result = self.apply()
         self.assertEqual("failed", result["status"])
         self.assertEqual({"db": ("unchanged", "unchanged"), "api": ("updated", "failed"),
                           "web": ("updated", "not_started"), "worker": ("unchanged", "unchanged")}, self.outcomes(result))
+        # Health as Compose reports it at the end; a service it does not report is unknown.
+        self.assertEqual({"db": "healthy", "api": "unhealthy", "web": "healthy", "worker": "unknown"},
+                         {service["name"]: service["health"] for service in result["serviceRollout"]["services"]})
 
     def test_a_redeploy_with_every_service_changed_and_no_order_is_one_compose_up(self):
         self.stack("v1", {}, depends={})
         self.apply()
-        FakeDocker.events = []
+        FakeDocker.events, FakeDocker.modes = [], []
         self.stack("v2", {"db": "b", "api": "b", "web": "b", "worker": "b"}, depends={})
         result = self.apply()
         self.assertFalse(result["serviceRollout"]["staged"])
         self.assertEqual(["preflight", "pull", "up:v2", "verify:v2"], FakeDocker.events)
+        # One `up` that recreates every service, since each one changed.
+        self.assertEqual(["force"], FakeDocker.modes)
 
     def test_changed_settings_paths_or_variables_change_every_service(self):
         self.stack("v1", {})
         self.apply()
         self.stack("v2", {})
         self.target["variables"] = {"PLATFORM_NETWORK": "platform-2"}
+        FakeDocker.events = []
         result = self.apply()
         self.assertEqual({"updated"}, {change for change, _ in self.outcomes(result).values()})
+        self.assertEqual({"settings"}, {service["reason"] for service in result["serviceRollout"]["services"]})
+        # Compose may resolve an unchanged definition the same way, so every service is recreated by name.
+        self.assertEqual(["preflight", "pull", "up:v2[db,worker]", "up:v2[api]", "up:v2[web]", "up:v2", "verify:v2"],
+                         FakeDocker.events)
 
     def test_a_rollout_refuses_dependencies_on_unknown_services_or_in_a_cycle_before_docker(self):
         for depends, refusal in (({"api": ["cache"]}, "Dependencies name an unknown service"),
@@ -992,10 +1017,126 @@ class RunnerTests(unittest.TestCase):
                 return ""
 
         RecordingDocker(self.target, {}).up_services(self.bundle, ["api"])
-        self.assertEqual(["up", "--detach", "--wait", "--wait-timeout", "120", "--no-deps", "--pull", "never", "api"],
-                         calls[-1][10:])
+        self.assertEqual(["up", "--detach", "--wait", "--wait-timeout", "120", "--no-deps", "--force-recreate", "--pull",
+                          "never", "api"], calls[-1][10:])
         with self.assertRaisesRegex(ValueError, "Invalid services"):
             RecordingDocker(self.target, {}).up_services(self.bundle, [])
+        # The whole release: `never` leaves every container as it is, `force` recreates them all, a roll back neither.
+        for mode, flags in ((None, []), ("never", ["--no-recreate"]), ("force", ["--force-recreate"])):
+            RecordingDocker(self.target, {}).up(self.bundle, mode)
+            self.assertEqual(["up", "--detach", "--wait", "--wait-timeout", "120", "--remove-orphans", "--pull", "never",
+                              *flags], calls[-1][10:])
+        with self.assertRaisesRegex(ValueError, "Invalid recreate mode"):
+            RecordingDocker(self.target, {}).up(self.bundle, "always")
+
+    def test_a_failure_in_a_later_wave_rolls_back_what_the_earlier_waves_changed(self):
+        self.manifest["rollbackCompatible"] = True
+        self.stack("v1", {})
+        first = self.apply()
+        FakeDocker.events = []
+        self.stack("v2", {"db": "b", "worker": "b", "api": "b", "web": "b"})
+        FakeDocker.fail = "api"
+        result = self.apply()
+        self.assertEqual("rolled_back", result["status"])
+        # Wave 1 (db, worker) started healthy, wave 2 (api) failed, wave 3 (web) never started; the whole previous
+        # release comes back, so the target runs exactly one release.
+        self.assertEqual(["preflight", "pull", "up:v2[db,worker]", "up:v2[api]", "pull", "up:v1", "verify:v1"],
+                         FakeDocker.events)
+        self.assertEqual({"db": ("updated", "rolled_back"), "worker": ("updated", "rolled_back"),
+                          "api": ("updated", "rolled_back"), "web": ("updated", "not_started")}, self.outcomes(result))
+        self.assertEqual(first["id"], runner.read_json(self.root / "state/pilot-dev/current.json")["id"])
+        services = {service["name"]: service for service in result["serviceRollout"]["services"]}
+        self.assertEqual({"healthy"}, {service["health"] for service in services.values()})
+        self.assertTrue(all(service["at"] for service in services.values()))
+        step = next(step for step in result["steps"] if step["name"] == "Start api")
+        self.assertEqual("failed", step["status"])
+
+    def test_a_dependency_update_never_restarts_an_unchanged_dependent(self):
+        self.stack("v1", {})
+        self.apply()
+        FakeDocker.events, FakeDocker.modes = [], []
+        self.stack("v2", {"db": "b"})
+        result = self.apply()
+        self.assertEqual("succeeded", result["status"])
+        # api and web depend on db, directly or not; only db is recreated, alone, and the converging `up` that removes
+        # orphans and checks every service recreates nothing.
+        self.assertEqual([["db"]], result["serviceRollout"]["waves"])
+        self.assertEqual(["preflight", "pull", "up:v2[db]", "up:v2", "verify:v2"], FakeDocker.events)
+        self.assertEqual(["never"], FakeDocker.modes)
+        self.assertEqual({"db": ("updated", "updated"), "api": ("unchanged", "unchanged"),
+                          "web": ("unchanged", "unchanged"), "worker": ("unchanged", "unchanged")}, self.outcomes(result))
+
+    def test_declaring_a_dependency_alone_restarts_nothing(self):
+        self.stack("v1", {}, depends={})
+        self.apply()
+        FakeDocker.events = []
+        self.stack("v2", {})
+        result = self.apply()
+        self.assertEqual({"unchanged"}, {change for change, _ in self.outcomes(result).values()})
+        self.assertEqual(["preflight", "pull", "up:v2", "verify:v2"], FakeDocker.events)
+        self.assertEqual(["db"], next(service for service in result["serviceRollout"]["services"]
+                                      if service["name"] == "api")["dependsOn"])
+
+    def test_a_service_whose_settings_changed_is_recreated_alone(self):
+        self.stack("v1", {})
+        self.apply()
+        settings = Path(self.target["settings"]["api"])
+        settings.write_text(json.dumps({"Database": {"Connection": "DO_NOT_LOG-rotated"}}))
+        FakeDocker.events, FakeDocker.modes = [], []
+        self.stack("v2", {})
+        result = self.apply()
+        self.assertEqual("succeeded", result["status"])
+        services = {service["name"]: service for service in result["serviceRollout"]["services"]}
+        self.assertEqual(("updated", "settings", "updated"),
+                         tuple(services["api"][key] for key in ("change", "reason", "outcome")))
+        # Same definition, so Compose alone would keep the container; api is recreated by name, web (which needs it)
+        # keeps running, and the converging `up` recreates nothing.
+        self.assertEqual(["preflight", "pull", "up:v2[api]", "up:v2", "verify:v2"], FakeDocker.events)
+        self.assertEqual(["never"], FakeDocker.modes)
+        self.assertEqual("unchanged", services["web"]["change"])
+        # The fingerprint stays beside the release on the target; the job record holds neither it nor a value.
+        folder = self.root / "state/pilot-dev/releases" / result["id"]
+        fingerprint = runner.read_json(folder / runner.FINGERPRINTS)["services"]["api"]
+        self.assertNotIn(fingerprint, json.dumps(result))
+        self.assertNotIn("DO_NOT_LOG", json.dumps(result))
+        self.assertEqual("unchanged", self.outcomes(self.apply())["api"][0])
+
+    def test_a_release_applied_before_fingerprints_restarts_nothing_for_settings(self):
+        self.stack("v1", {})
+        first = self.apply()
+        (self.root / "state/pilot-dev/releases" / first["id"] / runner.FINGERPRINTS).unlink()
+        self.stack("v2", {})
+        self.assertEqual({"unchanged"}, {change for change, _ in self.outcomes(self.apply()).values()})
+
+    def test_each_service_records_why_it_changed_from_what_to_what_its_health_and_when(self):
+        self.stack("v1", {}, versions={"db": "1.0.0", "api": "1.0.0", "web": "1.0.0", "worker": "1.0.0"})
+        self.apply()
+        self.stack("v2", {"api": "b"}, versions={"db": "1.0.0", "api": "2.0.0", "web": "1.0.0", "worker": "1.0.0"})
+        self.compose["services"]["web"]["mem_limit"] = "256m"
+        self.save()
+        result = self.apply()
+        services = {service["name"]: service for service in result["serviceRollout"]["services"]}
+        self.assertEqual({"version": "1.0.0", "digest": "a" * 12}, services["api"]["from"])
+        self.assertEqual({"version": "2.0.0", "digest": "b" * 12}, services["api"]["to"])
+        self.assertEqual({"db": None, "api": "image", "web": "definition", "worker": None},
+                         {name: service["reason"] for name, service in services.items()})
+        self.assertEqual(services["db"]["from"], services["db"]["to"])
+        self.assertEqual({"healthy"}, {service["health"] for service in services.values()})
+        for service in services.values():
+            self.assertRegex(service["at"], r"^\d{4}-\d{2}-\d{2}T")
+        # The original fields keep their names and meaning.
+        self.assertEqual({"name", "change", "reason", "dependsOn", "outcome", "from", "to", "health", "at"},
+                         set(services["api"]))
+        self.assertEqual(["db"], services["api"]["dependsOn"])
+
+    def test_a_first_rollout_records_no_from_and_a_failure_before_any_change_leaves_health_unknown(self):
+        self.stack("v1", {})
+        FakeDocker.fail = "pull"
+        result = self.apply()
+        self.assertEqual("failed", result["status"])
+        for service in result["serviceRollout"]["services"]:
+            self.assertEqual(("added", None, "not_started", "unknown"),
+                             (service["reason"], service["from"], service["outcome"], service["health"]))
 
     def test_logs_read_one_service_bounded_and_refuse_a_missing_container(self):
         class LogDocker:

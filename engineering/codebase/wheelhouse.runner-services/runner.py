@@ -61,6 +61,11 @@ CURRENT = ("id", "release", "kind", "branch", "sourceCommit", "versions", "sites
 # The Compose override the runner writes beside a release's compose.json: every service receives the environment it
 # runs in as DEPLOY_ENVIRONMENT. Never part of a bundle or its hash.
 ENVIRONMENT_OVERRIDE = "environment.json"
+# Each service's settings fingerprint the runner keeps beside a release it applied (`settings_fingerprints`); it never
+# leaves the target.
+FINGERPRINTS = "fingerprints.json"
+# A service's health at the end of a rollout, as its job record reports it.
+HEALTH = ("healthy", "unhealthy", "unknown")
 # How a release that opts in (`dotnetEnvironment`) runs under .NET: dev as Development, prod as Production. Another
 # environment gets no mapping.
 DOTNET_ENVIRONMENTS = {"dev": "Development", "prod": "Production"}
@@ -227,34 +232,84 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
-def rollout_plan(compose, environment, prior=None, prior_environment=None, same_inputs=True, dotnet=False):
+def definition_of(service):
+    """What decides whether a service's container must change: its Compose definition without `depends_on`, which only
+    orders starts, so declaring or dropping a dependency never restarts the service."""
+    return {key: value for key, value in service.items() if key != "depends_on"} if isinstance(service, dict) else service
+
+
+def image_identity(image, version):
+    """A service's release as a job record shows it: its version and its image digest's first 12 hex digits."""
+    digest = image.split("@sha256:", 1)[1][:12] if isinstance(image, str) and "@sha256:" in image else None
+    return {"version": version if isinstance(version, str) else None, "digest": digest}
+
+
+def version_of(versions, name):
+    entry = versions.get(name) if isinstance(versions, dict) else None
+    return entry.get("version") if isinstance(entry, dict) else None
+
+
+def rollout_plan(compose, environment, prior=None, prior_environment=None, same_inputs=True, dotnet=False,
+                 settings=None, prior_settings=None, versions=None, prior_versions=None):
     """What a release changes on a target, service by service, against the release it runs (`prior`, its compose.json,
-    and `prior_environment`, the runner's override it ran with): `added`, `updated` (its definition, image or the
-    environment the runner gives it — `dotnet` is the release's `dotnetEnvironment` — differs) or `unchanged`, and
-    `removed` for what it drops. A changed service starts in its dependency wave; `staged` holds when starting the
-    changed services wave by wave differs from one Compose `up`: some service keeps running untouched, or the changed
-    ones span more than one wave. A changed interpolation input (`same_inputs` false) changes them all."""
+    and `prior_environment`, the runner's override it ran with): `added`, `updated` or `unchanged`, and `removed` for
+    what it drops. A service's `reason` says why it changes: `added`; its `image`; the rest of its Compose `definition`
+    (a `depends_on` change alone is none); or its `settings` — its settings file's contents (`settings` against
+    `prior_settings`, each service's fingerprint), the environment the runner gives it (`dotnet` is the release's
+    `dotnetEnvironment`), or a changed interpolation input (`same_inputs` false), which changes every service.
+    A dependency's change never changes a dependent. `from` and `to` name the release each side runs (`versions`, the
+    release's map, and `prior_versions`, the running one's). A changed service starts in its dependency wave; `staged`
+    holds when starting the changed services wave by wave differs from one Compose `up`: some service keeps running
+    untouched, or the changed ones span more than one wave."""
     services = compose["services"]
     dependencies = service_dependencies(compose)
     before = (prior or {}).get("services") or {}
     overrides = ((prior_environment or {}).get("services") or {}) if isinstance(prior_environment, dict) else {}
     expected = {"environment": service_environment(environment, dotnet)}
-    changes = {}
+    settings = settings if isinstance(settings, dict) else {}
+    # A release copied by an older runner kept no fingerprints: its settings count as unchanged, not as a restart.
+    prior_settings = prior_settings if isinstance(prior_settings, dict) else {}
+    reasons = {}
     for name in sorted(services):
-        if prior is None or name not in before:
-            changes[name] = "added"
-        elif (not same_inputs or canonical(services[name]) != canonical(before[name])
-              or canonical(overrides.get(name)) != canonical(expected)):
-            changes[name] = "updated"
+        old = before.get(name) if prior is not None else None
+        if not isinstance(old, dict):
+            reasons[name] = "added"
+        elif canonical(services[name].get("image")) != canonical(old.get("image")):
+            reasons[name] = "image"
+        elif canonical(definition_of(services[name])) != canonical(definition_of(old)):
+            reasons[name] = "definition"
+        elif (not same_inputs or canonical(overrides.get(name)) != canonical(expected)
+              or (name in prior_settings and prior_settings[name] != settings.get(name))):
+            reasons[name] = "settings"
         else:
-            changes[name] = "unchanged"
+            reasons[name] = None
+    changes = {name: "added" if reason == "added" else "updated" if reason else "unchanged"
+               for name, reason in reasons.items()}
     waves = [wave for wave in ([name for name in level if changes[name] != "unchanged"]
                                for level in dependency_waves(services, dependencies)) if wave]
     unchanged = any(change == "unchanged" for change in changes.values())
-    return {"services": [{"name": name, "change": changes[name], "dependsOn": sorted(dependencies[name])}
+    return {"services": [{"name": name, "change": changes[name], "reason": reasons[name],
+                          "dependsOn": sorted(dependencies[name]),
+                          "from": None if changes[name] == "added" else
+                          image_identity(before[name].get("image"), version_of(prior_versions, name)),
+                          "to": image_identity(services[name].get("image"), version_of(versions, name))}
                          for name in sorted(services)],
             "removed": sorted(set(before) - set(services)), "waves": waves,
             "staged": len(waves) > 1 or (bool(waves) and unchanged)}
+
+
+def settings_fingerprints(target, compose, manifest):
+    """Each service's own settings as one hash: its settings file's contents (none for a service that takes no file)
+    and the environment the runner gives it. Kept beside the release on the target, never in a job record, so the
+    next rollout restarts a service whose settings changed although its definition did not."""
+    values = service_environment(target["environment"], manifest.get("dotnetEnvironment") is True)
+    required = manifest.get("requiredConfiguration") or {}
+    result = {}
+    for name in sorted(compose["services"]):
+        path = target.get("settings", {}).get(name) if name in required else None
+        contents = hashlib.sha256(Path(path).read_bytes()).hexdigest() if path else None
+        result[name] = hashlib.sha256(canonical({"settings": contents, "environment": values}).encode()).hexdigest()
+    return result
 
 
 def interpolation_inputs(target, manifest):
@@ -853,15 +908,31 @@ class Docker:
                              *arguments],
                             "compose " + arguments[0])
 
-    def unhealthy(self, bundle):
-        # Diagnosis after a failed wait: service names and container states only, never logs.
+    def containers(self, bundle):
+        """The release's containers as `compose ps` reports them: service names, states and health only, never logs."""
         try:
             output = self.compose(bundle, "ps", "--all", "--format", "json").strip()
             rows = json.loads(output) if output.startswith("[") else [json.loads(line) for line in output.splitlines()]
         except (CommandFailed, ValueError):
             return []
+        return [row for row in rows if isinstance(row, dict)]
+
+    def unhealthy(self, bundle):
+        # Diagnosis after a failed wait: service names and container states only, never logs.
         return sorted(row.get("Service", "unknown") + " (" + (row.get("Health") or row.get("State") or "unknown") + ")"
-                      for row in rows if isinstance(row, dict) and row.get("Health") != "healthy")
+                      for row in self.containers(bundle) if row.get("Health") != "healthy")
+
+    def service_health(self, bundle):
+        """Each service's health now: `healthy`; `unhealthy` when its check fails or its container exited, died or
+        keeps restarting; a service without a container, or still starting, is left out (unknown)."""
+        result = {}
+        for row in self.containers(bundle):
+            service, health, state = row.get("Service"), row.get("Health"), row.get("State")
+            if isinstance(service, str):
+                result[service] = ("healthy" if health == "healthy" else
+                                   "unhealthy" if health == "unhealthy" or state in ("exited", "dead", "restarting")
+                                   else "unknown")
+        return result
 
     def pull(self, bundle):
         self.compose(bundle, "config", "--quiet")
@@ -887,15 +958,21 @@ class Docker:
         require(type(timeout) is int and 10 <= timeout <= 300, "Invalid health timeout")
         return timeout
 
-    def up(self, bundle):
+    def up(self, bundle, recreate=None):
+        """The whole release: removes services it dropped and waits for every health check. `recreate` `never` leaves
+        every existing container as it is (creating only a missing one, starting a stopped one), `force` recreates every
+        service, and None (a roll back) recreates what differs from the release."""
+        require(recreate in (None, "never", "force"), "Invalid recreate mode")
+        mode = {"never": ["--no-recreate"], "force": ["--force-recreate"]}.get(recreate, [])
         self.compose(bundle, "up", "--detach", "--wait", "--wait-timeout", str(self.health_timeout()),
-                     "--remove-orphans", "--pull", "never")
+                     "--remove-orphans", "--pull", "never", *mode)
 
     def up_services(self, bundle, services):
-        """Starts only `services` — never their dependencies — and waits for their health checks."""
+        """Recreates only `services` — never their dependencies or dependents, whatever Compose's own config hash
+        says, so a settings-only change applies — and waits for their health checks."""
         require(services and all(isinstance(name, str) and SLUG.fullmatch(name) for name in services), "Invalid services")
         self.compose(bundle, "up", "--detach", "--wait", "--wait-timeout", str(self.health_timeout()),
-                     "--no-deps", "--pull", "never", *services)
+                     "--no-deps", "--force-recreate", "--pull", "never", *services)
 
     def verify(self, bundle, manifest):
         for service, image in manifest["images"].items():
@@ -987,12 +1064,15 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
             if manifest.get(key):
                 record[key] = manifest[key]
         # Service by service: what the release changes against the release the target runs, and in which waves.
-        plan = plan_against(root, previous, read_json(destination / "compose.json"), target, manifest)
+        compose = read_json(destination / "compose.json")
+        settings = settings_fingerprints(target, compose, manifest)
+        write_json(destination / FINGERPRINTS, {"services": settings})
+        plan = plan_against(root, previous, compose, target, manifest, settings)
         record["interpolation"] = interpolation_inputs(target, manifest)
         record["serviceRollout"] = {
             "staged": plan["staged"], "waves": plan["waves"], "removed": plan["removed"],
-            "services": [{**service, "outcome": "unchanged" if service["change"] == "unchanged" else "pending"}
-                         for service in plan["services"]]}
+            "services": [{**service, "outcome": "unchanged" if service["change"] == "unchanged" else "pending",
+                          "health": "unknown", "at": None} for service in plan["services"]]}
         starting = None
         def save():
             write_json(root / "jobs" / (job_id + ".json"), record)
@@ -1026,8 +1106,8 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
             record["mutationStarted"] = True
             save()
             if plan["staged"]:
-                # Changed services only, in dependency order: a wave starts after the waves it depends on are healthy,
-                # and a failing wave leaves the waves after it unstarted.
+                # Changed services only, each recreated alone, in dependency order: a wave starts after the waves it
+                # depends on are healthy, and a failing wave leaves the waves after it unstarted.
                 for wave in plan["waves"]:
                     starting = wave
                     with steps.run("Start " + ", ".join(wave)) as step:
@@ -1036,13 +1116,16 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                     settle_services(record, None, wave)
             starting = [service["name"] for service in record["serviceRollout"]["services"] if service["outcome"] == "pending"]
             with steps.run("Start containers") as step:
-                # Converges the whole release: what the waves left, removed services, and a check of the untouched ones.
-                docker.up(destination)
+                # Converges the whole release: removed services go and every health check is awaited. Once the waves
+                # ran, or when nothing changed, it recreates nothing, so an unchanged service keeps running even when a
+                # dependency it uses was replaced; when every service changed in one wave, it recreates them all.
+                docker.up(destination, "force" if starting else "never")
                 step["detail"] = rollout_summary(record["serviceRollout"])
-            settle_services(record, None, starting)
+            settle_services(record, None, starting, kept=True)
             starting = None
             with steps.run("Verify services") as step:
                 docker.verify(destination, manifest)
+                record_health(record, {name: "healthy" for name in manifest["images"]})
                 smoke = len(target.get("smoke", []))
                 step["detail"] = plural(len(manifest["images"]), "service") + " healthy" + (
                     "; " + plural(smoke, "smoke check") + " passed" if smoke else "")
@@ -1121,8 +1204,13 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                         prior_docker.verify(prior_bundle, prior_manifest)
                     record["status"] = "rolled_back"
                     settle_services(record, None, rolled_back=True)
+                    # Every service of the previous release passed its check; one this release added is gone.
+                    record_health(record, {name: "healthy" for name in prior_manifest["images"]})
                 except Exception:
                     record["status"] = "rollback_failed"
+            if mutation_started and record["status"] != "rolled_back":
+                with contextlib.suppress(Exception):
+                    record_health(record, docker.service_health(destination))
         record["completedAt"] = now()
         save()
         return record
@@ -1174,11 +1262,11 @@ def verify_release(target, manifest, record, verification, docker, project, cloc
     return result
 
 
-def plan_against(root, previous, compose, target, manifest):
+def plan_against(root, previous, compose, target, manifest, settings=None):
     """The rollout plan of `compose` against the release the target runs (`previous`, its current.json): that release's
-    compose.json, the environment override it ran with and its interpolation inputs. Without a readable previous release
-    every service is added."""
-    prior = prior_environment = None
+    compose.json, the environment override it ran with, its settings fingerprints (`settings` are this release's), its
+    interpolation inputs and its service versions. Without a readable previous release every service is added."""
+    prior = prior_environment = prior_settings = None
     same_inputs = False
     identifier = (previous or {}).get("id")
     if isinstance(identifier, str) and re.fullmatch(r"[0-9a-f-]{36}", identifier):
@@ -1188,25 +1276,42 @@ def plan_against(root, previous, compose, target, manifest):
         with contextlib.suppress(OSError, ValueError):
             prior_environment = read_json(folder / ENVIRONMENT_OVERRIDE)
         with contextlib.suppress(OSError, ValueError, AttributeError):
+            prior_settings = read_json(folder / FINGERPRINTS).get("services")
+        with contextlib.suppress(OSError, ValueError, AttributeError):
             same_inputs = read_json(root / "jobs" / (identifier + ".json")).get("interpolation") == \
                 interpolation_inputs(target, manifest)
     return rollout_plan(compose, target["environment"], prior if isinstance(prior, dict) else None, prior_environment,
-                        same_inputs, manifest.get("dotnetEnvironment") is True)
+                        same_inputs, manifest.get("dotnetEnvironment") is True, settings, prior_settings,
+                        manifest.get("versions"), (previous or {}).get("versions"))
 
 
-def settle_services(record, starting, done=None, rolled_back=False):
-    """Moves services on in a rollout's record: `done` ones to updated; after a failure (`done` and `rolled_back`
-    unset) the ones `starting` to failed and every other pending one to not started; after a roll back every updated or
-    failed one to rolled back."""
+def settle_services(record, starting, done=None, rolled_back=False, kept=False):
+    """Moves services on in a rollout's record, stamping `at` on each one it moves: `done` ones to updated, and with
+    `kept` every unchanged one too, as the step that kept it running and checked it ends; after a failure (`done` and
+    `rolled_back` unset) the ones `starting` to failed and every other pending one to not started; after a roll back
+    every updated or failed one to rolled back."""
+    at = now()
     for service in record.get("serviceRollout", {}).get("services", []):
+        outcome = service["outcome"]
         if rolled_back:
-            if service["outcome"] in ("updated", "failed"):
+            if outcome in ("updated", "failed"):
                 service["outcome"] = "rolled_back"
         elif done is not None:
-            if service["name"] in done and service["outcome"] == "pending":
+            if service["name"] in done and outcome == "pending":
                 service["outcome"] = "updated"
-        elif service["outcome"] == "pending":
+            elif kept and outcome == "unchanged":
+                service["at"] = at
+        elif outcome == "pending":
             service["outcome"] = "failed" if starting and service["name"] in starting else "not_started"
+        if service["outcome"] != outcome:
+            service["at"] = at
+
+
+def record_health(record, health):
+    """Each service's health at the end of a rollout, from `health` by service; a service it leaves out is unknown."""
+    for service in record.get("serviceRollout", {}).get("services", []):
+        value = health.get(service["name"]) if isinstance(health, dict) else None
+        service["health"] = value if value in HEALTH else "unknown"
 
 
 def rollout_summary(rollout):

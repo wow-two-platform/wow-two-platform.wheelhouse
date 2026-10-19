@@ -85,12 +85,16 @@ The API accepts target and release IDs only. It cannot upload arbitrary Compose,
 4. On prod, snapshot the product's databases and named volumes on the target; a failed snapshot fails the rollout.
    Pull every image before replacing any running container.
 5. Save durable intent and the previous successful bundle on the target.
-6. Apply Compose service-aware: compare each service's definition (image digest included), the environment override
-   and the target's interpolation inputs with the release the target runs; start the changed services in dependency
-   waves (Compose `depends_on`, `up --no-deps --wait` per wave) when that differs from one `up`, so a failing service
-   leaves its dependents unstarted; then converge the whole release with one `up --wait --remove-orphans`, which keeps
-   unchanged services running untouched. Wait for every declared health check, then request each site through the
-   ingress. A `depends_on` naming an unknown service or forming a cycle is refused before anything changes.
+6. Apply Compose service-aware: compare each service's definition (image digest included; `depends_on` left out), the
+   environment override, its settings fingerprint (its settings file's contents) and the target's interpolation inputs
+   with the release the target runs; recreate only the changed services, each alone, in dependency waves (Compose
+   `depends_on`, rendered from `deploy.yml` `dependsOn`; `up --no-deps --force-recreate --wait` per wave) when that
+   differs from one `up`, so a failing service leaves its dependents unstarted and a dependency's update never
+   restarts a dependent; then converge the whole release with one `up --wait --remove-orphans --no-recreate`, which
+   keeps unchanged services running untouched (`--force-recreate` instead when every service changed in one wave).
+   Wait for every declared health check, then request each site through the ingress. A `depends_on` naming an unknown
+   service or forming a cycle is refused before anything changes. Rollback stays release-wide, so a target always
+   runs exactly one release.
 7. Record the outcome with release, source commit, actor and previous release. On dev, a release that declares a dev
    check then runs it ([deployment automation](#deployment-automation)); the outcome stays what the rollout was.
 8. On failure, keep the attempted release; restore previous images only under a declared schema-compatibility
