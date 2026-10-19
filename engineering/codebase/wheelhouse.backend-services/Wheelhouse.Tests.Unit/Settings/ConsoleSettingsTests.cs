@@ -58,4 +58,17 @@ public sealed class ConsoleSettingsTests
         settings.IsValid.Should().BeFalse();
         settings.PeerOrigin.Should().BeNull();
     }
+
+    [Theory]
+    [InlineData(null, ".wheelhouse.auth")]
+    [InlineData("", ".wheelhouse.auth")]
+    [InlineData("prod", ".wheelhouse.auth")]
+    [InlineData("PROD", ".wheelhouse.auth")]
+    [InlineData("dev", ".wheelhouse.auth.dev")]
+    [InlineData(" Dev ", ".wheelhouse.auth.dev")]
+    [InlineData("dev;path=/", ".wheelhouse.auth")]
+    public void SessionCookieName_ShouldSeparateDevFromProd_WhenTheyShareOneHostName(string? environment, string expected)
+    {
+        ConsoleSettings.SessionCookieName(environment).Should().Be(expected);
+    }
 }
