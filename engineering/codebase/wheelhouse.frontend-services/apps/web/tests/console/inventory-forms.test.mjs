@@ -49,12 +49,22 @@ test("a product round-trips through its form, and a product without releases sen
     description: "Styled QR codes.",
     repository: "owner/forever-pin",
     defaultBranch: "main",
+    deploy: "wheelhouse",
     release: { asset: "foreverpin-release.tar.gz", workflow: null, images: [{ service: "api", image: "ghcr.io/owner/api" }] },
   });
   assert.equal(forms.productRequestOf({ ...values, publishes: false }, true).release, null);
   assert.equal(forms.productRequestOf(values, true).slug, "foreverpin");
   values.images[0].service = "edited";
   assert.equal(product.release.images[0].service, "api", "the form edits a detached copy");
+});
+
+test("what deploys a product round-trips through its form, a new one starts with Wheelhouse and an unknown mode is refused", () => {
+  assert.equal(forms.productFormOf(null).deploy, "wheelhouse");
+  const ci = forms.productFormOf({ ...product, deploy: "ci" });
+  assert.equal(ci.deploy, "ci");
+  assert.equal(forms.productRequestOf(ci, false).deploy, "ci");
+  assert.equal(forms.productRequestOf({ ...ci, deploy: "none" }, true).deploy, "none");
+  assert.equal(forms.productFormSchema.safeParse({ ...ci, deploy: "sometimes" }).success, false);
 });
 
 test("a product's workspace goes with its creation, and a saved product's moves and status changes follow", () => {

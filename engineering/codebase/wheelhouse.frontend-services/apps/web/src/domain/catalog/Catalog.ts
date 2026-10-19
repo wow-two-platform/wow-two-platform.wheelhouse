@@ -59,6 +59,8 @@ export interface CatalogImportResult {
   createdProducts: number;
   /** Existing products that moved into the workspace the catalog names. */
   movedProducts: number;
+  /** Existing products whose deploy mode the import set from their entry's `deploy`. */
+  updatedProducts: number;
   warnings: CatalogImportWarning[];
 }
 

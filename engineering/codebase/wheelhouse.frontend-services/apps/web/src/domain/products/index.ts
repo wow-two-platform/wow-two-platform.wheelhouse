@@ -1,4 +1,6 @@
 export {
+  ProductDeploy,
+  ProductDeployLabels,
   ProductIdentitySource,
   ProductStatus,
   type Product,

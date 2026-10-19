@@ -3,6 +3,7 @@ import { useAppMutation, useAppQuery, useOptimisticMutation } from "@/bootstrap/
 import { ProductStatusRules, type Product, type ProductStatus, type SaveProductRequest } from "@/domain/products";
 import { productsApi } from "@/integration/products";
 import { DeploymentKeys } from "@/application/deployments/DeploymentKeys";
+import { AutomationKeys } from "@/application/deployments/hooks/useDeploymentAutomation";
 
 export { useProductIcon, type ProductIconSource } from "./useProductIcon";
 export { IconAvailability } from "./IconAvailability";
@@ -26,7 +27,14 @@ export function useProducts() {
     key: ProductKeys.list,
     queryFn: ({ signal }) => productsApi.listProducts(signal),
   });
-  const invalidates = () => [ProductKeys.list, DeploymentKeys.targets, DeploymentKeys.releases];
+  // A product's deploy mode decides its automatic choices and whether Ready to promote offers it.
+  const invalidates = () => [
+    ProductKeys.list,
+    DeploymentKeys.targets,
+    DeploymentKeys.releases,
+    AutomationKeys.all,
+    DeploymentKeys.historyViews,
+  ];
   const status = useOptimisticMutation({
     mutationFn: ({ product, value }: { product: string; value: ProductStatus }, { signal }) =>
       productsApi.updateStatus(product, value, signal),

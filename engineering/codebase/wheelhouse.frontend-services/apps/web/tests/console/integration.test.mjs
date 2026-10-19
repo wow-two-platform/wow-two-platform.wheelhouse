@@ -458,10 +458,17 @@ test("accepts an explicit empty logout success", async () => {
   assert.deepEqual(await authApi.signOut(), { ok: true, value: undefined });
 });
 
+test("reads what deploys each product, Wheelhouse when the host names nothing", async () => {
+  globalThis.fetch = async () => json({ data: [product, { ...product, slug: "wheelhouse", deploy: "ci" }] });
+  const result = await productsApi.listProducts();
+  assert.deepEqual(result.value.map((item) => [item.slug, item.deploy]), [["test", "wheelhouse"], ["wheelhouse", "ci"]]);
+});
+
 test("rejects a missing management envelope and malformed consumed product fields", async () => {
   for (const payload of [
     [product],
     { data: [{ ...product, status: "invented" }] },
+    { data: [{ ...product, deploy: "sometimes" }] },
     { data: [{ ...product, inactiveServices: undefined }] },
     { data: [{ slug: "partial" }] },
   ]) {

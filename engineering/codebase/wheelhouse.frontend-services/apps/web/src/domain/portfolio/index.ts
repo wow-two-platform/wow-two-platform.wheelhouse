@@ -3,6 +3,7 @@ export {
   PillState,
   PillStateWords,
   shortRelease,
+  type CiProduct,
   type EnvironmentPill,
   type PillInput,
 } from './EnvironmentPill';

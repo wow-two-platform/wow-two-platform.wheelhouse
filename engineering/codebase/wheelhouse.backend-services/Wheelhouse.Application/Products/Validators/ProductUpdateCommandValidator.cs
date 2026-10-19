@@ -17,5 +17,6 @@ public sealed class ProductUpdateCommandValidator : AbstractValidator<ProductUpd
         RuleFor(x => x.Repository).MustMatch(InventoryPatternConstants.Repository, "a GitHub repository as owner/name");
         RuleFor(x => x.DefaultBranch).MustMatch(InventoryPatternConstants.Branch, "a branch name");
         RuleFor(x => x.Release!).SetValidator(new ProductReleaseValueObjectValidator()).When(x => x.Release is not null);
+        RuleFor(x => x.Deploy).IsInEnum();
     }
 }

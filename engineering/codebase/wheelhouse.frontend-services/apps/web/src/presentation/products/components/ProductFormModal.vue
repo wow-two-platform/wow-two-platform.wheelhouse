@@ -49,7 +49,7 @@ import {
   productFormSchema,
   productRequestOf,
 } from "@/application/products/ProductForms";
-import { identityNoteOf, isIdentityReadOnly } from "@/domain/products";
+import { identityNoteOf, isIdentityReadOnly, ProductDeploy, ProductDeployLabels } from "@/domain/products";
 import { failureReason } from "@/integration/common";
 import { DeleteConfirm, RowsField } from "@/presentation/common/components";
 import ProductDeployControls from "@/presentation/deployments/components/automation/ProductDeployControls.vue";
@@ -170,6 +170,24 @@ async function remove(): Promise<void> {
               <Field label="Default branch"><TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" /></Field>
             </form.Field>
           </div>
+          <form.Field name="deploy" v-slot="field">
+            <Field label="Deployed by">
+              <SelectPicker
+                :model-value="field.value"
+                @update:model-value="(value: unknown) => field.setValue(value as ProductDeploy)"
+                ><SelectPickerTrigger aria-label="Deployed by"><SelectPickerValue /></SelectPickerTrigger
+                ><SelectPickerContent
+                  ><SelectPickerItem
+                    v-for="mode in Object.values(ProductDeploy)"
+                    :key="mode"
+                    :item-key="mode"
+                    :label="ProductDeployLabels[mode]"
+                    >{{ ProductDeployLabels[mode] }}</SelectPickerItem
+                  ></SelectPickerContent
+                ></SelectPicker
+              >
+            </Field>
+          </form.Field>
           <form.Field name="publishes" v-slot="field">
             <SwitchField v-model="field.value" label="Publishes releases" />
           </form.Field>

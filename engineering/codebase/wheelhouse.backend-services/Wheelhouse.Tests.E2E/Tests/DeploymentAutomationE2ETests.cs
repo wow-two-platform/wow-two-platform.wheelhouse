@@ -36,6 +36,44 @@ public sealed class DeploymentAutomationE2ETests(WheelhouseAppFixture fixture) :
         products["foreverpin"].GetProperty("ciDeployed").GetBoolean().Should().BeFalse();
         products["wheelhouse"].GetProperty("autoDeployDev").GetBoolean().Should().BeFalse();
         products["wheelhouse"].GetProperty("ciDeployed").GetBoolean().Should().BeTrue();
+        products["wheelhouse"].GetProperty("deploy").GetString().Should().Be("ci");
+        products["foreverpin"].GetProperty("deploy").GetString().Should().Be("wheelhouse");
+    }
+
+    [Fact]
+    public async Task Automation_ShouldFollowEachProductsStoredDeployMode_NotItsSlug()
+    {
+        Release("foreverpin-gh-1", "v1.0.0", "2026-10-01T10:00:00Z");
+        await PassAsync();
+        await ProductDeployModes.SetAsync(AdminClient, "foreverpin", "ci");
+        var products = await AutomationAsync();
+        (products["foreverpin"].GetProperty("deploy").GetString(), products["foreverpin"].GetProperty("ciDeployed").GetBoolean(),
+                products["foreverpin"].GetProperty("autoDeployDev").GetBoolean())
+            .Should().Be(("ci", true, false));
+        var refused = await Owner().PutAsJsonAsync("/api/deployments/automation/foreverpin", new { autoDeployDev = true });
+        refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await refused.Content.ReadAsStringAsync()).Should().Contain("its own CI");
+
+        Release("foreverpin-gh-2", "v1.1.0", "2026-10-02T10:00:00Z");
+        (await PassAsync()).Submitted.Should().Be(0, "Wheelhouse never deploys a CI-deployed product on its own");
+
+        await ProductDeployModes.SetAsync(AdminClient, "foreverpin", "none");
+        products = await AutomationAsync();
+        (products["foreverpin"].GetProperty("deploy").GetString(), products["foreverpin"].GetProperty("ciDeployed").GetBoolean(),
+                products["foreverpin"].GetProperty("autoDeployDev").GetBoolean())
+            .Should().Be(("none", false, false));
+        refused = await Owner().PutAsJsonAsync("/api/deployments/automation/foreverpin", new { autoPromote = true });
+        refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await refused.Content.ReadAsStringAsync()).Should().Contain("Nothing deploys");
+        Fixture.Deployments.Starts.Should().BeEmpty();
+
+        // The slug decides nothing: the console's own product deploys automatically once it is set to Wheelhouse.
+        await ProductDeployModes.SetAsync(AdminClient, "wheelhouse", "wheelhouse");
+        await ProductDeployModes.SetAsync(AdminClient, "foreverpin", "wheelhouse");
+        products = await AutomationAsync();
+        (products["wheelhouse"].GetProperty("ciDeployed").GetBoolean(), products["wheelhouse"].GetProperty("autoDeployDev").GetBoolean())
+            .Should().Be((false, true));
+        products["foreverpin"].GetProperty("autoDeployDev").GetBoolean().Should().BeTrue("its own choice was never changed");
     }
 
     [Fact]
@@ -219,6 +257,10 @@ public sealed class DeploymentAutomationE2ETests(WheelhouseAppFixture fixture) :
         await using var scope = Fixture.Host.Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<DeploymentAutomationService>().RunOnceAsync(CancellationToken.None);
     }
+
+    private async Task<Dictionary<string, JsonElement>> AutomationAsync() =>
+        (await DataAsync("/api/deployments/automation")).GetProperty("products").EnumerateArray()
+        .ToDictionary(item => item.GetProperty("product").GetString()!);
 
     private HttpClient Owner()
     {

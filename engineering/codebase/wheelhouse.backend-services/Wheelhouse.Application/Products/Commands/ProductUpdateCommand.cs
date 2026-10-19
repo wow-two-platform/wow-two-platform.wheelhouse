@@ -1,6 +1,7 @@
 using Wheelhouse.Application.Audit;
 using Wheelhouse.Application.Inventory;
 using Wheelhouse.Application.Products.Models;
+using Wheelhouse.Domain.Products.Enums;
 using Wheelhouse.Domain.Products.Models;
 using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
@@ -27,6 +28,9 @@ public sealed record ProductUpdateCommand : ICommand<AppResult<ProductDto>>, IAu
 
     /// <summary>Gets where published releases and commit builds come from, or <c>null</c> for none.</summary>
     public ProductReleaseValueObject? Release { get; init; }
+
+    /// <summary>Gets what deploys the product, or <c>null</c> to keep it as it is.</summary>
+    public ProductDeployMode? Deploy { get; init; }
 
     /// <inheritdoc />
     public string AuditAction => "product.update";

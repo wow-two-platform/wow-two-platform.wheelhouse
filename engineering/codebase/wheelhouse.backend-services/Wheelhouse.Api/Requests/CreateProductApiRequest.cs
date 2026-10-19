@@ -1,3 +1,4 @@
+using Wheelhouse.Domain.Products.Enums;
 using Wheelhouse.Domain.Products.Models;
 
 namespace Wheelhouse.Api.Requests;
@@ -22,6 +23,9 @@ public sealed record CreateProductApiRequest
 
     /// <summary>Gets where published releases and commit builds come from, or <c>null</c> for none.</summary>
     public ProductReleaseValueObject? Release { get; init; }
+
+    /// <summary>Gets what deploys the product — <c>wheelhouse</c>, <c>ci</c> or <c>none</c> — or <c>null</c> to start with <c>wheelhouse</c>.</summary>
+    public ProductDeployMode? Deploy { get; init; }
 
     /// <summary>Gets the workspace the product joins, or <c>null</c> for the default workspace, <c>own-ventures</c>.</summary>
     public Guid? WorkspaceId { get; init; }

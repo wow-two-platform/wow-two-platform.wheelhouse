@@ -10,13 +10,13 @@ import {
   useUnfreezeDeploys,
   useUpdateAutomation,
 } from '@/application/deployments';
-import { DeployFreezes } from '@/domain/deployments';
+import { automationLockOf, DeployFreezes } from '@/domain/deployments';
 
 /**
  * A product's deploy controls, each saved on its own as it is switched: whether each new release deploys to dev,
  * whether a release that passed its dev watch is promoted to prod, and freezes of the whole product or of one
- * environment. A product its own CI deploys (Wheelhouse itself) shows the
- * automatic choice off and locked; a portfolio-wide freeze is named, and lifted on the Deployments page.
+ * environment. A product Wheelhouse does not deploy — its own CI or nothing does, as the product's deploy mode says —
+ * shows the automatic choices off and locked; a portfolio-wide freeze is named, and lifted on the Deployments page.
  */
 defineOptions({ name: 'ProductDeployControls' });
 const props = defineProps<{ readonly product: string }>();
@@ -28,6 +28,7 @@ const freezes = useDeployFreezes();
 const freeze = useFreezeDeploys();
 const unfreeze = useUnfreezeDeploys();
 const busy = computed(() => freeze.loading.value || unfreeze.loading.value);
+const locked = computed(() => automationLockOf(choices.value));
 const portfolio = computed(() => DeployFreezes.of(freezes.data.value, null, null));
 const scopes = [
   { environment: null, label: 'Freeze every deploy of this product' },
@@ -57,19 +58,19 @@ function setAutoPromote(value: boolean): void {
 <template>
   <section class="flex flex-col gap-2 rounded-md border border-border p-3" aria-label="Deploys">
     <h3 class="text-sm font-medium">Deploys</h3>
-    <p v-if="choices.ciDeployed" class="text-xs text-muted-foreground">Its own CI deploys it.</p>
+    <p v-if="locked" class="text-xs text-muted-foreground">{{ locked }}</p>
     <SwitchField
       :model-value="choices.autoDeployDev"
       label="Deploy each release to dev"
       size="sm"
-      :is-disabled="choices.ciDeployed || update.loading.value"
+      :is-disabled="locked !== null || update.loading.value"
       @update:model-value="setAutoDeployDev"
     />
     <SwitchField
       :model-value="choices.autoPromote"
       label="Promote to prod once a release passes its dev watch"
       size="sm"
-      :is-disabled="choices.ciDeployed || update.loading.value"
+      :is-disabled="locked !== null || update.loading.value"
       @update:model-value="setAutoPromote"
     />
     <SwitchField

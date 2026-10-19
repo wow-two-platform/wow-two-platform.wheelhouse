@@ -1,5 +1,6 @@
 import { computed, toValue, type ComputedRef, type InjectionKey, type MaybeRefOrGetter } from "vue";
 import { useDeploymentTargets } from "@/application/deployments";
+import { ProductKeys } from "@/application/products";
 import { useServerVitals } from "@/application/servers";
 import { useApiConnection } from "@/application/system";
 import { EnvironmentHealthRules } from "@/domain/overview";
@@ -12,11 +13,13 @@ import {
   type ProductFacts,
 } from "@/domain/portfolio";
 import { EnvironmentOrder } from "@/domain/targets";
+import { productsApi } from "@/integration/products";
+import { useAppQuery } from "@/bootstrap/query";
 import { usePortfolioSummary } from "./usePortfolioSummary";
 
 /**
- * The product this console is: its own CI deploys it, so its pills say so and show the version this console runs in
- * the environment it serves.
+ * The product this console is. Whether a product's pills say CI comes from its stored deploy mode; this only says whose
+ * CI pills may show the version this console runs in the environment it serves.
  */
 export const ConsoleProduct = "wheelhouse";
 
@@ -48,6 +51,8 @@ export function useProductFacts(range: MaybeRefOrGetter<DeploymentRange | null> 
   /* Without a range the trends read the pills' own summary; with one, the same summary over the range's weeks. */
   const trend = toValue(range) === null ? summary : usePortfolioSummary(trendWindow);
   const system = useApiConnection();
+  /* The product list every page reads already: each product's deploy mode decides whether its pills say CI. */
+  const products = useAppQuery({ key: ProductKeys.list, queryFn: ({ signal }) => productsApi.listProducts(signal) });
 
   const byProduct = (data: typeof summary.data.value) =>
     new Map<string, PortfolioProduct>((data?.products ?? []).map((item) => [item.product, item]));
@@ -60,6 +65,7 @@ export function useProductFacts(range: MaybeRefOrGetter<DeploymentRange | null> 
     void summary.data.value;
     void trend.data.value;
     void system.version.value;
+    void products.data.value;
     return new Map<string, ProductFacts>();
   });
 
@@ -72,7 +78,11 @@ export function useProductFacts(range: MaybeRefOrGetter<DeploymentRange | null> 
     const own = all.filter((target) => target.product === slug);
     const readings = EnvironmentHealthRules.ofProduct(slug, own, { vitals: vitals.data.value });
     const product = summaryByProduct.value.get(slug);
-    const isConsole = slug === ConsoleProduct && own.length === 0;
+    const ci = {
+      deploy: products.data.value?.find((item) => item.slug === slug)?.deploy,
+      targets: own.length,
+      console: slug === ConsoleProduct ? { environment: system.environment.value, version: system.version.value } : null,
+    };
     const pills = EnvironmentOrder.map((environment) => {
       const reading = readings.find((item) => item.environment === environment);
       const reported = reading?.targetId
@@ -83,9 +93,7 @@ export function useProductFacts(range: MaybeRefOrGetter<DeploymentRange | null> 
         reading,
         summary: product?.environments.find((item) => item.environment === environment),
         reportedRelease: reported,
-        ci: isConsole
-          ? { version: system.environment.value === environment ? system.version.value : null }
-          : null,
+        ci: EnvironmentPillRules.ciOf(ci, environment),
       });
     });
     const facts = factsOf(slug, pills, product, trendByProduct.value.get(slug));

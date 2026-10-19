@@ -5,6 +5,24 @@ export const ProductStatus = {
 } as const;
 export type ProductStatus = (typeof ProductStatus)[keyof typeof ProductStatus];
 
+/**
+ * What deploys a product, as its catalog entry's `deploy` says: Wheelhouse (automatic deploys and promotions apply), its
+ * own CI (the console never deploys it on its own and its pills say CI) or nothing.
+ */
+export const ProductDeploy = {
+  Wheelhouse: 'wheelhouse',
+  Ci: 'ci',
+  None: 'none',
+} as const;
+export type ProductDeploy = (typeof ProductDeploy)[keyof typeof ProductDeploy];
+
+/** How the product form names each deploy mode. */
+export const ProductDeployLabels: Readonly<Record<ProductDeploy, string>> = {
+  [ProductDeploy.Wheelhouse]: 'Wheelhouse',
+  [ProductDeploy.Ci]: 'Its own CI',
+  [ProductDeploy.None]: 'Nothing',
+};
+
 /** A site an environment publishes; a private one is reached over the private network only. */
 export interface ProductSite {
   name: string;
@@ -88,6 +106,8 @@ export interface Product {
   /** The workspace the product belongs to; null while it belongs to none. */
   workspaceId: string | null;
   status: ProductStatus;
+  /** What deploys the product: Wheelhouse, its own CI or nothing. */
+  deploy: ProductDeploy;
   /** The services the owner marked inactive, by their key in the product's deployment. */
   inactiveServices: string[];
   repository: ProductRepository;
@@ -107,4 +127,6 @@ export interface SaveProductRequest {
   repository: string;
   defaultBranch: string;
   release: ProductRelease | null;
+  /** What deploys the product; the host starts a new one with Wheelhouse and keeps an existing one's when absent. */
+  deploy?: ProductDeploy;
 }

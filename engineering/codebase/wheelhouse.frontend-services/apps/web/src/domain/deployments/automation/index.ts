@@ -1,5 +1,6 @@
 export {
   DefaultAutomation,
+  automationLockOf,
   DeploymentCause,
   type DeploymentAutomation,
   type ProductAutomation,

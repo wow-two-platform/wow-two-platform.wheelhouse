@@ -9,6 +9,7 @@ using Wheelhouse.Application.Deployments.History.Services;
 using Wheelhouse.Domain.Deployments.Entities;
 using Wheelhouse.Domain.Deployments.Enums;
 using Wheelhouse.Domain.Products.Entities;
+using Wheelhouse.Domain.Products.Enums;
 using Wheelhouse.Domain.Targets.Entities;
 using Wheelhouse.Domain.Targets.Enums;
 using WoW.Two.Sdk.Beta.Be.Mediator;
@@ -57,14 +58,17 @@ public sealed partial class DeploymentAutomationService(
             queue);
     }
 
-    /// <summary>Describes one product's automation choices; a product without a row takes the defaults.</summary>
+    /// <summary>Describes one product's automation choices; a product without a row takes the defaults. Only a product
+    /// Wheelhouse deploys (<see cref="ProductDeployMode.Wheelhouse"/>) takes automatic deploys; for one its own CI or
+    /// nothing deploys, both read off whatever its row says.</summary>
     /// <param name="product">The product.</param>
     /// <param name="row">Its recorded choices, if any.</param>
     /// <returns>The description.</returns>
     public static ProductAutomationDto Describe(ProductEntity product, ProductAutomationEntity? row)
     {
-        var ci = AutomationConstants.CiDeployedProducts.Contains(product.Slug);
-        return new ProductAutomationDto(product.Slug, !ci && (row?.AutoDeployDev ?? true), !ci && (row?.AutoPromote ?? false), ci);
+        var automatic = product.Deploy == ProductDeployMode.Wheelhouse;
+        return new ProductAutomationDto(product.Slug, automatic && (row?.AutoDeployDev ?? true),
+            automatic && (row?.AutoPromote ?? false), product.Deploy == ProductDeployMode.Ci, product.Deploy);
     }
 
     /// <summary>Holds how recently a release must have passed its dev watch for auto-promote to take it, so turning

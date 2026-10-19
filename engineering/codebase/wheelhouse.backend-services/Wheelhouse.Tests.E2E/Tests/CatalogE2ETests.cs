@@ -205,6 +205,16 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     private async Task<IReadOnlyList<WorkspaceResponse>> WorkspacesAsync() =>
         await (await AdminClient.GetAsync("api/workspaces")).ReadEnvelopeAsync<IReadOnlyList<WorkspaceResponse>>();
 
+    private async Task CreateProductAsync(string slug, string repository)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "api/products")
+        {
+            Content = JsonContent.Create(new { slug, name = slug, repository }),
+            Headers = { { "X-Wheelhouse-Action", "product" } },
+        };
+        (await AdminClient.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
     private async Task<JsonElement> ProductAsync(string slug) => await DataAsync(await AdminClient.GetAsync("api/products/" + slug));
 
     private static string[] Strings(JsonElement array) => [.. array.EnumerateArray().Select(item => item.GetString()!)];
@@ -486,6 +496,32 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         Strings((await DataAsync(response)).GetProperty("createdProducts")).Should().Equal("ocharo-platform");
+    }
+
+    [Fact]
+    public async Task Import_ShouldSetEachExistingProductsDeployMode_FromItsEntry()
+    {
+        PushHubs();
+        Fixture.RepositoryFiles.Push("wow-two-platform/wow-two-platform.wheelhouse-canary", "engineering/deployment/deploy.yml", CanaryDescriptor);
+        await ProductDeployModes.SetAsync(AdminClient, "wheelhouse", "wheelhouse");
+        await CreateProductAsync("pipelines", "wow-two-platform/wow-two-platform.pipelines");
+
+        var result = await DataAsync(await ImportClient().PostJsonAsync("api/catalog/import",
+            new { slugs = new[] { "wheelhouse", "pipelines", "wheelhousecanary" } }));
+
+        Strings(result.GetProperty("updatedProducts")).Should().Equal("wheelhouse", "pipelines");
+        Strings(result.GetProperty("createdProducts")).Should().Equal("wheelhousecanary");
+        (await ProductAsync("wheelhouse")).GetProperty("deploy").GetString().Should().Be("ci", "its entry says deploy: ci");
+        (await ProductAsync("pipelines")).GetProperty("deploy").GetString().Should().Be("none", "its entry says deploy: none");
+        (await ProductAsync("wheelhousecanary")).GetProperty("deploy").GetString().Should().Be("wheelhouse");
+        (await DataAsync(await AdminClient.GetAsync("/api/deployments/automation"))).GetProperty("products").EnumerateArray()
+            .Single(item => item.GetProperty("product").GetString() == "wheelhouse").GetProperty("ciDeployed").GetBoolean()
+            .Should().BeTrue();
+
+        var again = await DataAsync(await ImportClient().PostJsonAsync("api/catalog/import",
+            new { slugs = new[] { "wheelhouse", "pipelines", "wheelhousecanary" } }));
+        Strings(again.GetProperty("updatedProducts")).Should().BeEmpty();
+        Strings(again.GetProperty("movedProducts")).Should().BeEmpty("pipelines is in its entry's workspace since the first run");
     }
 
     [Fact]

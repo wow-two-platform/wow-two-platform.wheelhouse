@@ -114,7 +114,11 @@ test("the import result and the source read as one line each", () => {
   assert.equal(CatalogRules.summary({ createdWorkspaces: 1, createdProducts: 2, movedProducts: 1 }),
     "Added 2 products, created 1 workspace and moved 1 product.");
   assert.equal(CatalogRules.summary({ createdWorkspaces: 0, createdProducts: 1, movedProducts: 0 }), "Added 1 product.");
-  assert.match(CatalogRules.summary({ createdWorkspaces: 0, createdProducts: 0, movedProducts: 0 }), /^Nothing to import/);
+  assert.match(CatalogRules.summary({ createdWorkspaces: 0, createdProducts: 0, movedProducts: 0, updatedProducts: 0 }), /^Nothing to import/);
+  assert.equal(CatalogRules.summary({ createdWorkspaces: 0, createdProducts: 0, movedProducts: 1, updatedProducts: 1 }),
+    "Moved 1 product and set how 1 product deploys.");
+  assert.equal(CatalogRules.summary({ createdWorkspaces: 0, createdProducts: 0, movedProducts: 0, updatedProducts: 2 }),
+    "Set how 2 products deploy.");
   assert.equal(CatalogRules.sourceLabel({ repository: "wow-two/wow-two-ws", path: "catalog.yml", ref: "main",
     commit: "4f2c9e1a7b3d" }), "wow-two/wow-two-ws@4f2c9e1");
   assert.equal(CatalogRules.sourceLabel({ repository: "wow-two/wow-two-ws", path: "catalog.yml", ref: "main", commit: null }),
@@ -143,7 +147,8 @@ test("the catalog decodes, and an import posts its slugs with the catalog action
     [[null, null, "o/ventures@main has no catalog.yml."], ["R", "abc", null]]);
   assert.equal(catalog.value.entries[0].source, "o/ventures");
   const result = await catalogApi.importEntries(["hijinx", "museums"]);
-  assert.deepEqual(result.value, { createdWorkspaces: 1, createdProducts: 2, movedProducts: 0, warnings: [] });
+  assert.deepEqual(result.value, { createdWorkspaces: 1, createdProducts: 2, movedProducts: 0, updatedProducts: 0, warnings: [] },
+    "a host that reports no deploy-mode changes counts none");
   assert.equal(requests[1].url, "/api/catalog/import");
   assert.equal(requests[1].options.method, "POST");
   assert.equal(requests[1].options.headers.get("X-Wheelhouse-Action"), "catalog");

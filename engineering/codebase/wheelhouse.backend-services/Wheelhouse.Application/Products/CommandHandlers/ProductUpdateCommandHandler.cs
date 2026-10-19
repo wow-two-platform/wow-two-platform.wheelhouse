@@ -35,6 +35,7 @@ public sealed class ProductUpdateCommandHandler(
         product.Repository = request.Repository;
         product.DefaultBranch = request.DefaultBranch;
         product.Release = request.Release;
+        product.Deploy = request.Deploy ?? product.Deploy;
         await products.UpdateAsync(product, cancellationToken);
         return AppResult<ProductDto>.Ok(await projection.ProjectAsync(product, cancellationToken));
     }

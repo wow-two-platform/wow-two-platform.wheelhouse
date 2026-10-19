@@ -27,6 +27,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "016-deploy-automation", "017-deploy-freezes",
         "018-auto-promotions",
         "022-fleet-rollouts",
+        "025-product-deploy-mode",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -706,6 +707,31 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         (await migrator.HasTableAsync("fleet_rollouts")).Should().BeFalse();
         (await migrator.HasTableAsync("fleet_rollout_items")).Should().BeFalse();
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("022-fleet-rollouts"));
+    }
+
+    [Fact]
+    public async Task ProductDeployMode_ShouldMakeTheWheelhouseProductCi_AndEveryOtherWheelhouse_WhenApplied()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        var ordinal = Ordinals[Array.IndexOf(Migrations, "025-product-deploy-mode") - 1];
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: ordinal, CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        (await ReadColumnsAsync(connection, "products")).Select(column => column.Name).Should().NotContain("deploy");
+        // An earlier migration may have seeded the console's own product already.
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000001", "wheelhouse") + " ON CONFLICT (slug) DO NOTHING");
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000002", "pilot"));
+
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("025-product-deploy-mode"));
+        (await Scalar(connection, "SELECT deploy FROM products WHERE slug = 'wheelhouse'")).Should().Be("ci");
+        (await Scalar(connection, "SELECT deploy FROM products WHERE slug = 'pilot'")).Should().Be("wheelhouse");
+        (await ReadColumnsAsync(connection, "products")).Should().Contain(("deploy", "text", false));
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000003", "fresh"));
+        (await Scalar(connection, "SELECT deploy FROM products WHERE slug = 'fresh'")).Should().Be("wheelhouse");
+
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: ordinal, CancellationToken.None));
+        (await ReadColumnsAsync(connection, "products")).Select(column => column.Name).Should().NotContain("deploy");
     }
 
     /// <summary>The SQL that stores one vitals reading of a target slug, or of its server's host for <c>NULL</c>.</summary>

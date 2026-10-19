@@ -140,9 +140,18 @@ and an explicit cutover; a second host definition does not make a service redund
 ## Product catalog
 
 A product is one inventory row: slug, name, description, repository, default branch, an optional release source, its
-workspace and its status. The slug never changes once created; the runner
+workspace, its status and its deploy mode. The slug never changes once created; the runner
 refuses a target or release source for a product the snapshot lacks. While the repository carries a valid manifest,
 its name, description and homepage replace the row's ([product identity](#product-identity)).
+
+The deploy mode (`products.deploy`, migration `025-product-deploy-mode`) is the catalog entry's `deploy`: `wheelhouse`
+(Wheelhouse deploys it), `ci` (its own CI deploys it, as Wheelhouse itself) or `none` (nothing does). The catalog import
+sets it, the product form edits it (`deploy` on `POST`/`PUT /api/products`; omitted, a new product takes `wheelhouse`
+and a saved one keeps its own), and `ProductDto` carries it. Only a `wheelhouse` product takes automatic deploys and is
+offered for promotion — Ready to promote, auto-promote and fleets leave the others out — and the console's pills read
+CI for a `ci` product it has no target for. No check names a slug; the migration made the existing `wheelhouse` product
+`ci` and every other `wheelhouse`. Inventory exports leave the mode out, and the owner can still deploy any product by
+hand.
 
 `/api/products` joins the inventory and the product identity: each product's environments come from its targets, each environment's sites from
 the newest rollout this control plane saw succeed (no target is contacted), and its vault namespace is
@@ -222,11 +231,13 @@ field of the first problem.
   }`; `productId` is the product with the entry's slug, else `null`. Always 200 for a valid setting; a failing hub
   shows in its `error`. Signed-in session only.
 - `POST /api/catalog/import` `{ slugs }` (action header `catalog`, audited as `catalog.import`) walks the chosen
-  entries in merged order: an existing product with the slug moves into the entry's workspace; an entry with
+  entries in merged order: an existing product with the slug moves into the entry's workspace and takes the entry's
+  `deploy` as its deploy mode; an entry with
   `deploy: wheelhouse` and a repository becomes a product; anything else is skipped with a warning (an entry with
   `repositories: []` is not importable). A workspace is created from its catalog declaration, last in the order, only
-  when a product needs it. It answers `{ createdWorkspaces, createdProducts, movedProducts, warnings: [{ slug,
-  message }] }` (slugs); a second run changes nothing. A slug no readable hub lists is 400, naming each hub that could
+  when a product needs it. It answers `{ createdWorkspaces, createdProducts, movedProducts, updatedProducts, warnings:
+  [{ slug, message }] }` (slugs; `updatedProducts` names the existing products whose deploy mode changed); a second run
+  changes nothing. A slug no readable hub lists is 400, naming each hub that could
   not be read, and nothing changes.
 - A product created from the catalog needs no typed release config: name and description (clipped to 200) from the
   entry, the primary (first) repository, branch `main`, asset `{slug}-release.tar.gz`, workflow
@@ -386,8 +397,8 @@ request acts as `automation`, so every automatic submission goes through the ord
 (`deployment.start`, detail `…, automatic: a new release`) with the same runner gates.
 
 - **Auto-deploy to dev** is on per product unless the owner turns it off (`product_automation`, migration
-  `016-deploy-automation`; a product without a row takes the defaults). Wheelhouse is CI-deployed (`deploy: ci`) and
-  never deploys on its own; the API refuses turning it on (409).
+  `016-deploy-automation`; a product without a row takes the defaults). A product whose deploy mode is `ci` (Wheelhouse
+  itself) or `none` never deploys on its own, whatever its row says; the API refuses turning either choice on (409).
 - **Release watcher:** for every auto-deploying product with a release source and a dev target, the runner's `latest`
   read lists its newest published release (one GitHub call per product, pre-releases ignored). A product's first read
   only records its watermark (`release_watermarks`), so turning automation on never deploys a backlog; a release
@@ -395,7 +406,7 @@ request acts as `automation`, so every automatic submission goes through the ord
 - **Queue:** one slot per target (`deployment_queue`), latest wins: a newer release replaces a queued older one. A
   queued deploy waits while its target runs a rollout, and is dropped when the owner turned its automation off, or the
   target already ran that release. A refused submission is dropped too; the audit trail keeps why.
-- `GET /api/deployments/automation` lists every product's `{ product, autoDeployDev, autoPromote, ciDeployed }` and the
+- `GET /api/deployments/automation` lists every product's `{ product, autoDeployDev, autoPromote, ciDeployed, deploy }` and the
   queue; `PUT /api/deployments/automation/{product}` `{ autoDeployDev?, autoPromote? }` (action header `automation`,
   audited `product.automation`) changes the choices it names.
 - **Watch window:** for `Deployment:WatchMinutes` (10; 0 turns the looks off) after each target's latest successful

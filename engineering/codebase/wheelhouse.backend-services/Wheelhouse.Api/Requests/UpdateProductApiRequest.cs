@@ -1,3 +1,4 @@
+using Wheelhouse.Domain.Products.Enums;
 using Wheelhouse.Domain.Products.Models;
 
 namespace Wheelhouse.Api.Requests;
@@ -19,4 +20,7 @@ public sealed record UpdateProductApiRequest
 
     /// <summary>Gets where published releases and commit builds come from, or <c>null</c> for none.</summary>
     public ProductReleaseValueObject? Release { get; init; }
+
+    /// <summary>Gets what deploys the product — <c>wheelhouse</c>, <c>ci</c> or <c>none</c> — or <c>null</c> to keep it.</summary>
+    public ProductDeployMode? Deploy { get; init; }
 }

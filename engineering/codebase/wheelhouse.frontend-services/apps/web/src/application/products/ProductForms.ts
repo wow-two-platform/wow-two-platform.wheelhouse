@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { defaultMapFieldPath } from "@wow-two-beta/fe/forms-engine";
 import { InventoryRules } from "@/domain/common";
-import { ProductStatus, type Product, type ReleaseImage, type SaveProductRequest } from "@/domain/products";
+import { ProductDeploy, ProductStatus, type Product, type ReleaseImage, type SaveProductRequest } from "@/domain/products";
 
 /**
  * Represents a product's editable fields, flat; the release source applies only while the product publishes. The
@@ -12,6 +12,8 @@ export interface ProductFormModel {
   /** The workspace the product belongs to; null leaves a new product in the host's default workspace. */
   workspaceId: string | null;
   active: boolean;
+  /** What deploys the product: Wheelhouse, its own CI or nothing. */
+  deploy: ProductDeploy;
   name: string;
   description: string;
   repository: string;
@@ -28,6 +30,7 @@ export const productFormSchema = z
     slug: z.string().trim().regex(InventoryRules.slug, "Start with a lowercase letter; use lowercase letters, digits and dashes."),
     workspaceId: z.string().nullable(),
     active: z.boolean(),
+    deploy: z.enum(ProductDeploy),
     name: z.string().trim().min(1, "Enter a name."),
     description: z.string().trim(),
     repository: z.string().trim().regex(InventoryRules.repository, "Use owner/name."),
@@ -48,6 +51,7 @@ export function productFormOf(product: Product | null, workspaceId: string | nul
     slug: product?.slug ?? "",
     workspaceId: product ? product.workspaceId : workspaceId,
     active: product ? product.status === ProductStatus.Active : true,
+    deploy: product?.deploy ?? ProductDeploy.Wheelhouse,
     name: product?.name ?? "",
     description: product?.description ?? "",
     repository: product?.repository.name ?? "",
@@ -68,6 +72,7 @@ export function productRequestOf(values: ProductFormModel, isNew: boolean): Save
     description: values.description,
     repository: values.repository,
     defaultBranch: values.defaultBranch,
+    deploy: values.deploy,
     release: values.publishes
       ? { asset: values.asset, workflow: values.workflow || null, images: values.images }
       : null,

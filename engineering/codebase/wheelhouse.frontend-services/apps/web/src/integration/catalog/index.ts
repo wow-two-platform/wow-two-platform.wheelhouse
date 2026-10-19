@@ -44,6 +44,7 @@ const ImportResultSchema = z.object({
   createdWorkspaces: Changed,
   createdProducts: Changed,
   movedProducts: Changed,
+  updatedProducts: Changed.default(0),
   warnings: z.array(z.object({ slug: z.string(), message: z.string() })).default([]),
 });
 

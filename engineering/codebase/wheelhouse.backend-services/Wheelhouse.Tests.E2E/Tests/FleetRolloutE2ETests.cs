@@ -155,6 +155,18 @@ public sealed class FleetRolloutE2ETests(WheelhouseAppFixture fixture) : Wheelho
     }
 
     [Fact]
+    public async Task Fleet_ShouldRefuseAProductWheelhouseDoesNotDeploy()
+    {
+        await SeedAsync();
+        await ProductDeployModes.SetAsync(AdminClient, "ocharo", "ci");
+
+        (await PostAsync(new { items = Items(Products) }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict, "its own CI deploys ocharo, so Ready to promote never offers it");
+        Fixture.Deployments.Starts.Should().BeEmpty();
+        Statuses(await StartAsync(Items(["foreverpin", "pbn"]))).Should().Equal("running", "waiting");
+    }
+
+    [Fact]
     public async Task Fleet_ShouldHonorFreezes_UnlessOverriddenWithAReason()
     {
         await SeedAsync();

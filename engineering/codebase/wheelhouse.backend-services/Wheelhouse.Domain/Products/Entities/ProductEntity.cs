@@ -39,6 +39,9 @@ public sealed record ProductEntity : IKeyedEntity<Guid>, IHasTableName, IAuditab
     /// hand-imported bundles deploy.</summary>
     public ProductReleaseValueObject? Release { get; set; }
 
+    /// <summary>Gets or sets what deploys the product, from its catalog entry or the owner's choice.</summary>
+    public ProductDeployMode Deploy { get; set; } = ProductDeployMode.Wheelhouse;
+
     /// <summary>Gets or sets when the row was created; stamped by the SDK audit interceptor.</summary>
     public DateTimeOffset CreatedAt { get; set; }
 

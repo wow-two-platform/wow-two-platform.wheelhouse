@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using AwesomeAssertions;
 using Wheelhouse.Tests.E2E.Harness;
@@ -82,6 +83,30 @@ public sealed class InventoryE2ETests(WheelhouseAppFixture fixture) : Wheelhouse
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var updated = await response.ReadEnvelopeAsync<ProductResponse>();
         (updated.Slug, updated.Name, updated.Description).Should().Be(("wheelhouse", "Wheelhouse console", "Control plane."));
+    }
+
+    [Fact]
+    public async Task SaveProduct_ShouldStoreWhatDeploysIt_KeepItWhenOmitted_AndRefuseAnUnknownMode()
+    {
+        var created = await ActionClient("product").PostJsonAsync("api/products",
+            new { slug = "pilot", name = "Pilot", repository = "owner/pilot" });
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data").GetProperty("deploy").GetString()
+            .Should().Be("wheelhouse", "a new product is deployed by Wheelhouse unless the request says otherwise");
+
+        var ci = await ActionClient("product").PostJsonAsync("api/products",
+            new { slug = "selfie", name = "Selfie", repository = "owner/selfie", deploy = "ci" });
+        (await ci.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data").GetProperty("deploy").GetString().Should().Be("ci");
+
+        (await ProductDeployModes.SetAsync(AdminClient, "pilot", "none")).GetProperty("deploy").GetString().Should().Be("none");
+        var kept = await ActionClient("product").PutJsonAsync("api/products/pilot", new { name = "Pilot two", repository = "owner/pilot" });
+        (await kept.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data").GetProperty("deploy").GetString()
+            .Should().Be("none", "a save that names no mode keeps the stored one");
+
+        (await ActionClient("product").PutJsonAsync("api/products/pilot", new { name = "Pilot", repository = "owner/pilot", deploy = "sometimes" }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await AdminClient.GetFromJsonAsync<JsonElement>("api/products/wheelhouse")).GetProperty("data").GetProperty("deploy").GetString()
+            .Should().Be("ci");
     }
 
     [Fact]

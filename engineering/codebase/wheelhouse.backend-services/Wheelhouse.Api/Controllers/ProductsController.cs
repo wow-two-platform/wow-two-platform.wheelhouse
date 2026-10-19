@@ -77,6 +77,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
             Repository = request.Repository,
             DefaultBranch = request.DefaultBranch,
             Release = request.Release,
+            Deploy = request.Deploy,
             WorkspaceId = request.WorkspaceId,
         }, ct), envelope => CreatedAtAction(nameof(GetBySlug), new { slug = envelope.Data.Slug }, envelope));
 
@@ -96,6 +97,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
             Repository = request.Repository,
             DefaultBranch = request.DefaultBranch,
             Release = request.Release,
+            Deploy = request.Deploy,
         }, ct));
 
     /// <summary>Reads the product's manifest again now: checks the repository's branch head without waiting for the

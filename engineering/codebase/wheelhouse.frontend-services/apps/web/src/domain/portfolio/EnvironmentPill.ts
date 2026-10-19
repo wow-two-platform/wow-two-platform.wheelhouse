@@ -1,5 +1,6 @@
 import { StatusState, StatusWords } from '@/domain/common/StatusVocabulary';
 import { EnvironmentHealth, type EnvironmentReading } from '@/domain/overview/EnvironmentHealth';
+import { ProductDeploy } from '@/domain/products/Product';
 import { RolloutOutcome, type PortfolioDeploy, type PortfolioEnvironment } from './PortfolioSummary';
 
 /**
@@ -61,6 +62,16 @@ export interface PillInput {
   readonly reportedRelease?: string | null;
 }
 
+/** What decides whether a product's pills read CI. */
+export interface CiProduct {
+  /** What deploys the product; undefined while the product list loads. */
+  readonly deploy: ProductDeploy | undefined;
+  /** How many targets this console has for the product. */
+  readonly targets: number;
+  /** For this console's own product, the environment it serves and the version it runs; null for any other. */
+  readonly console: { readonly environment: string | null; readonly version: string | null } | null;
+}
+
 /** A release label as a pill shows it: `v1.2.0` reads `1.2.0`, build metadata after `+` dropped. */
 export function shortRelease(release: string | null | undefined): string | null {
   if (!release) return null;
@@ -70,6 +81,15 @@ export function shortRelease(release: string | null | undefined): string | null 
 
 /** Pure rules turning an environment's health and rollouts into its pill. */
 export const EnvironmentPillRules = {
+  /**
+   * The CI reading of one environment's pill: a product its own CI deploys, with no target in this console, reads CI in
+   * every environment; only this console's own product shows a version, the one it runs in the environment it serves.
+   * Null for a product Wheelhouse or nothing deploys, or one this console has targets for.
+   */
+  ciOf: (product: CiProduct, environment: string): { readonly version: string | null } | null =>
+    product.deploy === ProductDeploy.Ci && product.targets === 0
+      ? { version: product.console?.environment === environment ? product.console.version : null }
+      : null,
   of: (input: PillInput): EnvironmentPill => {
     const lastDeploy = input.summary?.lastDeploy ?? null;
     const running = input.summary?.running ?? null;

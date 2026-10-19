@@ -249,6 +249,20 @@ public sealed class DeploymentHistoryE2ETests(WheelhouseAppFixture fixture) : Wh
     }
 
     [Fact]
+    public async Task Promotions_LeaveOutAProductWheelhouseDoesNotDeploy()
+    {
+        await SeedAsync();
+        (await DataAsync("/api/deployments/promotions")).GetArrayLength().Should().Be(1);
+
+        await ProductDeployModes.SetAsync(AdminClient, "foreverpin", "ci");
+        (await DataAsync("/api/deployments/promotions")).GetArrayLength().Should().Be(0, "its own CI promotes it");
+        await ProductDeployModes.SetAsync(AdminClient, "foreverpin", "none");
+        (await DataAsync("/api/deployments/promotions")).GetArrayLength().Should().Be(0);
+        await ProductDeployModes.SetAsync(AdminClient, "foreverpin", "wheelhouse");
+        (await DataAsync("/api/deployments/promotions")).GetArrayLength().Should().Be(1);
+    }
+
+    [Fact]
     public async Task Promotions_LeaveOutAReleaseAlreadyOnItsWayToProd()
     {
         await SeedAsync();

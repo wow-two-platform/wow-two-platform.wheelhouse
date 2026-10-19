@@ -33,6 +33,10 @@ public sealed record ProductDto
     /// <summary>Gets whether the product is in use; inactive only hides it from the console's lists.</summary>
     public required ProductStatus Status { get; init; }
 
+    /// <summary>Gets what deploys the product: Wheelhouse, its own CI, or nothing. Only a product Wheelhouse deploys
+    /// takes automatic deploys and promotions.</summary>
+    public required ProductDeployMode Deploy { get; init; }
+
     /// <summary>Gets the keys of the product's services the owner marked inactive, in key order; every other
     /// service is active.</summary>
     public required IReadOnlyList<string> InactiveServices { get; init; }

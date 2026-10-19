@@ -67,6 +67,19 @@ test("vitals decide failing, degraded and unread; a host that cannot be read out
   assert.equal(pillOf("unknown").detail, "no reading");
 });
 
+test("a product's pills read CI from its stored deploy mode, and only the console's own product shows a version", () => {
+  const console = { environment: "prod", version: "0.5.0+abc" };
+  assert.deepEqual(EnvironmentPillRules.ciOf({ deploy: "ci", targets: 0, console }, "prod"), { version: "0.5.0+abc" });
+  assert.deepEqual(EnvironmentPillRules.ciOf({ deploy: "ci", targets: 0, console }, "dev"), { version: null });
+  assert.deepEqual(EnvironmentPillRules.ciOf({ deploy: "ci", targets: 0, console: null }, "prod"), { version: null },
+    "another CI-deployed product reads CI without this console's version");
+  assert.equal(EnvironmentPillRules.ciOf({ deploy: "wheelhouse", targets: 0, console }, "prod"), null,
+    "the console's own slug decides nothing once its mode says Wheelhouse");
+  assert.equal(EnvironmentPillRules.ciOf({ deploy: "none", targets: 0, console: null }, "prod"), null);
+  assert.equal(EnvironmentPillRules.ciOf({ deploy: "ci", targets: 2, console: null }, "prod"), null, "its targets read health");
+  assert.equal(EnvironmentPillRules.ciOf({ deploy: undefined, targets: 0, console }, "prod"), null);
+});
+
 test("a product its own CI deploys shows the console's version in the environment it serves", () => {
   const served = pillOf("missing", {}, { ci: { version: "0.5.0+abc" } });
   assert.deepEqual([served.state, served.detail, served.release], ["ci", "0.5.0", "0.5.0+abc"]);

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ProductIdentitySource, ProductStatus, type Product, type SaveProductRequest } from "@/domain/products";
+import { ProductDeploy, ProductIdentitySource, ProductStatus, type Product, type SaveProductRequest } from "@/domain/products";
 import { requestAccepted, requestData, requestEmpty } from "@/integration/common";
 
 const ProductSchema = z.object({
@@ -18,6 +18,8 @@ const ProductSchema = z.object({
   }),
   workspaceId: z.string().nullable(),
   status: z.enum(ProductStatus),
+  // A host before the stored mode sends none; every product it deploys is Wheelhouse's.
+  deploy: z.enum(ProductDeploy).default(ProductDeploy.Wheelhouse),
   inactiveServices: z.array(z.string()),
   repository: z.object({
     name: z.string(),

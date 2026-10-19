@@ -4,6 +4,7 @@ using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Products.Services;
 using Wheelhouse.Application.Workspaces.Services;
 using Wheelhouse.Domain.Products.Entities;
+using Wheelhouse.Domain.Products.Enums;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
@@ -11,7 +12,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Products.CommandHandlers;
 
 /// <summary>Handles <see cref="ProductCreateCommand"/>; a new product starts active, in the workspace the request
-/// names or else the default one.</summary>
+/// names or else the default one, deployed by Wheelhouse unless the request says otherwise.</summary>
 public sealed class ProductCreateCommandHandler(
     IProductsRepository products,
     IWorkspacesRepository workspaces,
@@ -40,6 +41,7 @@ public sealed class ProductCreateCommandHandler(
             DefaultBranch = request.DefaultBranch,
             WorkspaceId = workspace.Id,
             Release = request.Release,
+            Deploy = request.Deploy ?? ProductDeployMode.Wheelhouse,
         }, cancellationToken);
         return AppResult<ProductDto>.Ok(await projection.ProjectAsync(product, cancellationToken));
     }

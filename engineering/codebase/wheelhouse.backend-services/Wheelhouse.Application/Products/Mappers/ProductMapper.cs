@@ -45,6 +45,7 @@ internal static class ProductMapper
         },
         WorkspaceId = product.WorkspaceId,
         Status = product.Status,
+        Deploy = product.Deploy,
         InactiveServices = [.. inactiveServices.Order(StringComparer.Ordinal)],
         Repository = new ProductRepositoryDto
         {

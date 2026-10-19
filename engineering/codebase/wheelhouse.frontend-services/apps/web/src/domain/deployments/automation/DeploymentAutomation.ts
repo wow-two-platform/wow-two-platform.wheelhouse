@@ -1,3 +1,5 @@
+import { ProductDeploy } from '@/domain/products/Product';
+
 /** What the control plane deploys of one product on its own. */
 export interface ProductAutomation {
   readonly product: string;
@@ -7,6 +9,8 @@ export interface ProductAutomation {
   readonly autoPromote: boolean;
   /** The product's own CI deploys it (Wheelhouse itself), so the control plane never does. */
   readonly ciDeployed: boolean;
+  /** What deploys the product; only one Wheelhouse deploys takes automatic deploys. */
+  readonly deploy: ProductDeploy;
 }
 
 /** Why an automatic deploy waits: a new release for dev, or a promotion after the dev watch. */
@@ -37,4 +41,12 @@ export const DefaultAutomation = (product: string): ProductAutomation => ({
   autoDeployDev: true,
   autoPromote: false,
   ciDeployed: false,
+  deploy: ProductDeploy.Wheelhouse,
 });
+
+/** Why the automatic choices of a product Wheelhouse does not deploy are locked; null for one it deploys. */
+export function automationLockOf(choices: Pick<ProductAutomation, 'deploy'>): string | null {
+  if (choices.deploy === ProductDeploy.Ci) return 'Its own CI deploys it.';
+  if (choices.deploy === ProductDeploy.None) return 'Nothing deploys it.';
+  return null;
+}

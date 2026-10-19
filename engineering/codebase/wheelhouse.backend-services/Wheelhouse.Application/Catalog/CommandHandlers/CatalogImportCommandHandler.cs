@@ -6,6 +6,7 @@ using Wheelhouse.Application.Catalog.Services;
 using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Domain.Catalog.Enums;
 using Wheelhouse.Domain.Products.Entities;
+using Wheelhouse.Domain.Products.Enums;
 using Wheelhouse.Domain.Workspaces.Entities;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
@@ -14,7 +15,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Catalog.CommandHandlers;
 
 /// <summary>Handles <see cref="CatalogImportCommand"/> over the merged hubs. Each chosen entry, in catalog order: an existing product with its
-/// slug moves into the entry's workspace; otherwise an entry Wheelhouse deploys (<c>deploy: wheelhouse</c>) with a
+/// slug moves into the entry's workspace and takes the entry's <c>deploy</c> as its deploy mode; otherwise an entry Wheelhouse deploys (<c>deploy: wheelhouse</c>) with a
 /// repository becomes a product, whose release source <see cref="CatalogReleaseService"/> derives; any other entry is
 /// skipped with a warning. A workspace is created, last in the order, only when a product needs it. Every step checks
 /// what exists first, so an interrupted import completes when run again.</summary>
@@ -41,12 +42,16 @@ public sealed class CatalogImportCommandHandler(
             if (existing is not null)
             {
                 var workspace = await import.WorkspaceAsync(entry.Workspace, cancellationToken);
+                var deploy = ModeOf(entry.Deploy);
+                if (existing.WorkspaceId == workspace.Id && existing.Deploy == deploy)
+                    continue;
                 if (existing.WorkspaceId != workspace.Id)
-                {
-                    existing.WorkspaceId = workspace.Id;
-                    await products.UpdateAsync(existing, cancellationToken);
                     import.Moved.Add(entry.Slug);
-                }
+                if (existing.Deploy != deploy)
+                    import.Updated.Add(entry.Slug);
+                existing.WorkspaceId = workspace.Id;
+                existing.Deploy = deploy;
+                await products.UpdateAsync(existing, cancellationToken);
                 continue;
             }
 
@@ -68,6 +73,7 @@ public sealed class CatalogImportCommandHandler(
                 DefaultBranch = CatalogConstants.ReleaseBranch,
                 WorkspaceId = (await import.WorkspaceAsync(entry.Workspace, cancellationToken)).Id,
                 Release = derived.Release,
+                Deploy = ModeOf(entry.Deploy),
             }, cancellationToken);
             import.Created.Add(entry.Slug);
             if (derived.Note is { } note)
@@ -79,6 +85,7 @@ public sealed class CatalogImportCommandHandler(
             CreatedWorkspaces = import.CreatedWorkspaces,
             CreatedProducts = import.Created,
             MovedProducts = import.Moved,
+            UpdatedProducts = import.Updated,
             Warnings = import.Warnings,
         });
     }
@@ -103,6 +110,14 @@ public sealed class CatalogImportCommandHandler(
         return null;
     }
 
+    /// <summary>The deploy mode a product takes from its catalog entry's <c>deploy</c>.</summary>
+    private static ProductDeployMode ModeOf(CatalogDeploy deploy) => deploy switch
+    {
+        CatalogDeploy.Ci => ProductDeployMode.Ci,
+        CatalogDeploy.None => ProductDeployMode.None,
+        _ => ProductDeployMode.Wheelhouse,
+    };
+
     private static string Clip(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 
     /// <summary>Tracks one import's changes and creates the workspaces its products need.</summary>
@@ -113,6 +128,8 @@ public sealed class CatalogImportCommandHandler(
         public List<string> Created { get; } = [];
 
         public List<string> Moved { get; } = [];
+
+        public List<string> Updated { get; } = [];
 
         public List<CatalogImportWarningDto> Warnings { get; } = [];
 

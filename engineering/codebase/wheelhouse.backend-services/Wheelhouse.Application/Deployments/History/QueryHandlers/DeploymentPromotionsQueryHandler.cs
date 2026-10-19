@@ -1,13 +1,15 @@
 using Wheelhouse.Application.Deployments.History.Models;
 using Wheelhouse.Application.Deployments.History.Queries;
 using Wheelhouse.Application.Deployments.History.Services;
+using Wheelhouse.Domain.Products.Enums;
 using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Deployments.History.QueryHandlers;
 
-/// <summary>Handles <see cref="DeploymentPromotionsQuery"/>. Prod takes published releases only, so a commit build that
-/// succeeded on dev is never offered; a prod rollout of the release already under way, or a prod already on it or on a
+/// <summary>Handles <see cref="DeploymentPromotionsQuery"/>. Only a product Wheelhouse deploys is offered: one its own
+/// CI or nothing deploys is left out, so neither Ready to promote, auto-promote nor a fleet takes it. Prod takes published
+/// releases only, so a commit build that succeeded on dev is never offered; a prod rollout of the release already under way, or a prod already on it or on a
 /// later release, leaves the product out.</summary>
 public sealed class DeploymentPromotionsQueryHandler(DeploymentHistoryService history)
     : IQueryHandler<DeploymentPromotionsQuery, AppResult<IReadOnlyList<DeploymentPromotionDto>>>
@@ -31,6 +33,8 @@ public sealed class DeploymentPromotionsQueryHandler(DeploymentHistoryService hi
         foreach (var product in loaded.Targets.GroupBy(target => target.Product, StringComparer.Ordinal))
         {
             var workspace = product.First().Workspace;
+            if (product.First().Deploy != ProductDeployMode.Wheelhouse)
+                continue;
             if (filter.HasEntities
                 && !filter.Products.Contains(product.Key, StringComparer.Ordinal)
                 && !(workspace is not null && filter.Workspaces.Contains(workspace, StringComparer.Ordinal))

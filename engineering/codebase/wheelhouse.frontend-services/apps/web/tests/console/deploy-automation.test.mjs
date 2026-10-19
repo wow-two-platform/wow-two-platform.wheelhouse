@@ -5,7 +5,7 @@ import { bundleModule } from "./BundleModule.mjs";
 
 // The real rules of automatic deploys and freezes, and their wire decoding.
 const automation = await bundleModule(`
-  export { DefaultAutomation, DeployFreezes, rollbackRisks, DeploymentIssues } from './src/domain/deployments';
+  export { DefaultAutomation, DeployFreezes, rollbackRisks, DeploymentIssues, automationLockOf } from './src/domain/deployments';
   export { BuildFailureSchema, DeploymentAutomationSchema, DeployFreezeSchema, ReleaseChangelogSchema } from './src/integration/deployments/automationSchemas';
   export { DeploymentPromotionSchema, DeploymentItemSchema } from './src/integration/deployments/historySchemas';
 `);
@@ -24,7 +24,23 @@ const freeze = (product, environment, reason = null) => ({
 });
 
 test("a product takes auto-deploy to dev on and auto-promote off until the host says otherwise", () => {
-  assert.deepEqual(DefaultAutomation("foreverpin"), { product: "foreverpin", autoDeployDev: true, autoPromote: false, ciDeployed: false });
+  assert.deepEqual(DefaultAutomation("foreverpin"),
+    { product: "foreverpin", autoDeployDev: true, autoPromote: false, ciDeployed: false, deploy: "wheelhouse" });
+});
+
+test("the automatic choices lock for a product its own CI or nothing deploys, whatever its slug", () => {
+  assert.equal(automation.automationLockOf({ deploy: "wheelhouse" }), null);
+  assert.equal(automation.automationLockOf({ deploy: "ci" }), "Its own CI deploys it.");
+  assert.equal(automation.automationLockOf({ deploy: "none" }), "Nothing deploys it.");
+  const decoded = DeploymentAutomationSchema.parse({
+    products: [
+      { product: "wheelhouse", autoDeployDev: true, autoPromote: false, ciDeployed: false, deploy: "wheelhouse" },
+      { product: "notes", autoDeployDev: false, autoPromote: false, ciDeployed: false, deploy: "none" },
+      // A host before the stored mode names the CI flag only.
+      { product: "legacy", autoDeployDev: false, autoPromote: false, ciDeployed: true },
+    ],
+  });
+  assert.deepEqual(decoded.products.map((item) => item.deploy), ["wheelhouse", "none", "ci"]);
 });
 
 test("the narrowest freeze covers a target: its environment, then its product, then everything", () => {

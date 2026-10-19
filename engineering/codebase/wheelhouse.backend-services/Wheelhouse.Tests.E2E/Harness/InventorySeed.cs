@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Domain.Products.Entities;
+using Wheelhouse.Domain.Products.Enums;
 using Wheelhouse.Domain.Products.Models;
 using Wheelhouse.Domain.Servers.Entities;
 using Wheelhouse.Domain.Servers.Enums;
@@ -15,8 +16,8 @@ using Wheelhouse.Domain.Workspaces.Entities;
 namespace Wheelhouse.Tests.E2E.Harness;
 
 /// <summary>Writes the standard inventory every E2E test starts from, straight through the repositories so it leaves
-/// no audit entries: the default workspace holding ForeverPin on a dev and a prod server and Wheelhouse with no
-/// environment, and a vault beside dev.</summary>
+/// no audit entries: the default workspace holding ForeverPin on a dev and a prod server and Wheelhouse, which its own CI
+/// deploys, with no environment, and a vault beside dev.</summary>
 public static class InventorySeed
 {
     /// <summary>Writes the standard inventory into the freshly reset database.</summary>
@@ -46,6 +47,7 @@ public static class InventorySeed
         {
             Id = Guid.NewGuid(), Slug = "wheelhouse", Name = "Wheelhouse", Description = "The portfolio's control plane.",
             Repository = "wow-two-platform/wow-two-platform.wheelhouse", DefaultBranch = "main", WorkspaceId = workspace.Id,
+            Deploy = ProductDeployMode.Ci,
         });
 
         var pilot = await servers.CreateAsync(Server("pilot-host", "Pilot", "vps.example.net", "hel1"));

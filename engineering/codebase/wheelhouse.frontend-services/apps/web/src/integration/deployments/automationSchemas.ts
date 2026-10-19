@@ -1,12 +1,18 @@
 import { z } from 'zod';
 import { DeploymentCause, FleetItemStatus, FleetStatus, FreezeScope } from '@/domain/deployments';
+import { ProductDeploy } from '@/domain/products';
 
 export const ProductAutomationSchema = z.object({
   product: z.string(),
   autoDeployDev: z.boolean(),
   autoPromote: z.boolean(),
   ciDeployed: z.boolean().default(false),
-});
+  // A host before the stored mode sends none: its CI flag still says which products it never deploys.
+  deploy: z.enum(ProductDeploy).optional(),
+}).transform((value) => ({
+  ...value,
+  deploy: value.deploy ?? (value.ciDeployed ? ProductDeploy.Ci : ProductDeploy.Wheelhouse),
+}));
 
 export const DeploymentAutomationSchema = z.object({
   products: z.array(ProductAutomationSchema),

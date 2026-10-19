@@ -24,13 +24,14 @@ public sealed class DeploymentHistoryService(
         var workspaceSlugs = (await workspaces.GetAllAsync(ct)).ToDictionary(row => row.Id, row => row.Slug);
         var productRows = await products.GetAllAsync(ct);
         var productSlugs = productRows.ToDictionary(row => row.Id, row => row.Slug);
+        var productModes = productRows.ToDictionary(row => row.Id, row => row.Deploy);
         var productWorkspaces = productRows.ToDictionary(
             row => row.Slug, row => workspaceSlugs.GetValueOrDefault(row.WorkspaceId), StringComparer.Ordinal);
         var facts = (await targets.GetAllAsync(ct))
             .Where(row => productSlugs.ContainsKey(row.ProductId))
             .Select(row => new DeploymentTargetFacts(
                 row.Slug, productSlugs[row.ProductId], productWorkspaces.GetValueOrDefault(productSlugs[row.ProductId]),
-                row.Environment.ToString().ToLowerInvariant()))
+                row.Environment.ToString().ToLowerInvariant(), productModes[row.ProductId]))
             .ToArray();
         var byTarget = facts.ToDictionary(fact => fact.Slug, StringComparer.Ordinal);
 
