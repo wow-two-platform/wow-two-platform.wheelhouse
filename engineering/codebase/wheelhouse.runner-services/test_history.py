@@ -97,6 +97,33 @@ class HistoryTests(unittest.TestCase):
         [record] = history.records(self.root, transport.jobs(self.root, limit=None))
         self.assertIsNone(record["currentStep"])
 
+    def test_records_carry_how_the_rollout_treated_each_service(self):
+        self.bundle("pilot-v1", {"api": "ghcr.io/o/api@sha256:" + "a" * 64})
+        finished, older = self.job(5, "failed"), self.job(6, "succeeded")
+        rollout = {"staged": True, "waves": [["api"]], "removed": [],
+                   "services": [{"name": "api", "change": "updated", "outcome": "failed", "dependsOn": [],
+                                 "from": "1.1.0", "to": "1.2.0", "reason": "image", "health": "unhealthy",
+                                 "at": "2026-10-05T10:01:00+00:00"},
+                                {"name": "web", "change": "unchanged", "outcome": "unchanged", "dependsOn": ["api"]}]}
+        runner.write_json(self.root / "observed" / (finished + ".json"),
+                          {"id": finished, "status": "failed", "completedAt": "2026-10-05T10:02:00+00:00",
+                           "serviceRollout": rollout})
+        runner.write_json(self.root / "observed" / (older + ".json"),
+                          {"id": older, "status": "succeeded", "completedAt": "2026-10-06T10:02:00+00:00",
+                           "serviceRollout": {"waves": "malformed"}})
+        records = {record["id"]: record for record in history.records(self.root, transport.jobs(self.root, limit=None))}
+        self.assertEqual(rollout, records[finished]["serviceRollout"])
+        self.assertNotIn("serviceRollout", records[older], "a malformed report leaves the services unknown")
+
+    def test_a_watch_ended_by_another_rollout_reads_replaced_even_when_recorded_superseded(self):
+        self.bundle("pilot-v1", {"api": "ghcr.io/o/api@sha256:" + "a" * 64})
+        job = self.job(7, "succeeded")
+        runner.write_json(self.root / "observed" / (job + ".json"),
+                          {"id": job, "status": "succeeded", "completedAt": "2026-10-07T10:02:00+00:00"})
+        runner.write_json(self.root / "watching" / (job + ".json"), {"id": job, "status": "superseded", "checks": 2})
+        [record] = history.records(self.root, transport.jobs(self.root, limit=None))
+        self.assertEqual({"status": "replaced", "checks": 2}, record["watch"])
+
     def test_observation_reads_steps_sites_and_warnings_locally(self):
         job = self.job(4, "queued")
         runner.write_json(self.root / "observed" / (job + ".json"),

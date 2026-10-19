@@ -441,7 +441,8 @@ def follow(root, clock=time.time):
 WATCH_MINUTES = 10
 WATCH_INTERVAL = 60
 WATCH_BATCH_SIZE = 2  # each look is one SSH read bounded at 45 seconds, inside the API's 110-second budget
-WATCH_FINAL = {"passed", "degraded", "superseded", "unverified"}
+# `superseded` is the word records written before the rename keep; a new one says `replaced`.
+WATCH_FINAL = {"passed", "degraded", "replaced", "superseded", "unverified"}
 
 
 def watch_record(root, job_id):
@@ -479,7 +480,7 @@ def plural_of(count, noun):
 def watch(root, minutes=WATCH_MINUTES, clock=time.time):
     """A bounded pass over the watch windows: for `minutes` after each target's latest successful rollout, looks at its
     containers and sites once a minute (two looks per pass at most) and records `watching/<job>.json`: `passed` when
-    the window ends clean, `degraded` with what regressed, `superseded` when another rollout replaced it, `unverified`
+    the window ends clean, `degraded` with what regressed, `replaced` when another rollout replaced it, `unverified`
     when no look could read the target. Never deploys, retries or rolls back."""
     require(type(minutes) is int and 1 <= minutes <= 120, "A watch window is 1-120 minutes")
     result = {"checked": 0, "passed": 0, "degraded": 0, "busy": 0}
@@ -527,7 +528,7 @@ def watch(root, minutes=WATCH_MINUTES, clock=time.time):
                 continue
             result["checked"] += 1
             if reading.get("currentId") and reading["currentId"] != job_record.get("remoteJobId"):
-                record["status"] = "superseded"
+                record["status"] = "replaced"
                 write_json(path, record)
                 continue
             found = regressions(reading, record.get("baseline"))

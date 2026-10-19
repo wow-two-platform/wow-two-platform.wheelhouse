@@ -76,10 +76,10 @@ class WatchPassTests(unittest.TestCase):
         self.run_pass(1)
         self.assertEqual(["api is exited"], self.record()["findings"])
 
-    def test_a_replaced_rollout_is_superseded_and_an_unreadable_target_unverified(self):
+    def test_a_rollout_another_one_replaced_reads_replaced_and_an_unreadable_target_unverified(self):
         self.look(current="33333333-3333-4333-8333-333333333333")
         self.run_pass(1)
-        self.assertEqual("superseded", self.record()["status"])
+        self.assertEqual("replaced", self.record()["status"])
         (self.root / "watching" / (JOB + ".json")).unlink()
         self.run_pass(2)
         self.run_pass(4)

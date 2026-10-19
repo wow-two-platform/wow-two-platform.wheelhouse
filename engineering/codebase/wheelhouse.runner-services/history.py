@@ -40,13 +40,19 @@ def bundle_facts(root, bundle_id):
             "publishedAt": published if isinstance(published, str) else None}
 
 
-def current_step(root, job_id):
-    """The step a live rollout is on: the running one, else the last one recorded; None before the worker starts."""
+def observed_of(root, job_id):
+    """The target's last report on one submission, as the follower saved it; an empty dict when none is readable."""
     try:
         observed = read_json(root / "observed" / (job_id + ".json"))
     except (ValueError, OSError):
-        return None
-    steps = [step for step in (observed.get("steps") if isinstance(observed, dict) else None) or []
+        return {}
+    return observed if isinstance(observed, dict) else {}
+
+
+def current_step(root, job_id, observed=None):
+    """The step a live rollout is on: the running one, else the last one recorded; None before the worker starts."""
+    observed = observed_of(root, job_id) if observed is None else observed
+    steps = [step for step in observed.get("steps") or []
              if isinstance(step, dict) and isinstance(step.get("name"), str)]
     if not steps:
         return None
@@ -66,12 +72,24 @@ def watch_of(root, job_id):
         return None
     if not isinstance(record, dict) or not isinstance(record.get("status"), str):
         return None
-    return {key: record[key] for key in WATCH if key in record}
+    watch = {key: record[key] for key in WATCH if key in record}
+    if watch["status"] == "superseded":
+        watch["status"] = "replaced"  # the word a window ended by another rollout carried before the rename
+    return watch
+
+
+def service_rollout_of(observed):
+    """How the rollout treated each service, as the target reported it: each service's change and outcome, and, from
+    runners that record them, its versions from and to, why it changed, its health and when it settled. None for a
+    rollout older than service-aware rollouts."""
+    rollout = observed.get("serviceRollout")
+    return rollout if isinstance(rollout, dict) and isinstance(rollout.get("services"), list) else None
 
 
 def records(root, submissions):
-    """`submissions` is the transport's merged job list; each record gains its bundle's facts and, while it is live,
-    its current step. A bundle missing from the cache leaves product and services unknown (null)."""
+    """`submissions` is the transport's merged job list; each record gains its bundle's facts, how its rollout treated
+    each service (`serviceRollout`, so a list can say `1 of 4 changed`) and, while it is live, its current step. A
+    bundle missing from the cache leaves product and services unknown (null)."""
     facts = {}
     result = []
     for job in submissions:
@@ -83,8 +101,12 @@ def records(root, submissions):
                 "rollbackCompatible": bundle.get("rollbackCompatible"), "migrations": bundle.get("migrations"),
                 "verifies": bundle.get("verifies"), "services": bundle.get("services"),
                 "publishedAt": bundle.get("publishedAt")}
+        observed = observed_of(root, job["id"])
+        rollout = service_rollout_of(observed)
+        if rollout is not None:
+            item["serviceRollout"] = rollout
         if job.get("status") in PENDING:
-            item["currentStep"] = current_step(root, job["id"])
+            item["currentStep"] = current_step(root, job["id"], observed)
         elif job.get("status") == "succeeded":
             item["watch"] = watch_of(root, job["id"])
         result.append(item)
