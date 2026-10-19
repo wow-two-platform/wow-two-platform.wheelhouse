@@ -78,6 +78,8 @@ const nowRuns = computed(() =>
 );
 /** Each service with its versions and how it ended: the API's per-service results first, in rollout order. */
 const serviceRows = computed(() => {
+  // A deploy that changed nothing touched no service, whatever its release would have changed.
+  if (reading.value?.state === DeployState.NotApplied) return [];
   const results = deployment.value?.services ?? [];
   const changes = services.value ?? [];
   const names = [...results.map((item) => item.service), ...changes.map((item) => item.service).filter((name) => !results.some((item) => item.service === name))];
@@ -240,7 +242,9 @@ function rollBack(): void {
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                 <DeploymentStateChip v-if="reading" :reading="reading" />
                 <span v-if="deployment" class="text-sm text-muted-foreground">
-                  <template v-if="deployment.startedAt"
+                  <template v-if="reading?.state === DeployState.NotApplied"
+                    >stopped before any change {{ Measures.moment(deployment.completedAt ?? deployment.submittedAt) }}</template
+                  ><template v-else-if="deployment.startedAt"
                     >changes started {{ Measures.moment(deployment.startedAt)
                     }}<template v-if="deployment.completedAt"> · stopped {{ Measures.moment(deployment.completedAt) }}</template></template
                   ><template v-else>submitted <RelativeTime :value="deployment.submittedAt" /></template>
