@@ -5,9 +5,10 @@ umask 077
 
 usage() {
     cat <<'EOF'
-Usage: sudo bash bootstrap.sh --host-identity-verified --ssh-public-key /path/to/ci.pub [--install-tailscale]
+Usage: sudo bash bootstrap.sh --host-identity-verified [--ssh-public-key /path/to/ci.pub] [--install-tailscale]
 Installs host dependencies and a Docker-privileged wheelhouse-deploy account.
-Leaves SSH/firewall policy, Tailscale enrollment and application startup to the operator.
+Leaves SSH/firewall policy (harden-control.sh), Tailscale enrollment and application startup to the operator.
+--ssh-public-key authorizes CI's deploy key: only for CI's fallback path; a self-deploying Wheelhouse needs none.
 EOF
 }
 
@@ -23,25 +24,28 @@ while (($#)); do
         *) usage >&2; exit 2 ;;
     esac
 done
-[[ $EUID -eq 0 && $verified == true && -f "$public_key" && ! -L "$public_key" ]] || {
+[[ $EUID -eq 0 && $verified == true && ( -z $public_key || ( -f "$public_key" && ! -L "$public_key" ) ) ]] || {
     usage >&2; exit 2;
 }
 . /etc/os-release
 [[ $ID == ubuntu && $VERSION_ID == 26.04 && $(dpkg --print-architecture) == amd64 ]] || {
     echo 'This bootstrap is reviewed only for Ubuntu 26.04 amd64.' >&2; exit 1;
 }
-ssh-keygen -l -f "$public_key" >/dev/null
-[[ $(awk 'NF && $1 !~ /^#/ {count++} END {print count+0}' "$public_key") == 1 ]] || {
-    echo 'Provide exactly one SSH public key.' >&2; exit 1;
-}
-[[ $(awk 'NF {print $1; exit}' "$public_key") == ssh-ed25519 ]] || {
-    echo 'Provide an Ed25519 public key without authorized_keys options.' >&2; exit 1;
-}
+if [[ -n $public_key ]]; then
+    ssh-keygen -l -f "$public_key" >/dev/null
+    [[ $(awk 'NF && $1 !~ /^#/ {count++} END {print count+0}' "$public_key") == 1 ]] || {
+        echo 'Provide exactly one SSH public key.' >&2; exit 1;
+    }
+    [[ $(awk 'NF {print $1; exit}' "$public_key") == ssh-ed25519 ]] || {
+        echo 'Provide an Ed25519 public key without authorized_keys options.' >&2; exit 1;
+    }
+fi
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 deploy_user=wheelhouse-deploy
 deploy_root=/srv/wheelhouse
-for source in platform.compose.yml tailscale-serve.json control-only.yml prepare.py prepare_canary.py authorize-runner.sh; do
+for source in platform.compose.yml tailscale-serve.json control-only.yml prepare.py prepare_canary.py authorize-runner.sh \
+    self-deploy.py harden-control.sh bootstrap-products.sh; do
     [[ -f "$script_dir/$source" ]] || { echo "Missing bootstrap asset: $source" >&2; exit 1; }
 done
 # Fail rather than removing a pre-existing container stack's engine packages.
@@ -97,10 +101,12 @@ install -d -m 0700 -o "$deploy_user" -g "$deploy_group" /home/wheelhouse-deploy/
 authorized_keys=/home/wheelhouse-deploy/.ssh/authorized_keys
 [[ ! -L "$authorized_keys" ]] || { echo 'Refusing a symlinked authorized_keys.' >&2; exit 1; }
 touch "$authorized_keys"
-key_line=$(awk 'NF && $1 !~ /^#/ {print $1 " " $2}' "$public_key")
-if ! grep -Fq -- "$key_line" "$authorized_keys"; then
-    # This CI identity requires SCP/SSH commands, not agent forwarding, tunnels or a terminal.
-    printf 'restrict %s\n' "$key_line" >> "$authorized_keys"
+if [[ -n $public_key ]]; then
+    key_line=$(awk 'NF && $1 !~ /^#/ {print $1 " " $2}' "$public_key")
+    if ! grep -Fq -- "$key_line" "$authorized_keys"; then
+        # This CI identity requires SCP/SSH commands, not agent forwarding, tunnels or a terminal.
+        printf 'restrict %s\n' "$key_line" >> "$authorized_keys"
+    fi
 fi
 chown "$deploy_user:$deploy_group" "$authorized_keys"
 chmod 0600 "$authorized_keys"
@@ -117,10 +123,13 @@ install -m 0644 -o "$deploy_user" -g "$deploy_group" \
 # The console entry points require this middleware; Traefik refuses their routes until it exists.
 install -m 0600 -o "$deploy_user" -g "$deploy_group" \
     "$script_dir/control-only.yml" "$deploy_root/ingress/control-only.yml"
+# self-deploy.py: the break-glass deploy and rollback of both consoles, run as the deploy account (vps.md).
 install -m 0500 -o "$deploy_user" -g "$deploy_group" \
-    "$script_dir/prepare.py" "$script_dir/prepare_canary.py" "$deploy_root/bootstrap/"
-# The administrator runs this one; the deploy account must not be able to change it.
-install -m 0500 -o root -g root "$script_dir/authorize-runner.sh" "$deploy_root/bootstrap/authorize-runner.sh"
+    "$script_dir/prepare.py" "$script_dir/prepare_canary.py" "$script_dir/self-deploy.py" "$deploy_root/bootstrap/"
+# The administrator runs these; the deploy account must not be able to change them. harden-control.sh sources
+# bootstrap-products.sh for the SSH policy and security updates a products host shares.
+install -m 0500 -o root -g root "$script_dir/authorize-runner.sh" "$script_dir/harden-control.sh" \
+    "$script_dir/bootstrap-products.sh" "$deploy_root/bootstrap/"
 # Traefik must read mode-0600 route files written by the deploy account without extra capabilities.
 printf 'WHEELHOUSE_DEPLOY_UID=%s\nWHEELHOUSE_DEPLOY_GID=%s\n' \
     "$(id -u "$deploy_user")" "$(id -g "$deploy_user")" > "$deploy_root/platform/host.env"

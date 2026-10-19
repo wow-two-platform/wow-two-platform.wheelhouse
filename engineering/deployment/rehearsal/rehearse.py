@@ -16,6 +16,15 @@ runner key, and the runner deploys ForeverPin dev to it, reached through its pri
 `networks` proves on that host that the platform network keeps its fixed addresses: containers that start before
 Traefik take dynamic ones from .128/25, and repair-networks.sh gives a network made without the range one.
 
+`self-deploy` proves the kit's break-glass self-deploy.py on the local server: Wheelhouse's own release goes to
+wheelhouse-dev through the transport, as prod deploys it (its declared dev check runs), then self-deploy.py, run as the
+deploy account on the target with the runner it copies out of the release image, reads the console, deploys a second
+release, rolls back with no network, and sees a broken release roll back by itself.
+
+`harden` proves harden-control.sh on a real Ubuntu 26.04 host with real UFW and sshd: --check reports, the first run
+turns the firewall on with public SSH kept and converges, --tailnet-only-ssh refuses without a tailnet session and
+then closes public SSH and pins the runner keys, and --public-ssh reopens it.
+
 `enroll` enrolls a fresh root-only Ubuntu 26.04 host with the runner from the console image, as Wheelhouse prod does:
 the one-time key, the kit, a single-use key minted through the OAuth client, the node and host-key proofs, the seal.
 Then it places ForeverPin's databases and site on it and applies the tailnet policy after its review. Tailscale is the
@@ -410,6 +419,239 @@ def self_environment():
         "AllowedHosts": "localhost;" + SELF_HOST,
     }, indent=2) + "\n")
     print("Wrote " + str(path) + "; add a GitHub OAuth app there to sign in")
+
+
+# The self-deploy rehearsal's own runner root: the local server's fixtures and SSH identity, no other inventory.
+SELF_ROOT = STATE / "self-deploy" / "root"
+
+
+def self_release(tag, root=INVENTORY):
+    """Wheelhouse's release bundle under `tag`, built from this checkout as its CI builds one (an archive built
+    earlier is imported again), and imported under `root`."""
+    bundle_id = SELF + "-" + re.sub(r"[^a-z0-9-]+", "-", tag.lower())
+    if (root / "bundles" / bundle_id).exists():
+        print("Already imported " + bundle_id)
+        return bundle_id
+    output = private_dir(STATE / "build") / bundle_id
+    archive = STATE / "build" / (bundle_id + ".tar.gz")
+    if not archive.is_file():
+        commit = run("git", "-C", str(REPOSITORY), "rev-parse", "HEAD").strip()
+        print(run(yaml_python(), str(RELEASE), "build", "--repo", str(REPOSITORY), "--commit", commit, "--checkout",
+                  "--tag", tag, "--registry", REGISTRY + "/" + SELF, "--platform", platform(),
+                  "--output", str(output), "--archive", str(archive)).strip())
+    transport("import", "--archive", str(archive), "--bundle", bundle_id, root=root)
+    print("Imported " + bundle_id)
+    return bundle_id
+
+
+def self_root():
+    """The rehearsal's runner root, holding the local server's SSH identity and pin."""
+    import shutil
+    folder = private_dir(SELF_ROOT / "ssh" / "local")
+    for name in ("identity", "known_hosts"):
+        shutil.copyfile(INVENTORY / "ssh" / "local" / name, folder / name)
+        (folder / name).chmod(0o600)
+    return SELF_ROOT
+
+
+def derived_bundle(source, release, broken=False):
+    """A copy of a bundle under another release label; `broken` gives it a health check that always fails."""
+    manifest = json.loads((source / "release.json").read_text())
+    compose_file = json.loads((source / "compose.json").read_text())
+    manifest["release"] = release
+    if broken:
+        for service in compose_file["services"].values():
+            service["healthcheck"] = {"test": ["CMD", "false"], "interval": "2s", "timeout": "2s", "retries": 1,
+                                      "start_period": "0s"}
+    content = json.dumps(compose_file, indent=2).encode()
+    import hashlib
+    manifest["composeSha256"] = hashlib.sha256(content).hexdigest()
+    return {"release.json": json.dumps(manifest, indent=2).encode(), "compose.json": content}
+
+
+def on_target(*command, stdin=None, user="deploy", check=True):
+    """A command on the local server's target container, as its deploy account unless `user` says otherwise."""
+    result = subprocess.run(["docker", "compose", "-f", str(HERE / "compose.yml"), "exec", "-T", "-u", user, "target",
+                             *command], input=stdin, capture_output=True, env=environment())
+    if check and result.returncode:
+        detail = (result.stderr or result.stdout or b"").decode("utf-8", "replace").strip().splitlines()[-1:]
+        sys.exit("Failed on the target: " + " ".join(map(str, command[:3])) + (" — " + detail[0] if detail else ""))
+    return result
+
+
+def prove_self_deploy():
+    """Wheelhouse's own release to wheelhouse-dev through the transport, then the kit's self-deploy.py on the target."""
+    up()
+    self_environment()
+    root = self_root()
+    first = self_release("v0.0.1-rig.1", root)
+    outcome = deploy(first, "dev", target=SELF_TARGET, timeout=900, root=root)
+    verification = outcome.get("verification") or {}
+    if outcome.get("status") != "succeeded" or verification.get("status") != "passed":
+        sys.exit("Wheelhouse's own dev rollout or its declared check did not pass: " + json.dumps(verification))
+    print("Declared dev check: " + str(verification.get("summary")))
+
+    # The kit as the control host holds it: self-deploy.py, the console's target file, and two more releases.
+    source = root / "bundles" / first
+    bundles = {"second": derived_bundle(source, "v0.0.1-rig.2"),
+               "broken": derived_bundle(source, "v0.0.1-rig.3", broken=True)}
+    on_target("sh", "-c", "umask 077; mkdir -p /srv/wheelhouse/bootstrap /srv/wheelhouse/config /srv/wheelhouse/rig-bundles")
+    on_target("sh", "-c", "umask 077; cat > /srv/wheelhouse/bootstrap/self-deploy.py",
+              stdin=(HERE.parent / "vps" / "self-deploy.py").read_bytes())
+    for name, files in bundles.items():
+        for filename, content in files.items():
+            on_target("sh", "-c", "umask 077; mkdir -p /srv/wheelhouse/rig-bundles/" + name
+                      + " && cat > /srv/wheelhouse/rig-bundles/" + name + "/" + filename, stdin=content)
+    resolved = run(sys.executable, "-c", "import json, sys; sys.path.insert(0, sys.argv[1]); import fleet; "
+                   "target = fleet.resolve_target(sys.argv[2], 'wheelhouse-dev')['target']; "
+                   "[target.pop(key, None) for key in ('probeGate', 'rollbackCompatible')]; print(json.dumps(target))",
+                   str(RUNNERS), str(root), env=environment())
+    on_target("sh", "-c", "umask 077; cat > /srv/wheelhouse/config/wheelhouse-dev.json", stdin=resolved.encode())
+
+    def cli(*arguments, expect=0):
+        result = on_target("python3", "/srv/wheelhouse/bootstrap/self-deploy.py", *arguments, "--root", "/srv/wheelhouse",
+                           check=False)
+        text = (result.stdout + result.stderr).decode("utf-8", "replace").strip()
+        print("$ self-deploy.py " + " ".join(arguments) + "\n" + "\n".join("  " + line for line in text.splitlines()))
+        if result.returncode != expect:
+            sys.exit("self-deploy.py " + arguments[0] + " exited " + str(result.returncode) + ", expected " + str(expect))
+        return text
+
+    def runs():
+        reading = json.loads(cli("status", "--env", "dev", "--json"))["consoles"][0]
+        return reading["condition"], (reading["current"] or {}).get("release")
+
+    cli("status")
+    cli("deploy", "--env", "dev", "--bundle", "/srv/wheelhouse/rig-bundles/second")
+    if runs() != ("ready", "v0.0.1-rig.2"):
+        sys.exit("self-deploy.py deploy did not leave the console on v0.0.1-rig.2: " + str(runs()))
+    cli("rollback", "--env", "dev")
+    if runs() != ("ready", "v0.0.1-rig.1"):
+        sys.exit("self-deploy.py rollback did not return the console to v0.0.1-rig.1: " + str(runs()))
+    broken = cli("deploy", "--env", "dev", "--bundle", "/srv/wheelhouse/rig-bundles/broken", expect=1)
+    if '"status": "rolled_back"' not in broken or runs() != ("ready", "v0.0.1-rig.1"):
+        sys.exit("A broken release did not roll back by itself: " + str(runs()))
+    log = on_target("cat", "/srv/wheelhouse/self-deploy/log.jsonl").stdout.decode().splitlines()
+    print("Local log: " + ", ".join(json.loads(line)["action"] + " " + json.loads(line)["release"] for line in log))
+    print("Self-deploy proven on the rig: console path with its dev check, then deploy, rollback and a broken release"
+          " rolled back, by the release image's own runner.")
+
+
+HARDEN = STATE / "harden"
+# What the fresh host stands in for: the control host's deploy account with CI's and a console's runner key, its
+# `control` network (a docker stub answers for it), and a tailnet that is up (a tailscale stub says so).
+HARDEN_SETUP = r"""
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq >/dev/null
+apt-get install -y -qq --no-install-recommends ufw unattended-upgrades >/dev/null
+id wheelhouse-deploy >/dev/null 2>&1 || useradd --create-home --shell /bin/bash wheelhouse-deploy
+install -d -m 0700 -o wheelhouse-deploy -g wheelhouse-deploy /home/wheelhouse-deploy/.ssh
+cat > /home/wheelhouse-deploy/.ssh/authorized_keys <<'KEYS'
+restrict ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICiKeyCiKeyCiKeyCiKeyCiKeyCiKeyCiKeyCiKeyCiK
+restrict ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIConsoleRunnerKeyConsoleRunnerKeyConsoleRunnerK
+KEYS
+chown wheelhouse-deploy:wheelhouse-deploy /home/wheelhouse-deploy/.ssh/authorized_keys
+chmod 0600 /home/wheelhouse-deploy/.ssh/authorized_keys
+id ops >/dev/null 2>&1 || useradd --create-home --shell /bin/bash ops
+install -d -m 0700 -o ops -g ops /home/ops/.ssh
+cp /root/.ssh/authorized_keys /home/ops/.ssh/authorized_keys
+chown ops:ops /home/ops/.ssh/authorized_keys
+cat > /usr/local/bin/docker <<'STUB'
+#!/bin/sh
+[ "$1 $2 $3" = "network inspect control" ]
+STUB
+cat > /usr/local/bin/tailscale <<'STUB'
+#!/bin/sh
+echo '{"BackendState": "Running", "Self": {"Tags": ["tag:control"]}}'
+STUB
+chmod 755 /usr/local/bin/docker /usr/local/bin/tailscale
+mkdir -p /root/kit
+"""
+
+
+def prove_harden():
+    """harden-control.sh on the fresh Ubuntu host with real UFW and sshd, probed from the rig's public network and
+    its tailnet."""
+    import shutil
+    compose("--profile", "enroll", "rm", "-sf", FRESH, capture=False)
+    for volume in ("fresh-docker", "fresh-containerd"):
+        subprocess.run(["docker", "volume", "rm", "-f", "wheelhouse-rehearsal_" + volume], capture_output=True)
+    if HARDEN.exists():
+        shutil.rmtree(HARDEN)
+    private_dir(HARDEN)
+    key = HARDEN / "id_ed25519"
+    run("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "owner@rig", "-f", str(key))
+    private_dir(ENROLL_STATE)
+    (ENROLL_STATE / "fresh-root-keys").write_text(Path(str(key) + ".pub").read_text())
+    compose("--profile", "enroll", "up", "-d", "--build", FRESH, capture=False)
+    deadline = time.monotonic() + 180
+    while on_fresh("systemctl", "is-active", "ssh.socket", "ssh.service", check=False).returncode:
+        if time.monotonic() > deadline:
+            sys.exit("The fresh host's SSH never came up")
+        time.sleep(2)
+    on_fresh("bash", "-c", HARDEN_SETUP)
+    for name in ("harden-control.sh", "bootstrap-products.sh"):
+        on_fresh("sh", "-c", "cat > /root/kit/" + name, stdin=(HERE.parent / "vps" / name).read_bytes())
+
+    def harden(*arguments, expect=0):
+        result = on_fresh("bash", "/root/kit/harden-control.sh", *arguments, check=False)
+        text = (result.stdout + result.stderr).decode("utf-8", "replace").strip()
+        print("$ harden-control.sh " + " ".join(arguments) + "\n" + "\n".join("  " + line for line in text.splitlines()))
+        if result.returncode != expect:
+            sys.exit("harden-control.sh " + " ".join(arguments) + " exited " + str(result.returncode)
+                     + ", expected " + str(expect))
+        return text
+
+    def added():
+        return on_fresh("ufw", "show", "added").stdout.decode()
+
+    def reaches(network, address):
+        """Whether the owner's key signs in as ops at `address`, from a throwaway peer on `network`."""
+        return subprocess.run(["docker", "run", "--rm", "--network", network, "-v", str(HARDEN) + ":/key:ro",
+                               "--entrypoint", "ssh", "wheelhouse-rehearsal-fresh", "-i", "/key/id_ed25519",
+                               "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+                               "-o", "ConnectTimeout=6", "ops@" + address, "true"], capture_output=True).returncode == 0
+
+    if "change  firewall: enable it" not in harden("--check", expect=1):
+        sys.exit("--check did not report the firewall")
+    harden()
+    harden("--check")
+    before = added()
+    harden()
+    if added() != before:
+        sys.exit("A rerun changed the firewall")
+    if not reaches("wheelhouse-rig-public", FRESH_PUBLIC):
+        sys.exit("Public SSH closed before --tailnet-only-ssh")
+    harden("--tailnet-only-ssh", expect=1)
+    session = subprocess.run(["docker", "run", "-d", "--rm", "--network", "wheelhouse-rig-tailnet",
+                              "-v", str(HARDEN) + ":/key:ro", "--entrypoint", "ssh", "wheelhouse-rehearsal-fresh",
+                              "-i", "/key/id_ed25519", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
+                              "-o", "UserKnownHostsFile=/dev/null", "ops@" + FRESH_TAILNET, "sleep", "120"],
+                             capture_output=True, text=True).stdout.strip()
+    try:
+        deadline = time.monotonic() + 30
+        while "100.88." not in on_fresh("ss", "-Htn", "state", "established", "( sport = :22 )").stdout.decode():
+            if time.monotonic() > deadline:
+                sys.exit("The tailnet SSH session never opened")
+            time.sleep(1)
+        harden("--tailnet-only-ssh")
+        harden("--check", "--tailnet-only-ssh")
+        keys = on_fresh("cat", "/home/wheelhouse-deploy/.ssh/authorized_keys").stdout.decode()
+        proofs = {"runner keys pinned to 172.30.1.0/24": keys.count('restrict,from="172.30.1.0/24" ') == 2,
+                  "public SSH refused": not reaches("wheelhouse-rig-public", FRESH_PUBLIC),
+                  "tailnet SSH accepted": reaches("wheelhouse-rig-tailnet", FRESH_TAILNET),
+                  "a plain rerun keeps public SSH closed": "change" not in harden("--check")}
+        harden("--public-ssh")
+        proofs["--public-ssh reopens it"] = reaches("wheelhouse-rig-public", FRESH_PUBLIC)
+    finally:
+        subprocess.run(["docker", "rm", "-f", session], capture_output=True)
+    for name, ok in proofs.items():
+        print("  " + ("ok" if ok else "FAILED").ljust(9) + " " + name)
+    compose("--profile", "enroll", "rm", "-sf", FRESH, capture=False)
+    if not all(proofs.values()):
+        sys.exit("harden-control.sh did not harden the host as it should")
+    print("Control-host hardening proven on a real Ubuntu host: check, converge, close and reopen public SSH.")
 
 
 def on_products(*command, user=None, stdin=None, check=True):
@@ -823,7 +1065,8 @@ def down(volumes):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("action", choices=["up", "console", "dev", "bundle", "settings", "check", "deploy", "state",
-                                           "run", "self", "products", "networks", "enroll", "down"])
+                                           "run", "self", "self-deploy", "harden", "products", "networks", "enroll",
+                                           "down"])
     parser.add_argument("--env", default="dev", help="dev (default) or prod")
     parser.add_argument("--tag", help="bundle: a release tag such as v0.0.1-local.1; without it, a dev candidate")
     parser.add_argument("--bundle", help="the bundle ID to use; defaults to the checkout's candidate")
@@ -868,6 +1111,10 @@ def main():
         bundle_id = self_bundle()
         self_environment()
         deploy(bundle_id, "dev", target=SELF_TARGET, timeout=600)
+    elif args.action == "self-deploy":
+        prove_self_deploy()
+    elif args.action == "harden":
+        prove_harden()
     elif args.action == "products":
         products(args.bundle)
     elif args.action == "networks":
