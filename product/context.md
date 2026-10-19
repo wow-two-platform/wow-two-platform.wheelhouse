@@ -1,6 +1,6 @@
 # Wheelhouse — Context
 
-*Last updated: 2026-10-17*
+*Last updated: 2026-10-19*
 
 ## Current state
 
@@ -46,8 +46,10 @@ redirect and editor, real provider callbacks, persisted codes and cookie keys, a
 - The control-plane VPS hosts only platform apps; products get a separate VPS. Decided 2026-10-09.
 - Wheelhouse prod is the one console for every product environment; dev and prod never share a database.
   Wheelhouse dev is its test instance and deploys only a sample app. Decided 2026-10-14.
-- CI promotes Wheelhouse to prod after an approval; Wheelhouse never deploys itself. Prod answers on the
-  private HTTPS port 443, dev on 8443. The sample app is `wow-two-platform.wheelhouse-canary`. Decided 2026-10-14.
+- Prod answers on the private HTTPS port 443, dev on 8443. The sample app is `wow-two-platform.wheelhouse-canary`.
+  Decided 2026-10-14. CI promoted Wheelhouse then; since 2026-10-19 Wheelhouse deploys itself: CI only builds, prod
+  deploys each release to dev and promotes itself after a typed confirm, a host CLI covers a dead console, and public
+  SSH closes after a week's trial (decisions 64–66).
 - The canary lives permanently on the control-plane VPS beside both consoles, so the platform and its test app are
   always ready. Decided 2026-10-14.
 - Only Wheelhouse prod deploys products, in every environment; dev never holds the products host's key. A flow a

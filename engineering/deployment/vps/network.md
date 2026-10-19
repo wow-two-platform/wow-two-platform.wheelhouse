@@ -14,8 +14,12 @@ A products host runs products only; its runbook is [vps.md § Products host](vps
 | Owner devices on the tailnet | Tailscale Serve HTTPS `:8443` → `127.0.0.1:18082` | Traefik `dev` → dev console |
 | Owner devices on the tailnet | each canary node's Serve HTTPS `:443` → Traefik `:8084` | Traefik `canary` → that canary environment |
 | Owner devices on the tailnet | OpenSSH `:22` | Administrator account |
-| GitHub Actions (not on the tailnet) | OpenSSH `:22` on the public address | `wheelhouse-deploy`, keys only, `restrict` |
-| Consoles (runner) | OpenSSH `:22` at the host's `platform` bridge address `172.30.0.1` | `wheelhouse-deploy`, one key per console |
+| GitHub Actions (not on the tailnet) | OpenSSH `:22` on the public address | `wheelhouse-deploy`, keys only, `restrict`; CI's fallback path only, retired after the self-deploy trial |
+| Consoles (runner) | OpenSSH `:22` at the host's `platform` bridge address `172.30.0.1`, from `control` (`172.30.1.0/24`) | `wheelhouse-deploy`, one key per console; prod's deploys Wheelhouse itself too |
+
+Once Wheelhouse deploys itself and CI's path is retired, `harden-control.sh` turns UFW on: SSH only on `tailscale0`
+and from the consoles' `control` network to `172.30.0.1`, runner keys pinned to that network
+([vps.md § Host hardening](vps.md#host-hardening)).
 
 A products host:
 

@@ -67,8 +67,10 @@ pipelines `v0.9.0` (`v0.5.0` was the first generator that writes that key).
 |---|---|---|
 | `.github/workflows/publish-docker-image.yml` | Every push, pull request, or a dispatched commit | Calls the shared `delivery.yml` with Wheelhouse's checks (backend tiers; runner, CI contracts and VPS kit; frontend), then dev deployment for a published main push; a docs-only push runs nothing |
 | `.github/workflows/codeql.yml` | Main pushes beyond markdown, and weekly | The shared CodeQL scan, beside delivery |
-| `.github/workflows/deploy-dev.yml` | Called after successful main publication | Resolves the tested bundle and deploys over pinned SSH when host wiring is enabled |
-| `.github/workflows/promote-prod.yml` | Dispatched with a release tag | Waits for the owner's approval, then deploys that dev-proven release to prod |
+| `.github/workflows/deploy-dev.yml` | Called after successful main publication | The fallback: resolves the tested bundle and deploys it over pinned SSH; reports only, once `WHEELHOUSE_SELF_DEPLOY` is `true` |
+| `.github/workflows/promote-prod.yml` | Dispatched, with an optional release tag | The fallback: after the owner's approval, deploys a dev-proven release to prod; refuses once `WHEELHOUSE_SELF_DEPLOY` is `true` |
+
+Once activated, Wheelhouse deploys itself and CI only builds ([§ Wheelhouse deploys itself](#wheelhouse-deploys-itself)).
 
 A local build proves the path without GitHub:
 
@@ -77,9 +79,111 @@ python3 ../wow-two-platform.pipelines/generator/release.py build --repo . --chec
   --platform linux/arm64 --registry 127.0.0.1:15000/wheelhouse --output /tmp/wheelhouse-bundle
 ```
 
+## Wheelhouse deploys itself
+
+Decisions 64–66: CI builds, tests and publishes; it never reaches the control host. Wheelhouse prod deploys each release
+to `wheelhouse-dev` like any product and promotes itself from its own console. Nothing changes until prod runs a release
+with this code and the owner switches it on ([§ Activation](#activation)); until then CI's path below works as before.
+
+```text
+main push -> CI: test, build, publish vX.Y.Z (the release carries the bundle)
+prod: release watcher (every 2 min, the GitHub App) -> queue -> runner over SSH to 172.30.0.1 -> wheelhouse-dev
+  -> health, site probe through Traefik, the declared dev check, the watch window
+owner: Ready to promote -> type wheelhouse-prod + a reason -> detached runner job on the host -> wheelhouse-prod
+  -> health, then the site probe; either failing restores the previous release -> the new console reads the outcome
+no console answers -> self-deploy.py on the host: status, deploy, rollback (vps.md § Break-glass self-deploy)
+```
+
+| Piece | Where | What it does |
+|---|---|---|
+| Wheelhouse in prod's inventory | Products › Wheelhouse, deploy mode `wheelhouse`; targets `wheelhouse-dev`, `wheelhouse-prod` | Both consoles on the control host, as products are on theirs ([§ Inventory rows](#inventory-rows)) |
+| Console ingress | runner `fleet.py` `CONSOLE_INGRESS` | A Wheelhouse target takes its environment's entry point, port and probe from the kit (`prepare.py`), whatever the server row says, so one row serves both |
+| Rollback | runner `probeGate`, `rollbackCompatible` on Wheelhouse targets | A new console its ingress cannot reach rolls back; any release rolls back, since migrations only expand (decision 65, `ExpandOnlyTests`) |
+| Dev check | `deploy.yml` `verify` -> `self_check.py` in the image | After each dev rollout: readiness, status and an anonymous MCP initialization the console must refuse (CI's checks) |
+| Promotion guard | `SelfDeploymentInterceptor`, runner `transport.submit` | Prod only by the owner: typed ID and a reason; never automation, never a fleet, never while a fleet runs |
+| Read-back | `SelfDeploymentBootReader`, `GET /api/self-deployment`, the shell's notice | The new console reads its own newest rollout from the host's journal at boot and shows how it ended |
+| Break-glass | `vps/self-deploy.py` | Host-local deploy, rollback and status with the release image's own runner |
+| CI fallback switch | repository variable `WHEELHOUSE_SELF_DEPLOY` | `true` turns CI's deploy path off; `false` or unset turns it back on |
+| Host hardening | `vps/harden-control.sh` | Firewall, keys-only SSH, updates; then tailnet-only SSH (vps.md § Host hardening) |
+
+### Inventory rows
+
+In Wheelhouse prod, once it runs v0.5:
+
+- **Server** `control`: provider OVHcloud, host `172.30.0.1` (the host's `platform` address, as the consoles see it),
+  SSH user `wheelhouse-deploy`, port 22, scheme `https`. Its entry points and probes matter to no Wheelhouse target; set
+  `private` and `http://127.0.0.1:18080`. Prod's runner identity for it:
+  `sudo bash /srv/wheelhouse/bootstrap/authorize-runner.sh wheelhouse-prod control` (same-host mode).
+- **Targets** `wheelhouse-dev` and `wheelhouse-prod`: server `control`, network `control`, root `/srv/wheelhouse`, host
+  settings file `console` -> `/srv/wheelhouse/config/console-<env>.json`, site `console` -> the host's tailnet name.
+- Each deploy renders `/srv/wheelhouse/config/wheelhouse-<env>/console.target.json`: the host file plus the derived
+  `AllowedHosts`, site URL and `Deployment:TrustedProxies` (Traefik's `control` address). CI and `self-deploy.py`
+  mount the host file itself, so moving between them restarts the console once.
+- Prod reads Wheelhouse's public releases and pulls its private console image through the GitHub App
+  (vps.md § GitHub access); without the App the host's own GHCR sign-in serves the pull.
+
+### Self-promotion
+
+- Ready to promote lists Wheelhouse like any product; the deploy dialog preselects the newest release that succeeded
+  on dev, as it does for every prod target, and an older one is a rollback.
+- The dialog asks for `wheelhouse-prod` typed and a reason, warns that the console goes away for about a minute, and
+  keeps asking for the outcome while it does. The API answers 202 before anything changes; the runner's detached host
+  job then snapshots prod's database, pulls, replaces the container and waits for health and the site probe.
+- A failed health or site probe restores the previous release by itself; the database stays as the new release left
+  it, which the previous release can read (decision 65). The snapshot under `snapshots/<job>/` is the manual restore.
+- The new console (or the old one, after a roll back) reads its own newest rollout from the host's journal at boot,
+  logs it and shows it above every page until dismissed or a day old.
+- The audit trail keeps `deployment.start` with the actor, release and reason. Auto-promote, fleets and automatic
+  causes never reach Wheelhouse prod; step-up 2FA replaces the typed ID once it ships (decision 66).
+- Rollback is a promotion of an earlier release: it qualifies when dev's journal holds its success, whoever deployed it.
+
+### The fallback switch and its retirement
+
+`WHEELHOUSE_SELF_DEPLOY` (a repository variable) is the one switch. `true`: `deploy-dev.yml` only reports that prod
+deploys dev, and a dispatched `promote-prod.yml` fails before the `prod` environment; `ci_deploy.py` refuses too.
+`false` or unset: CI deploys dev and promotes prod as before. Set it with
+`gh variable set WHEELHOUSE_SELF_DEPLOY --body true -R wow-two-platform/wow-two-platform.wheelhouse`.
+
+Retire CI's path after a week and three self-promotions (decision 64), in this order:
+
+| When | Where | Delete |
+|---|---|---|
+| After the trial | Repository | `.github/workflows/deploy-dev.yml`, `promote-prod.yml`, the `deploy-dev` job of `publish-docker-image.yml`, `ci_deploy.py`, `ci_remote.py`, `test_ci_deploy.py` (a commit) |
+| Then | GitHub environment `dev` | Secrets `DEV_SSH_HOST`, `DEV_SSH_USER`, `DEV_SSH_KEY`, `DEV_SSH_KNOWN_HOSTS`; variable `DEV_DEPLOY_ENABLED` |
+| Then | GitHub environment `prod` | Secrets `DEV_SSH_HOST`, `DEV_SSH_USER`, `DEV_SSH_KEY`, `DEV_SSH_KNOWN_HOSTS` |
+| Then | Repository | Environments `dev` and `prod` themselves; the variable `WHEELHOUSE_SELF_DEPLOY` |
+| Then | Control host | CI's key line in `/home/wheelhouse-deploy/.ssh/authorized_keys` (match `ssh-keygen -lf` of the CI public key); `/srv/wheelhouse/ci/` |
+| Last | Control host | `harden-control.sh`, then `--tailnet-only-ssh` (vps.md § Host hardening) |
+
+`DEV_SSH_PORT` is referenced but was never set. Repository-level secrets are already empty. After the deletions the
+host CLI is the fallback; bringing CI back needs a new key and new secrets.
+
+### Activation
+
+The owner, in order; every step up to the burn-in reverts with the switch:
+
+1. Promote prod to v0.5 through CI: `gh workflow run promote-prod.yml -R wow-two-platform/wow-two-platform.wheelhouse`
+   (an empty release takes the newest one dev ran; the summary names it), then approve the `prod` environment.
+2. Give prod the GitHub App (vps.md § GitHub access): its key in prod's volume, the App ID in `console-prod.json`.
+3. Install the kit's new files on the host and read both consoles (vps.md § Break-glass self-deploy, Install).
+4. In prod: Deployments › Automation, Wheelhouse's auto-deploy to dev off. Products › Wheelhouse: deploy mode
+   `wheelhouse` and its release source; in `wow-two-ws/catalog.yml`, Wheelhouse's `deploy: ci` -> `deploy: wheelhouse`,
+   or a catalog import sets it back. Servers: `control`; authorize prod's runner for it. Then both targets; Check passes.
+5. From prod, deploy the release dev runs to `wheelhouse-dev`; its dev check passes; the dev console restarts once.
+6. `gh variable set WHEELHOUSE_SELF_DEPLOY --body true -R wow-two-platform/wow-two-platform.wheelhouse`, then turn
+   Wheelhouse's auto-deploy to dev on in prod. The next main push reaches dev within about two minutes of publishing.
+7. Promote one release from prod's Ready to promote; the page comes back about a minute later with the outcome.
+8. Roll prod back once from the host, then promote forward again from the console:
+   `sudo -u wheelhouse-deploy python3 /srv/wheelhouse/bootstrap/self-deploy.py rollback --env prod --reason "rehearsal"`.
+9. Burn in for a week with at least three self-promotions. Fallback: the variable back to `false` and Wheelhouse's
+   auto-deploy to dev off in prod.
+10. Retire CI's path and its secrets ([the table above](#the-fallback-switch-and-its-retirement)).
+11. Harden the host: `harden-control.sh`, then `--tailnet-only-ssh` (vps.md § Host hardening).
+
 ## Automatic Wheelhouse dev delivery
 
-The first remote target is `wheelhouse-dev`; separate prod provisioning remains deferred.
+The fallback path until retired ([§ Wheelhouse deploys itself](#wheelhouse-deploys-itself)); it runs only while
+`WHEELHOUSE_SELF_DEPLOY` is not `true`. The first remote target is `wheelhouse-dev`.
 Use the reviewed [VPS bootstrap](vps/vps.md) for Ubuntu 26.04 and private HTTPS.
 
 ```text
@@ -159,18 +263,23 @@ GitHub workflow acceptance remains the definitive check for this field.
 
 ## Promoting Wheelhouse to prod
 
-Wheelhouse prod is the one console for every product environment; CI promotes it, and it never deploys itself.
+Once activated, prod promotes itself ([§ Self-promotion](#self-promotion)). Until then, and while the switch is off,
+CI promotes it:
 
 ```text
-promote-prod (release tag, from main)
+promote-prod (optional release tag, rollback flag, from main)
   -> GitHub `prod` environment waits for the owner's approval
+  -> pinned SSH: read dev's journal and what prod runs; an empty release takes the newest release that succeeded on
+     wheelhouse-dev (by version, as Ready to promote offers it); one older than prod's needs `rollback: true`
+  -> the run summary names the release and why
   -> download exactly that release; verify asset digest, tag/source and approved image
   -> refuse unless a wheelhouse-dev job ran that release to `succeeded` with `completedAt`
-  -> pinned SSH -> existing runner -> wheelhouse-prod -> the same digest, HTTPS and MCP checks as dev
+  -> existing runner -> wheelhouse-prod -> the same digest, HTTPS and MCP checks as dev
 ```
 
-- Run it from the Actions tab or `gh workflow run promote-prod.yml -f release=vX.Y.Z`.
-- Roll back by promoting the previous release; it qualifies because it once succeeded on dev.
+- Run it from the Actions tab, `gh workflow run promote-prod.yml` (the newest dev-proven release) or
+  `-f release=vX.Y.Z`; a rollback adds `-f rollback=true`.
+- Roll back by promoting an earlier release with `rollback: true`; it qualifies because it once succeeded on dev.
 - Re-promoting the running release verifies it without a restart.
 - Migrations still run forward on start; a schema change that cannot roll back needs a reviewed recovery.
 - The `prod` environment allows only `main` and carries the same SSH secrets as `dev`: one host, one deploy account.
@@ -569,6 +678,8 @@ python3 rehearse.py deploy --env prod --tag v0.0.1-local.1 --confirm foreverpin-
 python3 rehearse.py bundle --tag v0.0.1-broken.1 --broken     # a release that fails after replacement
 python3 rehearse.py state --env dev
 python3 rehearse.py self                                      # Wheelhouse builds and deploys itself to wheelhouse-dev
+python3 rehearse.py self-deploy                               # its release with the dev check, then self-deploy.py
+python3 rehearse.py harden                                    # harden-control.sh on a real Ubuntu host and UFW
 python3 rehearse.py products                                  # the products-host kit on a second local host
 python3 rehearse.py networks                                  # fixed platform addresses survive dynamic containers
 python3 rehearse.py enroll                                    # a fresh Ubuntu 26.04 host enrolled, placed, policy applied

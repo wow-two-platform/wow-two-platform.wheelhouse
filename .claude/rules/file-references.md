@@ -17,7 +17,8 @@
 | Backend dev guidelines | `engineering/development/backend-guidelines.md` |
 | Frontend dev guidelines | `engineering/development/frontend-guidelines.md` |
 | Operational rules | `engineering/development/rules.md` |
-| Deploy / ops, local rig, VPS wiring checklist | `engineering/deployment/deployment.md` |
+| Deploy / ops, local rig, VPS wiring checklist, Wheelhouse deploying itself | `engineering/deployment/deployment.md` |
+| Control host runbook: bootstrap, break-glass `self-deploy.py`, `harden-control.sh` | `engineering/deployment/vps/vps.md` |
 | Host network: tailnet policy and tags, Docker networks, console isolation | `engineering/deployment/vps/network.md` |
 | Next versions, close-out items | `engineering/research/next-versions.md` |
 | Feature completeness, decision Points, sweep | `engineering/research/feature-completeness.md` |
@@ -62,3 +63,5 @@
 | `infra.py` | Infrastructure CLI the API runs: Tailscale status and policy, enrollment, placement, finished jobs |
 | `tailnet.py` · `enroll.py` · `placement.py` | Tailscale OAuth client, keys and policy; fresh-server enrollment; product databases and site nodes |
 | `infra_jobs.py` · `kit.py` | Infrastructure job journals and locks; the products-host kit an enrollment uploads |
+| `self_check.py` | Wheelhouse's declared dev check, run from its own image after each `wheelhouse-dev` rollout |
+| `ci_deploy.py` · `ci_remote.py` | CI's fallback deploy path for Wheelhouse, off while `WHEELHOUSE_SELF_DEPLOY` is `true`; retired after the trial |

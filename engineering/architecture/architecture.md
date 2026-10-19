@@ -500,7 +500,8 @@ request acts as `automation`, so every automatic submission goes through the ord
 
 - **Auto-deploy to dev** is on per product unless the owner turns it off (`product_automation`, migration
   `016-deploy-automation`; a product without a row takes the defaults). A product whose deploy mode is `ci` (Wheelhouse
-  itself) or `none` never deploys on its own, whatever its row says; the API refuses turning either choice on (409).
+  itself, until it deploys itself) or `none` never deploys on its own, whatever its row says; the API refuses turning
+  either choice on (409).
 - **Release watcher:** for every auto-deploying product with a release source and a dev target, the runner's `latest`
   read lists its newest published release (one GitHub call per product, pre-releases ignored). A product's first read
   only records its watermark (`release_watermarks`), so turning automation on never deploys a backlog; a release
@@ -580,6 +581,14 @@ request acts as `automation`, so every automatic submission goes through the ord
   multi-select with Promote selected and Promote all; the confirm dialog lists every product in order with what prod
   runs, its rollback-risk badges and changelog, a freeze override, the reason and each local prod's typed ID; Running
   now shows the running fleet's progress with Cancel, and Fleet rollouts lists the fleets that ended in the last day.
+- **Wheelhouse itself** (decision 64): once its product's deploy mode is `wheelhouse`, prod deploys each release to
+  `wheelhouse-dev` through the same watcher, queue and watch window, and its declared dev check (`self_check.py`)
+  replaces CI's post-deploy checks. Its prod is never auto-promoted (the API refuses turning it on, 409) and never part
+  of a fleet (400); `SelfDeploymentInterceptor` refuses an automatic cause, a missing typed ID or reason, and a
+  promotion while a fleet runs (409, audited). The runner gates Wheelhouse targets on the site probe and rolls any of
+  their releases back (expand-only migrations, decision 65); `GET /api/self-deployment` reads the console's own newest
+  rollout back from the host's journal, which `SelfDeploymentBootReader` does at boot
+  ([deployment operations](../deployment/deployment.md#wheelhouse-deploys-itself)).
 - **Changelog at promote:** every `main` release's GitHub body lists its commits since the previous release above
   GitHub's generated notes (the shared publish workflow from pipelines `v0.4.0`, `release.py notes`); a product pinned
   to an older tag keeps GitHub's one-line note, and the compare commit list covers it. `GET /api/deployments/products/{product}/changelog?from=&to=`

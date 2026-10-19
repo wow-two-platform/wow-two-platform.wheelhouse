@@ -128,4 +128,6 @@ Environments are `dev` and `prod` (`test` retired 2026-10-17): products work on 
 on dev (a typed target ID skips that). Every product builds through the shared `publish` workflow in
 `wow-two-platform.pipelines`: `main` releases `vX.Y.Z`, other branches build candidates.
 Artifact, registry and fleet rules live in `engineering/architecture/architecture.md`.
-Wheelhouse's own `engineering/deployment/deploy.yml` and `.github/workflows/` build and test it like any product.
+Wheelhouse's own `engineering/deployment/deploy.yml` and `.github/workflows/` build and test it like any product; once
+activated, prod deploys each release to its dev and promotes itself, CI only builds, and `vps/self-deploy.py` covers a
+dead console (`engineering/deployment/deployment.md` § Wheelhouse deploys itself).

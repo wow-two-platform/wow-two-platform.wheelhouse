@@ -27,9 +27,11 @@ A second VPS that runs products only is wired by [§ Products host](#products-ho
 | [Console allowlist](control-only.yml) | VPS ingress folder | Traefik middleware: the console entry points accept only the host itself |
 | [Tailnet policy](tailnet-policy.hujson) | Tailscale admin console | Owner devices reach consoles, SSH, canary and product sites; the control host reaches a products host's SSH only |
 | [Network migration](migrate-control-network.sh) | VPS, administrator, once | Moves an existing host onto the `control` and `platform` split |
+| [Break-glass self-deploy](self-deploy.py) | Control host, deployment account | Status, deploy and rollback of both consoles when none answers, with the release image's own runner |
+| [Host hardening](harden-control.sh) | Control host, administrator, after the self-deploy trial | Firewall, keys-only SSH, unattended security updates; then tailnet-only SSH and pinned runner keys |
 
-The control-host scripts do not accept SSH host keys, enroll Tailscale, change firewall/sshd policy, fetch operator
-credentials or start Wheelhouse. The products bootstrap does set SSH, firewall and tailnet policy; neither accepts a
+The control-host scripts do not accept SSH host keys, enroll Tailscale, fetch operator credentials or start Wheelhouse;
+only `harden-control.sh` changes firewall and sshd policy, when the owner runs it. The products bootstrap does set SSH, firewall and tailnet policy; neither accepts a
 host key or fetches a credential. They are executable preparation assets, not evidence of deployment.
 `bootstrap.sh` can rerun on its prepared host; it refuses incompatible engines/networks and never upgrades an
 installed package, because a Docker upgrade restarts every container on the host.
@@ -49,13 +51,14 @@ Review a partial failure before retrying; never delete a populated PostgreSQL vo
    A network `ssh-keyscan` alone is not independent verification. Use a verified `known_hosts` file.
 3. Sign in with the verified identity and preserve provider-console recovery access.
    Complete any provider-required initial password change interactively.
-4. Create a dedicated CI Ed25519 key outside the repository. Store its private half in the GitHub
-   `dev` environment; copy only the public half onto the VPS.
+4. Only for CI's fallback deploy path: create a dedicated CI Ed25519 key outside the repository, store its private
+   half in the GitHub `dev` environment and copy only the public half onto the VPS. A host that Wheelhouse deploys
+   itself to ([deployment.md § Wheelhouse deploys itself](../deployment.md#wheelhouse-deploys-itself)) needs none.
 5. Copy this reviewed directory to the VPS through verified SSH. Run:
 
 ```sh
-sudo bash bootstrap.sh --host-identity-verified \
-  --ssh-public-key /path/to/wheelhouse-dev-ci.pub --install-tailscale
+sudo bash bootstrap.sh --host-identity-verified --install-tailscale \
+  [--ssh-public-key /path/to/wheelhouse-dev-ci.pub]
 ```
 
 `wheelhouse-deploy` joins the Docker group, which grants host control. The CI key has `restrict`
@@ -540,14 +543,93 @@ sudo bash repair-networks.sh           # recreates each network that lacks the r
 - `rehearse.py networks` proves both: dynamic containers first, Traefik still at `.2`; and a repair that keeps a fixed
   address and moves a dynamic one into the range.
 
+## Break-glass self-deploy
+
+[`self-deploy.py`](self-deploy.py) deploys, rolls back and reads Wheelhouse on its control host when no console
+answers, and deploys the first console on a fresh or rebuilt host. It is the host-local form of what the consoles do:
+the release's own `runner.py`, copied out of its console image, validates the bundle, checks the target, takes the
+target's lock and launches the detached rollout, whose journal every console's history reads. It never races a
+console rollout, and the rollout outlives the session. Standard library and the Docker CLI only; no SSH, no secret.
+
+```sh
+# From a tailnet SSH session as the administrator, or the OVH KVM console.
+sudo -u wheelhouse-deploy python3 /srv/wheelhouse/bootstrap/self-deploy.py status
+sudo -u wheelhouse-deploy python3 /srv/wheelhouse/bootstrap/self-deploy.py rollback --env prod --reason "console down"
+sudo -u wheelhouse-deploy python3 /srv/wheelhouse/bootstrap/self-deploy.py deploy --env prod --release v0.5.21 \
+  --reason "console down"
+```
+
+- `status` reads each console's files alone: what it runs, whether a rollout runs or needs reconciliation, and its
+  newest rollouts. It works with Docker or the network down. `--json` for a machine.
+- `rollback` returns to the newest earlier release that succeeded there and whose bundle this host still keeps under
+  `releases/<job>/` (the ten newest), or to `--release`; no network. The previous images stay on the host.
+- `deploy` reads a published release anonymously from GitHub and checks its asset digest, tag, product and image
+  repository; prod takes only a release that succeeded on `wheelhouse-dev` unless `--skip-dev-pass`. A bundle folder
+  (`--bundle`) deploys without a download; a release the console already runs changes nothing.
+- Prod asks for `wheelhouse-prod` typed (`--yes` skips it) and a `--reason`. The job's actor is
+  `self-deploy:<administrator>`; `/srv/wheelhouse/self-deploy/log.jsonl` keeps each action with its reason.
+- Its target is the kit's `config/wheelhouse-<env>.json` (`prepare.py`), gated as a console's inventory gates
+  Wheelhouse's own: a new console its ingress cannot reach, or one that fails health, rolls back to the previous release.
+- It refuses root: files written as root would lock the deployment account out of later rollouts.
+- `rehearse.py self-deploy` proves it on the local server.
+
+### Install
+
+```sh
+# From the repository's engineering/deployment/vps, copied to the host; bootstrap.sh installs the same on a new host.
+sudo install -m 0500 -o wheelhouse-deploy -g wheelhouse-deploy self-deploy.py /srv/wheelhouse/bootstrap/
+sudo install -m 0500 -o root -g root harden-control.sh bootstrap-products.sh /srv/wheelhouse/bootstrap/
+sudo -u wheelhouse-deploy python3 /srv/wheelhouse/bootstrap/self-deploy.py status   # both consoles: ready
+```
+
+## Host hardening
+
+[`harden-control.sh`](harden-control.sh) gives the control host a products host's policy once CI no longer reaches it.
+The owner runs it after the self-deploy trial and the retirement of CI's path
+([deployment.md § The fallback switch and its retirement](../deployment.md#the-fallback-switch-and-its-retirement)).
+
+| UFW rule | Why |
+|---|---|
+| Default deny in, allow out | Baseline, as on a products host |
+| 22/tcp on `tailscale0` | The owner's SSH |
+| 443, 8443/tcp on `tailscale0` | Consoles through Serve; harmless where Serve bypasses UFW |
+| 22/tcp from `172.30.1.0/24` to `172.30.0.1` | The consoles' runners reach the host here |
+| 41641/udp | Tailscale's direct path |
+| 22/tcp from anywhere | Only until `--tailnet-only-ssh` |
+
+- Workloads on `platform` (`172.30.0.0/24`) lose host SSH: nothing allows them.
+- sshd: no passwords, no keyboard-interactive, no root (`01-wheelhouse-control.conf`, the products host's policy).
+  The administrator's local password stays, for the OVH KVM console only.
+- Unattended security updates without reboots; Docker and Tailscale upgrade by hand.
+- `--tailnet-only-ssh` also gives each runner key in `wheelhouse-deploy`'s `authorized_keys` `from="172.30.1.0/24"`,
+  so a leaked console key fails anywhere else. Retire CI's key first.
+- Only loopback ports are published here, so Docker's UFW bypass exposes nothing.
+
+```sh
+sudo bash /srv/wheelhouse/bootstrap/harden-control.sh --check   # what would change; exits 1 while anything would
+sudo bash /srv/wheelhouse/bootstrap/harden-control.sh           # firewall on, public SSH kept
+# Verify: each console's server check, both consoles over Serve, a canary deploy from dev.
+# Keep a second SSH session open over the tailnet, and rehearse a sign-in at the OVH KVM console first.
+sudo bash /srv/wheelhouse/bootstrap/harden-control.sh --check --tailnet-only-ssh
+sudo bash /srv/wheelhouse/bootstrap/harden-control.sh --tailnet-only-ssh   # from a tailnet session
+```
+
+Every run converges, so a rerun changes nothing; a plain run never reopens public SSH it closed. Verify from outside
+the tailnet that the public address answers on no port, over IPv4 and IPv6. Tailnet path lost: sign in at the OVH KVM
+console (`manager.ca.ovhcloud.com`) and run `--public-ssh`; last resort, OVH rescue mode. The control host's Tailscale
+key expiry stays disabled. `rehearse.py harden` proves the script on a real Ubuntu host with real UFW.
+
 ## GitHub-hosted CI access
 
-Pinned OpenSSH to the verified public VPS address is usable for initial deployment while the app stays
-private. Put host/user/key/known-hosts in the GitHub `dev` environment; keep strict host checking enabled.
+The fallback path until it is retired; a self-deploying Wheelhouse needs none of it, and `harden-control.sh
+--tailnet-only-ssh` closes it. Pinned OpenSSH to the verified public VPS address is usable for initial deployment while
+the app stays private. Put host/user/key/known-hosts in the GitHub `dev` environment; keep strict host checking enabled.
 Standard GitHub-hosted runners have changing broad IP ranges, so a fixed source-IP firewall exception
 does not follow them. [GitHub recommends against allowlisting those ranges](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 
-Once the tailnet exists, prefer the [Tailscale action](https://tailscale.com/docs/integrations/github/github-action)
+Tailnet CI was considered and set aside (2026-10-19): GitHub would still hold a host-root key, plus an OIDC client
+and a `tag:ci` grant. Wheelhouse deploys itself instead. The earlier note stays for reference: the
+[Tailscale action](https://tailscale.com/docs/integrations/github/github-action)
 with workload identity federation and a narrowly scoped CI tag. The ephemeral runner joins for one job,
 then logs out. Limit the tag's network grant to the dev host's SSH port; still use the pinned OpenSSH key.
 Configure OIDC trust for the exact repository and `dev` environment/main branch and grant `id-token: write`
