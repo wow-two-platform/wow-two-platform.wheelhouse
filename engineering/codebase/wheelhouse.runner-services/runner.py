@@ -1122,6 +1122,19 @@ def derived_settings(target, project, manifest, service):
     return values
 
 
+def with_hosts(derived, kept):
+    """The derived AllowedHosts, keeping any other host a host file lists (so a target moving to rendered settings answers
+    every host it did), localhost last."""
+    entries = [entry for entry in derived.split(";") if entry and entry != "localhost"]
+    seen = {entry.lower() for entry in entries}
+    for entry in (kept.split(";") if isinstance(kept, str) else []):
+        entry = entry.strip()
+        if entry and entry.lower() not in seen and entry.lower() != "localhost":
+            entries.append(entry)
+            seen.add(entry.lower())
+    return ";".join(entries + ["localhost"])
+
+
 def settings_declarations(target, manifest):
     """Every setting a release's services take on this target, without a value that is secret: each required key, each
     optional one with its default, and what the render derives (`hosts`, `proxies`, `sites`, `database`) with the value
@@ -1307,6 +1320,7 @@ def render_settings(target, manifest, project, provided, docker):
         derived = derived_settings(target, project, manifest, service)
         if proxy:
             derived[PROXIES] = [proxy]
+        derived[HOSTS] = with_hosts(derived[HOSTS], document.get(HOSTS))
         for key, value in derived.items():
             set_value(document, key, value)
             used["derived"].append(key)

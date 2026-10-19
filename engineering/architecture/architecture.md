@@ -125,7 +125,7 @@ own targets keep their hand-placed files), into `<root>/config/<product>-<enviro
 |---|---|
 | Host file | The file the target names for the service, if any: the pre-render settings, kept as a layer |
 | Wheelhouse | The environment's stored settings (`environment_settings`) and its vault secrets, read at deploy |
-| Derived | `AllowedHosts` (the hosts of the sites the service serves, its platform name `<product>-<environment>-<service>`, `localhost`), `Sites:<site>:Url` (the origin of every site the product publishes there), `Deployment:TrustedProxies` (the address of the host kit's `ingress` on the target's network) |
+| Derived | `AllowedHosts` (the hosts of the sites the service serves, its platform name `<product>-<environment>-<service>`, any other host its host file listed, `localhost`), `Sites:<site>:Url` (the origin of every site the product publishes there), `Deployment:TrustedProxies` (the address of the host kit's `ingress` on the target's network) |
 | Database | A required connection key (`ConnectionStrings:<name>`, `<Section>:ConnectionString`) no other layer sets, from `config/<product>-<environment>/database.json` (`prepare.py --database`), for a service that needs PostgreSQL |
 
 - A value goes to every service that declares its key (required, or a release's optional or secret declaration), and a

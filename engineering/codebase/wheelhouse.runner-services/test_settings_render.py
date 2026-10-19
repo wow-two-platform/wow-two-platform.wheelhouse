@@ -130,7 +130,8 @@ class RenderTests(unittest.TestCase):
         self.assertEqual("HOST_SECRET", api["Database"]["Connection"])
         self.assertEqual("Information", api["Logging"]["Level"])
         self.assertEqual("VAULT_SECRET", api["Billing"]["SecretKey"])
-        self.assertEqual("admin.pilot.example;app.pilot.example;pilot-dev-api;localhost", api["AllowedHosts"])
+        # The derived hosts first, then any other host the host file listed, localhost last.
+        self.assertEqual("admin.pilot.example;app.pilot.example;pilot-dev-api;old.example;localhost", api["AllowedHosts"])
         self.assertEqual(["172.30.0.2"], api["Deployment"]["TrustedProxies"])
         self.assertEqual({"admin": {"Url": "https://admin.pilot.example"}, "app": {"Url": "https://app.pilot.example"}},
                          api["Sites"])
@@ -258,6 +259,11 @@ class RenderTests(unittest.TestCase):
         self.assertEqual("database", worker["ConnectionStrings:Database"]["derived"])
         # Required keys come first.
         self.assertEqual([True] * 4 + [False] * 3, [item["required"] for item in declared["services"][0]["keys"]])
+
+    def test_derived_hosts_keep_a_host_files_other_hosts_once(self):
+        self.assertEqual("a.example;p-api;B.example;localhost",
+                         runner.with_hosts("a.example;p-api;localhost", "B.example;a.example;localhost; b.example"))
+        self.assertEqual("p-api;localhost", runner.with_hosts("p-api;localhost", None))
 
     def test_release_settings_declarations_are_validated(self):
         for declared in ({"ghost": {}}, {"api": {"optional": {"Bad Key": "x"}}}, {"api": {"secrets": "Key"}},
