@@ -106,6 +106,7 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddScoped<IProductsRepository, ProductsRepository>();
         builder.Services.AddScoped<IProductManifestsRepository, EfProductManifests>();
         builder.Services.AddScoped<IServiceStatusesRepository, ServiceStatusesRepository>();
+        builder.Services.AddScoped<IEnvironmentSettingsRepository, EnvironmentSettingsRepository>();
         builder.Services.AddScoped<IServersRepository, ServersRepository>();
         builder.Services.AddScoped<ITargetsRepository, TargetsRepository>();
         builder.Services.AddScoped<IVaultsRepository, VaultsRepository>();
@@ -221,6 +222,7 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Automation.Services.DeploymentAutomationService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Freezes.Services.DeployFreezeService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Fleets.Services.FleetRolloutService>();
+        builder.Services.AddScoped<Wheelhouse.Application.Deployments.Settings.Services.DeploymentSettingsService>();
         builder.Services.AddSingleton<Wheelhouse.Application.Deployments.Fleets.Services.FleetRolloutGate>();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<BackgroundActor>();

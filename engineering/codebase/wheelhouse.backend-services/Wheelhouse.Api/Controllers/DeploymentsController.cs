@@ -11,6 +11,8 @@ using Wheelhouse.Application.Deployments.Fleets.Queries;
 using Wheelhouse.Application.Deployments.Freezes.Commands;
 using Wheelhouse.Application.Deployments.Freezes.Queries;
 using Wheelhouse.Application.Deployments.History.Queries;
+using Wheelhouse.Application.Deployments.Settings.Commands;
+using Wheelhouse.Application.Deployments.Settings.Queries;
 using Wheelhouse.Application.Operations;
 using Microsoft.AspNetCore.Mvc;
 using WoW.Two.Sdk.Beta.Be.Mediator;
@@ -263,6 +265,23 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
         [RegularExpression(Slug)] string target, [RegularExpression(Slug)] string service,
         [FromQuery, Range(1, 1000)] int tail = 200, CancellationToken ct = default) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentLogsQuery(target, service, tail), ct));
+
+    /// <summary>Reads the settings a release takes on a target and where its next deploy's render takes each value from:
+    /// derived, the vault, the settings store, a release default or the target's host file. Key names and non-secret
+    /// values only; no target is contacted.</summary>
+    [HttpGet("targets/{target}/settings")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> Settings(
+        [RegularExpression(Slug)] string target, [FromQuery, Required, RegularExpression(Slug)] string release, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentSettingsQuery(target, release), ct));
+
+    /// <summary>Gives a target's environment setting values: secrets go to its vault namespace, the rest to the settings
+    /// store. Audited by key, never by value.</summary>
+    [HttpPut("targets/{target}/settings")]
+    [RequireActionHeader("settings")]
+    public async Task<IActionResult> SaveSettings(
+        [RegularExpression(Slug)] string target, DeploymentSettingsSaveRequest request, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentSettingsSaveCommand(target, request.ToValues(), actor.Actor), ct));
 
     /// <summary>Reads the authoritative outcome from the target.</summary>
     [HttpGet("{id:guid}")]

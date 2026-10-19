@@ -84,6 +84,34 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
         })));
     }
 
+    /// <summary>What the <c>settings</c> read answers for any target: each service's declared keys; none by default.</summary>
+    public object? Declarations { get; set; }
+
+    /// <summary>The settings values the last start carried to the runner, if any.</summary>
+    public JsonElement? LastSettings { get; private set; }
+
+    /// <summary>The setting keys the last check weighed, if it had any.</summary>
+    public IReadOnlyCollection<string>? LastCheckKeys { get; private set; }
+
+    public Task<AppResult<JsonElement>> SettingsAsync(string target, string release, CancellationToken ct) =>
+        Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(Declarations ?? new
+        {
+            targetId = target, release, services = Array.Empty<object>(),
+        })));
+
+    public Task<AppResult<JsonElement>> CheckAsync(string target, string? release, IReadOnlyCollection<string>? keys, CancellationToken ct)
+    {
+        LastCheckKeys = keys;
+        return CheckAsync(target, release, ct);
+    }
+
+    public Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass,
+        string? reason, Guid? fleet, JsonElement? settings, CancellationToken ct)
+    {
+        LastSettings = settings;
+        return StartAsync(target, release, actor, confirm, skipDevPass, reason, fleet, ct);
+    }
+
     public Task<AppResult<JsonElement>> CheckAsync(string target, string? release, CancellationToken ct)
     {
         LastTarget = target;

@@ -28,7 +28,7 @@ public static class DeploymentStateRules
     private static readonly HashSet<string> Fine = ["healthy", "starting", "running", "unknown"];
 
     /// <summary>The steps before a rollout changes anything.</summary>
-    private static readonly HashSet<string> Checking = ["Check target", "Snapshot data", "Pull images", "Dry-run migrations"];
+    private static readonly HashSet<string> Checking = ["Render settings", "Check target", "Snapshot data", "Pull images", "Dry-run migrations"];
 
     /// <summary>The steps after the services started.</summary>
     private static readonly HashSet<string> Verifying = ["Verify services", "Publish sites", "Probe sites", "Verify end to end"];

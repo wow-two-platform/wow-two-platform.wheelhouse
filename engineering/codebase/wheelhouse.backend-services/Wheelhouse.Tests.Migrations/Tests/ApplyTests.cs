@@ -29,6 +29,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "022-fleet-rollouts",
         "025-product-deploy-mode",
         "026-deployment-intents",
+        "027-environment-settings",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -734,6 +735,29 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
 
         Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: ordinal, CancellationToken.None));
         (await ReadColumnsAsync(connection, "products")).Select(column => column.Name).Should().NotContain("deploy");
+    }
+
+    [Fact]
+    public async Task EnvironmentSettings_ShouldHoldOneValuePerKeyAndEnvironment_AndGoWithTheProduct_WhenApplied()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000001", "pilot"));
+        const string value = "INSERT INTO environment_settings (product_id, environment, key, value, created_at_utc, updated_at_utc) " +
+                             "VALUES ('00000000-0000-0000-0000-000000000001', '{0}', 'DataProtection:ApplicationName', 'pilot', now(), now())";
+        await Execute(connection, string.Format(value, "dev"));
+        await Execute(connection, string.Format(value, "prod"));
+        var again = async () => await Execute(connection, string.Format(value, "dev"));
+        await again.Should().ThrowAsync<Npgsql.PostgresException>("a key holds one value per environment");
+        await Execute(connection, "DELETE FROM products");
+        (await Scalar(connection, "SELECT count(*) FROM environment_settings")).Should().Be(0L, "the values go with their product");
+
+        var ordinal = Ordinals[Array.IndexOf(Migrations, "027-environment-settings") - 1];
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: ordinal, CancellationToken.None));
+        (await migrator.HasTableAsync("environment_settings")).Should().BeFalse();
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("027-environment-settings"));
     }
 
     /// <summary>The SQL that stores one vitals reading of a target slug, or of its server's host for <c>NULL</c>.</summary>

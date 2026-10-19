@@ -18,6 +18,7 @@ public sealed class DeploymentStateRulesTests
     [Theory]
     [InlineData("queued", null, "in_progress", "queued", "info")]
     [InlineData("running", "Pull images", "in_progress", "checking", "info")]
+    [InlineData("running", "Render settings", "in_progress", "checking", "info")]
     [InlineData("running", "Start desk, jobs", "in_progress", "starting", "info")]
     [InlineData("running", "Roll back to v0.8.4", "in_progress", "rolling_back", "info")]
     [InlineData("rejected", null, "not_applied", "refused", "none")]

@@ -8,6 +8,7 @@ using Wheelhouse.Domain.Pins.Entities;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Secrets.Entities;
 using Wheelhouse.Domain.Servers.Entities;
+using Wheelhouse.Domain.Settings.Entities;
 using Wheelhouse.Domain.Targets.Entities;
 using Wheelhouse.Domain.Vaults.Entities;
 using Wheelhouse.Domain.Workspaces.Entities;
@@ -38,6 +39,9 @@ public sealed class WheelhouseDbContext(DbContextOptions<WheelhouseDbContext> op
 
     /// <summary>Gets the statuses the owner gave products' services; a service without one is active.</summary>
     public DbSet<ServiceStatusEntity> ServiceStatuses => Set<ServiceStatusEntity>();
+
+    /// <summary>Gets products' non-secret setting values per environment; secret values live in the vault.</summary>
+    public DbSet<EnvironmentSettingEntity> EnvironmentSettings => Set<EnvironmentSettingEntity>();
 
     /// <summary>Gets the cached manifests of the products' repositories — one row per product.</summary>
     public DbSet<ProductManifestEntity> ProductManifests => Set<ProductManifestEntity>();

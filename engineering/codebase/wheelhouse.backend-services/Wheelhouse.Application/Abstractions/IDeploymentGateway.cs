@@ -17,6 +17,21 @@ public interface IDeploymentGateway
     /// gateway that keeps no fleet submits it as an ordinary deploy.</summary>
     Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, Guid? fleet, CancellationToken ct) =>
         StartAsync(target, release, actor, confirm, skipDevPass, reason, ct);
+    /// <summary>Submits a trusted release with this deploy's settings layer: <paramref name="settings"/> is
+    /// <c>{"values": {key: value}}</c>, the target environment's stored settings and vault secrets, which travel to the
+    /// target over SSH stdin and are rendered there, never stored. A gateway without rendering submits it as an ordinary
+    /// deploy.</summary>
+    Task<AppResult<JsonElement>> StartAsync(string target, string release, string actor, string? confirm, bool skipDevPass,
+        string? reason, Guid? fleet, JsonElement? settings, CancellationToken ct) =>
+        StartAsync(target, release, actor, confirm, skipDevPass, reason, fleet, ct);
+    /// <summary>Checks a target's readiness with the setting keys Wheelhouse would provide (<paramref name="keys"/>, no
+    /// values), so the check names a required key no layer sets.</summary>
+    Task<AppResult<JsonElement>> CheckAsync(string target, string? release, IReadOnlyCollection<string>? keys, CancellationToken ct) =>
+        CheckAsync(target, release, ct);
+    /// <summary>Reads every setting a release's services take on a target: required and optional keys, which read as
+    /// secret, and what the render derives. No target is contacted. A gateway that renders nothing declares none.</summary>
+    Task<AppResult<JsonElement>> SettingsAsync(string target, string release, CancellationToken ct) =>
+        Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new { services = Array.Empty<object>() })));
     /// <summary>Records the owner's reconciliation of an interrupted or failed rollout on its target.</summary>
     Task<AppResult<JsonElement>> ReconcileAsync(string target, string job, string actor, CancellationToken ct);
     /// <summary>Reads a branch's recent commits of a product, each with its build when one exists.</summary>

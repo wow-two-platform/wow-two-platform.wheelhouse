@@ -20,6 +20,7 @@ public sealed class DeploymentGateway(
     private static readonly HashSet<string> GitHubActions = new(StringComparer.Ordinal)
     {
         "releases", "latest", "builds", "usage", "branches", "commits", "changelog", "build", "submit", "facts", "check",
+        "settings",
     };
 
     /// <inheritdoc />
@@ -45,6 +46,20 @@ public sealed class DeploymentGateway(
         RunAsync(release is null ? ["check", "--target", target] : ["check", "--target", target, "--bundle", release], ct);
 
     /// <inheritdoc />
+    public Task<AppResult<JsonElement>> CheckAsync(string target, string? release, IReadOnlyCollection<string>? keys, CancellationToken ct)
+    {
+        if (keys is null)
+            return CheckAsync(target, release, ct);
+        List<string> arguments = release is null ? ["check", "--target", target] : ["check", "--target", target, "--bundle", release];
+        arguments.Add("--stdin");
+        return RunAsync([.. arguments], ct, JsonSerializer.Serialize(new { keys }));
+    }
+
+    /// <inheritdoc />
+    public Task<AppResult<JsonElement>> SettingsAsync(string target, string release, CancellationToken ct) =>
+        RunAsync(["settings", "--target", target, "--bundle", release], ct);
+
+    /// <inheritdoc />
     public Task<AppResult<JsonElement>> StartAsync(
         string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, CancellationToken ct) =>
         StartAsync(target, release, actor, confirm, skipDevPass, reason, null, ct);
@@ -52,7 +67,13 @@ public sealed class DeploymentGateway(
     /// <inheritdoc />
     public Task<AppResult<JsonElement>> StartAsync(
         string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, Guid? fleet,
-        CancellationToken ct)
+        CancellationToken ct) =>
+        StartAsync(target, release, actor, confirm, skipDevPass, reason, fleet, null, ct);
+
+    /// <inheritdoc />
+    public Task<AppResult<JsonElement>> StartAsync(
+        string target, string release, string actor, string? confirm, bool skipDevPass, string? reason, Guid? fleet,
+        JsonElement? settings, CancellationToken ct)
     {
         List<string> arguments = ["submit", "--target", target, "--bundle", release, "--actor", actor];
         if (fleet is { } id)
@@ -64,7 +85,10 @@ public sealed class DeploymentGateway(
         // An argument list, never a shell: the reason reaches the runner as one value.
         if (reason is not null)
             arguments.AddRange(["--reason", reason]);
-        return RunAsync([.. arguments], ct);
+        // The settings values go to the runner's stdin, never an argument a process listing would show.
+        if (settings is not null)
+            arguments.Add("--stdin");
+        return RunAsync([.. arguments], ct, settings?.GetRawText());
     }
 
     /// <inheritdoc />
@@ -102,7 +126,7 @@ public sealed class DeploymentGateway(
         }
     }
 
-    private async Task<AppResult<JsonElement>> RunAsync(string[] arguments, CancellationToken ct)
+    private async Task<AppResult<JsonElement>> RunAsync(string[] arguments, CancellationToken ct, string? input = null)
     {
         ct.ThrowIfCancellationRequested();
         if (!File.Exists(settings.TransportPath))
@@ -117,6 +141,7 @@ public sealed class DeploymentGateway(
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                RedirectStandardInput = input is not null,
                 CreateNoWindow = true
             }
         };
@@ -143,6 +168,11 @@ public sealed class DeploymentGateway(
         try
         {
             process.Start();
+            if (input is not null)
+            {
+                await process.StandardInput.WriteAsync(input.AsMemory(), timeout.Token);
+                process.StandardInput.Close();
+            }
             var output = process.StandardOutput.ReadToEndAsync(timeout.Token);
             var error = process.StandardError.ReadToEndAsync(timeout.Token);
             await process.WaitForExitAsync(timeout.Token);

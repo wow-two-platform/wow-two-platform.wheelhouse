@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments.Freezes.Services;
+using Wheelhouse.Application.Deployments.Settings.Constants;
+using Wheelhouse.Application.Deployments.Settings.Services;
 using Wheelhouse.Domain.Deployments.Entities;
 using Wheelhouse.Domain.Deployments.Enums;
 using Wheelhouse.Domain.Targets.Entities;
@@ -13,10 +15,12 @@ namespace Wheelhouse.Application.Deployments;
 /// <summary>Handles a deploy. A freeze covering the target refuses an automatic deploy outright and an owner's deploy
 /// unless it overrides the freeze with a reason; the runner's own gates follow. A target the inventory lacks is left to
 /// the runner, which refuses it. A refusal of an inventory target — the freeze, a promotion gate or the runner's
-/// validation — is kept as an intent, so the history lists it as a deploy that changed nothing.</summary>
+/// validation — is kept as an intent, so the history lists it as a deploy that changed nothing. Before submitting, a
+/// target's settings are planned: a required key no layer sets, on a service without a host file, refuses the deploy,
+/// and the environment's stored settings and vault secrets go to the runner for the target to render.</summary>
 public sealed class DeploymentStartCommandHandler(
     IDeploymentGateway gateway, ITargetsRepository targets, IProductsRepository products, DeployFreezeService freezes,
-    IDeploymentAutomationStore intents, TimeProvider time)
+    IDeploymentAutomationStore intents, TimeProvider time, DeploymentSettingsService settings)
     : ICommandHandler<DeploymentStartCommand, AppResult<JsonElement>>
 {
     /// <inheritdoc />
@@ -36,13 +40,51 @@ public sealed class DeploymentStartCommandHandler(
             }
         }
 
+        JsonElement? values = null;
+        if (target is not null)
+        {
+            var prepared = await PrepareAsync(request, target, cancellationToken);
+            if (prepared is AppResult<JsonElement>.Failure refused)
+                return refused;
+            values = ((AppResult<JsonElement>.Success)prepared).Data;
+        }
+
         var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
         var result = await gateway.StartAsync(request.Target, request.Release, request.Actor, request.Confirm, request.SkipDevPass,
-            reason, request.Fleet, cancellationToken);
+            reason, request.Fleet, values, cancellationToken);
         // A conflict is the runner refusing before it recorded anything; an unavailable runner proves nothing either way.
         if (target is not null && result is AppResult<JsonElement>.Failure { Error: { Type: AppErrorType.Conflict } refusal })
             await RecordAsync(request, target, RefusalOf(refusal.Message), refusal.Message, cancellationToken);
         return result;
+    }
+
+    /// <summary>Plans the target's settings for the release and reads the values the target renders: a required key no
+    /// layer sets refuses the deploy, kept as an intent like any refusal. @internal</summary>
+    private async Task<AppResult<JsonElement>> PrepareAsync(DeploymentStartCommand request, TargetEntity target, CancellationToken ct)
+    {
+        var plan = await settings.PlanAsync(target.Slug, request.Release, ct);
+        if (plan is AppResult<Settings.Models.DeploySettingsDto>.Failure failed)
+        {
+            if (failed.Error.Type == AppErrorType.Conflict)
+                await RecordAsync(request, target, RefusalOf(failed.Error.Message), failed.Error.Message, ct);
+            return AppResult<JsonElement>.Fail(failed.Error);
+        }
+        var missing = ((AppResult<Settings.Models.DeploySettingsDto>.Success)plan).Data.Services
+            .Where(service => !service.HostFile)
+            .Select(service => (service.Name, Keys: service.Keys.Where(key => key.Source == SettingSources.Missing).Select(key => key.Key).ToList()))
+            .Where(service => service.Keys.Count > 0)
+            .ToList();
+        if (missing.Count > 0)
+        {
+            var message = "Fill in the required settings first: "
+                + string.Join("; ", missing.Select(service => service.Name + ": " + string.Join(", ", service.Keys))) + ".";
+            await RecordAsync(request, target, DeploymentRefusal.Validation, message, ct);
+            return AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(message));
+        }
+        var product = await products.GetByIdAsync(target.ProductId, ct);
+        return product is null
+            ? AppResult<JsonElement>.Fail(AppErrorFactory.NotFound($"Target '{target.Slug}' has no product."))
+            : await settings.ValuesAsync(target, product, ct);
     }
 
     /// <summary>What refused a deploy, read from the runner's static rule text: a dev pass or check is the promotion

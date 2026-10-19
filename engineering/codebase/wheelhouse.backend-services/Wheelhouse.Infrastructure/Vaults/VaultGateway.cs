@@ -14,15 +14,68 @@ namespace Wheelhouse.Infrastructure.Vaults;
 /// <summary>Administers the inventory's vaults over their management API with Wheelhouse's administrator credential.</summary>
 /// <remarks>
 /// Endpoints come only from the inventory the owner edits, so a request can never choose where Wheelhouse connects.
-/// Secret values travel one way — to the vault — and responses carry metadata, except a freshly minted token.
+/// The console's secret values travel one way — to the vault — and responses carry metadata, except a freshly minted
+/// token. Only a deploy's render reads values (<see cref="ReadValuesAsync"/>), with a token that expires in minutes and
+/// is revoked as soon as the values are read.
 /// </remarks>
 public sealed class VaultGateway(
     IVaultsRepository vaults,
     IServersRepository servers,
     IHttpClientFactory clients,
     VaultSessionCache sessions,
-    DeploymentSettings settings) : IVaultGateway
+    DeploymentSettings settings,
+    TimeProvider? time = null) : IVaultGateway
 {
+    /// <summary>How long a deploy's read token lives at most; it is revoked as soon as the values are read.</summary>
+    public static readonly TimeSpan ReadTokenLifetime = TimeSpan.FromMinutes(10);
+
+    /// <inheritdoc />
+    public async Task<AppResult<IReadOnlyDictionary<string, string>>> ReadValuesAsync(
+        string vault, string ns, IReadOnlyCollection<string> keys, string purpose, CancellationToken ct)
+    {
+        var resolved = await ResolveAsync(vault, ct);
+        if (resolved is not AppResult<VaultEndpoint>.Success { Data: var endpoint })
+            return AppResult<IReadOnlyDictionary<string, string>>.Fail(((AppResult<VaultEndpoint>.Failure)resolved).Error);
+        var space = Uri.EscapeDataString(ns);
+        var expires = (time ?? TimeProvider.System).GetUtcNow().Add(ReadTokenLifetime);
+        var name = "wheelhouse " + purpose;
+        var minted = await SendAsync(endpoint, HttpMethod.Post, "api/admin/namespaces/" + space + "/tokens",
+            new { name = name.Length > 200 ? name[..200] : name, expiresAtUtc = expires }, ct);
+        if (minted is not AppResult<JsonElement>.Success { Data: var token })
+            return AppResult<IReadOnlyDictionary<string, string>>.Fail(((AppResult<JsonElement>.Failure)minted).Error);
+        var id = token.GetProperty("id").GetString();
+        var secret = token.GetProperty("token").GetString()!;
+        try
+        {
+            var values = new SortedDictionary<string, string>(StringComparer.Ordinal);
+            foreach (var key in keys)
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get,
+                    endpoint.Url + "/api/secrets/" + space + "/" + Uri.EscapeDataString(key));
+                request.Headers.Add("X-Vault-Token", secret);
+                using var response = await clients.CreateClient(ClientName).SendAsync(request, ct);
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                    continue; // disabled or removed since it was listed
+                var read = await ReadAsync(response, ct);
+                if (read is not AppResult<JsonElement>.Success { Data: var data })
+                    return AppResult<IReadOnlyDictionary<string, string>>.Fail(((AppResult<JsonElement>.Failure)read).Error);
+                values[key] = data.GetProperty("value").GetString() ?? "";
+            }
+            return AppResult<IReadOnlyDictionary<string, string>>.Ok(values);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or KeyNotFoundException or InvalidOperationException)
+        {
+            return AppResult<IReadOnlyDictionary<string, string>>.Fail(
+                AppErrorFactory.ExternalUnavailable("The vault could not be read for the deploy."));
+        }
+        finally
+        {
+            // The token outlives the read by nothing: revoked at once, and expiring within minutes should the revoke fail.
+            if (Guid.TryParse(id, out var tokenId))
+                await SendAsync(endpoint, HttpMethod.Post, "api/admin/namespaces/" + space + "/tokens/" + tokenId + "/revoke", new { }, CancellationToken.None);
+        }
+    }
+
     /// <summary>The named client with redirects and cookies disabled.</summary>
     public const string ClientName = "vault";
 
