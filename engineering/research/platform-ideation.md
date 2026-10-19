@@ -58,6 +58,9 @@ written from it when the version opens.
 | 46 | One build job per release in the shared pipeline; a product splits into per-service jobs only when its build regularly passes 10 minutes | 2026-10-19 |
 | 47 | A product's manifest declares the public paths each service serves; Wheelhouse picks domains from a connected provider (Cloudflare first) and applies DNS and routing per environment | 2026-10-19 |
 | 48 | Each console's environment tag switches to the same page on the other console | 2026-10-19 |
+| 49 | A product's apex domain (`ocharo.co`) serves its marketing page and `www` redirects to it; each other product gets its own host (`studio.ocharo.co`) with its API under `/api` | 2026-10-19 |
+| 50 | Product sites are public behind the Cloudflare proxy; only SSH and Wheelhouse's control path stay on the tailnet; service-to-service APIs stay on the server's internal network | 2026-10-19 |
+| 51 | Dev uses each product's own domain (`studio-dev.ocharo.co`); no shared preview domain | 2026-10-19 |
 
 | Fact | Owner |
 |---|---|
