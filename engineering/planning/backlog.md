@@ -96,6 +96,8 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Ability to run one environment on several servers for uptime | feature | User 2026-10-19, future: one aggregated state (decision 44) and a per-server overlay; design first |
 | Back up Wheelhouse's own database on a schedule to at least two locations | feature | User 2026-10-19: not before Ocharo deploys; the control plane's audit, inventory and history need off-host copies |
 | Snapshot Wheelhouse's database in the promote workflow before a prod promotion | feature | User 2026-10-19: make `promote-prod.yml` reliable; a migration jump (0.3.9 → 0.5.x) runs on first start |
+| v0.7 one-click infrastructure: move a product to another server, fleet moves, decommission with step-up 2FA | feature | User 2026-10-19 (decisions 56–57): backup → restore → write freeze ≤10 min → DNS switch → old host kept 7 days; design in the automation analysis |
+| Provider APIs (Contabo, OVH) for snapshots, reinstall and ordering | feature | Parked 2026-10-19: no credential that can spend money until servers are bought often |
 | Ability to roll back automatically when the watch window sees a regression | feature | User 2026-10-19: later; the watch window flags the regression and the owner decides |
 | Recover database migrations across services when a later service fails | decision | User 2026-10-19, for discussion: A migrates, then B's migration fails, so A's must roll back too. Either every migration stays rollback-safe, or the release updates A and B first and migrates the databases after |
 | Show the maintenance page in Uzbek, Russian and English at least | feature | Parked 2026-10-19 from Iteration 15: per-product copy in the manifest, chosen by `Accept-Language` |

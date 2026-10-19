@@ -61,6 +61,13 @@ written from it when the version opens.
 | 49 | A product's apex domain (`ocharo.co`) serves its marketing page and `www` redirects to it; each other product gets its own host (`studio.ocharo.co`) with its API under `/api` | 2026-10-19 |
 | 50 | Product sites are public behind the Cloudflare proxy; only SSH and Wheelhouse's control path stay on the tailnet; service-to-service APIs stay on the server's internal network | 2026-10-19 |
 | 51 | Dev uses each product's own domain (`studio-dev.ocharo.co`); no shared preview domain | 2026-10-19 |
+| 52 | Wheelhouse drives Tailscale through an owner-created OAuth client: tagged keys, devices and the access policy after a reviewed diff | 2026-10-19 |
+| 53 | A fresh server enrolls from Wheelhouse with a one-time key, root-only images included; the hand-run kit stays the fallback | 2026-10-19 |
+| 54 | Private images pull with a short-lived token per deploy; products hosts hold no registry token | 2026-10-19 |
+| 55 | Wheelhouse renders settings with secret values at deploy; a first deploy asks for missing required values | 2026-10-19 |
+| 56 | A one-click move goes through backups, freezes writes 10 minutes at most and keeps the old host 7 days | 2026-10-19 |
+| 57 | v0.6 extracts code into the SDKs; one-click infrastructure (move job, fleet moves, decommission) is v0.7 | 2026-10-19 |
+| 58 | Builds spend no money: CI stays inside the free Actions quotas and is trimmed before anything is paid | 2026-10-19 |
 
 | Fact | Owner |
 |---|---|
