@@ -1,13 +1,14 @@
 import { onMounted, onScopeDispose, ref, type Ref } from "vue";
+import { AuthStatus } from "@wow-two-beta/fe/auth";
+import { feedbackSessionExpiry } from "@wow-two-beta/fe/feedback";
 import {
   ApiFailureFactory,
   type ApiFailure,
 } from "@wow-two-beta/fe/foundation/http";
 import type { Result } from "@wow-two-beta/fe/foundation/results";
-import { clearQuerySession } from "@/bootstrap/query";
 import type { CurrentUser } from "@/domain/auth";
 import { authApi } from "@/integration/auth";
-import { clearHttpSession } from "@/integration/common";
+import { sessionBridge } from "@/integration/common";
 
 /** The session held by the private console's root. */
 export interface AuthSession {
@@ -20,7 +21,11 @@ export interface AuthSession {
 
 let sessionRequest: Promise<Result<CurrentUser, ApiFailure>> | undefined;
 
-/** Resolves one shared session read and invalidates private data when the owner leaves. */
+/**
+ * Resolves one shared session read and publishes it to the session bridge, which clears private data when the owner
+ * changes or leaves. An expired session signs out in place: the root shows the sign-in screen on the same address, so
+ * signing in again returns there.
+ */
 export function useAuth(): AuthSession {
   const user = ref<CurrentUser | null>(null);
   const loading = ref(true);
@@ -32,8 +37,16 @@ export function useAuth(): AuthSession {
       sessionRequest ??= authApi.getCurrentUser();
       const result = await sessionRequest;
       if (!active) return;
-      if (result.ok) user.value = result.value;
-      else if (result.failure.status !== 401) error.value = result.failure;
+      if (result.ok) {
+        user.value = result.value;
+        sessionBridge.publishSession({
+          status: AuthStatus.Authenticated,
+          user: result.value,
+        });
+      } else {
+        if (result.failure.status !== 401) error.value = result.failure;
+        sessionBridge.publishSession({ status: AuthStatus.Anonymous, user: null });
+      }
     } catch {
       if (active) error.value = ApiFailureFactory.create("transport");
     } finally {
@@ -43,6 +56,13 @@ export function useAuth(): AuthSession {
   onScopeDispose(() => {
     active = false;
   });
+  onScopeDispose(
+    sessionBridge.subscribeExpired(() => {
+      sessionRequest = undefined;
+      user.value = null;
+    }),
+  );
+  onScopeDispose(sessionBridge.subscribeExpired(feedbackSessionExpiry()));
 
   function signIn(): void {
     window.location.assign(authApi.signInUrl());
@@ -51,7 +71,8 @@ export function useAuth(): AuthSession {
   async function signOut(): Promise<void> {
     try {
       const result = await authApi.signOut();
-      if (!result.ok) {
+      // Cancelled: the server answered 401, so the session had already expired and nothing is left to sign out.
+      if (!result.ok && result.failure.code !== "cancelled") {
         error.value = {
           ...result.failure,
           message:
@@ -67,8 +88,7 @@ export function useAuth(): AuthSession {
     } finally {
       sessionRequest = undefined;
       user.value = null;
-      clearHttpSession();
-      clearQuerySession();
+      sessionBridge.publishSession({ status: AuthStatus.Anonymous, user: null });
     }
   }
 

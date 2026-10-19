@@ -20,7 +20,7 @@ const bundle = await build({
       export { hostTrend } from './src/domain/servers/models/VitalsSample';
       export { ServerExtensions } from './src/domain/servers/ServerExtensions';
       export { AttentionRules } from './src/domain/overview/AttentionRules';
-      export { clearHttpSession } from './src/integration/common';
+      export { sessionBridge } from './src/integration/common';
       export { useServerVitals } from './src/application/servers/useServerVitals';
       export { queryClient, queryPlugin } from './src/bootstrap/query';
       export { createRenderer, h, nextTick, reactive } from 'vue';
@@ -48,7 +48,7 @@ const {
   hostTrend,
   ServerExtensions,
   AttentionRules,
-  clearHttpSession,
+  sessionBridge,
   useServerVitals,
   queryClient,
   queryPlugin,
@@ -561,9 +561,10 @@ test("cancels pending private data across logout even when the transport resolve
     new Promise((resolve) => {
       settle = resolve;
     });
+  sessionBridge.publishSession({ status: "authenticated", user: { login: "owner", name: "Owner", avatar: null } });
   const pending = productsApi.listProducts();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  clearHttpSession();
+  sessionBridge.publishSession({ status: "anonymous", user: null });
   const result = await pending;
   assert.equal(result.ok, false);
   assert.equal(result.failure.code, "cancelled");

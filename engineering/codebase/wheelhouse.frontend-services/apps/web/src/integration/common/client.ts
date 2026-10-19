@@ -1,6 +1,6 @@
+import { createAuthBridge } from "@wow-two-beta/fe/auth";
 import {
   createApiClient,
-  createRequestScope,
   ApiFailureFactory,
   type ApiFailure,
 } from "@wow-two-beta/fe/foundation/http";
@@ -9,11 +9,20 @@ import {
   type Result,
 } from "@wow-two-beta/fe/foundation/results";
 import type { ZodType } from "zod";
+import type { CurrentUser } from "@/domain/auth";
 
-const sessionScope = createRequestScope();
+/**
+ * Owns the owner's session lifetime: its scope cancels a replaced session's requests and clears its cached records,
+ * and the first 401 of a signed-in session expires it once.
+ */
+export const sessionBridge = createAuthBridge<CurrentUser>({
+  getIdentity: (u) => u.login,
+});
+
 const client = createApiClient({
   credentials: "same-origin",
-  scope: sessionScope,
+  scope: sessionBridge.scope,
+  onUnauthorized: sessionBridge.onUnauthorized,
 });
 
 /** Options for same-origin management requests; action headers guard owner writes. */
@@ -22,11 +31,6 @@ export interface RequestOptions {
   readonly body?: unknown;
   readonly signal?: AbortSignal | undefined;
   readonly action?: string;
-}
-
-/** Invalidates pending private reads and writes across a sign-out boundary. */
-export function clearHttpSession(): void {
-  sessionScope.invalidate();
 }
 
 /** Decodes the endpoint's consumed shape without exposing response diagnostics as display text. */
