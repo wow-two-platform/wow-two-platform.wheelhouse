@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-10-17*
+*Last updated: 2026-10-19*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -86,6 +86,9 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Clear the history cache on submit and reconcile | fix | A new rollout can take up to 3 s to appear |
 | Show the release in a deployment page's breadcrumb | fix | The trail reads "Deployment" because the route title doesn't reach `ScopeBar` |
 | Cover the Deployments page with browser end-to-end tests | engineering | Grid, filters, list paging and the detail page have unit tests only |
+| Ability to promote or roll back from Telegram alert buttons | feature | Parked 2026-10-19: behind step-up 2FA; the console is enough for now |
+| CVE gate: scan images at build, warn on prod confirm, rebuild on base-image fixes | feature | Parked 2026-10-19 |
+| Refresh dev's database from a redacted, compacted prod copy | feature | User 2026-10-19: no personal data reaches dev; feeds the end-to-end dev checks that gate auto-promote |
 | Roll prod back by promoting the previous release | feature | Dev-to-prod promotion exists |
 | Run each app's migrations as a rollout step and show their state | feature | User decision 2026-10-14: apps own their SQL; the runner migrates with the new image between pull and start; prod waits for test. The app database's own migration journal stays the authority; Wheelhouse reads it at deploy and keeps what it saw in the job history, never a second table. Rollback scripts run only on a confirmed operator action |
 | Mount a GitHub token that can start product builds | check | `WHEELHOUSE_GITHUB_TOKEN_FILE` with Actions write on each product; the Build button needs it |
@@ -152,6 +155,8 @@ checks were dropped for it (the list stays in git history).
 | Item | Type | Notes |
 |---|---|---|
 | Analyze full-page versus modal dialogs | product | Then record the dialog convention in wow2 |
+| Ability to tour a page on a first visit | feature | User 2026-10-19: a guided tour ("storybook") that spotlights one section at a time under a blurred overlay; separate from info buttons, which always show context on click; may use different text. Name to settle (tour vs walkthrough) |
+| Analyze Home widgets: add, remove and move them | product | User 2026-10-19: pinned products leave Home (the sidebar has them); phones have no sidebar, so decide what replaces pins there |
 
 ## SDK adoption
 
