@@ -12,6 +12,7 @@ A second VPS that runs products only is wired by [§ Products host](#products-ho
 | Asset | Runs where | Result |
 |---|---|---|
 | [Host bootstrap](bootstrap.sh) | Verified VPS, administrator | Docker/Compose/Python/OpenSSH, deploy account, network, platform files |
+| [Administrator script](create-admin.sh) | Root-only products VPS, root, once | A sudo administrator that signs in with root's SSH keys; sets no password |
 | [Products bootstrap](bootstrap-products.sh) | Verified products VPS, administrator | The same, plus SSH keys only, firewall, unattended security updates and the tailnet |
 | [Configuration generator](prepare.py) | VPS, deployment account | Each console's database credentials, settings and target JSON; with `--server products`, a products host's platform, databases, site nodes and GHCR sign-in |
 | [Canary generator](prepare_canary.py) | VPS, deployment account | The canary's dev and prod databases and settings files |
@@ -299,6 +300,7 @@ Prod console (control host) -> tailnet -> <products-tailnet-ip>:22 -> wheelhouse
 | Step | Who |
 |---|---|
 | Buy, verify the host key, administrator key, tailnet policy, auth key, GitHub token | Owner |
+| The administrator account and its sudo access, on a root-only image | `create-admin.sh`; the owner sets its password |
 | Packages, deploy account, kit, `platform` network, SSH policy, firewall, updates, tailnet join | `bootstrap-products.sh` |
 | PostgreSQL password, Compose file, databases, settings folders, site nodes, GHCR sign-in | `prepare.py --server products` |
 | Prod's runner identity, its host-key pin, its authorization and the proof it connects | `authorize-runner.sh` |
@@ -309,13 +311,35 @@ and the tailnet, which need a real Ubuntu host ([Local server](../deployment.md#
 
 ### 1. Buy and first sign-in (owner)
 
-1. Order the VPS in the OVH Canada account: Ubuntu 26.04 amd64, at least 8 GB RAM and 100 GB disk.
-2. Verify the SSH host fingerprint in the OVH console before the first connection, as in
-   [Initial administrator access](#initial-administrator-access).
-3. Put your own key on the administrator account and sign in with it; password sign-in goes in step 3:
-   `ssh-copy-id -i ~/.ssh/<your-key>.pub ubuntu@<public-ip>`, then `ssh ubuntu@<public-ip>`.
-4. Give the administrator a local password for the provider's KVM console, the recovery path once SSH is tailnet-only:
-   `sudo passwd ubuntu`. Keep it in the password manager; SSH never accepts it.
+Any provider works: the kit needs Ubuntu 26.04 amd64, SSH and an out-of-band console. OVH and Contabo are registered
+providers in Wheelhouse. Their images differ: OVH delivers an administrator account (`ubuntu`), Contabo delivers `root`
+only. `<admin-user>` below is `ubuntu` on OVH, or the name you give `create-admin.sh` on a root-only image.
+
+1. Order the VPS: Ubuntu 26.04 amd64, at least 8 GB RAM and 100 GB disk. The bootstrap refuses any other image.
+2. Verify the SSH host fingerprint in the provider's out-of-band console before the first connection (OVH KVM,
+   Contabo VNC), as in [Initial administrator access](#initial-administrator-access). That console is also the recovery
+   path once SSH is tailnet-only.
+3. Put your own key on the account the image delivers, and end with an administrator that you sign in to with that key.
+   The bootstrap in step 3 turns password sign-in off.
+   - OVH, an administrator is delivered: `ssh-copy-id -i ~/.ssh/<your-key>.pub ubuntu@<public-ip>`, then
+     `ssh ubuntu@<public-ip>`.
+   - Root-only image (Contabo): add your key to root, then create the administrator once from a root session. The script
+     copies root's keys to it and sets no password; set that yourself:
+
+     ```sh
+     ssh-copy-id -i ~/.ssh/<your-key>.pub root@<public-ip>
+     scp engineering/deployment/vps/create-admin.sh root@<public-ip>:
+     ssh root@<public-ip>
+     bash create-admin.sh <admin-user>   # on the host: refuses to run without your key on root
+     passwd <admin-user>                 # your own password, for the console and sudo
+     exit
+     ```
+
+     Then `ssh <admin-user>@<public-ip>` with your key. Rerunning the script is safe; it refuses an existing user that
+     holds other keys.
+4. Give the administrator a local password for the provider's console, the recovery path once SSH is tailnet-only:
+   `sudo passwd <admin-user>` on OVH (the `passwd` above did it on a root-only image). SSH never accepts it. Keep it in
+   the password manager.
 
 ### 2. Tailnet policy and site key (owner, Tailscale admin console)
 
@@ -327,20 +351,21 @@ and the tailnet, which need a real Ubuntu host ([Local server](../deployment.md#
 ### 3. Bootstrap (owner runs the script)
 
 ```sh
-scp -r engineering/deployment/vps ubuntu@<public-ip>:wheelhouse-kit
-ssh ubuntu@<public-ip>
+scp -r engineering/deployment/vps <admin-user>@<public-ip>:wheelhouse-kit
+ssh <admin-user>@<public-ip>
 sudo bash wheelhouse-kit/bootstrap-products.sh --host-identity-verified --tailnet-hostname <products-node>
 ```
 
 - `tailscale up` prints a sign-in link; open it as the tailnet administrator. The node joins as `tag:products`, so its
   key never expires.
-- The script refuses to run before your key signs you in, since it turns password sign-in off.
+- The script refuses to run before your key signs you in, since it turns password sign-in off. It also turns root
+  sign-in off, so on a root-only image the administrator from step 1 is the way in from then on.
 - SSH stays public until you close it. From the laptop, open a session over the tailnet and keep it open:
-  `ssh ubuntu@<products-tailnet-ip>`. In that session:
+  `ssh <admin-user>@<products-tailnet-ip>`. In that session:
   `sudo bash wheelhouse-kit/bootstrap-products.sh --host-identity-verified --tailnet-only-ssh`.
-- Fallback when the tailnet path is lost: sign in on the OVH KVM console and run
-  `sudo bash wheelhouse-kit/bootstrap-products.sh --host-identity-verified --public-ssh` (or `sudo ufw allow 22/tcp`).
-  OVH rescue mode is the last resort.
+- Fallback when the tailnet path is lost: sign in as the administrator on the provider's console (OVH KVM, Contabo
+  VNC) and run `sudo bash wheelhouse-kit/bootstrap-products.sh --host-identity-verified --public-ssh`
+  (or `sudo ufw allow 22/tcp`). The provider's rescue mode is the last resort.
 - 80 and 443 stay closed. Apply pending OS updates once, in a reboot window:
   `sudo apt-get update && sudo apt-get upgrade && sudo reboot`. After that, security updates install unattended,
   without reboots; Docker and Tailscale upgrade only by hand.
@@ -426,7 +451,7 @@ Servers › Add server:
 | Field | Value |
 |---|---|
 | Slug | `<server-id>`, as in step 7 |
-| Provider, region | OVHcloud, the VPS's region |
+| Provider, region | OVHcloud or Contabo, the VPS's region |
 | Host · SSH user · SSH port | `<products-tailnet-ip>` · `wheelhouse-deploy` · `22` |
 | Scheme · port · certificate resolver | `https` · empty · empty |
 | Entry points · private entry points | `private` · `private`: every site answers privately until public ingress ships |

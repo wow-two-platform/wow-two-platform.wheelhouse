@@ -42,7 +42,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Install the GitHub App and place its key on both consoles | check | Owner steps in `deployment.md` § GitHub access; Deployments › Issues names any owner still without it |
 | Drop the sign-in `repo` and `read:packages` scopes | fix | Once the GitHub App serves every owner; package versions then need the token file |
 | Rename a product's repository through the GitHub App | feature | User decision 2026-10-14; needs Administration write, the App has Actions write and Contents and Metadata read |
-| Register the second OVH VPS for Ocharo as a server | check | User 2026-10-17: the owner buys it (`app-t-004` in the wow2 tasks); Wheelhouse wires it with v0.5's public-hosting iteration |
+| Register the Ocharo products VPS (Contabo) as a server | check | User 2026-10-17: the owner buys it (`app-t-004` in the wow2 tasks); Wheelhouse wires it with v0.5's public-hosting iteration |
 | Deploy Ocharo to the products VPS | check | User 2026-10-17: Ocharo is the first product to go live, after v0.5's essential modules (`app-t-005`); ForeverPin follows |
 | Choose the shared preview domain for dev hosts | check | Topology point 25; one wildcard DNS record; `test` was retired 2026-10-17 |
 | Retire `rehearse.py console` for the self-deployed console | check | `rehearse.py self` deploys Wheelhouse to `wheelhouse-dev`; it needs an OAuth app and the inventory mount |

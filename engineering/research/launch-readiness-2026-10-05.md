@@ -362,6 +362,8 @@ Forty GB also needs bounded image retention and off-provider backups.
 OVH is implemented as `ovhcloud` across backend, frontend and runner inventory. Existing provider ordinals are
 preserved; PostgreSQL stores unconstrained text, so this addition needs no migration. Choosing Vultr or DigitalOcean
 would need its provider enum addition before registering the host; SSH transport itself is provider-independent.
+Contabo joined the same way on 2026-10-19 (`contabo`, no migration): its images deliver `root` only, which
+`deployment/vps/create-admin.sh` turns into an administrator before the products bootstrap.
 
 ---
 
