@@ -43,12 +43,13 @@ written from it when the version opens.
 | 31 | An expired session signs out once and returns to the same page after sign-in; no error toasts | 2026-10-19 |
 | 32 | GitHub access goes through one GitHub App installed on every owner; a token file stays the fallback | 2026-10-19 |
 | 33 | Deploys carry eight states, coloured by the attention they need rather than by state | 2026-10-19 |
-| 34 | Deploys that changed nothing (refused, cancelled, expired) are hidden by default; stats count them and the product's tabs list them | 2026-10-19 |
+| 34 | Deploys that changed nothing (refused, cancelled, expired) sit behind one toggle, off by default, that hides or shows them in both the records and the stats | 2026-10-19 |
 | 35 | On phones a deploy's service map becomes an impact list with an "Open map" action | 2026-10-19 |
 | 36 | Services declare dependencies as `dependsOn` in `deploy.yml`; rollouts follow that order and roll back release-wide | 2026-10-19 |
 | 37 | A service restarts only when its own image or settings change; a dependency's update never restarts it | 2026-10-19 |
 | 38 | Only Wheelhouse deploys through CI; Wheelhouse deploys every other product; catalog `ci`/`none` entries never create products | 2026-10-19 |
 | 39 | Automatic rollback on a watch-window regression waits; the watch window flags the regression | 2026-10-19 |
+| 40 | Zero-disruption phase 1 also takes an emergency path through the drain, automation that honours each target's deploy policy, and dry runs bounded by lock and statement timeouts | 2026-10-19 |
 
 | Fact | Owner |
 |---|---|
