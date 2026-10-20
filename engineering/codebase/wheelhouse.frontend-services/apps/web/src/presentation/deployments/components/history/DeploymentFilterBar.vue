@@ -52,12 +52,13 @@ function remove(key: string): void {
 
 <template>
   <div class="flex min-w-0 flex-col gap-2">
-    <!-- A phone's single-row strip scrolls sideways; its trailing edge fades, so controls past it read as more. -->
+    <!-- A phone's single-row strip scrolls sideways; its trailing edge fades, so controls past it read as more. Both
+         strips keep 8px under their content, so a scrollbar thumb never sits against a chip. -->
     <div
       :class="[
         'flex min-w-0 flex-wrap items-center gap-2',
         props.isSingleRow
-          ? 'max-md:-mx-1 max-md:flex-nowrap max-md:overflow-x-auto max-md:px-1 max-md:pr-6 max-md:pb-0.5 max-md:*:shrink-0 max-md:[mask-image:linear-gradient(to_right,#000_calc(100%-1.5rem),transparent)]'
+          ? 'max-md:-mx-1 max-md:flex-nowrap max-md:overflow-x-auto max-md:px-1 max-md:pr-6 max-md:pb-2 max-md:*:shrink-0 max-md:[mask-image:linear-gradient(to_right,#000_calc(100%-1.5rem),transparent)]'
           : props.isEntityLocked
             ? 'max-md:flex-nowrap'
             : '',
@@ -74,7 +75,7 @@ function remove(key: string): void {
     </div>
     <ul
       v-if="chips.length"
-      :class="['flex gap-1.5', props.isSingleRow ? 'flex-wrap max-md:flex-nowrap max-md:overflow-x-auto max-md:*:shrink-0' : 'flex-wrap']"
+      :class="['flex gap-1.5', props.isSingleRow ? 'flex-wrap max-md:flex-nowrap max-md:overflow-x-auto max-md:pb-2 max-md:*:shrink-0' : 'flex-wrap']"
       aria-label="Chosen products and services"
     >
       <li v-for="chip in chips" :key="chip.key">
