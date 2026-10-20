@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-10-19*
+*Last updated: 2026-10-20*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -70,6 +70,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Item | Type | Notes |
 |---|---|---|
 | Ability to rotate the vault's root key with a transactional rewrap | feature | 2026-10-19 merge analysis: unwrap every product key under the old root key, wrap under the new one, prove the canary, one transaction; the owner swaps the file after |
+| Ability to recover a lost root key with the owner's passkey | feature | User 2026-10-20 (decision 67): the database keeps the root key sealed by a passkey-derived key (WebAuthn PRF); after a lost key file, sign in, touch the passkey and Wheelhouse writes the file back. Waits on Wheelhouse database backups (Iteration 12) |
 | Ability to export audit checkpoints off the control host | feature | 2026-10-19 merge analysis: the hash chain is unkeyed, so a database administrator could rewrite it consistently; a periodic head off-host makes that visible |
 | Drop the vault inventory rows, password files and the `Vault:Mode` fallback | cleanup | v0.6, once every prod store is imported and verified (Iteration 23); a contract migration under decision 65 |
 | Ability for a product to fetch secrets at startup with its own token | feature | Parked (decision 60): the deploy-time render is the model; revisit for rotation-heavy secrets or hosts Wheelhouse does not deploy |

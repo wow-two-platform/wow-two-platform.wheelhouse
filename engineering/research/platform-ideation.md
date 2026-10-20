@@ -1,6 +1,6 @@
 # Platform ideation — v0.5
 
-*Last updated: 2026-10-19*
+*Last updated: 2026-10-20*
 
 Settled decisions from the v0.5 platform brainstorm: what the platform is, how products are modelled and who owns each
 fact. Iteration happens in the conversation; this file records only what the owner settled. The v0.5 version doc is
@@ -76,6 +76,7 @@ written from it when the version opens.
 | 64 | Wheelhouse deploys itself: CI only builds, prod deploys each release to dev, and prod promotes itself after a typed confirm; supersedes decision 3's CI promotion | 2026-10-19 |
 | 65 | Wheelhouse migrations only expand; a contract change takes two releases, so any release can roll back | 2026-10-19 |
 | 66 | Step-up 2FA ships before Ocharo's public launch and covers every prod promotion | 2026-10-19 |
+| 67 | The vault's root key has two recoveries: the owner's offline copy, checked against the key in use on a schedule, and later a passkey-sealed copy in the database | 2026-10-20 |
 
 | Fact | Owner |
 |---|---|
