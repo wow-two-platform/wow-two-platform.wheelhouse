@@ -14,8 +14,9 @@ using WoW.Two.Sdk.Beta.Be.Testing.Web;
 namespace Wheelhouse.Tests.E2E.Tests;
 
 /// <summary>Verifies the console's infrastructure automation: Tailscale nodes and the reviewed policy, a fresh server's
-/// enrollment and a product's placement reach the runner as the owner asked, are audited, and a finished enrollment
-/// moves its server onto the tailnet.</summary>
+/// enrollment, a product's placement and an enrolled server's upkeep reach the runner as the owner asked, are audited,
+/// a finished enrollment moves its server onto the tailnet, and a job that brought a host to the kit records its
+/// public ingress and public address.</summary>
 [Collection(WheelhouseCollection.Name)]
 public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBase(fixture)
 {
@@ -26,6 +27,7 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
     [InlineData("api/tailnet/policy")]
     [InlineData("api/servers/prod-host/enrollment")]
     [InlineData("api/products/foreverpin/placements")]
+    [InlineData("api/servers/prod-host/upkeep")]
     public async Task Reads_ShouldReturn401_WhenTheCallerIsAnonymous(string path)
     {
         (await AnonymousClient.GetAsync(path)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -183,6 +185,121 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
             .Be(("foreverpin", "failed", "Not on the tailnet yet: foreverpin-app"));
         Infra.Acknowledged.Should().HaveCount(2);
     }
+
+    [Fact]
+    public async Task Upkeep_ShouldStartTheJobAsTheOwnerForAKnownServerAndAuditIt()
+    {
+        (await AdminClient.PostAsync("api/servers/prod-host/upkeep", null)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await Act("server").PostAsync("api/servers/missing/upkeep", null)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var response = await Act("server").PostAsync("api/servers/prod-host/upkeep", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Data(response)).GetProperty("kind").GetString().Should().Be("upkeep");
+        var call = Infra.Calls.Should().ContainSingle(call => call.Action == "upkeep").Subject;
+        ((string?)call.Request, call.Actor).Should().Be(("prod-host", "test-admin"));
+        (await LastAudit()).Should().Be(("server.upkeep", "prod-host", "succeeded"));
+        var listed = await Data(await AdminClient.GetAsync("api/servers/prod-host/upkeep"));
+        (listed.GetProperty("kit").GetString(), listed.GetProperty("jobs").GetArrayLength()).Should().Be((new string('c', 64), 0));
+    }
+
+    [Fact]
+    public async Task FinishedUpkeep_ShouldRecordTheKitsPublicIngressAndAddressAndKeepTheOwnersPattern()
+    {
+        await Act("server").PutAsJsonAsync("api/servers/prod-host", new
+        {
+            name = "Prod", provider = "hetzner", host = "100.101.7.8", region = "fsn1", sshUser = "wheelhouse-deploy",
+            sshPort = 22, ingress = new { scheme = "https", entryPoints = new[] { "private" }, privateEntryPoints = new[] { "private" },
+                pattern = "{site}-{product}.{environment}.preview.example" },
+        });
+        Infra.Finished.Add(new
+        {
+            id = "6f1c2a9e-0000-4000-8000-000000000003", kind = "upkeep", serverId = "prod-host", status = "succeeded",
+            actor = "sulton-max",
+            facts = new { kitDigest = new string('d', 64), publicAddress = "203.0.113.20", addressSource = "enrollment", ingress = KitIngress() },
+        });
+
+        await Pass();
+
+        var ingress = await IngressOf("prod-host");
+        (ingress.GetProperty("certResolver").GetString(), ingress.GetProperty("entryPoints")[0].GetString(),
+            ingress.GetProperty("privateEntryPoints")[0].GetString(), ingress.GetProperty("probe").GetString(),
+            ingress.GetProperty("publicAddress").GetString(), ingress.GetProperty("pattern").GetString())
+            .Should().Be(("letsencrypt", "websecure", "private", "https://127.0.0.1", "203.0.113.20",
+                "{site}-{product}.{environment}.preview.example"));
+        var exported = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(Fixture.InventoryRoot, "inventory.json")))
+            .RootElement.GetProperty("servers").EnumerateArray().Single(item => item.GetProperty("id").GetString() == "prod-host");
+        exported.GetProperty("ingress").GetProperty("publicAddress").GetString().Should().Be("203.0.113.20");
+        var entry = (await Entries()).Single(entry => entry.GetProperty("action").GetString() == "server.upkeep.finish");
+        (entry.GetProperty("subject").GetString(), entry.GetProperty("actor").GetString(), entry.GetProperty("outcome").GetString())
+            .Should().Be(("prod-host", "sulton-max", "succeeded"));
+        entry.GetProperty("detail").GetString().Should().Contain("kit dddddddddddd").And.Contain("public 203.0.113.20");
+    }
+
+    [Fact]
+    public async Task FinishedEnrollment_ShouldRecordThePublicAddressItEnrolledOn_AndAServerEditKeepsIt()
+    {
+        Infra.Finished.Add(new
+        {
+            id = "6f1c2a9e-0000-4000-8000-000000000004", kind = "enrollment", serverId = "prod-host", status = "succeeded",
+            actor = "sulton-max",
+            facts = new { tailnetAddress = "100.101.7.8", publicAddress = "203.0.113.20", ingress = KitIngress() },
+        });
+        await Pass();
+        (await IngressOf("prod-host")).GetProperty("publicAddress").GetString().Should().Be("203.0.113.20");
+
+        // The address is never typed: an edit that sends another, or none, keeps the recorded one.
+        var edited = await Act("server").PutAsJsonAsync("api/servers/prod-host", new
+        {
+            name = "Prod", provider = "hetzner", host = "100.101.7.8", region = "fsn1", sshUser = "wheelhouse-deploy",
+            sshPort = 22, ingress = new { scheme = "https", entryPoints = new[] { "websecure" }, privateEntryPoints = new[] { "private" },
+                certResolver = "letsencrypt", publicAddress = "198.51.100.9" },
+        });
+        edited.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await IngressOf("prod-host")).GetProperty("publicAddress").GetString().Should().Be("203.0.113.20");
+        var created = await Act("server").PostAsJsonAsync("api/servers", new
+        {
+            slug = "spare-host", name = "Spare", provider = "contabo", host = "198.51.100.10", region = "eu",
+            ingress = new { scheme = "https", entryPoints = new[] { "websecure" }, privateEntryPoints = Array.Empty<string>(),
+                publicAddress = "198.51.100.10" },
+        });
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        (await IngressOf("spare-host")).GetProperty("publicAddress").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task FinishedUpkeep_ShouldRecordNothing_WhenItsIngressIsNotOneWheelhouseCanUse()
+    {
+        Infra.Finished.Add(new
+        {
+            id = "6f1c2a9e-0000-4000-8000-000000000005", kind = "upkeep", serverId = "prod-host", status = "succeeded",
+            actor = "sulton-max",
+            facts = new { publicAddress = "203.0.113.20", ingress = new { scheme = "ftp", entryPoints = new[] { "web secure" },
+                privateEntryPoints = Array.Empty<string>() } },
+        });
+
+        await Pass();
+
+        (await IngressOf("prod-host")).GetProperty("publicAddress").ValueKind.Should().Be(JsonValueKind.Null);
+        (await Entries()).Single(entry => entry.GetProperty("action").GetString() == "server.upkeep.finish")
+            .GetProperty("outcome").GetString().Should().Be("failed");
+    }
+
+    private static object KitIngress() => new
+    {
+        scheme = "https", port = (int?)null, entryPoints = new[] { "websecure" }, privateEntryPoints = new[] { "private" },
+        certResolver = "letsencrypt", pattern = (string?)null, probe = "https://127.0.0.1", privateProbe = "http://127.0.0.1:18080",
+    };
+
+    private async Task Pass()
+    {
+        await using var scope = Fixture.Host.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<InfraJobRecorder>().PassAsync(CancellationToken.None);
+    }
+
+    private async Task<JsonElement> IngressOf(string slug) =>
+        (await Data(await AdminClient.GetAsync("api/servers"))).EnumerateArray()
+            .Single(server => server.GetProperty("slug").GetString() == slug).GetProperty("ingress");
 
     private const string OwnerKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOwnerKeyOwnerKeyOwnerKey owner@laptop";
 

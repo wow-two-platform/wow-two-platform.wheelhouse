@@ -10,7 +10,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Servers.CommandHandlers;
 
 /// <summary>Handles <see cref="ServerCreateCommand"/>; the server reaches nothing until its SSH identity and pinned
-/// host key are on the control host.</summary>
+/// host key are on the control host. Its public address waits for enrollment or host upkeep to record it.</summary>
 public sealed class ServerCreateCommandHandler(IServersRepository servers)
     : ICommandHandler<ServerCreateCommand, AppResult<ServerDto>>
 {
@@ -30,7 +30,7 @@ public sealed class ServerCreateCommandHandler(IServersRepository servers)
             Region = request.Region,
             SshUser = request.SshUser,
             SshPort = request.SshPort,
-            Ingress = request.Ingress,
+            Ingress = request.Ingress with { PublicAddress = null },
         }, cancellationToken);
         return AppResult<ServerDto>.Ok(ServerMapper.Map(server));
     }

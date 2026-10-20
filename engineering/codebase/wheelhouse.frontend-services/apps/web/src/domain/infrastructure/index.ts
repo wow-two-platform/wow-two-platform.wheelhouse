@@ -36,6 +36,13 @@ export {
   type StartEnrollmentRequest,
 } from './Enrollment';
 export {
+  AddressSource,
+  UpkeepRules,
+  type Upkeep,
+  type UpkeepFacts,
+  type UpkeepListing,
+} from './Upkeep';
+export {
   MAX_PLACED_SITES,
   PlacementPatterns,
   PlacementRules,

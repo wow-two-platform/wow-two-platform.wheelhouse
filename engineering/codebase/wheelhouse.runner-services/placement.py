@@ -1,6 +1,7 @@
-"""Places a product on a products host from the console, in place of vps.md's hand-run steps 4 and 5: the platform
-converges (PostgreSQL and the private ingress), the product's dev and prod databases are created once, and each of its
-private sites gets a tailnet node per environment that joins with its own single-use key.
+"""Places a product on a products host from the console, in place of vps.md's hand-run steps 4 and 5: the host
+converges to this Wheelhouse's kit (upkeep.converge: the kit, its firewall, PostgreSQL and the ingress), the product's
+dev and prod databases are created once, and each of its private sites gets a tailnet node per environment that joins
+with its own single-use key.
 
 Everything runs over prod's runner SSH as wheelhouse-deploy, through the kit's prepare.py on the host. Database
 passwords never leave the host. A site node's key is minted just before the node first starts, written to a private
@@ -15,28 +16,23 @@ import catalog
 import fleet
 import infra_jobs
 import tailnet
+import upkeep
 from infra_jobs import Journal, remote
 from runner import SLUG, CommandFailed, Rejected, now, read_json, require
 from transport import Ssh
 
-ROOT = fleet.DEFAULT_ROOT
-PREPARE = "python3 " + ROOT + "/bootstrap/prepare.py --root " + ROOT + " --server products"
-COMPOSE = "cd " + ROOT + "/platform && docker compose --env-file host.env -f compose.yml"
+ROOT = upkeep.ROOT
+PREPARE = upkeep.PREPARE
+COMPOSE = upkeep.COMPOSE
 NODE = re.compile(r"[a-z][a-z0-9-]{0,50}[a-z0-9]")
 RESERVED = ("postgres", "ingress")
-STEPS = (("platform", "PostgreSQL and private ingress"),
+STEPS = (("platform", "Kit, firewall, PostgreSQL and the ingress"),
          ("databases", "Dev and prod databases"),
          ("sites", "Site nodes registered"),
          ("nodes", "Site nodes on the tailnet"))
 NODE_SECONDS = 120
-
-
-def converge_platform(ssh):
-    """prepare.py --server products keeps the PostgreSQL password and renders compose.yml again; then PostgreSQL and
-    Traefik start or stay. Shared with the enrollment's platform step."""
-    remote(ssh, PREPARE, timeout=120)
-    remote(ssh, COMPOSE + " up -d --wait postgres ingress", timeout=900)
-    return "PostgreSQL and the private ingress run; compose.yml rendered from the kit"
+# The enrollment's platform step: prepare.py and Compose on a host whose kit its root phases just laid out.
+converge_platform = upkeep.converge_platform
 
 
 def journal_path(root, identifier):
@@ -225,7 +221,8 @@ def run(root, identifier, session=None):
                 lazy["session"] = session or tailnet.Tailscale(root)
             return lazy["session"]
 
-        actions = {"platform": lambda: converge_platform(ssh), "databases": lambda: databases(ssh, journal),
+        actions = {"platform": lambda: upkeep.converge(root, server, ssh, journal.record["facts"]),
+                   "databases": lambda: databases(ssh, journal),
                    "sites": lambda: sites(ssh, journal, tailscale()),
                    "nodes": lambda: nodes(ssh, journal, tailscale())}
         for key, _ in STEPS:

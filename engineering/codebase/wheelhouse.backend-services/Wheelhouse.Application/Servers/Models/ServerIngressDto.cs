@@ -26,4 +26,7 @@ public sealed record ServerIngressDto
 
     /// <summary>Gets where the runner requests private sites from, or <c>null</c>.</summary>
     public string? PrivateProbe { get; init; }
+
+    /// <summary>Gets the server's public IPv4 address, recorded by enrollment and host upkeep, or <c>null</c>.</summary>
+    public string? PublicAddress { get; init; }
 }

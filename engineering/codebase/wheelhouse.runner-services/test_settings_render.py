@@ -286,6 +286,21 @@ class RenderTests(unittest.TestCase):
             with self.subTest(types=types), self.assertRaises(ValueError):
                 runner.release_settings({**self.manifest, "settings": {"api": {"types": types}}})
 
+    def test_a_baseline_host_reaches_the_derived_hosts_and_site_urls(self):
+        self.database()
+        self.target["ingress"] = {"scheme": "https", "entryPoints": ["websecure"], "privateEntryPoints": ["private"],
+                                  "certResolver": "letsencrypt", "hosts": {"admin": "admin.pilot.example"},
+                                  "publicAddress": "203.0.113.10"}
+        result = self.apply()
+        self.assertEqual("succeeded", result["status"], result.get("reason"))
+        api = self.rendered("api")
+        self.assertEqual("admin.pilot.example;pilot-dev.203-0-113-10.sslip.io;pilot-dev-api;old.example;localhost",
+                         api["AllowedHosts"])
+        self.assertEqual({"admin": {"Url": "https://admin.pilot.example"},
+                          "app": {"Url": "https://pilot-dev.203-0-113-10.sslip.io"}}, api["Sites"])
+        declared = {item["key"]: item for item in runner.settings_declarations(self.target, self.manifest)["services"][0]["keys"]}
+        self.assertIn("pilot-dev.203-0-113-10.sslip.io", declared[HOSTS]["value"])
+
     def test_derived_hosts_keep_a_host_files_other_hosts_once(self):
         self.assertEqual("a.example;p-api;B.example;localhost",
                          runner.with_hosts("a.example;p-api;localhost", "B.example;a.example;localhost; b.example"))

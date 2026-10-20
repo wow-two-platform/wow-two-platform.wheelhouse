@@ -71,6 +71,18 @@ class InventoryTests(unittest.TestCase):
                 self.assertTrue(resolved['requiresDevPass'])
                 self.assertFalse(resolved['needsConfirmation'])
                 self.assertEqual(str(self.root / 'ssh' / 'hel1' / 'identity'), resolved['ssh']['keyFile'])
+                self.assertIsNone(resolved['target']['ingress']['publicAddress'])
+
+    def test_a_servers_public_address_reaches_its_targets_ingress(self):
+        document = json.loads(json.dumps(SNAPSHOT))
+        document['servers'][0]['ingress']['publicAddress'] = '203.0.113.10'
+        document['targets'][0]['sites'] = []
+        self.write(document)
+        inventory.install(self.root)
+        with patch.dict(os.environ, NO_RIG):
+            ingress = fleet.resolve_target(self.root, 'pilot-prod')['target']['ingress']
+        self.assertEqual(('203.0.113.10', {}), (ingress['publicAddress'], ingress['hosts']))
+        self.assertEqual('203.0.113.10', inventory.server_json(fleet.SERVERS[0])['ingress']['publicAddress'])
 
     def test_a_malformed_snapshot_is_refused_whole(self):
         catalog.PRODUCTS = ()

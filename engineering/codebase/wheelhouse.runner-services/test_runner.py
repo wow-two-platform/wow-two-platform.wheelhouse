@@ -506,7 +506,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual("http://pilot-dev-api:8080",
                          route["http"]["services"]["pilot-dev-api-8080"]["loadBalancer"]["servers"][0]["url"])
         current = runner.state(self.target)["current"]
-        self.assertEqual([{"name": "app", "service": "api", "exposure": "public",
+        self.assertEqual([{"name": "app", "service": "api", "exposure": "public", "primary": True,
                            "url": "http://app-pilot.dev.localhost:18080"}], current["sites"])
         self.assertEqual(("candidate", "main", "1.2.0+aaaaaaa"),
                          (current["kind"], current["branch"], current["versions"]["api"]["version"]))
@@ -576,7 +576,7 @@ class RunnerTests(unittest.TestCase):
                          {name: (router["priority"], router["rule"]) for name, router in routers.items()})
         self.assertEqual({"pilot-dev-api-8080"}, {router["service"] for router in routers.values()})
         # One published address per service site: its root, probed once.
-        self.assertEqual([{"name": "app", "service": "api", "exposure": "public",
+        self.assertEqual([{"name": "app", "service": "api", "exposure": "public", "primary": True,
                            "url": "http://app-pilot.dev.localhost:18080"}], runner.state(self.target)["current"]["sites"])
 
     def test_invalid_schema_2_sites_are_refused_before_docker(self):
@@ -1337,8 +1337,10 @@ class RouteRenderTests(unittest.TestCase):
                          {name: router["priority"] for name, router in routers.items()})
         self.assertEqual("Host(`app.pilot.example`) && (Path(`/api/docs`) || PathPrefix(`/api/docs/`))",
                          routers["pilot-dev-app-docs-api-docs"]["rule"])
-        self.assertEqual(({"certResolver": "letsencrypt"}, ["private"]),
-                         (routers["pilot-dev-admin-api-root"]["tls"], routers["pilot-dev-admin-api-root"]["entryPoints"]))
+        # The resolver goes to public routers only: a private entry point sits behind its site node's Serve.
+        self.assertEqual(({"certResolver": "letsencrypt"}, None, ["private"]),
+                         (routers["pilot-dev-app-api-api"]["tls"], routers["pilot-dev-admin-api-root"].get("tls"),
+                          routers["pilot-dev-admin-api-root"]["entryPoints"]))
 
     def test_the_longest_prefix_wins_and_a_path_serves_itself_and_below_never_a_longer_word(self):
         routers = self.render()[0]["http"]["routers"]
@@ -1391,6 +1393,60 @@ class RouteRenderTests(unittest.TestCase):
         routers = self.render()[0]["http"]["routers"]
         self.assertEqual({"pilot-dev-app-api-a-b", "pilot-dev-app-api-a-b-2"},
                          {name for name in routers if name.startswith("pilot-dev-app-api-a")})
+
+    def baseline(self, environment="dev", **ingress):
+        """The products host's ingress after host upkeep: no named host, no pattern, its public address recorded."""
+        self.target["environment"] = environment
+        self.target["ingress"] = {"scheme": "https", "entryPoints": ["websecure"], "privateEntryPoints": ["private"],
+                                  "certResolver": "letsencrypt", "hosts": {}, "publicAddress": "203.0.113.10",
+                                  **ingress}
+        return self.render()
+
+    def test_a_public_site_without_a_host_answers_on_its_baseline_host(self):
+        config, published = self.baseline()
+        routers = config["http"]["routers"]
+        # The primary site takes the product's own name; dev adds -dev; the private admin site gets no public host.
+        self.assertEqual("Host(`pilot-dev.203-0-113-10.sslip.io`)", routers["pilot-dev-app-web-root"]["rule"])
+        self.assertEqual((["websecure"], {"certResolver": "letsencrypt"}),
+                         (routers["pilot-dev-app-web-root"]["entryPoints"], routers["pilot-dev-app-web-root"]["tls"]))
+        self.assertNotIn("pilot-dev-admin-api-root", routers)
+        self.assertEqual({("app", True, "https://pilot-dev.203-0-113-10.sslip.io")},
+                         {(site["name"], site["primary"], site["url"]) for site in published if site["service"] == "web"})
+        # Prod drops -dev, and a second site adds its name after the product.
+        config, published = self.baseline("prod")
+        self.assertEqual({"https://pilot.203-0-113-10.sslip.io", "https://pilot.203-0-113-10.sslip.io/api/docs",
+                          "https://pilot.203-0-113-10.sslip.io/api", "https://pilot-status.203-0-113-10.sslip.io"},
+                         {site["url"] for site in published})
+        self.assertFalse(any(site["primary"] for site in published if site["name"] == "status"))
+
+    def test_a_named_host_or_the_servers_pattern_wins_over_the_baseline_host(self):
+        _, published = self.baseline(hosts={"app": "app.pilot.example"})
+        self.assertEqual({"https://app.pilot.example"}, {site["url"] for site in published if site["service"] == "web"})
+        _, published = self.baseline(pattern="{site}-{product}.{environment}.example")
+        self.assertEqual({"https://app-pilot.dev.example"}, {site["url"] for site in published if site["service"] == "web"})
+
+    def test_without_a_public_address_a_public_site_without_a_host_stays_unrouted(self):
+        config, published = self.baseline(publicAddress=None)
+        self.assertEqual(({}, []), (config["http"]["routers"], published))
+
+    def test_a_schema_1_release_takes_its_first_site_as_the_primary_one(self):
+        self.manifest = {"schemaVersion": 1, "images": {"management": "m", "redirect": "r"},
+                         "sites": {"management": {"app": {"path": "/", "exposure": "public"}},
+                                   "redirect": {"go": {"path": "/", "exposure": "public"}}}}
+        _, published = self.baseline()
+        self.assertEqual([("app", True, "https://pilot-dev.203-0-113-10.sslip.io"),
+                          ("go", False, "https://pilot-go-dev.203-0-113-10.sslip.io")],
+                         [(site["name"], site["primary"], site["url"]) for site in published])
+
+    def test_a_baseline_host_whose_label_would_pass_63_characters_is_not_made(self):
+        self.assertIsNone(runner.baseline_host("p" * 48, "dev", "s" * 20, False, "203.0.113.10"))
+        self.assertEqual("ocharo-studio-dev.203-0-113-10.sslip.io",
+                         runner.baseline_host("ocharo-studio", "dev", "app", True, "203.0.113.10"))
+
+    def test_an_invalid_public_address_is_refused(self):
+        for address in ("203.0.113", "203.0.113.256", "2001:db8::1", "example.com"):
+            with self.subTest(address=address), self.assertRaisesRegex(runner.Rejected, "Invalid public address"):
+                self.baseline(publicAddress=address)
 
 
 class IngressHandler(http.server.BaseHTTPRequestHandler):

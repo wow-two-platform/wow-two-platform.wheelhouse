@@ -1,5 +1,6 @@
-"""The products-host kit Wheelhouse uploads when it enrolls a server: engineering/deployment/vps, shipped inside
-Wheelhouse's image at /app/kit, so an enrollment never fetches it from GitHub. Its digest is recorded on the job."""
+"""The products-host kit Wheelhouse uploads when it enrolls a server, and again when Refresh kit or a placement brings
+an enrolled host to it (upkeep.py): engineering/deployment/vps, shipped inside Wheelhouse's image at /app/kit, so no
+job fetches it from GitHub. Its digest is recorded on the job."""
 from __future__ import annotations
 import hashlib
 import io
@@ -12,6 +13,12 @@ from runner import require
 FILES = ("enroll-products.sh", "bootstrap-products.sh", "create-admin.sh", "repair-networks.sh", "authorize-runner.sh",
          "prepare.py", "products.compose.yml", "tailscale-serve-products.json")
 IMAGE_KIT = Path("/app/kit")
+# The ingress this kit lays out on a products host (products.compose.yml): public sites on websecure (host port 443)
+# with HTTP-01 certificates from the letsencrypt resolver, private sites on the private entry point behind their site
+# nodes; the runner probes both on the host. A finished enrollment, placement or host upkeep records it on the server.
+PUBLIC_INGRESS = {"scheme": "https", "port": None, "entryPoints": ["websecure"], "privateEntryPoints": ["private"],
+                  "certResolver": "letsencrypt", "pattern": None, "probe": "https://127.0.0.1",
+                  "privateProbe": "http://127.0.0.1:18080"}
 
 
 def kit_dir():

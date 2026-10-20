@@ -35,7 +35,7 @@ usage() {
 Usage: sudo bash bootstrap-products.sh --host-identity-verified [--tailnet-hostname <name>]
                                        [--tailnet-only-ssh | --public-ssh]
 Prepares a products host: Docker, the wheelhouse-deploy account, the products kit and `platform` network, SSH keys
-only, the firewall, unattended security updates and the tailnet (tag:products).
+only, the firewall (80 and 443 public for the ingress), unattended security updates and the tailnet (tag:products).
   --tailnet-hostname <name>  Join the tailnet as <name> (prints a sign-in link) unless it already has.
   --tailnet-only-ssh         Close public SSH; needs an open SSH session over the tailnet.
   --public-ssh               Reopen public SSH: the fallback when the tailnet path is lost.
@@ -156,7 +156,8 @@ lay_out_kit() {
     local kit=$1 directory
     deploy_group=$(id -gn "$deploy_user")
     for directory in "$deploy_root" "$deploy_root/config" "$deploy_root/platform" "$deploy_root/platform/.secrets" \
-        "$deploy_root/platform/sites" "$deploy_root/ingress" "$deploy_root/bootstrap" "$deploy_root/private"; do
+        "$deploy_root/platform/sites" "$deploy_root/platform/acme" "$deploy_root/ingress" "$deploy_root/bootstrap" \
+        "$deploy_root/private"; do
         [[ ! -L $directory ]] || { echo 'Refusing a symlinked deployment directory.' >&2; exit 1; }
         install -d -m 0700 -o "$deploy_user" -g "$deploy_group" "$directory"
     done
@@ -167,8 +168,15 @@ lay_out_kit() {
     install -m 0500 -o "$deploy_user" -g "$deploy_group" "$kit/prepare.py" "$deploy_root/bootstrap/prepare.py"
     install -m 0500 -o root -g root "$kit/authorize-runner.sh" "$deploy_root/bootstrap/authorize-runner.sh"
     # Traefik runs as the deploy account so it reads the runner's mode-0600 route files without extra capabilities.
-    printf 'WHEELHOUSE_DEPLOY_UID=%s\nWHEELHOUSE_DEPLOY_GID=%s\n' \
-        "$(id -u "$deploy_user")" "$(id -g "$deploy_user")" > "$deploy_root/platform/host.env"
+    # An owner's WHEELHOUSE_ACME_CA line (Let's Encrypt staging, for a trial) survives a rerun.
+    local acme_ca=
+    if [[ -f $deploy_root/platform/host.env && ! -L $deploy_root/platform/host.env ]]; then
+        acme_ca=$(grep -E '^WHEELHOUSE_ACME_CA=https://[^[:space:]]+$' "$deploy_root/platform/host.env" | tail -n 1 || true)
+    fi
+    {
+        printf 'WHEELHOUSE_DEPLOY_UID=%s\nWHEELHOUSE_DEPLOY_GID=%s\n' "$(id -u "$deploy_user")" "$(id -g "$deploy_user")"
+        if [[ -n $acme_ca ]]; then printf '%s\n' "$acme_ca"; fi
+    } > "$deploy_root/platform/host.env"
     chown "$deploy_user:$deploy_group" "$deploy_root/platform/host.env"
     chmod 0600 "$deploy_root/platform/host.env"
 }
@@ -284,8 +292,9 @@ sys.exit(1)
 '
 }
 
-# Default deny inbound. SSH stays public until --tailnet-only-ssh closes it; 80 and 443 stay closed until public ingress
-# ships. Docker publishes only on loopback here, so its rules open nothing. A rerun keeps the current SSH exposure.
+# Default deny inbound. SSH stays public until --tailnet-only-ssh closes it. 80 and 443 are open for the public ingress
+# (Traefik's web and websecure); Docker publishes nothing else beyond loopback, and its published ports bypass UFW, so
+# these two rules state the exposure rather than grant it. A rerun keeps the current SSH exposure.
 configure_firewall() {
     local active=false
     ufw status | grep -qx 'Status: active' && active=true
@@ -303,6 +312,9 @@ configure_firewall() {
     ufw allow in on tailscale0 to any port 22 proto tcp comment 'ssh over the tailnet' >/dev/null
     # WireGuard's direct path; without it the tailnet still works through relays, only slower.
     ufw allow 41641/udp comment 'tailscale direct' >/dev/null
+    # Public ingress: HTTP-01 challenges and the https redirect on 80, public sites on 443.
+    ufw allow 80/tcp comment 'public ingress http' >/dev/null
+    ufw allow 443/tcp comment 'public ingress https' >/dev/null
     if [[ $ssh_mode == public || ( $ssh_mode == keep && $active == false ) ]]; then
         ufw allow 22/tcp comment 'public ssh' >/dev/null
     elif [[ $ssh_mode == tailnet ]]; then

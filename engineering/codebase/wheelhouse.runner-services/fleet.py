@@ -70,6 +70,9 @@ class Ingress:
     # unset means the scheme's port on loopback. Private sites are probed only when `private_probe` is set.
     probe: str | None = None
     private_probe: str | None = None
+    # The server's public IPv4 address, recorded at enrollment or by host upkeep; a public site with no host answers on
+    # its baseline host there (decision 68). Never typed by hand.
+    public_address: str | None = None
 
 
 @dataclass(frozen=True)
@@ -241,7 +244,8 @@ def ingress_of(server, target):
     probe = ingress.probe or ingress.scheme + "://127.0.0.1" + (":" + str(ingress.port) if ingress.port else "")
     return {"scheme": ingress.scheme, "port": ingress.port, "entryPoints": list(ingress.entry_points),
             "privateEntryPoints": list(ingress.private_entry_points), "certResolver": ingress.cert_resolver,
-            "pattern": pattern, "hosts": hosts, "probe": probe, "privateProbe": ingress.private_probe}
+            "pattern": pattern, "hosts": hosts, "probe": probe, "privateProbe": ingress.private_probe,
+            "publicAddress": ingress.public_address}
 
 
 def ssh_of(root, server):

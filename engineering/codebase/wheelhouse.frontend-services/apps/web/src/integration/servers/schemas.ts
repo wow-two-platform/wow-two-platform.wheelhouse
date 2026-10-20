@@ -19,6 +19,8 @@ export const ServerSchema = z.object({
     pattern: z.string().nullable(),
     probe: z.string().nullable(),
     privateProbe: z.string().nullable(),
+    // A host before the public ingress sends none.
+    publicAddress: z.string().nullable().optional(),
   }),
 });
 const nullableNumber = z.number().finite().nullable();

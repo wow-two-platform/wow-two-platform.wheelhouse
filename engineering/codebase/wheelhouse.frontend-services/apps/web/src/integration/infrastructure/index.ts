@@ -8,6 +8,8 @@ import type {
   StartEnrollmentRequest,
   StartPlacementRequest,
   TailnetStatus,
+  Upkeep,
+  UpkeepListing,
 } from "@/domain/infrastructure";
 import { requestData } from "@/integration/common";
 import {
@@ -18,6 +20,8 @@ import {
   PolicyReviewSchema,
   PolicyRevertedSchema,
   TailnetStatusSchema,
+  UpkeepListingSchema,
+  UpkeepSchema,
 } from "./schemas";
 
 export {
@@ -28,6 +32,8 @@ export {
   PolicyReviewSchema,
   PolicyRevertedSchema,
   TailnetStatusSchema,
+  UpkeepListingSchema,
+  UpkeepSchema,
 } from "./schemas";
 
 const server = (slug: string) => `/api/servers/${encodeURIComponent(slug)}/enrollment`;
@@ -59,6 +65,17 @@ export const enrollmentApi = {
   /** Starts the enrollment, or reruns one that stopped short from its first unfinished step. */
   start: (slug: string, body: StartEnrollmentRequest, signal?: AbortSignal) =>
     requestData<Enrollment>(server(slug), EnrollmentSchema, { method: "POST", body, signal, action: "server" }),
+};
+
+/** An enrolled server's upkeep: its runs and a new one that brings the host to the console's kit. */
+export const upkeepApi = {
+  /** The server's runs, newest first, beside the digest of the kit this console ships. */
+  list: (slug: string, signal?: AbortSignal) =>
+    requestData<UpkeepListing>(`/api/servers/${encodeURIComponent(slug)}/upkeep`, UpkeepListingSchema, { signal }),
+  start: (slug: string, signal?: AbortSignal) =>
+    requestData<Upkeep>(`/api/servers/${encodeURIComponent(slug)}/upkeep`, UpkeepSchema, {
+      method: "POST", signal, action: "server",
+    }),
 };
 
 /** A product's placements on servers: databases and site nodes. */

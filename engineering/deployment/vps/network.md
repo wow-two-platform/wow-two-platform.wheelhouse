@@ -1,6 +1,6 @@
 # Network and access
 
-*Last updated: 2026-10-19*
+*Last updated: 2026-10-20*
 
 How the control-plane host and a products host are reached and how their containers are kept apart. Host-specific
 values (tailnet name, addresses, accounts) stay out of this public repository; the operator keeps them in private notes.
@@ -25,13 +25,17 @@ A products host:
 
 | From | Path | Lands on |
 |---|---|---|
-| Owner devices on the tailnet | each site node's Serve HTTPS `:443` → Traefik `private` `172.30.0.2:8080` | That product site and environment |
+| The public internet | TCP `:80` → Traefik `web` (`:8081`) | Let's Encrypt's HTTP-01 challenge; anything else gets a redirect to https |
+| The public internet | TCP `:443` → Traefik `websecure` (`:8443`) | Public sites on their baseline (`<product>-dev.<ip>.sslip.io`) or bound hosts, each with an HTTP-01 certificate |
+| Owner devices on the tailnet | each site node's Serve HTTPS `:443` → Traefik `private` `172.30.0.2:8080` | That private product site and environment |
 | Owner devices on the tailnet | OpenSSH `:22` | Administrator account |
 | Prod console (runner), from the control host | OpenSSH `:22` at the products host's tailnet address | `wheelhouse-deploy`, prod's key only, `restrict` |
-| The public internet | Nothing, once `--tailnet-only-ssh` closed public SSH | UFW denies; 80 and 443 open with public ingress later |
+| The public internet, anything else | Nothing, once `--tailnet-only-ssh` closed public SSH | UFW denies |
 
-Nothing else listens publicly: Traefik publishes only on loopback, and neither PostgreSQL nor a console has a host
-port. Serve is tailnet-only; never use Funnel.
+On the control host nothing listens publicly: Traefik publishes only on loopback, and neither PostgreSQL nor a console
+has a host port. On a products host Traefik publishes 80 and 443 on every address, its private entry point on loopback
+only, and nothing else; UFW allows 80 and 443 to say so (Docker's published ports pass UFW either way), and Refresh
+kit's last step refuses any other container port published beyond loopback. Serve is tailnet-only; never use Funnel.
 
 ## Tailnet policy
 
@@ -113,8 +117,10 @@ prints the same checks; a fresh host gets both networks from `bootstrap.sh`.
 
 - The same addresses as the control host's `platform`, so a product's settings read alike on either host.
 - Docker hands workloads addresses from `172.30.0.128/25` only, so a restart order never lets one take a fixed address.
-- No `control` network and no console; Traefik's one entry point, `private` (`:8080`, loopback `18080`), serves every
-  site and trusts forwarded headers only from the host and the site nodes' range.
+- No `control` network and no console. Traefik's `private` entry point (`:8080`, loopback `18080`) serves private
+  sites and trusts forwarded headers only from the host and the site nodes' range; `web` (`:8081`, host port 80) and
+  `websecure` (`:8443`, host port 443) serve public sites and trust no forwarded header. The `letsencrypt` resolver
+  answers HTTP-01 on `web` and keeps its account and certificates in `platform/acme/`. Only public routers carry it.
 - Targets set `PLATFORM_NETWORK=platform`; products trust Traefik's `172.30.0.2` as their proxy.
 - Service-to-service calls stay on `platform`; only SSH and the sites reach the tailnet.
 
@@ -124,7 +130,11 @@ Verify on the products host:
 sudo docker network inspect platform -f '{{json .IPAM.Config}}'   # Subnet, IPRange 172.30.0.128/25, Gateway
 sudo docker run --rm --network platform curlimages/curl:8.11.1 -s -o /dev/null -w '%{http_code}\n' \
   -H 'Host: <site-node>.<tailnet>.ts.net' http://172.30.0.2:8080/   # the site's own answer, not Traefik's 404
+sudo ss -Htln | awk '{print $4}' | sort -u   # beyond loopback and the tailnet: 22 (UFW: tailnet only), 80 and 443
 ```
+
+From any machine off the tailnet: `curl -sI http://<baseline-host>/` answers `301` to https, `curl -sI
+https://<baseline-host>/` answers with a trusted certificate, and every other port is closed.
 
 ## Why it is shaped this way
 

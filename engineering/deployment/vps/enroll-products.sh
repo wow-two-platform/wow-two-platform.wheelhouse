@@ -7,6 +7,8 @@
 #   join <hostname>       the tailnet as tag:products; stdin holds a single-use auth key Wheelhouse minted
 #   accept-runner         authorizes prod's runner key for wheelhouse-deploy; stdin holds that public key
 #   seal <admin>          keys-only SSH, no root sign-in, public SSH closed, the one-time key removed; stdin holds it
+#   upkeep                an enrolled host brought to this kit: layout, platform network and firewall (80 and 443
+#                         public, SSH kept as it is); run as root through the deploy account's Docker access
 # Every phase converges, so a rerun is safe. Secrets arrive on stdin only and never reach an argument, a log or a file
 # outside /run. Sourcing it defines the phases without running them. By hand, use bootstrap-products.sh (vps.md).
 set -euo pipefail
@@ -25,7 +27,8 @@ ssh_mode=keep tailnet_hostname=''
 secret_dir=${secret_dir:-/run}
 
 enroll_usage() {
-    echo 'Usage: enroll-products.sh admin <name> | packages | host | join <hostname> | accept-runner | seal <admin>' >&2
+    echo 'Usage: enroll-products.sh admin <name> | packages | host | join <hostname> | accept-runner | seal <admin>' \
+        '| upkeep' >&2
     exit 2
 }
 
@@ -146,6 +149,24 @@ phase_seal() {
     echo 'Keys-only SSH, no root sign-in, public SSH closed, the one-time key removed.'
 }
 
+# Host upkeep: Wheelhouse prod uploads the current kit to /srv/wheelhouse/bootstrap/kit as the deploy account, then runs
+# this phase as root on the host through that account's Docker access (a one-off privileged container that enters the
+# host's namespaces; vps.md § Host upkeep). The kit is laid out again, the platform network kept and the firewall
+# converged: 80 and 443 open for the public ingress, SSH exposure as it is. The last line names the host's own IPv4
+# source address, which Wheelhouse uses only when nothing recorded the server's public address.
+phase_upkeep() {
+    local address
+    require_platform
+    lay_out_kit "$script_dir"
+    repair_network platform "$platform_subnet" "$platform_gateway" "$platform_range" >/dev/null
+    ensure_platform_network
+    ssh_mode=keep configure_firewall >/dev/null
+    address=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") {print $(i + 1); exit}}' || true)
+    [[ $address =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || address=
+    echo 'Kit laid out; firewall: 80 and 443 public, SSH exposure kept.'
+    printf '{"hostAddress": "%s"}\n' "$address"
+}
+
 enroll_main() {
     (($#)) || enroll_usage
     require_enrolling_root
@@ -156,6 +177,7 @@ enroll_main() {
         join) [[ $# -eq 2 ]] || enroll_usage; phase_join "$2" ;;
         accept-runner) [[ $# -eq 1 ]] || enroll_usage; phase_accept_runner ;;
         seal) [[ $# -eq 2 ]] || enroll_usage; phase_seal "$2" ;;
+        upkeep) [[ $# -eq 1 ]] || enroll_usage; phase_upkeep ;;
         *) enroll_usage ;;
     esac
 }

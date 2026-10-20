@@ -8,3 +8,4 @@ export {
   type SmokeCheck,
   type TargetSetting,
 } from './Target';
+export { BASELINE_DOMAIN, BaselineHost } from './BaselineHost';

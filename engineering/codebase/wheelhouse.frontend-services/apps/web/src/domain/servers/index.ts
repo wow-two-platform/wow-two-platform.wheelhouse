@@ -28,6 +28,11 @@ export interface ServerIngress {
   pattern: string | null;
   probe: string | null;
   privateProbe: string | null;
+  /**
+   * The server's public IPv4 address, where its public entry points answer: a public site with no host gets its
+   * baseline host there. Enrollment and kit refresh record it; an edit never changes it.
+   */
+  publicAddress?: string | null | undefined;
 }
 
 /** A host Wheelhouse deploys to; its SSH identity and pinned host key stay files on the control host. */

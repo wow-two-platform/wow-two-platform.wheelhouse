@@ -153,6 +153,25 @@ test("Add environment opens as a new dev environment right after editing one", a
   assert.deepEqual(created.sites, []);
 });
 
+test("the environment form prefills each known public site's baseline host and keeps a host the owner named", async () => {
+  const servers = [{ slug: "ocharo-vps", ingress: { publicAddress: "203.0.113.10" } }];
+  const knownSites = [{ name: "app", exposure: "public", primary: true }, { name: "admin", exposure: "private", primary: false }];
+  const mounted = mountDialog(dialogs.TargetFormModal, { product: "ocharo-studio", servers, knownSites, target: null });
+  mounted.state.open = true;
+  await nextTick();
+  assert.deepEqual(mounted.values().sites, [{ site: "app", host: "ocharo-studio-dev.203-0-113-10.sslip.io" }]);
+  mounted.unmount();
+  // Prod drops -dev; a host the owner typed stays put.
+  const edited = mountDialog(dialogs.TargetFormModal, { product: "ocharo-studio", servers, knownSites, target: null });
+  Object.assign(edited.state, { target: { slug: "ocharo-studio-prod", product: "ocharo-studio", server: "ocharo-vps",
+    environment: "prod", network: "platform", root: "/srv/wheelhouse", settings: [], smokeChecks: [],
+    sites: [{ site: "status", host: "status.ocharo.example" }] }, open: true });
+  await nextTick();
+  assert.deepEqual(edited.values().sites, [{ site: "status", host: "status.ocharo.example" },
+    { site: "app", host: "ocharo-studio.203-0-113-10.sslip.io" }]);
+  edited.unmount();
+});
+
 test("New server opens with the defaults right after editing a server", async () => {
   const server = {
     slug: "fra1",

@@ -1,5 +1,6 @@
-# Products host platform only: PostgreSQL, a private Traefik ingress and one tailnet node per private site. No console
-# and no Wheelhouse database run here; Wheelhouse prod's runner deploys each product from its release bundle.
+# Products host platform only: PostgreSQL, a Traefik ingress (private, and public on 80 and 443) and one tailnet node per
+# private site. No console and no Wheelhouse database run here; Wheelhouse prod's runner deploys each product from its
+# release bundle.
 # bootstrap-products.sh installs this template as platform/products.compose.yml. `prepare.py --server products` renders
 # platform/compose.yml from it plus the site nodes it registered (platform/sites.json), so run Compose against the
 # rendered file. Keep `services:` the last top-level key: the renderer appends each site node beneath it.
@@ -62,17 +63,34 @@ services:
     command:
       - --providers.file.directory=/etc/traefik/routes
       - --providers.file.watch=true
-      # private serves every site through its tailnet node until public ingress (websecure, Cloudflare) ships.
-      # Forwarded headers are trusted from the host and the site nodes only, never from a workload.
+      # private serves private sites through their tailnet nodes. Forwarded headers are trusted from the host and the
+      # site nodes only, never from a workload.
       - --entryPoints.private.address=:8080
       - --entryPoints.private.forwardedHeaders.trustedIPs=127.0.0.1/32,172.30.0.1/32,172.30.0.64/26
+      # Public ingress (decision 68): web (host port 80) answers Let's Encrypt's HTTP-01 challenge and sends everything
+      # else to https; websecure (host port 443) serves public sites, each router with the letsencrypt resolver. Nothing
+      # in front is trusted for forwarded headers. Unprivileged ports inside, so Traefik needs no capability.
+      - --entryPoints.web.address=:8081
+      - --entryPoints.web.http.redirections.entryPoint.to=:443
+      - --entryPoints.web.http.redirections.entryPoint.scheme=https
+      - --entryPoints.websecure.address=:8443
+      - --entryPoints.websecure.http.tls=true
+      - --certificatesResolvers.letsencrypt.acme.httpChallenge.entryPoint=web
+      - --certificatesResolvers.letsencrypt.acme.storage=/etc/traefik/acme/acme.json
+      # host.env may point it at Let's Encrypt staging for a trial; the local rig points it nowhere.
+      - --certificatesResolvers.letsencrypt.acme.caServer=${WHEELHOUSE_ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
       - --ping=true
       - --ping.entryPoint=private
       - --log.level=INFO
+    # The only public ports on the host: 80 and 443, for public sites. The private entry point stays on loopback.
     ports:
       - 127.0.0.1:18080:8080
+      - 80:8081
+      - 443:8443
     volumes:
       - ../ingress:/etc/traefik/routes:ro
+      # Certificates and the ACME account, written by Traefik as the deploy account (acme.json, mode 0600).
+      - ./acme:/etc/traefik/acme
     networks:
       platform:
         ipv4_address: 172.30.0.2

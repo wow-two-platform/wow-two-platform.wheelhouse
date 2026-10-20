@@ -32,11 +32,11 @@ STEPS = (("contact", "Public SSH and the host key it presents"),
          ("upload", "Products kit uploaded"),
          ("admin", "Administrator account"),
          ("packages", "Docker, Tailscale, UFW and security updates installed"),
-         ("host", "Deploy account, kit, platform network and firewall"),
+         ("host", "Deploy account, kit, platform network and firewall (80 and 443 public)"),
          ("join", "Tailnet join with a single-use key"),
          ("node", "Tailnet node at the server's public address"),
          ("runner", "Prod's runner key, proven over the tailnet"),
-         ("platform", "PostgreSQL and private ingress"),
+         ("platform", "PostgreSQL and the ingress, private and public"),
          ("seal", "Keys-only SSH, public SSH closed, one-time key removed"),
          ("verify", "Public SSH refused, tailnet path open"))
 USER = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
@@ -264,7 +264,7 @@ def packages(root, journal):
 
 def host(root, journal):
     EnrollSsh(root, journal.record["request"]).phase("host", timeout=900)
-    return "wheelhouse-deploy, /srv/wheelhouse, the platform network, security updates and UFW in place"
+    return "wheelhouse-deploy, /srv/wheelhouse, the platform network, security updates and UFW (80 and 443 open) in place"
 
 
 def join(root, journal, session=None):
@@ -355,7 +355,12 @@ def runner(root, journal):
 
 
 def platform(root, journal):
-    return placement.converge_platform(runner_ssh(root, journal))
+    """The kit the host phase laid out, up: PostgreSQL and the ingress, private and public. What the server records
+    once the enrollment succeeds: the public address it was enrolled on and the ingress this kit lays out."""
+    detail = placement.converge_platform(runner_ssh(root, journal))
+    journal.record["facts"].update(publicAddress=journal.record["request"]["publicAddress"], addressSource="enrollment",
+                                   ingress=dict(kit.PUBLIC_INGRESS))
+    return detail
 
 
 def seal(root, journal):

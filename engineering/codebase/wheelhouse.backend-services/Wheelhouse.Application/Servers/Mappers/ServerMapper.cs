@@ -35,5 +35,6 @@ internal static class ServerMapper
         Pattern = ingress.Pattern,
         Probe = ingress.Probe,
         PrivateProbe = ingress.PrivateProbe,
+        PublicAddress = ingress.PublicAddress,
     };
 }

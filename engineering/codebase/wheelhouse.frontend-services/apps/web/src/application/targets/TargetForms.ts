@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { InventoryRules } from "@/domain/common";
+import type { Product } from "@/domain/products";
+import type { Server } from "@/domain/servers";
 import {
+  BaselineHost,
   DeploymentEnvironment,
   type InventoryTarget,
   type SaveTargetRequest,
@@ -65,4 +68,61 @@ export function targetRequestOf(values: TargetFormModel, product: string, isNew:
     smokeChecks: values.smokeChecks,
     sites: values.sites,
   };
+}
+
+/** A site the product is known to publish, from its environments' last rollouts. */
+export interface KnownSite {
+  name: string;
+  exposure: "public" | "private";
+  /** The front door, whose baseline host carries no site name. */
+  primary: boolean;
+}
+
+/**
+ * The sites a product's environments publish, by name: public when any environment publishes it publicly. The front
+ * door is the site a rollout marked primary; before the runner marked one, the first by name.
+ */
+export function knownSitesOf(product: Pick<Product, "environments"> | null | undefined): KnownSite[] {
+  const sites = new Map<string, KnownSite>();
+  for (const environment of product?.environments ?? [])
+    for (const site of environment.sites) {
+      const known = sites.get(site.name) ?? { name: site.name, exposure: site.exposure, primary: false };
+      if (site.exposure === "public") known.exposure = "public";
+      known.primary ||= site.primary === true;
+      sites.set(site.name, known);
+    }
+  const list = [...sites.values()].sort((left, right) => left.name.localeCompare(right.name));
+  const first = list[0];
+  if (first && !list.some((site) => site.primary)) first.primary = true;
+  return list;
+}
+
+/** The public address of the server an environment runs on, if enrollment or kit refresh recorded one. */
+export function publicAddressOf(servers: readonly Pick<Server, "slug" | "ingress">[], server: string): string | null {
+  return servers.find((item) => item.slug === server)?.ingress?.publicAddress ?? null;
+}
+
+/**
+ * The site rows with each known public site's baseline host filled in (decision 68): a site without a row, or with an
+ * empty host or a baseline host derived before (another environment or server), takes the baseline host for this
+ * environment and server; a host the owner named stays. Private sites and servers without a public address change
+ * nothing; the deploy fills an empty host the same way.
+ */
+export function withBaselineHosts(
+  sites: readonly SiteHost[],
+  known: readonly KnownSite[],
+  product: string,
+  environment: DeploymentEnvironment,
+  address: string | null,
+): SiteHost[] {
+  const rows = sites.map((site) => ({ ...site }));
+  for (const site of known) {
+    if (site.exposure !== "public") continue;
+    const host = BaselineHost.of(product, site.name, environment, address, site.primary);
+    if (!host) continue;
+    const row = rows.find((item) => item.site.trim() === site.name);
+    if (!row) rows.push({ site: site.name, host });
+    else if (!row.host.trim() || BaselineHost.isBaseline(row.host)) row.host = host;
+  }
+  return rows;
 }

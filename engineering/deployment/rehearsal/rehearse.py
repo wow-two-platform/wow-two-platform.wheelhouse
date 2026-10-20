@@ -11,7 +11,10 @@ checkout, and the runner deploys it to the wheelhouse-dev target, at http://cons
 
 `products` proves the products-host kit on a second, local host with its own Docker daemon: bootstrap-products.sh's
 steps lay it out, prepare.py creates its platform, databases and site nodes, authorize-runner.sh pins and accepts a
-runner key, and the runner deploys ForeverPin dev to it, reached through its private entry point by site name.
+runner key, and the runner deploys ForeverPin dev to it. Its public sites answer on their baseline sslip.io hosts
+through the host's public ingress (80 redirects to 443), from another machine on the rig's network; the private entry
+point stays on loopback. Traefik's letsencrypt resolver is wired to each public router; a CA that never answers stands
+in for Let's Encrypt, so no certificate is issued here.
 
 `networks` proves on that host that the platform network keeps its fixed addresses: containers that start before
 Traefik take dynamic ones from .128/25, and repair-networks.sh gives a network made without the range one.
@@ -89,6 +92,10 @@ PRODUCTS_ADDRESS = "100.88.0.1"
 PRODUCTS_ROOT = "/srv/wheelhouse"
 PRODUCTS_PORT = 2223
 DEPLOY_USER = "wheelhouse-deploy"
+# Where the products host's ACME resolver is pointed on the rig: nothing listens there, so Traefik's order for a
+# baseline host fails at once and names the host and resolver in its log, and no request leaves the machine.
+PRODUCTS_ACME_CA = "https://127.0.0.1:14000/directory"
+CURL_IMAGE = "curlimages/curl:8.11.1"
 
 
 def run(*arguments, env=None, capture=True):
@@ -669,9 +676,24 @@ def as_deploy(script, stdin=None, check=True):
     return on_products("sh", "-c", script, user=DEPLOY_USER, stdin=stdin, check=check)
 
 
-def products_settings(bundle_id, credentials):
+def products_address():
+    """The products host's network on the rig and its address there: its public address, as a VPS's is on the
+    internet."""
+    networks = json.loads(run("docker", "inspect", "-f", "{{json .NetworkSettings.Networks}}",
+                              "wheelhouse-rehearsal-products-1"))
+    name, network = next(iter(sorted(networks.items())))
+    return name, network["IPAddress"]
+
+
+def baseline_hosts(address):
+    """ForeverPin dev's baseline hosts on that address (decision 68): its first site, app, takes the product's name."""
+    dashed = address.replace(".", "-")
+    return {service: PRODUCT + ("" if site == "app" else "-" + site) + "-dev." + dashed + ".sslip.io"
+            for service, site in SITES.items()}
+
+
+def products_settings(bundle_id, credentials, hosts):
     """ForeverPin dev's settings on the products host: its own database, its site hosts and the ingress as its proxy."""
-    hosts = {service: PRODUCT + "-" + site + "-dev." + PRODUCTS_TAILNET for service, site in SITES.items()}
     values = {
         "DatabaseSettings": {"ConnectionString": credentials["ConnectionString"]},
         "ApiSettings": {"RedirectBaseUrl": "https://" + hosts["redirect"]},
@@ -696,25 +718,28 @@ def products_settings(bundle_id, credentials):
         # Read-only for the container's own user inside the deploy account's mode-0700 folder, as the runbook writes them.
         as_deploy("umask 077; f=" + path + "; [ ! -e $f ] || chmod 0600 $f; cat > $f; chmod 0444 $f",
                   stdin=json.dumps(filled, indent=2) + "\n")
-    return {service: folder + "/" + service + ".json" for service in SITES}, hosts
+    return {service: folder + "/" + service + ".json" for service in SITES}
 
 
-def products_inventory(settings, hosts):
-    """The inventory a prod console would export for this server and target, as the Servers and Products forms take
-    them: the tailnet address (here the forwarded SSH port), the deploy account and the private entry point."""
+def products_inventory(settings, address):
+    """The inventory a prod console would export for this server and target once host upkeep recorded it: the tailnet
+    address (here the forwarded SSH port), the deploy account, the kit's public ingress and the public address. The
+    target names no site host, so the deploy fills each public site's baseline host. The server stands in for the
+    Contabo VPS, so the runner renders settings into the host's own config/ folder, as on a VPS."""
     private_file(PRODUCTS_INVENTORY / "inventory.json", json.dumps({
         "version": 1, "products": [], "vaults": [],
-        "servers": [{"id": PRODUCTS_SERVER, "name": "Local products host", "provider": "local", "host": "127.0.0.1",
+        "servers": [{"id": PRODUCTS_SERVER, "name": "Local products host", "provider": "contabo", "host": "127.0.0.1",
                      "region": "local", "sshUser": DEPLOY_USER, "sshPort": PRODUCTS_PORT,
-                     "ingress": {"scheme": "https", "port": None, "entryPoints": ["private"],
-                                 "privateEntryPoints": ["private"], "certResolver": None, "pattern": None,
-                                 "probe": "http://127.0.0.1:18080", "privateProbe": "http://127.0.0.1:18080"}}],
+                     "ingress": {"scheme": "https", "port": None, "entryPoints": ["websecure"],
+                                 "privateEntryPoints": ["private"], "certResolver": "letsencrypt", "pattern": None,
+                                 "probe": "https://127.0.0.1", "privateProbe": "http://127.0.0.1:18080",
+                                 "publicAddress": address}}],
         "targets": [{"id": PRODUCT + "-dev", "serverId": PRODUCTS_SERVER, "product": PRODUCT, "environment": "dev",
                      "network": "platform", "root": PRODUCTS_ROOT,
                      "settings": [{"service": service, "path": path} for service, path in settings.items()],
                      "smoke": [{"service": "management", "path": "/api/runtime-config", "status": 200},
                                {"service": "redirect", "path": "/health", "status": 200}],
-                     "sites": [{"site": SITES[service], "host": host} for service, host in hosts.items()]}],
+                     "sites": []}],
     }, indent=2) + "\n")
 
 
@@ -824,6 +849,11 @@ def products(bundle_id=None):
         sys.exit("The products host offers more than key sign-in: " + offered.stderr.strip())
     print("SSH offers key sign-in only.")
 
+    # The kit as this checkout has it, laid out again as host upkeep's root phase does, so a host made from an older
+    # kit takes the public ingress; its ACME resolver points where nothing answers.
+    on_products("bash", "-c", ". /kit/bootstrap-products.sh && lay_out_kit /kit")
+    as_deploy("cd " + PRODUCTS_ROOT + "/platform && { grep -q '^WHEELHOUSE_ACME_CA=' host.env "
+              "|| echo 'WHEELHOUSE_ACME_CA=" + PRODUCTS_ACME_CA + "' >> host.env; }")
     prepare = "python3 " + PRODUCTS_ROOT + "/bootstrap/prepare.py --server products"
     platform = "cd " + PRODUCTS_ROOT + "/platform && docker compose --env-file host.env -f compose.yml "
     print(as_deploy(prepare).stdout.strip())
@@ -844,8 +874,10 @@ def products(bundle_id=None):
         for name in ("release.json", "compose.json"):
             (destination / name).write_bytes((INVENTORY / "bundles" / bundle_id / name).read_bytes())
     credentials = json.loads(as_deploy("cat " + credentials_path).stdout)
-    settings, hosts = products_settings(bundle_id, credentials)
-    products_inventory(settings, hosts)
+    network, address = products_address()
+    hosts = baseline_hosts(address)
+    settings = products_settings(bundle_id, credentials, hosts)
+    products_inventory(settings, address)
     report = transport("check", "--target", PRODUCT + "-dev", "--bundle", bundle_id, root=PRODUCTS_INVENTORY)
     for check in report["checks"]:
         print("  " + ("ok" if check["ok"] else "FAILED").ljust(9) + " " + check["name"] + " — " + check["detail"])
@@ -854,18 +886,56 @@ def products(bundle_id=None):
     outcome = deploy(bundle_id, "dev", root=PRODUCTS_INVENTORY)
     if outcome.get("status") != "succeeded":
         sys.exit("The deploy to the products host did not succeed")
-    # A site node's path: from the platform network to Traefik's private entry point, by the site's host name.
-    for service, host in hosts.items():
-        path = "/api/runtime-config" if service == "management" else "/health"
-        answer = as_deploy("docker exec " + PRODUCT + "-dev-" + service + "-1 curl -s -o /dev/null -w '%{http_code}' "
-                           "-H 'Host: " + host + "' http://172.30.0.2:8080" + path).stdout.strip()
-        print("Private entry point, Host " + host + path + ": " + answer)
-        if answer != "200":
-            sys.exit("The private entry point did not route " + host)
+    prove_public_ingress(network, address, hosts)
     prove_runner_authorization()
     prove_private_pull(json.loads((destination / "release.json").read_text())["images"]["redirect"])
-    print("Products host proven locally: layout, platform, databases, site nodes, runner key, deploy, private route, "
-          "private image pull.")
+    print("Products host proven locally: layout, platform, databases, site nodes, runner key, deploy, public routes on "
+          "baseline hosts, private image pull. Let's Encrypt itself cannot run here: no certificate was issued.")
+
+
+def prove_public_ingress(network, address, hosts):
+    """ForeverPin dev's public sites from another machine on the rig's network, as a visitor reaches a VPS: port 80
+    redirects to https but keeps the HTTP-01 challenge path, 443 routes each baseline host (Traefik's default
+    certificate, since no CA answers here), the private entry point is not reachable, the render handed each service its
+    baseline host, and Traefik's letsencrypt resolver took an order for every baseline host."""
+    def curl(*arguments):
+        result = subprocess.run(["docker", "run", "--rm", "--network", network, CURL_IMAGE, "-s",
+                                 "-o", "/dev/null", "--connect-timeout", "5", "--max-time", "15", *arguments],
+                                capture_output=True, text=True)
+        return result.returncode, result.stdout.strip()
+
+    proofs = {}
+    for service, host in hosts.items():
+        path = "/api/runtime-config" if service == "management" else "/health"
+        _, redirect = curl("-w", "%{http_code} %{redirect_url}", "--resolve", host + ":80:" + address,
+                           "http://" + host + path)
+        status, _, location = redirect.partition(" ")
+        proofs["http://" + host + path + " redirects to https (" + status + ")"] = (
+            status in ("301", "302", "307", "308") and location in ("https://" + host + path,
+                                                                     "https://" + host + ":443" + path))
+        _, secure = curl("-k", "-w", "%{http_code}", "--resolve", host + ":443:" + address, "https://" + host + path)
+        proofs["https://" + host + path + " answers " + secure] = secure == "200"
+    # Port 80 hands Let's Encrypt's HTTP-01 path to Traefik's challenge handler (an unknown token: 404), never the
+    # redirect, so a real order can validate there.
+    host = hosts["management"]
+    _, challenge = curl("-w", "%{http_code} %{redirect_url}", "--resolve", host + ":80:" + address,
+                        "http://" + host + "/.well-known/acme-challenge/rig-token")
+    proofs["port 80 serves the HTTP-01 challenge path itself (" + challenge.strip() + ")"] = challenge.strip() == "404"
+    for port in ("18080", "8080", "8081", "8443"):
+        code, _ = curl("-w", "%{http_code}", "http://" + address + ":" + port + "/ping")
+        proofs["port " + port + " is closed to other machines"] = code != 0
+    rendered = json.loads(as_deploy("cat " + PRODUCTS_ROOT + "/config/" + PRODUCT + "-dev/management.target.json").stdout)
+    proofs["the render's AllowedHosts names the baseline host"] = hosts["management"] in rendered["AllowedHosts"].split(";")
+    proofs["the render's Sites:app:Url is the baseline host"] = (
+        rendered.get("Sites", {}).get("app", {}).get("Url") == "https://" + hosts["management"])
+    log = on_products("docker", "logs", "wheelhouse-products-ingress-1")
+    lines = [line for line in (log.stdout + log.stderr).splitlines() if "letsencrypt" in line]
+    proofs["the letsencrypt resolver took an order for each baseline host"] = all(
+        any(host in line for line in lines) for host in hosts.values())
+    for name, ok in proofs.items():
+        print("  " + ("ok" if ok else "FAILED").ljust(9) + " " + name)
+    if not all(proofs.values()):
+        sys.exit("The products host's public ingress is not as the kit lays it out")
 
 
 def prove_networks():

@@ -9,7 +9,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Servers.CommandHandlers;
 
 /// <summary>Handles <see cref="ServerUpdateCommand"/>; a host that changes keeps failing its pinned host key until
-/// the owner replaces the pin.</summary>
+/// the owner replaces the pin. The public address stays what enrollment or host upkeep recorded.</summary>
 public sealed class ServerUpdateCommandHandler(IServersRepository servers)
     : ICommandHandler<ServerUpdateCommand, AppResult<ServerDto>>
 {
@@ -26,7 +26,7 @@ public sealed class ServerUpdateCommandHandler(IServersRepository servers)
         server.Region = request.Region;
         server.SshUser = request.SshUser;
         server.SshPort = request.SshPort;
-        server.Ingress = request.Ingress;
+        server.Ingress = request.Ingress with { PublicAddress = server.Ingress.PublicAddress };
         await servers.UpdateAsync(server, cancellationToken);
         return AppResult<ServerDto>.Ok(ServerMapper.Map(server));
     }

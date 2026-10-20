@@ -77,6 +77,7 @@ written from it when the version opens.
 | 65 | Wheelhouse migrations only expand; a contract change takes two releases, so any release can roll back | 2026-10-19 |
 | 66 | Step-up 2FA ships before Ocharo's public launch and covers every prod promotion | 2026-10-19 |
 | 67 | The vault's root key has two recoveries: the owner's offline copy, checked against the key in use on a schedule, and later a passkey-sealed copy in the database | 2026-10-20 |
+| 68 | A deployed site whose product has no domain gets a baseline public host on its server's IP through sslip.io: `<product>-dev.<ip>.sslip.io` in dev, `<product>.<ip>.sslip.io` in prod, a second site adding `-<site>` after the product; Wheelhouse fills it and a bound domain replaces it. It is served from the server's own ingress on 80 and 443 with an HTTP-01 certificate, not through Cloudflare; SSH and the control path stay on the tailnet. Narrows decision 50's Cloudflare proxy to sites with a bound domain | 2026-10-20 |
 
 | Fact | Owner |
 |---|---|
@@ -85,7 +86,7 @@ written from it when the version opens.
 | Release asset and workflow | Derived from the pipelines convention; no console field |
 | Settings: keys, non-secret defaults, which keys are secret | Repo manifest |
 | Secret values | Secrets Vault |
-| Site names | Repo manifest; hosts come from the server's pattern |
+| Site names | Repo manifest; hosts come from a bound domain, else the server's baseline host (decision 68) |
 | Needs (PostgreSQL, Valkey, broker) and volumes | Repo manifest; shown and provisioned per environment |
 | Placement, lifecycle, approvals | Wheelhouse database |
 

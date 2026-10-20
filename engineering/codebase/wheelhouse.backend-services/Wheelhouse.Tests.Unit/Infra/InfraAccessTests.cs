@@ -3,6 +3,8 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Products.Models;
+using Wheelhouse.Application.Servers.CommandHandlers;
+using Wheelhouse.Application.Servers.Commands;
 using Wheelhouse.Application.Servers.Models;
 using Wheelhouse.Application.Tailnet.Queries;
 using Wheelhouse.Application.Tailnet.QueryHandlers;
@@ -39,6 +41,16 @@ public sealed class InfraAccessTests
         data.GetProperty("reason").GetString().Should().Be(ConsoleInfraAccess.DevRefusal);
     }
 
+    [Fact]
+    public async Task HostUpkeep_ShouldBeRefusedOnDevWithoutAskingTheRunner()
+    {
+        var result = await new ServerUpkeepCommandHandler(null!, new UnreachableGateway(), Access("dev"))
+            .HandleAsync(new ServerUpkeepCommand { Slug = "ocharo-vps", Actor = "sulton-max" }, CancellationToken.None);
+
+        result.Should().BeOfType<AppResult<JsonElement>.Failure>().Subject.Error.Message
+            .Should().Be(ConsoleInfraAccess.DevRefusal);
+    }
+
     /// <summary>A gateway any call to which fails the test.</summary>
     private sealed class UnreachableGateway : IInfraGateway
     {
@@ -52,6 +64,8 @@ public sealed class InfraAccessTests
         public Task<AppResult<JsonElement>> EnrollAsync(ServerEnrollmentRequest request, string actor, CancellationToken ct) => Never();
         public Task<AppResult<JsonElement>> PlacementsAsync(string product, CancellationToken ct) => Never();
         public Task<AppResult<JsonElement>> PlaceAsync(ProductPlacementRequest request, string actor, CancellationToken ct) => Never();
+        public Task<AppResult<JsonElement>> UpkeepsAsync(string server, CancellationToken ct) => Never();
+        public Task<AppResult<JsonElement>> UpkeepAsync(string server, string actor, CancellationToken ct) => Never();
         public Task<AppResult<JsonElement>> FinishedAsync(CancellationToken ct) => Never();
         public Task<AppResult<JsonElement>> AcknowledgeAsync(string job, CancellationToken ct) => Never();
     }

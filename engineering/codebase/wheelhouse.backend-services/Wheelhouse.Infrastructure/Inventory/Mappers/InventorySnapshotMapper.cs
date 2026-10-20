@@ -54,6 +54,7 @@ internal static class InventorySnapshotMapper
             Pattern = server.Ingress.Pattern,
             Probe = server.Ingress.Probe,
             PrivateProbe = server.Ingress.PrivateProbe,
+            PublicAddress = server.Ingress.PublicAddress,
         },
     };
 
@@ -112,6 +113,7 @@ internal static class InventorySnapshotMapper
         Pattern = ingress.Pattern,
         Probe = ingress.Probe,
         PrivateProbe = ingress.PrivateProbe,
+        PublicAddress = ingress.PublicAddress,
     };
 
     /// <summary>Maps snapshot settings files to the stored ones.</summary>

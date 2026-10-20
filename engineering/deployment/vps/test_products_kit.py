@@ -46,9 +46,12 @@ class ScriptTests(unittest.TestCase):
         self.assertTrue(self.tailnet_session("0 36 [fd7a:115c:a1e0::5]:22 [fd7a:115c:a1e0::9]:61000\n"))
         self.assertFalse(self.tailnet_session("0 0 [2001:db8::1]:22 [2001:db8::2]:61000\n"))
 
-    def test_the_products_bootstrap_keeps_80_and_443_closed_and_passwords_off(self):
+    def test_the_products_bootstrap_opens_only_80_and_443_publicly_and_keeps_passwords_off(self):
         script = (KIT / "bootstrap-products.sh").read_text()
-        self.assertNotRegex(script, r"ufw allow[^\n]*\b(80|443)\b")
+        # The public ingress takes 80 and 443; SSH is public only until --tailnet-only-ssh, then on tailscale0 only.
+        allowed = re.findall(r"^\s*ufw allow (?!in on tailscale0 )(\S+)", script, re.M)
+        self.assertEqual(["41641/udp", "80/tcp", "443/tcp", "22/tcp"], allowed)
+        self.assertIn("ufw allow in on tailscale0 to any port 22 proto tcp", script)
         for line in ("PasswordAuthentication no", "KbdInteractiveAuthentication no", "PermitRootLogin no"):
             self.assertIn("\n" + line + "\n", script)
         self.assertIn('--advertise-tags="$tailnet_tag"', script)
@@ -298,10 +301,39 @@ class EnrollPhaseTests(unittest.TestCase):
         self.assertNotIn("ufw --force delete allow 22/tcp", self.calls())
         self.assertIn(ENROLLMENT_KEY, self.admin_keys().read_text())
 
+    def test_upkeep_lays_out_the_kit_and_opens_80_and_443_with_ssh_exposure_kept(self):
+        steps = ('require_platform() { echo require_platform >> "$STATE/calls"; }; '
+                 'lay_out_kit() { echo "lay_out_kit $1" >> "$STATE/calls"; }; '
+                 'repair_network() { echo "repair_network $1" >> "$STATE/calls"; }; '
+                 'ensure_platform_network() { echo ensure_platform_network >> "$STATE/calls"; }; '
+                 'ufw() { echo "ufw $*" >> "$STATE/calls"; [[ $1 != status ]] || echo "Status: active"; }; '
+                 'ip() { echo "1.1.1.1 via 203.0.113.1 dev eth0 src 203.0.113.10 uid 0"; }; '
+                 'phase_upkeep')
+        result = self.run_phase(steps)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({"hostAddress": "203.0.113.10"}, json.loads(result.stdout.strip().splitlines()[-1]))
+        calls = self.calls()
+        self.assertEqual(["require_platform", "lay_out_kit " + str(KIT), "repair_network platform",
+                          "ensure_platform_network"], calls[:4])
+        self.assertIn("ufw allow 80/tcp comment public ingress http", calls)
+        self.assertIn("ufw allow 443/tcp comment public ingress https", calls)
+        # An enrolled host's firewall is on and its SSH tailnet-only: upkeep neither opens nor closes public SSH.
+        self.assertFalse([call for call in calls if "22/tcp" in call])
+        self.assertIn("ufw --force enable", calls)
+
+    def test_upkeep_names_no_address_when_the_host_has_none(self):
+        steps = ('require_platform() { :; }; lay_out_kit() { :; }; repair_network() { :; }; '
+                 'ensure_platform_network() { :; }; ufw() { [[ $1 != status ]] || echo "Status: active"; }; '
+                 'ip() { echo "RTNETLINK answers: Network is unreachable" >&2; return 2; }; phase_upkeep')
+        result = self.run_phase(steps)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual({"hostAddress": ""}, json.loads(result.stdout.strip().splitlines()[-1]))
+
     @unittest.skipIf(os.geteuid() == 0, "running as root would pass the root check")
     def test_every_phase_needs_root_and_a_known_name(self):
         self.assertIn("Run as root", self.run_phase("enroll_main packages").stderr)
-        for steps in ("enroll_main reboot", "enroll_main", "enroll_main join", "enroll_main seal a b"):
+        for steps in ("enroll_main reboot", "enroll_main", "enroll_main join", "enroll_main seal a b",
+                      "enroll_main upkeep now"):
             with self.subTest(steps=steps):
                 result = self.run_phase("require_enrolling_root() { :; }; " + steps)
                 self.assertEqual(2, result.returncode)
@@ -455,17 +487,32 @@ class ComposeTests(unittest.TestCase):
                                  tailnet="tail1234.ts.net")
         self.compose = (self.root / "platform" / "compose.yml").read_text()
 
-    def test_the_products_platform_runs_no_console_and_publishes_only_loopback(self):
+    def test_the_products_platform_runs_no_console_and_publishes_only_the_public_ingress_beyond_loopback(self):
         services = re.findall(r"^  ([a-z-]+):$", self.compose.split("\nservices:\n", 1)[1], re.M)
         self.assertEqual(["postgres", "ingress", "ocharo-desk-dev", "ocharo-desk"], services)
         definitions = re.sub(r"#.*", "", self.compose)
         self.assertNotIn("console", definitions)
         self.assertNotIn("control", definitions)
-        published = re.findall(r"^      - ([0-9.]+):[0-9]+:[0-9]+$", self.compose, re.M)
-        self.assertEqual(["127.0.0.1"], published)
+        published = re.findall(r"^      - ([0-9.]+:)?([0-9]+):([0-9]+)$", self.compose, re.M)
+        # The private entry point on loopback; web and websecure on every address, as host ports 80 and 443.
+        self.assertEqual([("127.0.0.1:", "18080", "8080"), ("", "80", "8081"), ("", "443", "8443")], published)
         self.assertIn("ipv4_address: 172.30.0.3\n        aliases: [wheelhouse-postgres]", self.compose)
         self.assertIn("--entryPoints.private.address=:8080", self.compose)
         self.assertEqual(1, self.compose.count("--entryPoints.private.address"))
+
+    def test_public_ingress_redirects_80_to_https_and_issues_http_01_certificates_into_the_kit(self):
+        for flag in ("--entryPoints.web.address=:8081", "--entryPoints.web.http.redirections.entryPoint.to=:443",
+                     "--entryPoints.web.http.redirections.entryPoint.scheme=https",
+                     "--entryPoints.websecure.address=:8443",
+                     "--certificatesResolvers.letsencrypt.acme.httpChallenge.entryPoint=web",
+                     "--certificatesResolvers.letsencrypt.acme.storage=/etc/traefik/acme/acme.json"):
+            self.assertIn("      - " + flag + "\n", self.compose)
+        self.assertIn("      - ./acme:/etc/traefik/acme\n", self.compose)
+        # Nothing in front of the public entry points is trusted for forwarded headers.
+        self.assertNotIn("--entryPoints.web.forwardedHeaders", self.compose)
+        self.assertNotIn("--entryPoints.websecure.forwardedHeaders", self.compose)
+        self.assertTrue((self.root / "platform" / "acme").is_dir())
+        self.assertEqual(0o700, (self.root / "platform" / "acme").stat().st_mode & 0o777)
 
     def test_site_nodes_proxy_to_the_private_entry_point(self):
         serve = json.loads((KIT / "tailscale-serve-products.json").read_text())

@@ -93,7 +93,10 @@ internal static class ProductMapper
             Sites =
             [
                 .. sites.GetValueOrDefault(target.Slug, [])
-                    .Select(site => new ProductSiteDto { Name = site.Name, Url = site.Url, Exposure = site.Exposure }),
+                    .Select(site => new ProductSiteDto
+                    {
+                        Name = site.Name, Url = site.Url, Exposure = site.Exposure, Primary = site.Primary,
+                    }),
             ],
             // One namespace per product environment, on the vault of the server the environment runs on.
             Secrets = vaults.TryGetValue(target.ServerId, out var vault)

@@ -6,8 +6,8 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Abstractions;
 
 /// <summary>Exposes the runner's infrastructure actions: Tailscale through the owner's OAuth client, a server's
-/// enrollment and a product's placement on a server. Answers are the runner's JSON, passed through; none holds a secret.
-/// </summary>
+/// enrollment, a product's placement on a server and an enrolled server's upkeep. Answers are the runner's JSON, passed
+/// through; none holds a secret.</summary>
 public interface IInfraGateway
 {
     /// <summary>Reads whether the OAuth client is in place and works, and each server's tailnet node.</summary>
@@ -36,6 +36,13 @@ public interface IInfraGateway
 
     /// <summary>Starts placing a product's databases and private sites on a server as a detached job.</summary>
     Task<AppResult<JsonElement>> PlaceAsync(ProductPlacementRequest request, string actor, CancellationToken ct);
+
+    /// <summary>Reads a server's upkeep runs, newest first, beside the digest of the kit this console ships.</summary>
+    Task<AppResult<JsonElement>> UpkeepsAsync(string server, CancellationToken ct);
+
+    /// <summary>Starts bringing an enrolled server to this console's kit as a detached job: the kit, its firewall
+    /// (80 and 443 public) and the platform, then a check of the public entry points.</summary>
+    Task<AppResult<JsonElement>> UpkeepAsync(string server, string actor, CancellationToken ct);
 
     /// <summary>Reads finished infrastructure jobs the console has not recorded yet.</summary>
     Task<AppResult<JsonElement>> FinishedAsync(CancellationToken ct);

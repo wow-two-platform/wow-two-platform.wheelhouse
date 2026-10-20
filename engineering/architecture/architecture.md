@@ -1,6 +1,6 @@
 # Wheelhouse architecture
 
-*Last updated: 2026-10-19*
+*Last updated: 2026-10-20*
 
 ## Runtime
 
@@ -127,7 +127,7 @@ own targets keep their hand-placed files), into `<root>/config/<product>-<enviro
 |---|---|
 | Host file | The file the target names for the service, if any: the pre-render settings, kept as a layer |
 | Wheelhouse | The environment's stored settings (`environment_settings`) and its built-in vault secrets, read at deploy |
-| Derived | `AllowedHosts` (the hosts of the sites the service serves, its platform name `<product>-<environment>-<service>`, any other host its host file listed, `localhost`), `Sites:<site>:Url` (the origin of every site the product publishes there), `Deployment:TrustedProxies` (the address of the host kit's `ingress` on the target's network) |
+| Derived | `AllowedHosts` (the hosts of the sites the service serves, its platform name `<product>-<environment>-<service>`, any other host its host file listed, `localhost`), `Sites:<site>:Url` (the origin of every site the product publishes there), `Deployment:TrustedProxies` (the address of the host kit's `ingress` on the target's network). A public site's host is the target's, else the server's pattern, else its baseline host on the server's public address (`<product>[-<site>][-dev].<ip-with-dashes>.sslip.io`, decision 68), so both keys name it |
 | Database | A required connection key (`ConnectionStrings:<name>`, `<Section>:ConnectionString`) no other layer sets, from `config/<product>-<environment>/database.json` (`prepare.py --database`), for a service that needs PostgreSQL |
 
 - A value goes to every service that declares its key (required, or a release's optional or secret declaration), and a
@@ -209,6 +209,9 @@ The console edits them; every change is an audited command. The API exports the 
 `<runner root>/inventory.json` at startup and after each change — atomically, owner-only, one write at a time — and
 the runner reads only that snapshot, refusing a malformed one whole. The runner CLI keeps working from the last
 snapshot while the API is down.
+
+A server's ingress row carries its public address (`publicAddress`), where its public sites' baseline hosts point.
+Enrollment and Refresh kit record it with the kit's ingress; a server edit keeps it, so it is never typed.
 
 Credentials never enter the database. A server's SSH identity and pinned host key (`ssh/<server>/identity`,
 `known_hosts`) and a vault's administrator password (`vaults/<vault>/password`) are files the owner places on

@@ -65,6 +65,12 @@ public sealed class StubInfraGateway : IInfraGateway
     public Task<AppResult<JsonElement>> PlaceAsync(ProductPlacementRequest request, string actor, CancellationToken ct) =>
         Write("place", request, actor, new { kind = "placement", product = request.Product, status = "queued" });
 
+    public Task<AppResult<JsonElement>> UpkeepsAsync(string server, CancellationToken ct) =>
+        Answer("upkeeps", server, null, new { serverId = server, kit = new string('c', 64), jobs = Array.Empty<object>() });
+
+    public Task<AppResult<JsonElement>> UpkeepAsync(string server, string actor, CancellationToken ct) =>
+        Write("upkeep", server, actor, new { id = Guid.NewGuid().ToString("D"), kind = "upkeep", serverId = server, status = "queued" });
+
     public Task<AppResult<JsonElement>> FinishedAsync(CancellationToken ct) =>
         Answer("finished", null, null, Finished.ToArray());
 

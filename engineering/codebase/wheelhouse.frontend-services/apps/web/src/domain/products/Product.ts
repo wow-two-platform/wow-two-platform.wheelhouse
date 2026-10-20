@@ -28,6 +28,8 @@ export interface ProductSite {
   name: string;
   url: string;
   exposure: 'public' | 'private';
+  /** The product's front door, whose baseline host carries no site name; false before the runner recorded it. */
+  primary?: boolean;
 }
 
 /** Where an environment's settings belong in a vault. */

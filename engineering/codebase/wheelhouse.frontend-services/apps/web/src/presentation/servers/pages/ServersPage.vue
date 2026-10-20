@@ -58,6 +58,7 @@ import VaultFormModal from '../components/VaultFormModal.vue';
 import AddServerMenu from '@/presentation/infrastructure/components/AddServerMenu.vue';
 import ServerEnrollment from '@/presentation/infrastructure/components/ServerEnrollment.vue';
 import ServerTailnetNode from '@/presentation/infrastructure/components/ServerTailnetNode.vue';
+import ServerUpkeep from '@/presentation/infrastructure/components/ServerUpkeep.vue';
 import TailnetPanel from '@/presentation/infrastructure/components/TailnetPanel.vue';
 
 /**
@@ -257,6 +258,7 @@ const trendWindow = computed(() => {
             >
           </DataRegion>
           <ServerTailnetNode v-if="server" :server="server" class="mb-5" />
+          <ServerUpkeep v-if="server" :server="server" class="mb-5" />
           <section class="mb-5" :aria-label="`${server?.name ?? 'Server'} products`">
             <h3 class="mb-2 text-xs font-medium text-muted-foreground">Products</h3>
             <DataRegion :is-first-load="targets.isFirstLoad.value || products.isFirstLoad.value" loading-label="Reading products">

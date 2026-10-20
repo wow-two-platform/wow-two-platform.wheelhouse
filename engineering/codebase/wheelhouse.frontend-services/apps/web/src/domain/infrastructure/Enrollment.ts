@@ -31,6 +31,8 @@ export interface EnrollmentFacts {
   hostKeyConfirmedBy?: 'owner' | 'tailnet' | undefined;
   kitDigest?: string | undefined;
   tailnetAddress?: string | undefined;
+  /** The public address the server was enrolled on; its public sites' baseline hosts name it. */
+  publicAddress?: string | undefined;
   nodeId?: string | undefined;
   nodeName?: string | undefined;
   publicSshClosed?: boolean | undefined;
@@ -70,15 +72,19 @@ export interface Enrollment {
 /** The account Wheelhouse deploys as on every products host. */
 export const DEPLOY_ACCOUNT = 'wheelhouse-deploy';
 
-/** How a products host publishes sites: on the private entry point, probed on the host itself. */
+/**
+ * How a products host's kit publishes sites: public ones on websecure (port 443) with Let's Encrypt HTTP-01
+ * certificates, private ones on the private entry point behind their site nodes, both probed on the host itself.
+ * Enrollment and kit refresh record it on the server, with its public address.
+ */
 export const ProductsHostIngress: Readonly<ServerIngress> = {
   scheme: 'https',
   port: null,
-  entryPoints: ['private'],
+  entryPoints: ['websecure'],
   privateEntryPoints: ['private'],
-  certResolver: null,
+  certResolver: 'letsencrypt',
   pattern: null,
-  probe: 'http://127.0.0.1:18080',
+  probe: 'https://127.0.0.1',
   privateProbe: 'http://127.0.0.1:18080',
 };
 

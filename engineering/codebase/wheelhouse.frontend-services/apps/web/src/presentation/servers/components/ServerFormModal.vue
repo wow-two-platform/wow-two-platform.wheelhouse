@@ -178,6 +178,10 @@ async function remove(): Promise<void> {
                 />
               </Field>
             </form.Field>
+            <!-- Recorded by enrollment and kit refresh, never typed: public sites' baseline hosts name it. -->
+            <Field v-if="props.server?.ingress.publicAddress" label="Public address" is-read-only>
+              <TextInput :model-value="props.server.ingress.publicAddress" autocomplete="off" />
+            </Field>
             <div class="grid gap-4 sm:grid-cols-2">
               <form.Field name="probe" v-slot="field">
                 <Field label="Probe">

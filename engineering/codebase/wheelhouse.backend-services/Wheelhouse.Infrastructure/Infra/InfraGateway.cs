@@ -14,7 +14,8 @@ namespace Wheelhouse.Infrastructure.Infra;
 
 /// <summary>Runs the runner's <c>infra.py</c> beside <c>transport.py</c>: an argument list, never a shell, and no
 /// secret in any argument. The OAuth client file and the SSH keys stay on disk under the runner root. A long job is
-/// recorded first, then run as this process's own child (<c>enroll-run</c>, <c>place-run</c>), which nothing waits for:
+/// recorded first, then run as this process's own child (<c>enroll-run</c>, <c>place-run</c>, <c>upkeep-run</c>), which
+/// nothing waits for:
 /// every call here returns within its timeout, and the console reaps the job when it ends.</summary>
 /// <remarks>Only configuration exposes the local rig, and only the rig may point the runner at another Tailscale API
 /// (<c>Infra:TailscaleApi</c>, its fake); <c>Infra:KitPath</c> names the products kit when it is not at <c>/app/kit</c>.
@@ -80,6 +81,17 @@ public sealed class InfraGateway(DeploymentSettings settings, IConfiguration con
                 ? ["place-run", "--job", parsed.ToString("D")]
                 : null, ct);
     }
+
+    /// <inheritdoc />
+    public Task<AppResult<JsonElement>> UpkeepsAsync(string server, CancellationToken ct) =>
+        RunAsync(["upkeeps", "--server", server], ct);
+
+    /// <inheritdoc />
+    public Task<AppResult<JsonElement>> UpkeepAsync(string server, string actor, CancellationToken ct) =>
+        StartAsync(["upkeep", "--server", server, "--actor", actor, "--no-launch"],
+            job => job.TryGetProperty("id", out var id) && Guid.TryParse(id.GetString(), out var parsed)
+                ? ["upkeep-run", "--job", parsed.ToString("D")]
+                : null, ct);
 
     /// <inheritdoc />
     public Task<AppResult<JsonElement>> FinishedAsync(CancellationToken ct) => RunAsync(["finished"], ct);

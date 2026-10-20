@@ -13,6 +13,7 @@ const bundle = await build({
       export { vaultDefinitionFormOf, vaultDefinitionFormSchema, vaultDefinitionRequestOf } from './src/application/secrets/VaultDefinitionForms';
       export * from './src/application/workspaces/WorkspaceForms';
       export { VpsProvider, VpsProviderLabels } from './src/domain/servers';
+      export { BaselineHost } from './src/domain/targets';
     `,
     resolveDir: process.cwd(),
   },
@@ -142,6 +143,61 @@ test("a new environment starts as dev on the first server, and its slug follows 
   assert.equal(body.product, "foreverpin");
   assert.deepEqual(body.sites, [{ site: "app", host: "dev.example.com" }]);
   assert.equal(forms.targetFormSchema.safeParse({ ...values, server: "" }).success, false);
+});
+
+test("a public site's baseline host follows the product, site, environment and server address (decision 68)", () => {
+  const { BaselineHost } = forms;
+  assert.equal(BaselineHost.of("ocharo-studio", "app", "dev", "203.0.113.10", true), "ocharo-studio-dev.203-0-113-10.sslip.io");
+  assert.equal(BaselineHost.of("ocharo-studio", "app", "prod", "203.0.113.10", true), "ocharo-studio.203-0-113-10.sslip.io");
+  // A second site adds its name after the product.
+  assert.equal(BaselineHost.of("ocharo-studio", "admin", "dev", "203.0.113.10", false), "ocharo-studio-admin-dev.203-0-113-10.sslip.io");
+  assert.equal(BaselineHost.of("ocharo-studio", "app", "dev", null, true), null);
+  assert.equal(BaselineHost.of("ocharo-studio", "app", "dev", "2001:db8::1", true), null);
+  assert.equal(BaselineHost.of("p".repeat(48), "s".repeat(20), "dev", "203.0.113.10", false), null, "a label over 63 characters");
+  assert.equal(BaselineHost.isBaseline("ocharo-studio-dev.203-0-113-10.sslip.io"), true);
+  assert.equal(BaselineHost.isBaseline("studio-dev.ocharo.co"), false);
+});
+
+test("the environment form offers each known public site its baseline host and keeps a host the owner named", () => {
+  const known = forms.knownSitesOf({
+    environments: [
+      { name: "dev", sites: [{ name: "app", url: "https://a", exposure: "public", primary: true },
+        { name: "admin", url: "https://b", exposure: "private", primary: false }] },
+      { name: "prod", sites: [{ name: "status", url: "https://c", exposure: "public", primary: false }] },
+    ],
+  });
+  assert.deepEqual(known, [
+    { name: "admin", exposure: "private", primary: false },
+    { name: "app", exposure: "public", primary: true },
+    { name: "status", exposure: "public", primary: false },
+  ]);
+  const address = forms.publicAddressOf([{ slug: "ocharo-vps", ingress: { publicAddress: "203.0.113.10" } }], "ocharo-vps");
+  assert.equal(address, "203.0.113.10");
+  assert.equal(forms.publicAddressOf([{ slug: "old", ingress: { publicAddress: null } }], "old"), null);
+  const dev = forms.withBaselineHosts([{ site: "status", host: "status.example.com" }], known, "ocharo-studio", "dev", address);
+  assert.deepEqual(dev, [
+    { site: "status", host: "status.example.com" },
+    { site: "app", host: "ocharo-studio-dev.203-0-113-10.sslip.io" },
+  ]);
+  // Switching to prod moves the baseline host it filled, never the owner's; without an address nothing changes.
+  assert.deepEqual(forms.withBaselineHosts(dev, known, "ocharo-studio", "prod", address)[1],
+    { site: "app", host: "ocharo-studio.203-0-113-10.sslip.io" });
+  assert.deepEqual(forms.withBaselineHosts([{ site: "app", host: "" }], known, "ocharo-studio", "dev", null), [{ site: "app", host: "" }]);
+  // Before a rollout marked a front door, the first site by name is it.
+  assert.deepEqual(forms.knownSitesOf({ environments: [{ name: "dev", sites: [
+    { name: "go", url: "https://g", exposure: "public" }, { name: "app", url: "https://a", exposure: "public" }] }] })
+    .map((site) => [site.name, site.primary]), [["app", true], ["go", false]]);
+  assert.deepEqual(forms.knownSitesOf(null), []);
+});
+
+test("a server edit never sends the public address enrollment recorded", () => {
+  const server = { slug: "ocharo-vps", name: "Ocharo VPS", provider: "contabo", host: "100.101.7.8", region: "eu",
+    sshUser: "wheelhouse-deploy", sshPort: 22, ingress: { scheme: "https", port: null, entryPoints: ["websecure"],
+      privateEntryPoints: ["private"], certResolver: "letsencrypt", pattern: null, probe: "https://127.0.0.1",
+      privateProbe: "http://127.0.0.1:18080", publicAddress: "203.0.113.10" } };
+  const body = forms.serverRequestOf(forms.serverFormOf(server), false);
+  assert.equal("publicAddress" in body.ingress, false);
+  assert.deepEqual(body.ingress.entryPoints, ["websecure"]);
 });
 
 test("a vault keeps its server, and a new one is named after it", () => {

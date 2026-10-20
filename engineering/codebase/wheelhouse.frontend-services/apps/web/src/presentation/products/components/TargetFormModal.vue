@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { TargetOperations } from "@/application/targets";
+import type { KnownSite } from "@/application/targets/TargetForms";
 import type { Server } from "@/domain/servers";
 import type { InventoryTarget } from "@/domain/targets";
 
@@ -12,6 +13,8 @@ export interface TargetFormModalProps {
   readonly target: InventoryTarget | null;
   readonly servers: readonly Server[];
   readonly operations: Pick<TargetOperations, "create" | "update" | "remove">;
+  /** The sites the product is known to publish: each public one is offered its baseline host. */
+  readonly knownSites?: readonly KnownSite[];
 }
 </script>
 
@@ -40,19 +43,23 @@ import {
 import { useFormDialogSession } from "@wow-two-beta/fe/forms-engine";
 import { useAppForm } from "@/bootstrap/form";
 import {
+  publicAddressOf,
   suggestedTargetSlug,
   targetFormOf,
   targetFormSchema,
   targetRequestOf,
+  withBaselineHosts,
 } from "@/application/targets/TargetForms";
-import { EnvironmentOrder } from "@/domain/targets";
+import { EnvironmentOrder, type DeploymentEnvironment } from "@/domain/targets";
+import type { TargetFormModel } from "@/application/targets/TargetForms";
 import { failureReason } from "@/integration/common";
 import { DeleteConfirm, RowsField } from "@/presentation/common/components";
 
 /** Edits where an environment runs, which settings files its services read, which requests prove a rollout and
- * which hosts its sites answer on. */
+ * which hosts its sites answer on. Each known public site without a host of the owner's is prefilled with its baseline
+ * host on the chosen server's public address, and follows the environment and server until the owner types another. */
 defineOptions({ name: "TargetFormModal" });
-const props = defineProps<TargetFormModalProps>();
+const props = withDefaults(defineProps<TargetFormModalProps>(), { knownSites: () => [] });
 const emit = defineEmits<{ "update:open": [open: boolean] }>();
 defineSlots<{}>();
 
@@ -75,9 +82,25 @@ const form = useAppForm({
  * update has set every prop. */
 useFormDialogSession(form, {
   open: () => props.open,
-  initialValues: () => targetFormOf(props.target, props.product, props.servers[0]?.slug ?? null),
+  initialValues: () => {
+    const values = targetFormOf(props.target, props.product, props.servers[0]?.slug ?? null);
+    return { ...values, sites: baselineSites(values.sites, values.environment, values.server) };
+  },
   onOpen: () => (removeError.value = ""),
 });
+
+/** The site rows with each known public site's baseline host for this environment and server. @internal */
+function baselineSites(sites: TargetFormModel["sites"], environment: DeploymentEnvironment, server: string) {
+  return withBaselineHosts(sites, props.knownSites, props.product, environment, publicAddressOf(props.servers, server));
+}
+
+/** Keeps baseline hosts following the environment and the server; a host the owner typed stays. */
+watch(
+  [() => form.state.values.environment, () => form.state.values.server],
+  ([environment, server]) => {
+    if (props.open) form.setValue("sites", baselineSites(form.state.values.sites, environment, server));
+  },
+);
 
 /** Keeps a new target's slug following its environment until the owner types another. */
 watch(

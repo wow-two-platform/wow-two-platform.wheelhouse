@@ -204,7 +204,8 @@ def prepare_products_platform(root):
     """The products host's PostgreSQL password, created once and kept on every rerun, and its rendered Compose file."""
     dedicated_root(root)
     platform = root / "platform"
-    for directory in (root, root / "config", platform, platform / ".secrets", platform / "sites"):
+    # acme/ holds the public ingress's certificates and ACME account, written by Traefik as this account.
+    for directory in (root, root / "config", platform, platform / ".secrets", platform / "sites", platform / "acme"):
         private_directory(directory)
     password = platform / ".secrets" / "postgres-password"
     if password.is_symlink():

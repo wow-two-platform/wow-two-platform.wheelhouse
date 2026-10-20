@@ -169,6 +169,9 @@ class EnrollmentTests(unittest.TestCase):
         self.assertEqual(kit.digest(), facts["kitDigest"])
         self.assertTrue(facts["nodeId"])
         self.assertEqual([TAILNET_ADDRESS], self.converged)
+        # What the console records on the server: the public address it enrolled on and the kit's public ingress.
+        self.assertEqual((PUBLIC, "enrollment", kit.PUBLIC_INGRESS),
+                         (facts["publicAddress"], facts["addressSource"], facts["ingress"]))
         # The minted key was single-use and tag:products, spent by the host, and recorded by ID only.
         state = list(self.fake.keys.values())
         self.assertEqual([(["tag:products"], True, False, True, 900)],

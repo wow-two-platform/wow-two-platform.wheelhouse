@@ -14,8 +14,10 @@ from unittest.mock import patch
 import catalog
 import fleet
 import infra_jobs
+import kit
 import placement
 import tailnet
+import upkeep
 from runner import Rejected
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "deployment" / "rehearsal"))
@@ -33,6 +35,11 @@ FAKE_DOCKER = textwrap.dedent("""\
     root = Path(os.environ["HOST_ROOT"])
     with open(root / "docker.log", "a") as log:
         log.write(" ".join(sys.argv[1:]) + "\\n")
+    if sys.argv[1] == "run" and "nsenter" in sys.argv:
+        # The kit's root phase through the deploy account's Docker access: here it only reports the host's address.
+        print("Kit laid out; firewall: 80 and 443 public, SSH exposure kept.")
+        print(json.dumps({"hostAddress": os.environ.get("HOST_ADDRESS", "")}))
+        sys.exit(0)
     if "exec" in sys.argv:
         sys.stdin.read()
         sys.exit(int(os.environ.get("DATABASE_FAILS", "0")))
@@ -71,7 +78,7 @@ class PlacementTests(unittest.TestCase):
                         patch.object(catalog, "PRODUCTS", products), patch.object(fleet, "SERVERS", servers),
                         patch.object(placement, "NODE_SECONDS", 0),
                         patch.object(placement.time, "sleep", lambda seconds: None),
-                        patch.object(placement, "remote", self.remote)):
+                        patch.object(placement, "remote", self.remote), patch.object(upkeep, "remote", self.remote)):
             patcher.start()
             self.addCleanup(patcher.stop)
         identity = self.root / "ssh" / "ocharo-products"
@@ -94,17 +101,18 @@ class PlacementTests(unittest.TestCase):
         (bin_dir / "docker").write_text(FAKE_DOCKER)
         (bin_dir / "docker").chmod(0o755)
         self.environment = {**os.environ, "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
-                            "HOST_ROOT": str(self.host), "FAKE_TAILSCALE": api}
+                            "HOST_ROOT": str(self.host), "FAKE_TAILSCALE": api, "HOST_ADDRESS": "203.0.113.10"}
         self.stdins = []
 
     def remote(self, ssh, command, stdin=None, timeout=30):
         self.assertEqual(("100.101.7.8", "wheelhouse-deploy"), (ssh.config["host"], ssh.config["user"]))
         self.stdins.append(stdin)
-        result = subprocess.run(["bash", "-c", command.replace(placement.ROOT, str(self.host))], input=stdin,
-                                capture_output=True, text=True, env=self.environment)
+        result = subprocess.run(["bash", "-c", command.replace(placement.ROOT, str(self.host))],
+                                input=stdin.encode() if isinstance(stdin, str) else stdin, capture_output=True,
+                                env=self.environment)
         if result.returncode:
-            raise infra_jobs.ssh_failure(result.returncode, result.stderr)
-        return result.stdout
+            raise infra_jobs.ssh_failure(result.returncode, result.stderr.decode())
+        return result.stdout.decode()
 
     def place(self, database=True, sites=(("app", "ocharo-desk"),)):
         job = placement.start(self.root, {"serverId": "ocharo-products", "product": "ocharo-platform",
@@ -139,7 +147,25 @@ class PlacementTests(unittest.TestCase):
         self.assertEqual([], list((self.host / "private" / "sites").iterdir()))
         compose = (self.host / "platform" / "compose.yml").read_text()
         self.assertIn("../private/sites/ocharo-desk.env", compose)
-        self.assertIn("up -d --wait postgres ingress", self.docker_calls()[0])
+        self.assertIn("up -d --wait postgres ingress", self.docker_calls()[1])
+
+    def test_the_platform_step_brings_the_host_to_this_kit_first(self):
+        result = self.place(database=False)
+        self.assertEqual("succeeded", result["status"], result.get("reason"))
+        # The kit went up as the deploy account, then its root phase ran through Docker, before PostgreSQL and Traefik.
+        self.assertEqual(sorted(kit.FILES), sorted(path.name for path in (self.host / "bootstrap" / "kit").iterdir()))
+        helper, platform = self.docker_calls()[:2]
+        # The rig's switch (set for these tests) lets the kit accept an arm64 host; a real host runs without it.
+        self.assertTrue(helper.startswith("run --rm --privileged --pid=host --userns=host --network=none "
+                                          "-e WHEELHOUSE_REHEARSAL=1 " + upkeep.HELPER
+                                          + " nsenter -t 1 -m -u -i -n -p -- bash "), helper)
+        self.assertTrue(helper.endswith("/bootstrap/kit/enroll-products.sh upkeep"), helper)
+        self.assertIn("up -d --wait postgres ingress", platform)
+        facts = result["facts"]
+        self.assertEqual((kit.digest(), "203.0.113.10", "host", "websecure"),
+                         (facts["kitDigest"], facts["publicAddress"], facts["addressSource"],
+                          facts["ingress"]["entryPoints"][0]))
+        self.assertIn("Kit " + kit.digest()[:12] + " laid out", result["steps"][0]["detail"])
 
     def test_a_rerun_keeps_databases_and_joined_nodes_and_mints_nothing(self):
         self.place()
@@ -177,7 +203,7 @@ class PlacementTests(unittest.TestCase):
 
     def test_a_site_key_travels_on_stdin_only(self):
         self.place(database=False)
-        carried = [stdin for stdin in self.stdins if stdin]
+        carried = [stdin for stdin in self.stdins if stdin and isinstance(stdin, str)]
         self.assertEqual(2, len(carried))
         self.assertTrue(all(stdin.startswith("TS_AUTHKEY=tskey-auth-") for stdin in carried))
         self.assertFalse(any("tskey" in line for line in self.docker_calls()))

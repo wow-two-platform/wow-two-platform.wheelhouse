@@ -1,13 +1,16 @@
 using System.Net;
 using System.Net.Sockets;
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Servers.Validators;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.InfraJobs;
 
-/// <summary>Handles <see cref="InfraJobRecordCommand"/>. A failed job is recorded as a failed action with its reason.</summary>
+/// <summary>Handles <see cref="InfraJobRecordCommand"/>. A failed job is recorded as a failed action with its reason. A
+/// job that brought the host to the kit sets the server's ingress to what the kit lays out, keeping the owner's host
+/// pattern, and records the public address it found; a job that found none keeps the one recorded before.</summary>
 public sealed class InfraJobRecordCommandHandler(IServersRepository servers)
     : ICommandHandler<InfraJobRecordCommand, AppResult<bool>>
 {
@@ -19,16 +22,33 @@ public sealed class InfraJobRecordCommandHandler(IServersRepository servers)
     {
         if (request.Status != "succeeded")
             return AppResult<bool>.Fail(AppErrorFactory.ExternalUnavailable(request.Reason ?? "The job failed."));
-        if (request.Kind != InfraJobRecordCommand.Enrollment)
-            return AppResult<bool>.Ok(true);
-        if (!InTailnet(request.TailnetAddress))
+        var enrollment = request.Kind == InfraJobRecordCommand.Enrollment;
+        if (enrollment && !InTailnet(request.TailnetAddress))
             return AppResult<bool>.Fail(AppErrorFactory.Validation("The enrollment recorded no tailnet address."));
+        if (!enrollment && request.Ingress is null)
+            return AppResult<bool>.Ok(true);
         var server = await servers.GetBySlugAsync(request.Server, cancellationToken);
         if (server is null)
             return AppResult<bool>.Fail(AppErrorFactory.NotFound($"Server '{request.Server}' was not found."));
-        server.Host = request.TailnetAddress!;
-        server.SshUser = DeployUser;
-        server.SshPort = 22;
+        if (enrollment)
+        {
+            server.Host = request.TailnetAddress!;
+            server.SshUser = DeployUser;
+            server.SshPort = 22;
+        }
+
+        if (request.Ingress is { } ingress)
+        {
+            var recorded = ingress with
+            {
+                Pattern = server.Ingress.Pattern,
+                PublicAddress = request.PublicAddress ?? server.Ingress.PublicAddress,
+            };
+            if (!(await new ServerIngressValueObjectValidator().ValidateAsync(recorded, cancellationToken)).IsValid)
+                return AppResult<bool>.Fail(AppErrorFactory.Validation("The job recorded an ingress Wheelhouse cannot use."));
+            server.Ingress = recorded;
+        }
+
         await servers.UpdateAsync(server, cancellationToken);
         return AppResult<bool>.Ok(true);
     }

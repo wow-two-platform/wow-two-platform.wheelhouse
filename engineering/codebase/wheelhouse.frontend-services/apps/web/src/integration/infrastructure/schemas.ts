@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { InfraJobStatus, JobStepStatus, TailnetNodeRole } from "@/domain/infrastructure";
+import { AddressSource, InfraJobStatus, JobStepStatus, TailnetNodeRole } from "@/domain/infrastructure";
 
 /** Text the host may leave out or send as null. */
 const optionalText = z.string().nullable().default(null);
@@ -128,6 +128,7 @@ export const EnrollmentSchema = z.object({
       hostKeyConfirmedBy: z.enum(["owner", "tailnet"]).optional().catch(undefined),
       kitDigest: z.string().optional(),
       tailnetAddress: z.string().optional(),
+      publicAddress: z.string().optional(),
       nodeId: z.string().optional(),
       nodeName: z.string().optional(),
       publicSshClosed: z.boolean().optional(),
@@ -179,4 +180,30 @@ export const PlacementSchema = z.object({
     .default({ databases: [], sites: [] }),
   mints: z.array(MintedKeySchema).default([]),
   steps: z.array(JobStepSchema).default([]),
+});
+
+export const UpkeepSchema = z.object({
+  id: z.string(),
+  kind: z.literal("upkeep"),
+  serverId: z.string(),
+  status: z.enum(["queued", "running", "succeeded", "failed", "interrupted"]),
+  reason: optionalText,
+  actor: z.string().default(""),
+  createdAt: z.string(),
+  startedAt: optionalText,
+  completedAt: optionalText,
+  facts: z
+    .object({
+      kitDigest: z.string().optional(),
+      publicAddress: z.string().nullable().optional(),
+      addressSource: z.enum(AddressSource).nullable().optional().catch(undefined),
+    })
+    .default({}),
+  steps: z.array(JobStepSchema).default([]),
+});
+
+export const UpkeepListingSchema = z.object({
+  serverId: z.string(),
+  kit: optionalText,
+  jobs: z.array(UpkeepSchema).default([]),
 });

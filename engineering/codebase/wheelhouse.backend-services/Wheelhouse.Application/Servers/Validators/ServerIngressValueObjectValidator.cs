@@ -1,4 +1,5 @@
 using FluentValidation;
+using Wheelhouse.Application.InfraJobs;
 using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Domain.Servers.Models;
@@ -32,5 +33,8 @@ public sealed class ServerIngressValueObjectValidator : AbstractValidator<Server
         RuleFor(x => x.PrivateProbe!)
             .MustMatch(InventoryPatternConstants.Endpoint, "an address such as http://ingress:80")
             .When(x => x.PrivateProbe is not null);
+        RuleFor(x => x.PublicAddress!)
+            .MustMatch(InfraPatterns.PublicAddress, "an IPv4 address such as 203.0.113.10")
+            .When(x => x.PublicAddress is not null);
     }
 }

@@ -151,10 +151,14 @@ def valid_id(value):
     return value
 
 
+# Each job kind and its journal folder under <root>/infra/.
+KINDS = (("enrollment", "enrollments"), ("placement", "placements"), ("upkeep", "upkeeps"))
+
+
 def finished(root):
     """Finished jobs the console has not recorded yet, oldest first: what its follower audits and applies."""
     result = []
-    for kind, name in (("enrollment", "enrollments"), ("placement", "placements")):
+    for kind, name in KINDS:
         directory = Path(root) / INFRA / name
         for path in directory.glob("*.json") if directory.is_dir() else ():
             try:
@@ -171,7 +175,7 @@ def finished(root):
 def acknowledge(root, identifier):
     """Marks a finished job recorded by the console, so its follower records it once."""
     valid_id(identifier)
-    for name in ("enrollments", "placements"):
+    for _, name in KINDS:
         directory = Path(root) / INFRA / name
         for path in directory.glob("*.json") if directory.is_dir() else ():
             try:
@@ -203,12 +207,14 @@ def ssh_failure(code, stderr, denied=None):
 
 
 def remote(ssh, command, stdin=None, timeout=30):
-    """One command over a runner SSH session (transport.Ssh's pinned options), relaying the kit's own refusal."""
+    """One command over a runner SSH session (transport.Ssh's pinned options), relaying the kit's own refusal. Text
+    goes in as text; bytes (the kit's archive) as bytes. The answer is text."""
     arguments = ["ssh", *ssh.options(), "-p", str(ssh.config.get("port", 22)), ssh.destination, command]
     try:
-        result = subprocess.run(arguments, input=stdin, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(arguments, input=stdin.encode() if isinstance(stdin, str) else stdin,
+                                capture_output=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         raise CommandFailed("The host did not finish within " + str(timeout) + " seconds") from None
     if result.returncode:
-        raise ssh_failure(result.returncode, result.stderr)
-    return result.stdout
+        raise ssh_failure(result.returncode, result.stderr.decode("utf-8", "replace"))
+    return result.stdout.decode("utf-8", "replace")

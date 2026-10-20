@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Infrastructure actions Wheelhouse prod runs: Tailscale through the owner's OAuth client (nodes, the access policy
-after a reviewed diff), enrolling a fresh server, and placing a product's databases and private sites on a server.
+after a reviewed diff), enrolling a fresh server, placing a product's databases and private sites on a server, and
+bringing an enrolled host to the current kit (host upkeep).
 
 Each action prints one JSON document; a refusal prints {"status": "rejected", "reason": ...} on stderr and exits 1, as
-transport.py does. Long jobs (`enroll`, `place`) record their journal and start `enroll-run` or `place-run` detached;
-the console passes --no-launch and starts that run as its own child instead. Nothing here prints a secret."""
+transport.py does. Long jobs (`enroll`, `place`, `upkeep`) record their journal and start `enroll-run`, `place-run` or
+`upkeep-run` detached; the console passes --no-launch and starts that run as its own child instead. Nothing here prints
+a secret."""
 import argparse
 import json
 from pathlib import Path
@@ -14,6 +16,7 @@ import infra_jobs
 import inventory
 import placement
 import tailnet
+import upkeep
 from runner import rejection
 
 
@@ -26,7 +29,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["tailnet", "policy", "policy-apply", "policy-revert", "enrollment",
                                            "enrollment-key", "enroll", "enroll-run", "placements", "place",
-                                           "place-run", "finished", "acknowledge"])
+                                           "place-run", "upkeeps", "upkeep", "upkeep-run", "finished",
+                                           "acknowledge"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--server")
     parser.add_argument("--product")
@@ -44,7 +48,7 @@ def main():
     parser.add_argument("--database", action="store_true", help="place: create the product's dev and prod databases")
     parser.add_argument("--site", action="append", default=[], metavar="SITE=NODE", help="place: a private site")
     parser.add_argument("--no-launch", action="store_true",
-                        help="enroll, place: record the job only; the caller runs enroll-run or place-run itself")
+                        help="enroll, place, upkeep: record the job only; the caller runs its -run action itself")
     args = parser.parse_args()
     root = Path(args.root).resolve()
     try:
@@ -77,6 +81,12 @@ def main():
                                      args.actor, launch=not args.no_launch)
         elif args.action == "place-run":
             result = placement.run(root, args.job)
+        elif args.action == "upkeeps":
+            result = upkeep.listing(root, args.server)
+        elif args.action == "upkeep":
+            result = upkeep.start(root, {"serverId": args.server}, args.actor, launch=not args.no_launch)
+        elif args.action == "upkeep-run":
+            result = upkeep.run(root, args.job)
         elif args.action == "finished":
             result = infra_jobs.finished(root)
         else:

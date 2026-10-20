@@ -83,6 +83,17 @@ public sealed class InfraGatewayTests : IDisposable
     }
 
     [Fact]
+    public async Task UpkeepAsync_ShouldRecordTheJobThenRunItById()
+    {
+        await Gateway().UpkeepAsync("ocharo-vps", "sulton-max", CancellationToken.None);
+
+        var calls = await Calls(2);
+        Arguments(calls[0]).Should().Equal("upkeep", "--server", "ocharo-vps", "--actor", "sulton-max", "--no-launch",
+            "--root", _root);
+        Arguments(calls[1]).Should().Equal("upkeep-run", "--job", "6f1c2a9e-0000-4000-8000-000000000001", "--root", _root);
+    }
+
+    [Fact]
     public async Task TheTailscaleApi_ShouldChangeOnlyOnTheRig()
     {
         var configuration = new Dictionary<string, string?> { ["Infra:TailscaleApi"] = "http://fake-tailscale:8080" };

@@ -114,6 +114,10 @@ const facts = computed(() => enrollment.value?.facts ?? {});
           <dt class="text-xs text-muted-foreground">Tailnet address</dt>
           <dd class="font-mono text-xs">{{ facts.tailnetAddress }}</dd>
         </div>
+        <div v-if="facts.publicAddress" class="min-w-0">
+          <dt class="text-xs text-muted-foreground">Public address</dt>
+          <dd class="font-mono text-xs">{{ facts.publicAddress }}</dd>
+        </div>
         <div v-if="facts.nodeName || facts.nodeId" class="min-w-0">
           <dt class="text-xs text-muted-foreground">Node</dt>
           <dd class="break-all">{{ facts.nodeName ?? facts.nodeId }}</dd>

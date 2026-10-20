@@ -28,4 +28,9 @@ public sealed record ServerIngressValueObject
 
     /// <summary>Gets where the runner requests private sites from, or <c>null</c> to leave them unprobed.</summary>
     public string? PrivateProbe { get; init; }
+
+    /// <summary>Gets the server's public IPv4 address, where its public entry points answer: a public site with no host
+    /// answers on its baseline host there (decision 68). Recorded by enrollment and host upkeep, never typed; a server
+    /// edit keeps it.</summary>
+    public string? PublicAddress { get; init; }
 }

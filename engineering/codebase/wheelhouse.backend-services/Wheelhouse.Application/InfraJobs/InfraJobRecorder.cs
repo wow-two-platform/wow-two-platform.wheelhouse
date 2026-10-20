@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Wheelhouse.Domain.Servers.Models;
 using Microsoft.Extensions.Logging;
 using Wheelhouse.Application.Abstractions;
 using WoW.Two.Sdk.Beta.Be.Mediator;
@@ -46,7 +47,8 @@ public sealed partial class InfraJobRecorder(
         var kind = Text(job, "kind");
         if (job.ValueKind != JsonValueKind.Object || Text(job, "id") is not { } id || !Guid.TryParse(id, out _)
             || Text(job, "serverId") is not { } server || Text(job, "status") is not { } status
-            || kind is not (InfraJobRecordCommand.Enrollment or InfraJobRecordCommand.Placement))
+            || kind is not (InfraJobRecordCommand.Enrollment or InfraJobRecordCommand.Placement
+                or InfraJobRecordCommand.Upkeep))
             return null;
         var mints = job.TryGetProperty("mints", out var list) && list.ValueKind == JsonValueKind.Array
             ? list.EnumerateArray().Where(mint => mint.ValueKind == JsonValueKind.Object).Select(mint =>
@@ -62,7 +64,28 @@ public sealed partial class InfraJobRecorder(
             Kind = kind, Id = id, Server = server, Product = Text(job, "product"), Status = status,
             Reason = Text(job, "reason"), Mints = mints,
             TailnetAddress = facts.ValueKind == JsonValueKind.Object ? Text(facts, "tailnetAddress") : null,
+            Ingress = facts.ValueKind == JsonValueKind.Object ? IngressOf(facts) : null,
+            PublicAddress = facts.ValueKind == JsonValueKind.Object ? Text(facts, "publicAddress") : null,
+            KitDigest = facts.ValueKind == JsonValueKind.Object ? Text(facts, "kitDigest") : null,
         };
+    }
+
+    /// <summary>The ingress the kit laid out, as the job recorded it; <c>null</c> when it recorded none or another
+    /// shape. The handler validates it before the server takes it.</summary>
+    private static ServerIngressValueObject? IngressOf(JsonElement facts)
+    {
+        if (!facts.TryGetProperty("ingress", out var ingress) || ingress.ValueKind != JsonValueKind.Object)
+            return null;
+        try
+        {
+            return ingress.Deserialize<ServerIngressValueObject>(JsonSerializerOptions.Web) is { } read
+                ? read with { PublicAddress = null }
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static string? Text(JsonElement element, string name) =>

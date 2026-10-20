@@ -23,6 +23,8 @@ const {
   PolicyRevertedSchema,
   TailnetRules,
   TailnetStatusSchema,
+  UpkeepListingSchema,
+  UpkeepRules,
   adminAfterLogin,
   enrollmentApi,
   enrollmentFormOf,
@@ -35,6 +37,7 @@ const {
   placementRequestOf,
   placementsApi,
   tailnetApi,
+  upkeepApi,
 } = infra;
 const originalFetch = globalThis.fetch;
 afterEach(() => {
@@ -46,6 +49,9 @@ const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 const ingress = { scheme: "https", port: null, entryPoints: ["private"], privateEntryPoints: ["private"],
   certResolver: null, pattern: null, probe: "http://127.0.0.1:18080", privateProbe: "http://127.0.0.1:18080" };
+// What a products host's kit lays out: enrollment and kit refresh record it on the server.
+const kitIngress = { scheme: "https", port: null, entryPoints: ["websecure"], privateEntryPoints: ["private"],
+  certResolver: "letsencrypt", pattern: null, probe: "https://127.0.0.1", privateProbe: "http://127.0.0.1:18080" };
 const server = (fields = {}) => ({ slug: "ocharo-vps", name: "Ocharo VPS", provider: "contabo", host: "203.0.113.10",
   region: "eu", sshUser: "wheelhouse-deploy", sshPort: 22, ingress, ...fields });
 const node = (fields = {}) => ({ id: "n1", name: "ocharo-vps", hostname: "ocharo-vps", addresses: ["100.101.1.2", "fd7a:115c:a1e0::1"],
@@ -243,7 +249,7 @@ test("a fresh server registers on its public IP as the deploy account with a pro
   const values = { slug: "ocharo-vps", name: "Ocharo VPS", provider: "contabo", region: "eu", publicAddress: " 203.0.113.10 " };
   assert.equal(freshServerFormSchema.safeParse(values).success, true);
   assert.deepEqual(freshServerRequestOf(values), { slug: "ocharo-vps", name: "Ocharo VPS", provider: "contabo",
-    host: "203.0.113.10", region: "eu", sshUser: "wheelhouse-deploy", sshPort: 22, ingress });
+    host: "203.0.113.10", region: "eu", sshUser: "wheelhouse-deploy", sshPort: 22, ingress: kitIngress });
   assert.equal(freshServerFormSchema.safeParse({ ...values, provider: "local" }).success, false);
   assert.equal(freshServerFormSchema.safeParse({ ...values, publicAddress: "100.101.1.2" }).success, false);
   assert.equal(freshServerFormSchema.safeParse({ ...values, slug: "Ocharo" }).success, false);
@@ -350,4 +356,41 @@ test("the placement form starts on the first server it can use and refuses what 
   assert.deepEqual(paths({ sites: Array.from({ length: 11 }, (_, index) => ({ site: `s${index}`, node: `node-${index}` })) }), ["sites"]);
   assert.deepEqual(placementRequestOf({ ...values, sites: [{ site: " app ", node: " ocharo-desk " }] }),
     { server: "ocharo-vps", database: true, sites: [{ site: "app", node: "ocharo-desk" }] });
+});
+
+const upkeepJob = (fields = {}) => ({ id: "u1", kind: "upkeep", serverId: "ocharo-vps", status: "succeeded", reason: null,
+  actor: "sulton-max", createdAt: "2026-10-20T08:00:00Z", startedAt: "2026-10-20T08:00:01Z",
+  completedAt: "2026-10-20T08:01:00Z", facts: { kitDigest: "c".repeat(64), publicAddress: "203.0.113.10",
+    addressSource: "enrollment" }, steps: [], ...fields });
+
+test("an enrolled host's kit section knows whether it runs this console's kit and where its address came from", () => {
+  const listing = UpkeepListingSchema.parse({ serverId: "ocharo-vps", kit: "c".repeat(64),
+    jobs: [upkeepJob({ id: "u2", status: "failed", reason: "Port 80 does not redirect to https (404)", facts: {} }), upkeepJob()] });
+  assert.equal(UpkeepRules.latest(listing).id, "u2");
+  assert.equal(UpkeepRules.hostKit(listing), "c".repeat(64));
+  assert.equal(UpkeepRules.isCurrent(listing), true);
+  assert.equal(UpkeepRules.isCurrent({ ...listing, kit: "d".repeat(64) }), false);
+  assert.equal(UpkeepRules.isCurrent({ serverId: "ocharo-vps", kit: "c".repeat(64), jobs: [] }), false);
+  assert.equal(UpkeepRules.canStart(listing), true);
+  assert.equal(UpkeepRules.canStart({ ...listing, jobs: [upkeepJob({ status: "running" })] }), false);
+  assert.equal(UpkeepRules.sourceWord("enrollment"), "from enrollment");
+  assert.equal(UpkeepRules.sourceWord(undefined), null);
+  // Only an enrolled host, reached on its tailnet address, shows it; never the local rig or a host still public.
+  assert.equal(UpkeepRules.isVisible(server({ host: "100.101.7.8" })), true);
+  assert.equal(UpkeepRules.isVisible(server()), false);
+  assert.equal(UpkeepRules.isVisible(server({ host: "100.101.7.8", provider: "local" })), false);
+  assert.equal(UpkeepListingSchema.parse({ serverId: "x", kit: null }).jobs.length, 0);
+  assert.equal(UpkeepListingSchema.parse({ serverId: "x", kit: null, jobs: [upkeepJob({ facts: { addressSource: "dns" } })] })
+    .jobs[0].facts.addressSource, undefined);
+});
+
+test("the kit refresh reads with GET and starts with the server action header", async () => {
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push([url, options.method ?? "GET", options.headers?.get?.("X-Wheelhouse-Action") ?? null]);
+    return json({ data: options.method === "POST" ? upkeepJob({ status: "queued" }) : { serverId: "ocharo-vps", kit: null, jobs: [] } });
+  };
+  assert.equal((await upkeepApi.list("ocharo vps")).value.jobs.length, 0);
+  assert.equal((await upkeepApi.start("ocharo-vps")).value.status, "queued");
+  assert.deepEqual(requests, [["/api/servers/ocharo%20vps/upkeep", "GET", null], ["/api/servers/ocharo-vps/upkeep", "POST", "server"]]);
 });

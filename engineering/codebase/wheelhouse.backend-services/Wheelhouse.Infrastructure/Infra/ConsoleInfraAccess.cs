@@ -13,7 +13,8 @@ public sealed class ConsoleInfraAccess(IConfiguration configuration) : IInfraAcc
 
     /// <summary>The refusal deployed dev answers with.</summary>
     public const string DevRefusal =
-        "Only Wheelhouse prod drives Tailscale, enrolls servers and places products; dev never holds their keys.";
+        "Only Wheelhouse prod drives Tailscale, enrolls servers, places products and refreshes host kits; "
+        + "dev never holds their keys.";
 
     /// <inheritdoc />
     public string? Refusal =>

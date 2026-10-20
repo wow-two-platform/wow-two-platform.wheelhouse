@@ -42,6 +42,7 @@ const ProductSchema = z.object({
           name: z.string(),
           url: z.string(),
           exposure: z.enum(["public", "private"]),
+          primary: z.boolean().default(false),
         }),
       ),
       secrets: z.object({ vault: z.string(), namespace: z.string() }).nullable(),

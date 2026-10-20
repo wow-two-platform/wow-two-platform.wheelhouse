@@ -1,6 +1,6 @@
 # Deployment operations
 
-*Last updated: 2026-10-19*
+*Last updated: 2026-10-20*
 
 ## Ownership and current boundary
 
@@ -39,6 +39,13 @@ project, platform-network alias, database, settings files and hostnames. No hard
   ([convention](../../../../../conventions/deployment/descriptor/deploy-descriptor.md#sites-and-routing)).
 - A target names each site's host; dev may follow the server's pattern, prod names every host itself. Domain
   bindings replace both later; `site_host` in the runner is that seam.
+- A public site with no host answers on its baseline host (decision 68), on the public address enrollment or Refresh
+  kit recorded on its server: `<product>-dev.<ip>.sslip.io` in dev, `<product>.<ip>.sslip.io` in prod, the address's
+  dots as dashes; a site other than the release's primary one adds `-<site>` after the product
+  (`ocharo-studio-admin-dev.203-0-113-10.sslip.io`). The runner fills it at deploy, so `AllowedHosts` and
+  `Sites:<site>:Url` name it; the environment form prefills it, still editable. A private site never gets one.
+- A baseline host is served by the server's own ingress on 80 and 443 with a Let's Encrypt HTTP-01 certificate, not
+  through Cloudflare; a bound domain replaces it.
 - After a verified rollout the runner writes `<root>/ingress/<product>-<environment>.yml`, a Traefik file-provider route.
 - One router per site path maps the host and path to `<product>-<environment>-<service>:<port>` on the platform network.
 - `/` renders `` Host(`h`) ``; `/api` renders `` Host(`h`) && (Path(`/api`) || PathPrefix(`/api/`)) ``, never `/apiary`.
@@ -47,6 +54,8 @@ project, platform-network alias, database, settings files and hostnames. No hard
 - The target records one URL per service site, its shortest path, the site's root first; Wheelhouse shows Open site
   links on the target and after a deploy, one per site.
 - A release without sites removes the project's route file; a private site routes only on private entry points.
+- Only public routers carry the server's certificate resolver: a private entry point sits behind its site node's Serve,
+  which ends TLS.
 - After publishing, the runner requests every site through the ingress by its host name, the way a visitor reaches it.
 - A site that does not answer within 20 seconds is a warning on the deploy and on its Open site link, not a failure.
 - Traefik's own 404 for an unknown host counts as no answer; an application's 404 or 401 counts as an answer.
@@ -429,7 +438,8 @@ issue, so no restart is needed.
 ## Tailscale and enrollment
 
 Wheelhouse prod brings a fresh server online and onto the tailnet itself, places a product's databases and private
-sites on it, and applies the tailnet policy after the owner reviews its diff ([vps.md § Products host](vps/vps.md#products-host)).
+sites on it, brings an enrolled host to the kit it ships, and applies the tailnet policy after the owner reviews its
+diff ([vps.md § Products host](vps/vps.md#products-host)).
 The runner's `infra.py` does the work beside `transport.py`; the API starts it, follows its journals and audits each
 start and finish. Dev never does any of it: its Servers page reads "prod only".
 
@@ -441,19 +451,31 @@ start and finish. Dev never does any of it: its Servers page reads "prod only".
   and is removed at once; jobs and audit keep its ID, tag and expiry only.
 - **Enrollment:** a one-time Ed25519 key per server (Servers › Add server › Enroll a fresh server) that the owner adds
   to the account the image delivers. Its steps, each recorded live: first contact (host key pinned, checked against the
-  owner's fingerprint when given), kit upload (`/app/kit`, its digest recorded), administrator, packages, host layout,
-  tailnet join, node check (its endpoints must hold the public address), prod's runner key proven over the tailnet
-  against the first-seen host key, platform, seal (keys-only SSH, no root, public SSH closed, one-time key removed) and
-  verify. A rerun continues from the first step that has not succeeded; every step converges.
-- **Placement:** Products › a product › Hosting › Place on a server: the platform converges, dev and prod databases are
-  created once (passwords stay in `database.json` on the host), and each site gets a node per environment.
+  owner's fingerprint when given), kit upload (`/app/kit`, its digest recorded), administrator, packages, host layout
+  (UFW with 80 and 443 open), tailnet join, node check (its endpoints must hold the public address), prod's runner key
+  proven over the tailnet against the first-seen host key, platform (private and public ingress), seal (keys-only SSH,
+  no root, public SSH closed, one-time key removed) and verify. A rerun continues from the first step that has not
+  succeeded; every step converges. A host enrolled before a kit change takes it with Refresh kit, below.
+- **Placement:** Products › a product › Hosting › Place on a server: the host converges to this console's kit (as
+  Refresh kit does), dev and prod databases are created once (passwords stay in `database.json` on the host), and each
+  site gets a node per environment.
+- **Host upkeep:** Servers › a server › Kit › Refresh kit, on an enrolled host: the kit uploaded as `wheelhouse-deploy`
+  to `/srv/wheelhouse/bootstrap/kit`, its root phase (`enroll-products.sh upkeep`: layout, `platform` network, UFW
+  with 80 and 443 public and SSH as it is), PostgreSQL and the ingress, then the public check (80 redirects to https,
+  443 answers TLS, no container publishes beyond loopback but the ingress). The root phase runs through the deploy
+  account's Docker access, which already grants host control: a one-off privileged container (`alpine`, pinned by
+  digest) that enters PID 1's namespaces. The section shows the kit the host runs against this console's and the
+  server's public address.
 - **Policy:** Servers › Tailnet › Review policy renders `tailnet-policy.hujson` with one host alias and one
   control-path test per products host, diffs it against the live policy and runs Tailscale's validation. Apply sends
   the reviewed ETag and digest; the policy it replaces is kept for revert. A policy whose tests no longer accept
   `tag:control` to `tag:products:22` is refused, whatever Tailscale would save.
 - **Recording:** every `Infra:FollowSeconds` (10) the API records finished jobs in the audit trail as the owner who
-  started them (`server.enrollment.finish`, `product.placement.finish`), and moves an enrolled server's host to its
-  tailnet address and `wheelhouse-deploy`.
+  started them (`server.enrollment.finish`, `product.placement.finish`, `server.upkeep.finish`), and moves an enrolled
+  server's host to its tailnet address and `wheelhouse-deploy`. A job that brought the host to the kit records the
+  kit's ingress on the server (`websecure` with `letsencrypt`, `private`, probes on the host; the owner's host pattern
+  kept) and its public address: the one already recorded, else the enrollment's, else the host's own public source
+  address. A server edit never changes the public address.
 
 Owner steps, once (Tailscale admin console):
 
@@ -761,9 +783,14 @@ python3 rehearse.py down --volumes
 - `products` starts a products host with its own Docker daemon (SSH `127.0.0.1:2223`), laid out by
   `bootstrap-products.sh`'s own steps; `prepare.py --server products` creates its platform, ForeverPin's databases and
   site nodes. It pins and accepts a runner key and deploys the newest healthy release to `foreverpin-dev` over SSH from
-  its own inventory (`state/products/inventory`).
-- Its sites answer through the private entry point by site name, as a site node reaches them. A stand-in prod console
-  proves `authorize-runner.sh --remote` and `--accept` at a stand-in tailnet address.
+  its own inventory (`state/products/inventory`), as a Contabo server whose ingress and public address Refresh kit
+  recorded (its address on the rig's network) and whose target names no site host.
+- Its public sites answer on their baseline hosts from another container on the rig's network: 80 redirects to https
+  and keeps the HTTP-01 challenge path, 443 routes each host, 8080/8081/8443/18080 stay closed, and the rendered
+  settings name the baseline hosts. Its ACME resolver points at a CA that never answers (`WHEELHOUSE_ACME_CA` in
+  `host.env`), so Traefik's log shows the `letsencrypt` order for each baseline host and no certificate is issued:
+  a real HTTP-01 validation needs a public address. A stand-in prod console proves `authorize-runner.sh --remote` and
+  `--accept` at a stand-in tailnet address.
 - A password-protected local registry stands in for GHCR: the deploy account signs in through `prepare.py`'s GHCR
   sign-in, and the runner's SSH session pulls a private image that root, without a sign-in, cannot.
 - Packages, the firewall, unattended updates and the tailnet need a real Ubuntu host; `products` leaves them out, and
@@ -890,8 +917,8 @@ A service's recent container output is readable on request through `logs`; Docke
 11. Deploy dev, verify real URLs and provider callbacks, restore a backup, promote the same image digests to prod.
 
 A VPS that hosts products only follows [VPS › Products host](vps/vps.md#products-host): its bootstrap, `prepare.py`
-and `authorize-runner.sh` script steps 3–7, while the fingerprint and settings values stay with the owner. Its sites
-stay on the tailnet until public ingress ships.
+and `authorize-runner.sh` script steps 3–7, while the fingerprint and settings values stay with the owner. Its public
+sites answer on baseline hosts through its ingress on 80 and 443 until a domain is bound; private ones on the tailnet.
 Existing product containers keep serving without Wheelhouse. A new VPS is a Servers entry plus its credential files; it uses the same product release.
 Data relocation remains a separately planned copy/restore/cutover operation.
 

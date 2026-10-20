@@ -26,4 +26,7 @@ public sealed record SnapshotIngressModel
 
     /// <summary>Gets where private sites are requested from, or <c>null</c>.</summary>
     public string? PrivateProbe { get; init; }
+
+    /// <summary>Gets the server's public IPv4 address, where public sites get their baseline hosts, or <c>null</c>.</summary>
+    public string? PublicAddress { get; init; }
 }

@@ -34,6 +34,9 @@ SITE_PATH = re.compile(r"/(?:[A-Za-z0-9._~-]+/)*(?:[A-Za-z0-9._~-]+)?")
 ROUTE_PATH = re.compile(r"/|(?:/[A-Za-z0-9._~-]+)+")
 ENTRY_POINT = re.compile(r"[a-z][a-z0-9-]{0,31}")
 PROBE_ADDRESS = re.compile(r"https?://[A-Za-z0-9.-]+(?::[0-9]{1,5})?")
+IPV4 = re.compile(r"(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}")
+# A public site with no host gets one on its server's public address through sslip.io (decision 68).
+BASELINE_DOMAIN = "sslip.io"
 # Traefik's own answer for a host it has no router for; an application's 404 carries its own body.
 NO_ROUTE = b"404 page not found"
 LOG_LINE_LIMIT = 2000
@@ -494,18 +497,39 @@ def target_ingress(target):
         address = ingress.get(key)
         require(address is None or (isinstance(address, str) and PROBE_ADDRESS.fullmatch(address)),
                 "Invalid ingress probe address")
+    # The server's public IPv4 address, recorded at enrollment or by host upkeep: what baseline hosts name.
+    address = ingress.get("publicAddress")
+    require(address is None or (isinstance(address, str) and IPV4.fullmatch(address)), "Invalid public address")
     return ingress
 
 
-def site_host(target, ingress, site):
-    """The host a site answers on in this target's environment: the target's named host, else the server's pattern.
-    The seam a domain binding (product, environment, site -> host) replaces; a binding may narrow a site's exposure,
-    never widen it."""
-    host = ingress.get("hosts", {}).get(site)
+def baseline_host(product, environment, site, primary, address):
+    """A public site's host before its product has a domain (decision 68): `<product>-dev.<ip>.sslip.io` in dev,
+    `<product>.<ip>.sslip.io` in prod, the address's dots as dashes; a site other than the primary one adds `-<site>`
+    after the product. None when the name would not be a valid host (a label over 63 characters)."""
+    label = product + ("" if primary else "-" + site) + ("" if environment == "prod" else "-" + environment)
+    host = label + "." + address.replace(".", "-") + "." + BASELINE_DOMAIN
+    return host if HOST.fullmatch(host) and len(label) <= 63 else None
+
+
+def primary_site(sites):
+    """The release's front door: the site it marks primary (descriptor 2 always marks one), else its first site."""
+    return next((site["site"] for site in sites if site.get("primary")), sites[0]["site"] if sites else None)
+
+
+def site_host(target, ingress, site, primary=None):
+    """The host a site answers on in this target's environment: the target's named host, else the server's pattern,
+    else, for a public site, its baseline host on the server's public address. The seam a domain binding
+    (product, environment, site -> host) replaces; a binding may narrow a site's exposure, never widen it."""
+    name = site["site"]
+    host = ingress.get("hosts", {}).get(name)
     if host is None and ingress.get("pattern"):
-        host = (ingress["pattern"].replace("{site}", site).replace("{product}", target["product"])
+        host = (ingress["pattern"].replace("{site}", name).replace("{product}", target["product"])
                 .replace("{environment}", target["environment"]))
         require(HOST.fullmatch(host), "Site host pattern produced an invalid host")
+    if host is None and site.get("exposure") == "public" and ingress.get("publicAddress"):
+        host = baseline_host(target["product"], target["environment"], name, name == (primary or name),
+                             ingress["publicAddress"])
     return host
 
 
@@ -538,10 +562,12 @@ def ingress_routes(target, project, manifest):
     port = ingress.get("port")
     origin_port = ":" + str(port) if port and port != default_port else ""
     routers, upstreams, published = {}, {}, []
-    for site in release_sites(manifest):
+    sites = release_sites(manifest)
+    primary = primary_site(sites)
+    for site in sites:
         if site["environments"] is not None and target["environment"] not in site["environments"]:
             continue
-        host = site_host(target, ingress, site["site"])
+        host = site_host(target, ingress, site, primary)
         points = ingress.get("entryPoints" if site["exposure"] == "public" else "privateEntryPoints", [])
         if not host or not points:
             continue  # a site without a host or an entry point stays internal
@@ -552,7 +578,9 @@ def ingress_routes(target, project, manifest):
         for path in site["paths"]:
             router = {"rule": route_rule(host, path), "priority": route_priority(path), "service": upstream,
                       "entryPoints": points}
-            if ingress["scheme"] == "https" and ingress.get("certResolver"):
+            # Only a public router takes the resolver: a private entry point sits behind its site node's Serve, which
+            # ends TLS, and an HTTP-01 order for a tailnet name could never validate.
+            if ingress["scheme"] == "https" and ingress.get("certResolver") and site["exposure"] == "public":
                 router["tls"] = {"certResolver": ingress["certResolver"]}
             base = name = project + "-" + site["site"] + "-" + site["service"] + "-" + route_label(path)
             suffix = 2
@@ -562,6 +590,7 @@ def ingress_routes(target, project, manifest):
         entry = site["paths"][0]
         published.append(((site["site"], len(entry), entry, site["service"]),
                           {"name": site["site"], "service": site["service"], "exposure": site["exposure"],
+                           "primary": site["site"] == primary,
                            "url": ingress["scheme"] + "://" + host + origin_port + ("" if entry == "/" else entry)}))
     return ({"http": {"routers": routers, "services": upstreams}},
             [record for _, record in sorted(published, key=lambda item: item[0])])

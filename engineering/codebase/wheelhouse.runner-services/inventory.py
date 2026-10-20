@@ -94,7 +94,8 @@ def server_of(item):
                       cert_resolver=text(ingress, "certResolver", optional=True),
                       pattern=text(ingress, "pattern", optional=True),
                       probe=text(ingress, "probe", optional=True),
-                      private_probe=text(ingress, "privateProbe", optional=True)))
+                      private_probe=text(ingress, "privateProbe", optional=True),
+                      public_address=text(ingress, "publicAddress", optional=True)))
 
 
 def target_of(item):
@@ -129,7 +130,8 @@ def server_json(server):
             "ingress": {"scheme": ingress.scheme, "port": ingress.port, "entryPoints": list(ingress.entry_points),
                         "privateEntryPoints": list(ingress.private_entry_points),
                         "certResolver": ingress.cert_resolver, "pattern": ingress.pattern,
-                        "probe": ingress.probe, "privateProbe": ingress.private_probe}}
+                        "probe": ingress.probe, "privateProbe": ingress.private_probe,
+                        "publicAddress": ingress.public_address}}
 
 
 def target_json(target):
