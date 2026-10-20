@@ -139,12 +139,18 @@ async function remove(): Promise<void> {
               <TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" />
             </Field>
           </form.Field>
+          <!-- Every server's kit lays out the same network and folder, so Wheelhouse fills both. The target keeps the
+               folder; each environment deploys into its own `<folder>/<product>-<environment>/`. -->
           <div class="grid gap-4 sm:grid-cols-2">
-            <form.Field name="network" is-required v-slot="field">
-              <Field label="Network"><TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" /></Field>
+            <form.Field name="network" v-slot="field">
+              <Field label="Network" is-read-only helper="Set by the server kit"
+                ><TextInput v-model="field.value" autocomplete="off"
+              /></Field>
             </form.Field>
-            <form.Field name="root" is-required v-slot="field">
-              <Field label="Releases folder"><TextInput v-model="field.value" autocomplete="off" @blur="field.onBlur" /></Field>
+            <form.Field name="root" v-slot="field">
+              <Field label="Deploy folder" is-read-only helper="Each environment gets its own folder inside"
+                ><TextInput v-model="field.value" autocomplete="off"
+              /></Field>
             </form.Field>
           </div>
           <RowsField
