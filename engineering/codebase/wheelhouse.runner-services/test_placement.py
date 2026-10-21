@@ -25,6 +25,8 @@ import fake_tailscale  # noqa: E402
 
 KIT = Path(__file__).resolve().parents[2] / "deployment" / "vps"
 CLIENT = {"clientId": "kWheelhouseCNTRL", "clientSecret": "tskey-client-kWheelhouseCNTRL-secretvalue"}
+# What the console read from a deploy.yml whose `app` site is private and whose services need PostgreSQL.
+DECLARED = {"sites": {"app": "private", "www": "public"}, "postgres": True}
 
 # Stands in for Docker on the products host: logs every call; `compose up` of a site node reads that node's env file
 # and joins the fake tailnet with its key, as the tailscale container would at first login.
@@ -116,7 +118,7 @@ class PlacementTests(unittest.TestCase):
 
     def place(self, database=True, sites=(("app", "ocharo-desk"),)):
         job = placement.start(self.root, {"serverId": "ocharo-products", "product": "ocharo-platform",
-                                          "database": database,
+                                          "database": database, "declared": DECLARED,
                                           "sites": [{"site": site, "node": node} for site, node in sites]},
                               "sulton-max", launch=False)
         return placement.run(self.root, job["id"])
@@ -187,6 +189,7 @@ class PlacementTests(unittest.TestCase):
     def test_a_refusal_on_the_host_reaches_the_owner(self):
         self.place(database=False)
         studio = placement.start(self.root, {"serverId": "ocharo-products", "product": "ocharo-studio",
+                                             "declared": {"sites": {"app": "private"}},
                                              "sites": [{"site": "app", "node": "ocharo-desk"}]}, "sulton-max",
                                  launch=False)
         result = placement.run(self.root, studio["id"])
@@ -216,14 +219,33 @@ class PlacementTests(unittest.TestCase):
                  (dict(serverId="missing"), "Server is not in the inventory"))
         for changes, message in cases:
             request = {"serverId": "ocharo-products", "product": "ocharo-platform", "database": True, "sites": [],
-                       **changes}
+                       "declared": DECLARED, **changes}
             with self.subTest(changes=changes), self.assertRaisesRegex(Rejected, message):
                 placement.start(self.root, request, "sulton-max", launch=False)
+
+    def test_a_placement_asks_only_for_what_deploy_yml_calls_for(self):
+        app = [{"site": "app", "node": "ocharo-platform-app"}]
+        cases = ((dict(declared=None), "follows the product's deploy.yml"),
+                 (dict(declared={"sites": {"app": "secret"}}), "Invalid declared sites"),
+                 (dict(sites=[{"site": "www", "node": "ocharo-platform-www"}]), "www is public"),
+                 (dict(sites=[{"site": "admin", "node": "ocharo-platform-admin"}]), "declares no site admin"),
+                 (dict(declared={**DECLARED, "postgres": False}), "needs PostgreSQL"),
+                 (dict(declared={"sites": {"app": "private"}}), "needs PostgreSQL"))
+        for changes, message in cases:
+            request = {"serverId": "ocharo-products", "product": "ocharo-platform", "database": True, "sites": app,
+                       "declared": DECLARED, **changes}
+            with self.subTest(changes=changes), self.assertRaisesRegex(Rejected, message):
+                placement.start(self.root, request, "sulton-max", launch=False)
+        # A private site alone, for a product that needs no database; the journal keeps what deploy.yml declared.
+        job = placement.start(self.root, {"serverId": "ocharo-products", "product": "ocharo-studio", "database": False,
+                                          "sites": app, "declared": {"sites": {"app": "private"}}},
+                              "sulton-max", launch=False)
+        self.assertEqual({"sites": {"app": "private"}, "postgres": False}, job["request"]["declared"])
 
     def test_sites_need_the_tailscale_client(self):
         (self.root / tailnet.CLIENT_FILE).unlink()
         with self.assertRaisesRegex(Rejected, "Connect Tailscale first"):
-            placement.start(self.root, {"serverId": "ocharo-products", "product": "ocharo-platform",
+            placement.start(self.root, {"serverId": "ocharo-products", "product": "ocharo-platform", "declared": DECLARED,
                                         "sites": [{"site": "app", "node": "ocharo-desk"}]}, "sulton-max", launch=False)
 
     def test_listing_and_the_follower_s_finished_jobs(self):

@@ -14,6 +14,7 @@ import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge, RelativeTime } from "@wow-two-beta/fe/presentation/display";
 import { Alert, DataRegion } from "@wow-two-beta/fe/presentation/feedback";
 import { usePlacementChanges, usePlacements } from "@/application/infrastructure";
+import { useProductDescriptor } from "@/application/products";
 import { useServers } from "@/application/servers";
 import { InfraJobRules, PlacementRules, type Placement } from "@/domain/infrastructure";
 import { InfoPopover, StatusPill } from "@/presentation/common/components";
@@ -23,17 +24,32 @@ import PlacementModal from "./PlacementModal.vue";
 /**
  * Where the product is placed: each placement, newest first, with its state, its live steps (read every two seconds
  * while one runs) and what it created — the dev and prod databases and each site's node, environment, address, tailnet
- * address and whether it is online. "Place on a server" opens the placement dialog.
+ * address and whether it is online. "Place on a server" opens the placement dialog, offered only when the product's
+ * deploy.yml calls for something to place: databases for a service that needs PostgreSQL, nodes for private sites. A
+ * product that needs neither says so in one line, as does a deploy.yml that cannot be read.
  */
 defineOptions({ name: "HostingPanel" });
 const props = defineProps<HostingPanelProps>();
 defineSlots<{}>();
 
 const placements = usePlacements(() => props.product.slug);
+const descriptor = useProductDescriptor(() => props.product.slug);
 const operations = usePlacementChanges();
 const servers = useServers();
 const placing = ref(false);
 const list = computed(() => placements.placements.value);
+/** What deploy.yml calls for; null until it is read, or when it cannot be. */
+const plan = computed(() => {
+  const read = descriptor.data.value;
+  return read && !read.problem ? PlacementRules.planOf(read) : null;
+});
+const placeable = computed(() => (plan.value ? PlacementRules.hasWork(plan.value) : false));
+/** The one line Hosting shows instead of the button: nothing to place, or why deploy.yml could not be read. */
+const note = computed(() => {
+  const problem = descriptor.data.value?.problem ?? (descriptor.error.value ? descriptor.error.value.message : null);
+  if (problem) return `Placement follows deploy.yml: ${problem}`;
+  return plan.value && !placeable.value ? "Nothing to place: no service needs a database and every site is public." : "";
+});
 
 /** A server's name, or its slug for one the inventory no longer holds. @internal */
 const serverName = (slug: string) => servers.data.value?.find((server) => server.slug === slug)?.name ?? slug;
@@ -50,16 +66,26 @@ const startsOpen = (placement: Placement, index: number) => index === 0 || Infra
         </h3>
         <InfoPopover title="Hosting">
           <p>
-            A placement creates the product's dev and prod databases on a server and gives each site its own tailnet node:
-            prod's under the node name, dev's with -dev added.
+            A placement creates the product's dev and prod databases on a server when a service needs PostgreSQL, and gives
+            each private site its own tailnet node: prod's under the node name, dev's with -dev added. Public sites need
+            none: they answer on the server's baseline hosts.
           </p>
         </InfoPopover>
       </div>
-      <Button size="sm" variant="outline" tone="neutral" class="ms-auto max-md:min-h-11" @click="placing = true">
+      <Button
+        v-if="placeable"
+        size="sm"
+        variant="outline"
+        tone="neutral"
+        class="ms-auto max-md:min-h-11"
+        @click="placing = true"
+      >
         <template #leading><MapPin :size="14" /></template>Place on a server
       </Button>
     </div>
+    <p v-if="note" class="text-sm text-muted-foreground" :class="list.length ? 'mb-3' : ''">{{ note }}</p>
     <DataRegion
+      v-if="!note || list.length"
       :is-first-load="placements.isFirstLoad.value"
       :error="placements.data.value ? null : placements.error.value"
       :has-data="Boolean(placements.data.value)"
@@ -129,9 +155,12 @@ const startsOpen = (placement: Placement, index: number) => index === 0 || Infra
       </ul>
     </DataRegion>
     <PlacementModal
+      v-if="plan && placeable"
       :open="placing"
       :product="props.product"
+      :plan="plan"
       :servers="servers.data.value ?? []"
+      :placements="list"
       :operations="operations"
       @update:open="placing = $event"
     />

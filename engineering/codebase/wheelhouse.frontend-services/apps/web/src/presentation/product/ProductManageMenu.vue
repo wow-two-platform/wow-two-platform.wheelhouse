@@ -23,12 +23,12 @@ import {
   MenuSeparator,
 } from "@wow-two-beta/fe/presentation/nav";
 import { ConsolePaths } from "@/application/navigation";
-import { IconAvailability, useProducts } from "@/application/products";
+import { IconAvailability, useProductDescriptor, useProducts } from "@/application/products";
 import { useServers } from "@/application/servers";
 import { useTargets } from "@/application/targets";
 import { knownSitesOf } from "@/application/targets/TargetForms";
 import { useWorkspaces } from "@/application/workspaces";
-import { ProductStatus, ProductStatusRules } from "@/domain/products";
+import { ProductDescriptorRules, ProductStatus, ProductStatusRules } from "@/domain/products";
 import { environmentRank, type InventoryTarget } from "@/domain/targets";
 import { failureReason } from "@/integration/common";
 import { useIsPhone } from "@/presentation/deployments/hooks/useIsPhone";
@@ -59,7 +59,15 @@ const targetForm = ref<{ open: boolean; target: InventoryTarget | null }>({ open
 const refreshing = ref(false);
 const active = computed(() => ProductStatusRules.isActive(props.product));
 const repositoryUrl = computed(() => props.product.repository.url || `https://github.com/${props.product.repository.name}`);
-const knownSites = computed(() => knownSitesOf(props.product));
+const descriptor = useProductDescriptor(() => props.product.slug);
+const knownSites = computed(() => knownSitesOf(props.product, descriptor.data.value));
+/** The services every environment runs: deploy.yml's, else the ones the release source was derived from. */
+const services = computed(() => {
+  const read = descriptor.data.value;
+  return read && !read.problem
+    ? ProductDescriptorRules.serviceNames(read)
+    : (props.product.release?.images.map((image) => image.service) ?? []);
+});
 
 /** Opens the environment form: blank to add one, or filled to edit one. */
 function openTarget(target: InventoryTarget | null = null): void {
@@ -151,6 +159,7 @@ defineExpose({ addEnvironment: () => openTarget(null) });
     :servers="servers.data.value ?? []"
     :operations="targets"
     :known-sites="knownSites"
+    :services="services"
     @update:open="(open) => (targetForm = { ...targetForm, open })"
   />
   <CloneModal

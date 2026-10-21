@@ -25,6 +25,11 @@ def parse_site(value):
     return {"site": site, "node": node}
 
 
+def parse_declared(value):
+    site, _, exposure = value.partition("=")
+    return site, exposure
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["tailnet", "policy", "policy-apply", "policy-revert", "enrollment",
@@ -47,6 +52,10 @@ def main():
     parser.add_argument("--expected-host-key", help="enroll: the host key fingerprint from the provider's console")
     parser.add_argument("--database", action="store_true", help="place: create the product's dev and prod databases")
     parser.add_argument("--site", action="append", default=[], metavar="SITE=NODE", help="place: a private site")
+    parser.add_argument("--declared-site", action="append", default=[], metavar="SITE=EXPOSURE",
+                        help="place: a site the product's deploy.yml declares, public or private")
+    parser.add_argument("--needs-postgres", action="store_true",
+                        help="place: a service in the product's deploy.yml needs PostgreSQL")
     parser.add_argument("--no-launch", action="store_true",
                         help="enroll, place, upkeep: record the job only; the caller runs its -run action itself")
     args = parser.parse_args()
@@ -77,7 +86,9 @@ def main():
             result = placement.listing(root, product=args.product, server=args.server)
         elif args.action == "place":
             result = placement.start(root, {"serverId": args.server, "product": args.product,
-                                            "database": args.database, "sites": list(map(parse_site, args.site))},
+                                            "database": args.database, "sites": list(map(parse_site, args.site)),
+                                            "declared": {"sites": dict(map(parse_declared, args.declared_site)),
+                                                         "postgres": args.needs_postgres}},
                                      args.actor, launch=not args.no_launch)
         elif args.action == "place-run":
             result = placement.run(root, args.job)

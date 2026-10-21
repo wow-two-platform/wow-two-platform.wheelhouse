@@ -1,6 +1,6 @@
 # Wheelhouse dev VPS
 
-*Last updated: 2026-10-20*
+*Last updated: 2026-10-21*
 
 This bootstrap prepares the private control-plane host on Ubuntu 26.04 amd64: `wheelhouse-prod` and
 `wheelhouse-dev` side by side, each with its own database and sign-in. GitHub builds the image; the existing
@@ -344,9 +344,10 @@ its file placed in prod's volume. Then, in Wheelhouse prod:
    Rerun continues from it. Afterwards the server's host is its tailnet address, root and public SSH are refused, the
    one-time key is gone from both hosts, and your administrator signs in over the tailnet. The server records the
    kit's public ingress and the public IP it was enrolled on; UFW allows 80 and 443.
-5. **Products › the product › Hosting › Place on a server:** databases and private sites (`app` → `ocharo-desk`), as
-   steps 4–5 below do by hand; each site node joins with its own single-use key. Public sites need no placement: they
-   answer on their baseline hosts.
+5. **Products › the product › Hosting › Place on a server:** what its `deploy.yml` calls for — databases when a service
+   needs PostgreSQL (Ocharo Platform), a node per private site (`<product>-<site>`) — as steps 4–5 below do by hand; each
+   site node joins with its own single-use key. Public sites need no placement: they answer on their baseline hosts, so
+   Ocharo Studio has nothing to place.
 6. **Servers › Tailnet › Review policy:** the diff adds the new host's alias and control-path test; Apply once
    Tailscale's validation passes.
 7. Continue with [step 8](#8-register-and-deploy-owner-wheelhouse-prod) for targets, settings and the first deploy.

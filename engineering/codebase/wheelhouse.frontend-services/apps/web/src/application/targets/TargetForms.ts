@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { InventoryRules } from "@/domain/common";
-import type { Product } from "@/domain/products";
+import type { Product, ProductDescriptor } from "@/domain/products";
 import type { Server } from "@/domain/servers";
 import {
   BaselineHost,
@@ -79,10 +79,18 @@ export interface KnownSite {
 }
 
 /**
- * The sites a product's environments publish, by name: public when any environment publishes it publicly. The front
- * door is the site a rollout marked primary; before the runner marked one, the first by name.
+ * The sites a product publishes, by name. Its deploy.yml, once read, is the source: each declared site with its exposure
+ * and front door. Without it, the sites its environments' last rollouts published: public when any environment
+ * publishes it publicly, the front door the site a rollout marked primary, else the first by name.
  */
-export function knownSitesOf(product: Pick<Product, "environments"> | null | undefined): KnownSite[] {
+export function knownSitesOf(
+  product: Pick<Product, "environments"> | null | undefined,
+  descriptor?: Pick<ProductDescriptor, "problem" | "sites"> | null,
+): KnownSite[] {
+  if (descriptor && !descriptor.problem)
+    return descriptor.sites
+      .map((site) => ({ name: site.name, exposure: site.exposure, primary: site.primary }))
+      .sort((left, right) => left.name.localeCompare(right.name));
   const sites = new Map<string, KnownSite>();
   for (const environment of product?.environments ?? [])
     for (const site of environment.sites) {

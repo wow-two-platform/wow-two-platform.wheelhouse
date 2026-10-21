@@ -1,6 +1,7 @@
 using System.Text;
 using AwesomeAssertions;
 using Wheelhouse.Application.Catalog;
+using Wheelhouse.Application.Catalog.Models;
 using Wheelhouse.Application.Catalog.Parsers;
 using Wheelhouse.Domain.Catalog.Enums;
 
@@ -114,7 +115,58 @@ public sealed class CatalogParserTests
 
         parsed.Problem.Should().BeNull();
         parsed.Value!.Product.Should().Be("foreverpin");
-        parsed.Value.Services.Should().Equal(("management", null), ("redirect", "ghcr.io/sulton-max/pin-redirect"));
+        parsed.Value.Services.Select(service => (service.Service, service.Image))
+            .Should().Equal(("management", null), ("redirect", "ghcr.io/sulton-max/pin-redirect"));
+        parsed.Value.Sites.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ParseDescriptor_ShouldReadEachServicesNeedsAndDescriptorOnesSitesByName()
+    {
+        var parsed = DeployDescriptorParser.Parse(Bytes(
+            """
+            descriptor: 1
+            product: ocharo-platform
+            services:
+              jobs:
+                needs: [postgres]
+              desk:
+                needs: [postgres, valkey]
+                sites:
+                  app: { exposure: public }
+                  admin: { exposure: private }
+              image-worker:
+                sites:
+                  admin: {}
+                  media:
+            """));
+
+        parsed.Problem.Should().BeNull();
+        parsed.Value!.Services.Select(service => (service.Service, string.Join(",", service.Needs)))
+            .Should().Equal(("jobs", "postgres"), ("desk", "postgres,valkey"), ("image-worker", ""));
+        // A site any service makes private is private; the first site of the first service by name is the front door.
+        parsed.Value.Sites.Should().Equal(
+            new DeployDescriptorSite("admin", "private", true),
+            new DeployDescriptorSite("app", "public", false),
+            new DeployDescriptorSite("media", "public", false));
+    }
+
+    [Fact]
+    public void ParseDescriptor_ShouldReadDescriptorTwosSitesInFileOrder_WithTheMarkedOrFirstSiteAsTheFrontDoor()
+    {
+        const string services = "services:\n  edge:\n    sites: { crm: { paths: [/] } }\n";
+        var marked = DeployDescriptorParser.Parse(Bytes(
+            "descriptor: 2\nproduct: haven\nsites:\n  landing: {}\n  crm: { primary: true }\n  admin: { exposure: private }\n"
+            + services));
+        var unmarked = DeployDescriptorParser.Parse(Bytes(
+            "descriptor: 2\nproduct: haven\nsites:\n  landing:\n  admin: { exposure: private }\n" + services));
+
+        marked.Value!.Sites.Should().Equal(
+            new DeployDescriptorSite("landing", "public", false),
+            new DeployDescriptorSite("crm", "public", true),
+            new DeployDescriptorSite("admin", "private", false));
+        unmarked.Value!.Sites.Should().Equal(
+            new DeployDescriptorSite("landing", "public", true), new DeployDescriptorSite("admin", "private", false));
     }
 
     [Theory]
@@ -123,6 +175,9 @@ public sealed class CatalogParserTests
     [InlineData("product: pin\nservices: {}\n", "line 2: services must name at least one service.")]
     [InlineData("product: pin\nservices:\n  Api: {}\n", "line 3: services must be keyed by lowercase slugs.")]
     [InlineData("product: pin\nservices: [api]\n", "line 2: services must be a mapping.")]
+    [InlineData("product: pin\nservices:\n  api: { needs: postgres }\n", "line 3: services.api.needs must be a list.")]
+    [InlineData("product: pin\nservices:\n  api: { sites: { app: { exposure: open } } }\n", "line 3: services.api.sites.app.exposure must be public or private.")]
+    [InlineData("descriptor: 2\nproduct: pin\nsites: { app: { primary: yes } }\nservices: { api: {} }\n", "line 3: sites.app.primary must be true or false.")]
     public void ParseDescriptor_ShouldNameTheLineAndField_WhenTheFileBreaksARule(string text, string problem)
     {
         DeployDescriptorParser.Parse(Bytes(text)).Problem.Should().Be(problem);

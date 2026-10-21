@@ -1100,8 +1100,9 @@ def prove_placement_and_policy():
         for name in ("Dockerfile", "site-node.py"):
             archive.add(str(HERE / "fresh" / "site-node" / name), arcname=name)
     on_fresh("docker", "build", "-q", "-t", "tailscale/tailscale:v1.104.1", "-", stdin=package.getvalue())
+    # What the console passes from a deploy.yml: the rig declares ForeverPin's app site private, so it gets a node.
     job = enroller("place", "--server", FRESH, "--product", PRODUCT, "--database", "--site", "app=foreverpin-app",
-                   "--actor", "rig", "--no-launch")
+                   "--declared-site", "app=private", "--needs-postgres", "--actor", "rig", "--no-launch")
     placed = enroller("place-run", "--job", job["id"])
     for step in placed["steps"]:
         print("  " + step["status"].ljust(9) + " " + step["title"] + (" — " + step["detail"] if step["detail"] else ""))

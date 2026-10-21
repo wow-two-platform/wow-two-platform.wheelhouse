@@ -1,5 +1,5 @@
 import { InventoryRules } from '@/domain/common';
-import type { Product } from '@/domain/products';
+import { ProductDescriptorRules, type ProductDescriptor } from '@/domain/products';
 import { VpsProvider, type Server } from '@/domain/servers';
 import type { InfraJobStatus, JobStep, MintedKey } from './InfraJob';
 
@@ -58,34 +58,49 @@ export const RESERVED_NODES: readonly string[] = ['postgres', 'ingress'];
 /** The most sites one placement takes. */
 export const MAX_PLACED_SITES = 10;
 
+/** What a product's deploy.yml calls for on a server. */
+export interface PlacementPlan {
+  /** The services that need PostgreSQL; any one gives the product a dev and a prod database. */
+  databases: string[];
+  /** The private sites, each needing a tailnet node per environment. */
+  sites: string[];
+  /** The public sites, which answer on the server's baseline hosts and need nothing placed. */
+  publicSites: string[];
+}
+
 /** Pure rules over a product's placement. */
 export const PlacementRules = {
-  /** A site's default node name: `<product>-<site>`, such as `ocharo-platform-app`. */
+  /** A site's default node name: `<product>-<site>`, such as `ocharo-platform-admin`. */
   defaultNode: (product: string, site: string): string => `${product}-${site}`,
 
   /** Dev's node for a site whose prod node is `node`. */
   devNode: (node: string): string => `${node}-dev`,
 
+  /** What the descriptor calls for: databases when a service needs PostgreSQL, a node per private site. */
+  planOf: (descriptor: Pick<ProductDescriptor, 'services' | 'sites'>): PlacementPlan => ({
+    databases: ProductDescriptorRules.postgresServices(descriptor),
+    sites: ProductDescriptorRules.privateSites(descriptor),
+    publicSites: descriptor.sites.filter((site) => site.exposure === 'public').map((site) => site.name),
+  }),
+
+  /** Whether a plan holds anything to place. */
+  hasWork: (plan: PlacementPlan): boolean => plan.databases.length > 0 || plan.sites.length > 0,
+
   /**
-   * The node a row keeps when its site changes: one still at the previous site's default (or empty) follows the new
-   * site's default; one the owner typed stays.
+   * The prod node a site is placed under on a server: the one the host registered for it in an earlier placement there,
+   * newest first, since the host keeps a site's node; else `<product>-<site>`.
    */
-  followSite: (product: string, previousSite: string, nextSite: string, node: string): string =>
-    !node.trim() || node === PlacementRules.defaultNode(product, previousSite)
-      ? nextSite.trim()
-        ? PlacementRules.defaultNode(product, nextSite.trim())
-        : ''
-      : node,
-
-  /** The product's declared site names, in order across its environments; `app` when it declares none. */
-  siteNamesOf: (product: Pick<Product, 'environments'>): string[] => {
-    const names = [...new Set(product.environments.flatMap((environment) => environment.sites.map((site) => site.name)))];
-    return names.length ? names : ['app'];
-  },
-
-  /** The rows a new placement starts from: each declared site under its default node. */
-  initialSites: (product: Pick<Product, 'slug' | 'environments'>): PlacementSite[] =>
-    PlacementRules.siteNamesOf(product).map((site) => ({ site, node: PlacementRules.defaultNode(product.slug, site) })),
+  nodeFor: (
+    product: string,
+    site: string,
+    server: string,
+    placements: readonly Pick<Placement, 'serverId' | 'facts'>[] = [],
+  ): string =>
+    placements
+      .filter((placement) => placement.serverId === server)
+      .flatMap((placement) => placement.facts.sites)
+      .find((placed) => placed.site === site && placed.environment === 'prod')?.node ??
+    PlacementRules.defaultNode(product, site),
 
   /** The servers a product can be placed on: every one but the local rig. */
   eligibleServers: <TServer extends Pick<Server, 'provider'>>(servers: readonly TServer[]): TServer[] =>
@@ -98,23 +113,6 @@ export const PlacementRules = {
       : RESERVED_NODES.includes(node)
         ? `${node} is kept for the host.`
         : null,
-
-  /**
-   * The rows whose node clashes with an earlier row's: the same name, or one row's dev node (`<node>-dev`) equal to
-   * another's, as the host checks them.
-   */
-  clashingRows: (sites: readonly PlacementSite[]): number[] => {
-    const taken = new Set<string>();
-    const clashes: number[] = [];
-    sites.forEach((entry, index) => {
-      const node = entry.node.trim();
-      if (!node) return;
-      if (taken.has(node) || taken.has(PlacementRules.devNode(node))) clashes.push(index);
-      taken.add(node);
-      taken.add(PlacementRules.devNode(node));
-    });
-    return clashes;
-  },
 
   /** The sites a placement created, by site name, prod before dev. */
   placedSites: (placement: Pick<Placement, 'facts'>): PlacedSite[] =>

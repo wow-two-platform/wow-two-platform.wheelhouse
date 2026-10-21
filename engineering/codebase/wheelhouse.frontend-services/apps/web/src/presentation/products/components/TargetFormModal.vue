@@ -15,12 +15,15 @@ export interface TargetFormModalProps {
   readonly operations: Pick<TargetOperations, "create" | "update" | "remove">;
   /** The sites the product is known to publish: each public one is offered its baseline host. */
   readonly knownSites?: readonly KnownSite[];
+  /** The services the product's deploy.yml declares; the environment runs every one of them on its server. */
+  readonly services?: readonly string[];
 }
 </script>
 
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Badge } from "@wow-two-beta/fe/presentation/display";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 import {
   Field,
@@ -56,10 +59,11 @@ import { failureReason } from "@/integration/common";
 import { DeleteConfirm, RowsField } from "@/presentation/common/components";
 
 /** Edits where an environment runs, which settings files its services read, which requests prove a rollout and
- * which hosts its sites answer on. Each known public site without a host of the owner's is prefilled with its baseline
+ * which hosts its sites answer on. Shows, read-only, the services deploy.yml declares: the environment runs each of
+ * them on the chosen server. Each known public site without a host of the owner's is prefilled with its baseline
  * host on the chosen server's public address, and follows the environment and server until the owner types another. */
 defineOptions({ name: "TargetFormModal" });
-const props = withDefaults(defineProps<TargetFormModalProps>(), { knownSites: () => [] });
+const props = withDefaults(defineProps<TargetFormModalProps>(), { knownSites: () => [], services: () => [] });
 const emit = defineEmits<{ "update:open": [open: boolean] }>();
 defineSlots<{}>();
 
@@ -94,9 +98,10 @@ function baselineSites(sites: TargetFormModel["sites"], environment: DeploymentE
   return withBaselineHosts(sites, props.knownSites, props.product, environment, publicAddressOf(props.servers, server));
 }
 
-/** Keeps baseline hosts following the environment and the server; a host the owner typed stays. */
+/** Keeps baseline hosts following the environment, the server and the sites deploy.yml declares once it is read; a
+ * host the owner typed stays. */
 watch(
-  [() => form.state.values.environment, () => form.state.values.server],
+  [() => form.state.values.environment, () => form.state.values.server, () => props.knownSites],
   ([environment, server]) => {
     if (props.open) form.setValue("sites", baselineSites(form.state.values.sites, environment, server));
   },
@@ -156,6 +161,13 @@ async function remove(): Promise<void> {
                 ></SelectPicker>
               </Field>
             </form.Field>
+          </div>
+          <div v-if="props.services.length" class="flex flex-col gap-1.5">
+            <span id="target-services-label" class="text-sm font-medium">Services</span>
+            <ul role="list" aria-labelledby="target-services-label" class="flex flex-wrap gap-1.5">
+              <li v-for="service in props.services" :key="service"><Badge variant="outline" size="sm">{{ service }}</Badge></li>
+            </ul>
+            <span class="text-xs text-muted-foreground">From deploy.yml: each one runs on the chosen server</span>
           </div>
           <form.Field v-if="!target" name="slug" is-required v-slot="field">
             <Field label="Slug" helper="Deployments know the environment by this; it never changes">

@@ -71,14 +71,25 @@ public sealed class InfraGatewayTests : IDisposable
     [Fact]
     public async Task PlaceAsync_ShouldRunTheRecordedJobById()
     {
+        var descriptor = new ProductDescriptorDto
+        {
+            Commit = new string('a', 40),
+            Services = [new ProductDescriptorServiceDto { Service = "desk", Needs = ["postgres"] }],
+            Sites =
+            [
+                new ProductDescriptorSiteDto { Name = "admin", Exposure = "private" },
+                new ProductDescriptorSiteDto { Name = "app", Exposure = "public", Primary = true },
+            ],
+        };
         var request = new ProductPlacementRequest("ocharo-platform", "ocharo-products", true,
-            [new ProductPlacementSite("app", "ocharo-desk")]);
+            [new ProductPlacementSite("admin", "ocharo-platform-admin")], descriptor);
 
         await Gateway().PlaceAsync(request, "sulton-max", CancellationToken.None);
 
         var calls = await Calls(2);
         Arguments(calls[0]).Should().Equal("place", "--server", "ocharo-products", "--product", "ocharo-platform", "--actor",
-            "sulton-max", "--database", "--site", "app=ocharo-desk", "--no-launch", "--root", _root);
+            "sulton-max", "--database", "--site", "admin=ocharo-platform-admin", "--declared-site", "admin=private",
+            "--declared-site", "app=public", "--needs-postgres", "--no-launch", "--root", _root);
         Arguments(calls[1]).Should().Equal("place-run", "--job", "6f1c2a9e-0000-4000-8000-000000000001", "--root", _root);
     }
 

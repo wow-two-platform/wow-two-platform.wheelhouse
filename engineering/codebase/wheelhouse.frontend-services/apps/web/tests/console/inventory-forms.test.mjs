@@ -190,6 +190,19 @@ test("the environment form offers each known public site its baseline host and k
   assert.deepEqual(forms.knownSitesOf(null), []);
 });
 
+test("the environment form knows a product's sites from its deploy.yml before any rollout", () => {
+  const descriptor = { commit: "a".repeat(40), problem: null, services: [{ service: "studio", needs: [] }],
+    sites: [{ name: "app", exposure: "public", primary: true }, { name: "admin", exposure: "private", primary: false }] };
+  const known = forms.knownSitesOf({ environments: [] }, descriptor);
+  assert.deepEqual(known, [{ name: "admin", exposure: "private", primary: false }, { name: "app", exposure: "public", primary: true }]);
+  assert.deepEqual(forms.withBaselineHosts([], known, "ocharo-studio", "dev", "203.0.113.10"),
+    [{ site: "app", host: "ocharo-studio-dev.203-0-113-10.sslip.io" }]);
+  // deploy.yml wins over what an older rollout published; one that cannot be read leaves the rollouts as the source.
+  const rolled = { environments: [{ name: "dev", sites: [{ name: "old", url: "https://o", exposure: "public", primary: true }] }] };
+  assert.deepEqual(forms.knownSitesOf(rolled, descriptor).map((site) => site.name), ["admin", "app"]);
+  assert.deepEqual(forms.knownSitesOf(rolled, { ...descriptor, problem: "no deploy.yml", sites: [] }).map((site) => site.name), ["old"]);
+});
+
 test("a server edit never sends the public address enrollment recorded", () => {
   const server = { slug: "ocharo-vps", name: "Ocharo VPS", provider: "contabo", host: "100.101.7.8", region: "eu",
     sshUser: "wheelhouse-deploy", sshPort: 22, ingress: { scheme: "https", port: null, entryPoints: ["websecure"],

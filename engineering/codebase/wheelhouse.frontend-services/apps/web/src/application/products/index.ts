@@ -1,4 +1,4 @@
-import { computed } from "vue";
+import { computed, toValue, type MaybeRefOrGetter } from "vue";
 import { useAppMutation, useAppQuery, useOptimisticMutation } from "@/bootstrap/query";
 import { ProductStatusRules, type Product, type ProductStatus, type SaveProductRequest } from "@/domain/products";
 import { productsApi } from "@/integration/products";
@@ -8,8 +8,25 @@ import { AutomationKeys } from "@/application/deployments/hooks/useDeploymentAut
 export { useProductIcon, type ProductIconSource } from "./useProductIcon";
 export { IconAvailability } from "./IconAvailability";
 
-/** Query keys for products; inventory writes invalidate through these. */
-export const ProductKeys = { list: ["products"] as const };
+/** Query keys for products; inventory writes invalidate through these, and the list's key prefixes every other. */
+export const ProductKeys = {
+  list: ["products"] as const,
+  descriptor: (product: string) => ["products", product, "descriptor"] as const,
+};
+
+/**
+ * What a product's deploy.yml declares at its branch head: the services every environment runs, their needs and the
+ * sites with their exposure. Hosting, the placement dialog and the environment form read it; a product write or a
+ * refresh from the repository reads it again.
+ */
+export function useProductDescriptor(product: MaybeRefOrGetter<string | null>) {
+  return useAppQuery({
+    key: () => ProductKeys.descriptor(toValue(product) ?? ""),
+    queryFn: ({ signal }) => productsApi.getDescriptor(toValue(product) ?? "", signal),
+    enabled: () => Boolean(toValue(product)),
+    meta: { suppressGlobalError: true },
+  });
+}
 
 /** Applies a change to one product in the cached list, for an optimistic write; an unread list stays unread. @internal */
 function patchProduct(

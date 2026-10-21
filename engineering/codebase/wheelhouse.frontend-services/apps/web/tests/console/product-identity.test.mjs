@@ -205,6 +205,33 @@ test("a refresh GitHub cannot serve fails with the host's reason and no product"
   );
 });
 
+test("the descriptor route decodes deploy.yml's services, needs and sites, and a reason when it cannot be read", async () => {
+  const urls = [];
+  const answers = [
+    { commit, problem: null, needsPostgres: true, services: [{ service: "desk", needs: ["postgres"] }, { service: "jobs" }],
+      sites: [{ name: "app", exposure: "public", primary: true }, { name: "admin", exposure: "private" }] },
+    { commit: null, problem: "owner/forever-pin@main has no engineering/deployment/deploy.yml.", services: [], sites: [] },
+  ];
+  globalThis.fetch = async (url) => {
+    urls.push(url);
+    return json({ data: answers[urls.length - 1] });
+  };
+
+  const read = await identity.productsApi.getDescriptor("ocharo-platform");
+  const missing = await identity.productsApi.getDescriptor("foreverpin");
+
+  assert.deepEqual(urls, ["/api/products/ocharo-platform/descriptor", "/api/products/foreverpin/descriptor"]);
+  assert.deepEqual(read.value.services, [{ service: "desk", needs: ["postgres"] }, { service: "jobs", needs: [] }]);
+  assert.deepEqual(read.value.sites.map((site) => [site.name, site.exposure, site.primary]),
+    [["app", "public", true], ["admin", "private", false]]);
+  assert.deepEqual(identity.ProductDescriptorRules.postgresServices(read.value), ["desk"]);
+  assert.deepEqual(identity.ProductDescriptorRules.privateSites(read.value), ["admin"]);
+  assert.deepEqual(identity.ProductDescriptorRules.serviceNames(read.value), ["desk", "jobs"]);
+  assert.equal(missing.value.problem, "owner/forever-pin@main has no engineering/deployment/deploy.yml.");
+  assert.equal((await (globalThis.fetch = async () => json({ data: { ...answers[0], sites: [{ name: "app", exposure: "open" }] } }),
+    identity.productsApi.getDescriptor("x"))).ok, false, "an unknown exposure is a protocol error");
+});
+
 test("a slug is escaped in the refresh route", async () => {
   let url;
   globalThis.fetch = async (requested) => {

@@ -3,6 +3,10 @@ converges to this Wheelhouse's kit (upkeep.converge: the kit, its firewall, Post
 dev and prod databases are created once, and each of its private sites gets a tailnet node per environment that joins
 with its own single-use key.
 
+A placement asks only for what the product's deploy.yml calls for, as the console read it and passes it along
+(`declared`): databases when a service needs PostgreSQL, nodes for private sites. Public sites need none: they answer
+on the server's baseline hosts.
+
 Everything runs over prod's runner SSH as wheelhouse-deploy, through the kit's prepare.py on the host. Database
 passwords never leave the host. A site node's key is minted just before the node first starts, written to a private
 env file on the host through SSH stdin, and removed once the node has started; only its ID, tag and expiry are kept."""
@@ -18,7 +22,7 @@ import infra_jobs
 import tailnet
 import upkeep
 from infra_jobs import Journal, remote
-from runner import SLUG, CommandFailed, Rejected, now, read_json, require
+from runner import EXPOSURES, SLUG, CommandFailed, Rejected, now, read_json, require
 from transport import Ssh
 
 ROOT = upkeep.ROOT
@@ -52,20 +56,37 @@ def validate(request):
     product = str(request.get("product") or "")
     require(SLUG.fullmatch(product), "Invalid product")
     catalog.product(product)
+    exposures, postgres = declared(request.get("declared"))
     sites = request.get("sites") or []
     require(isinstance(sites, list) and len(sites) <= 10, "Place at most 10 sites at once")
     cleaned, names = [], set()
     for entry in sites:
         site, node = str((entry or {}).get("site") or ""), str((entry or {}).get("node") or "")
         require(SLUG.fullmatch(site), "Use the site's name from the product's manifest, such as app")
+        require(site in exposures, "The product's deploy.yml declares no site " + site)
+        require(exposures[site] == "private",
+                "Site " + site + " is public: it answers on its baseline host and needs no tailnet node")
         require(NODE.fullmatch(node) and node not in RESERVED,
                 "Use a lowercase node name such as ocharo-desk; dev's node adds -dev")
         require(node not in names and node + "-dev" not in names, "Each site needs its own node name")
         names.update((node, node + "-dev"))
         cleaned.append({"site": site, "node": node})
     database = bool(request.get("database"))
+    require(not database or postgres, "No service of the product needs PostgreSQL, so it takes no databases")
     require(database or cleaned, "Choose databases, sites or both")
-    return {"serverId": server.id, "product": product, "database": database, "sites": cleaned}
+    return {"serverId": server.id, "product": product, "database": database, "sites": cleaned,
+            "declared": {"sites": dict(sorted(exposures.items())), "postgres": postgres}}
+
+
+def declared(value):
+    """What the product's deploy.yml declares, as the console read it: each site's exposure, and whether a service needs
+    PostgreSQL. A request without it is refused, so nothing is placed that the manifest does not call for."""
+    require(isinstance(value, dict), "A placement follows the product's deploy.yml; the request carries none of it")
+    sites = value.get("sites") or {}
+    require(isinstance(sites, dict) and len(sites) <= 50 and all(
+        isinstance(name, str) and SLUG.fullmatch(name) and exposure in EXPOSURES for name, exposure in sites.items()),
+        "Invalid declared sites")
+    return sites, value.get("postgres") is True
 
 
 def start(root, request, actor, launch=True):

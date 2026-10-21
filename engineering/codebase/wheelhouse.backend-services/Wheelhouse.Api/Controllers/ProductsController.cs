@@ -37,6 +37,15 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     public async Task<IActionResult> GetBySlug([RegularExpression(Slug)] string slug, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new ProductGetBySlugQuery { Slug = slug }, ct));
 
+    /// <summary>Gets what the product's <c>deploy.yml</c> declares at its branch head: its services and their needs, and
+    /// its sites with their exposure; a descriptor that cannot be read answers with its reason.</summary>
+    [HttpGet("{slug}/descriptor")]
+    [Authorize(Policy = AuthConfigurationExtensions.ProductsReadPolicy)]
+    [ProducesResponseType<ApiResponse<ProductDescriptorDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetDescriptor([RegularExpression(Slug)] string slug, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new ProductDescriptorQuery(slug), ct));
+
     /// <summary>Gets the icon a product's repository carries for a theme, form and color, falling back along the icon
     /// convention; not found when no file resolves, so the caller shows its monogram.</summary>
     [HttpGet("{slug}/icon")]

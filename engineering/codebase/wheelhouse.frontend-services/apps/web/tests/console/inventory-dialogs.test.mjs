@@ -15,6 +15,7 @@ const bundle = await build({
       export { default as TargetFormModal } from './src/presentation/products/components/TargetFormModal.vue';
       export { default as ServerFormModal } from './src/presentation/servers/components/ServerFormModal.vue';
       export { default as VaultFormModal } from './src/presentation/servers/components/VaultFormModal.vue';
+      export { default as PlacementModal } from './src/presentation/infrastructure/components/PlacementModal.vue';
     `,
     resolveDir: process.cwd(),
   },
@@ -84,7 +85,12 @@ function mountDialog(dialog, props) {
     }),
   });
   app.mount({});
-  return { state, values: () => instance.setupState.form.state.values, unmount: () => app.unmount() };
+  return {
+    state,
+    values: () => instance.setupState.form.state.values,
+    setup: () => instance.setupState,
+    unmount: () => app.unmount(),
+  };
 }
 
 /** Edits a record, closes, then opens "New" in one update, and returns the values each session started from. */
@@ -207,4 +213,37 @@ test("Add vault opens named after its server right after editing a vault", async
   assert.equal(created.slug, "fra1-vault");
   assert.equal(created.name, "");
   assert.equal(created.url, "http://vault:8080");
+});
+
+test("the environment form fills a public site's baseline host when deploy.yml is read after it opened", async () => {
+  const servers = [{ slug: "ocharo-vps", ingress: { publicAddress: "203.0.113.10" } }];
+  const mounted = mountDialog(dialogs.TargetFormModal, { product: "ocharo-studio", servers, knownSites: [], target: null,
+    services: ["studio"] });
+  mounted.state.open = true;
+  await nextTick();
+  assert.deepEqual(mounted.values().sites, []);
+  mounted.state.knownSites = [{ name: "app", exposure: "public", primary: true }];
+  await nextTick();
+  assert.deepEqual(mounted.values().sites, [{ site: "app", host: "ocharo-studio-dev.203-0-113-10.sslip.io" }]);
+  mounted.unmount();
+});
+
+test("the placement dialog opens with what deploy.yml calls for ticked and keeps Place off until something is chosen", async () => {
+  const servers = [{ slug: "rig", provider: "local" }, { slug: "ocharo-vps", provider: "contabo" }];
+  const product = { slug: "ocharo-platform", name: "Ocharo Platform" };
+  const plan = { databases: ["desk", "jobs"], sites: ["admin"], publicSites: ["app"] };
+  const placements = [{ serverId: "ocharo-vps", facts: { databases: [], sites: [
+    { site: "admin", environment: "prod", node: "ocharo-admin", address: "", joined: true }] } }];
+  const mounted = mountDialog(dialogs.PlacementModal, { product, plan, servers, placements });
+  mounted.state.open = true;
+  await nextTick();
+  assert.deepEqual(mounted.values(), { server: "ocharo-vps", database: true, sites: ["admin"] });
+  assert.equal(mounted.setup().canPlace, true);
+  assert.equal(mounted.setup().nodeOf("admin", "ocharo-vps"), "ocharo-admin", "the node the host already holds");
+  assert.equal(mounted.setup().publicNote, "app is public: it answers on the server's baseline host, no node needed.");
+  mounted.setup().form.setValue("database", false);
+  mounted.setup().form.setValue("sites", []);
+  await nextTick();
+  assert.equal(mounted.setup().canPlace, false);
+  mounted.unmount();
 });

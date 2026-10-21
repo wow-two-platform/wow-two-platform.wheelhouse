@@ -27,6 +27,7 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
     [InlineData("api/tailnet/policy")]
     [InlineData("api/servers/prod-host/enrollment")]
     [InlineData("api/products/foreverpin/placements")]
+    [InlineData("api/products/foreverpin/descriptor")]
     [InlineData("api/servers/prod-host/upkeep")]
     public async Task Reads_ShouldReturn401_WhenTheCallerIsAnonymous(string path)
     {
@@ -104,8 +105,42 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
     }
 
     [Fact]
+    public async Task Descriptor_ShouldAnswerTheServicesNeedsAndSitesDeployYmlDeclares()
+    {
+        var commit = Fixture.RepositoryFiles.Push(Repository, DescriptorPath, Descriptor);
+
+        var data = await Data(await AdminClient.GetAsync("api/products/foreverpin/descriptor"));
+
+        data.GetProperty("commit").GetString().Should().Be(commit);
+        data.GetProperty("problem").ValueKind.Should().Be(JsonValueKind.Null);
+        data.GetProperty("needsPostgres").GetBoolean().Should().BeTrue();
+        data.GetProperty("services").EnumerateArray()
+            .Select(service => (service.GetProperty("service").GetString(),
+                string.Join(",", service.GetProperty("needs").EnumerateArray().Select(need => need.GetString()))))
+            .Should().Equal(("management", "postgres"), ("redirect", ""));
+        data.GetProperty("sites").EnumerateArray()
+            .Select(site => (site.GetProperty("name").GetString(), site.GetProperty("exposure").GetString(),
+                site.GetProperty("primary").GetBoolean()))
+            .Should().Equal(("app", "public", true), ("ops", "private", false));
+        (await AdminClient.GetAsync("api/products/missing/descriptor")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Descriptor_ShouldAnswerWhyItCannotBeRead_WhenTheRepositoryHasNone()
+    {
+        Fixture.RepositoryFiles.PushEmpty(Repository);
+
+        var data = await Data(await AdminClient.GetAsync("api/products/foreverpin/descriptor"));
+
+        data.GetProperty("problem").GetString().Should().Contain("has no engineering/deployment/deploy.yml");
+        data.GetProperty("services").GetArrayLength().Should().Be(0);
+        data.GetProperty("sites").GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
     public async Task Place_ShouldStartThePlacementForAKnownProductAndServer()
     {
+        Fixture.RepositoryFiles.Push(Repository, DescriptorPath, Descriptor);
         (await Act("placement").PostAsJsonAsync("api/products/missing/placements", Placement())).StatusCode
             .Should().Be(HttpStatusCode.NotFound);
 
@@ -115,8 +150,51 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
         var call = Infra.Calls.Should().ContainSingle(call => call.Action == "place").Subject;
         var request = (ProductPlacementRequest)call.Request!;
         (request.Product, request.Server, request.Database, call.Actor).Should().Be(("foreverpin", "prod-host", true, "test-admin"));
-        request.Sites.Should().Equal(new ProductPlacementSite("app", "foreverpin-app"));
+        request.Sites.Should().Equal(new ProductPlacementSite("ops", "foreverpin-ops"));
+        // The runner gets what deploy.yml declares, so it checks the request against it too.
+        request.Descriptor.NeedsPostgres.Should().BeTrue();
+        request.Descriptor.Sites.Select(site => (site.Name, site.Exposure)).Should().Equal(("app", "public"), ("ops", "private"));
         (await LastAudit()).Should().Be(("product.place", "foreverpin", "succeeded"));
+    }
+
+    [Theory]
+    [InlineData(true, "app", "is public")]
+    [InlineData(false, "status", "declares no site 'status'")]
+    public async Task Place_ShouldReturn400_WhenASiteIsNotAPrivateSiteOfDeployYml(bool database, string site, string reason)
+    {
+        Fixture.RepositoryFiles.Push(Repository, DescriptorPath, Descriptor);
+
+        var response = await Act("placement").PostAsJsonAsync("api/products/foreverpin/placements",
+            new { server = "prod-host", database, sites = new[] { new { site, node = "foreverpin-" + site } } });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.ReadProblemAsync()).Detail.Should().Contain(reason);
+        Infra.Calls.Should().NotContain(call => call.Action == "place");
+    }
+
+    [Fact]
+    public async Task Place_ShouldReturn400_WhenDatabasesAreAskedForAProductWithoutPostgres()
+    {
+        Fixture.RepositoryFiles.Push(Repository, DescriptorPath, Descriptor.Replace("    needs: [postgres]\n", ""));
+
+        var response = await Act("placement").PostAsJsonAsync("api/products/foreverpin/placements",
+            new { server = "prod-host", database = true, sites = Array.Empty<object>() });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.ReadProblemAsync()).Detail.Should().Contain("needs PostgreSQL");
+        Infra.Calls.Should().NotContain(call => call.Action == "place");
+    }
+
+    [Fact]
+    public async Task Place_ShouldReturn409_WhenDeployYmlCannotBeRead()
+    {
+        Fixture.RepositoryFiles.PushEmpty(Repository);
+
+        var response = await Act("placement").PostAsJsonAsync("api/products/foreverpin/placements", Placement());
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.ReadProblemAsync()).Detail.Should().Contain("follows the product's deploy.yml");
+        Infra.Calls.Should().NotContain(call => call.Action == "place");
     }
 
     [Fact]
@@ -311,8 +389,29 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
 
     private static object Placement() => new
     {
-        server = "prod-host", database = true, sites = new[] { new { site = "app", node = "foreverpin-app" } },
+        server = "prod-host", database = true, sites = new[] { new { site = "ops", node = "foreverpin-ops" } },
     };
+
+    private const string Repository = "sulton-max/10x-venture-forever-pin";
+
+    private const string DescriptorPath = "engineering/deployment/deploy.yml";
+
+    /// <summary>A descriptor 1 product: management needs PostgreSQL and serves the public app site and the private ops
+    /// site; redirect needs nothing.</summary>
+    private const string Descriptor = """
+        descriptor: 1
+        product: foreverpin
+        services:
+          management:
+            needs: [postgres]
+            sites:
+              app: { exposure: public }
+              ops: { exposure: private }
+          redirect:
+            sites:
+              app: {}
+
+        """;
 
     private HttpClient Act(string action)
     {

@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { ProductDeploy, ProductIdentitySource, ProductStatus, type Product, type SaveProductRequest } from "@/domain/products";
+import {
+  ProductDeploy,
+  ProductIdentitySource,
+  ProductStatus,
+  type Product,
+  type ProductDescriptor,
+  type SaveProductRequest,
+} from "@/domain/products";
 import { requestAccepted, requestData, requestEmpty } from "@/integration/common";
 
 const ProductSchema = z.object({
@@ -50,6 +57,16 @@ const ProductSchema = z.object({
   ),
 });
 
+/** What a product's deploy.yml declares; a descriptor that cannot be read comes with its reason and nothing else. */
+export const ProductDescriptorSchema = z.object({
+  commit: z.string().nullable(),
+  problem: z.string().nullable(),
+  services: z.array(z.object({ service: z.string(), needs: z.array(z.string()).default([]) })).default([]),
+  sites: z
+    .array(z.object({ name: z.string(), exposure: z.enum(["public", "private"]), primary: z.boolean().default(false) }))
+    .default([]),
+});
+
 /** A product's address segment: the routes take its identifier or its slug. @internal */
 const productPath = (product: string) => `/api/products/${encodeURIComponent(product)}`;
 
@@ -75,6 +92,9 @@ export const productsApi = {
     requestAccepted(`${productPath(product)}/workspace`, {
       method: "PUT", body: { workspaceId }, signal, action: "workspace",
     }),
+  /** What the product's deploy.yml declares at its branch head: services, their needs and sites. */
+  getDescriptor: (product: string, signal?: AbortSignal) =>
+    requestData<ProductDescriptor>(`${productPath(product)}/descriptor`, ProductDescriptorSchema, { signal }),
   /** Marks a product active or inactive. */
   updateStatus: (product: string, status: ProductStatus, signal?: AbortSignal) =>
     requestAccepted(`${productPath(product)}/status`, {

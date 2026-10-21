@@ -32,6 +32,7 @@ const {
   enrollmentRequestOf,
   freshServerFormSchema,
   freshServerRequestOf,
+  PlacementForms,
   placementFormOf,
   placementFormSchema,
   placementRequestOf,
@@ -315,47 +316,60 @@ test("a step's duration: finished, ticking while it runs, none before it starts"
   assert.equal(InfraJobRules.hasRunningStep([step("a", "succeeded"), step("b", "running")]), true);
 });
 
-test("a placement names nodes after the product and site, and dev's adds -dev", () => {
-  assert.equal(PlacementRules.defaultNode("ocharo-platform", "app"), "ocharo-platform-app");
+// What Wheelhouse reads from deploy.yml: Ocharo Studio (one service, SQLite, a public app site) and Ocharo Platform
+// (desk and jobs need PostgreSQL; desk's app site is public), plus a private admin site for the node rows.
+const studio = { commit: "a".repeat(40), problem: null, services: [{ service: "studio", needs: [] }],
+  sites: [{ name: "app", exposure: "public", primary: true }] };
+const platform = { commit: "b".repeat(40), problem: null,
+  services: [{ service: "desk", needs: ["postgres"] }, { service: "jobs", needs: ["postgres"] }, { service: "image-worker", needs: [] }],
+  sites: [{ name: "app", exposure: "public", primary: true }] };
+const withAdmin = { ...platform, sites: [...platform.sites, { name: "admin", exposure: "private", primary: false }] };
+
+test("a placement plans only what deploy.yml calls for and names nodes after the product and site", () => {
+  assert.deepEqual(PlacementRules.planOf(studio), { databases: [], sites: [], publicSites: ["app"] });
+  assert.equal(PlacementRules.hasWork(PlacementRules.planOf(studio)), false, "Studio needs nothing placed");
+  assert.deepEqual(PlacementRules.planOf(platform), { databases: ["desk", "jobs"], sites: [], publicSites: ["app"] });
+  assert.equal(PlacementRules.hasWork(PlacementRules.planOf(platform)), true);
+  assert.deepEqual(PlacementRules.planOf(withAdmin).sites, ["admin"]);
+  assert.equal(PlacementRules.defaultNode("ocharo-platform", "admin"), "ocharo-platform-admin");
   assert.equal(PlacementRules.devNode("ocharo-desk"), "ocharo-desk-dev");
-  assert.equal(PlacementRules.followSite("ocharo-platform", "app", "desk", "ocharo-platform-app"), "ocharo-platform-desk");
-  assert.equal(PlacementRules.followSite("ocharo-platform", "", "desk", ""), "ocharo-platform-desk");
-  assert.equal(PlacementRules.followSite("ocharo-platform", "app", "desk", "ocharo-desk"), "ocharo-desk", "a typed node stays");
-  assert.equal(PlacementRules.followSite("ocharo-platform", "app", "", "ocharo-platform-app"), "");
-  const product = { slug: "ocharo-platform", environments: [
-    { name: "dev", sites: [{ name: "app", url: "https://a", exposure: "private" }, { name: "desk", url: "https://d", exposure: "private" }], secrets: null },
-    { name: "prod", sites: [{ name: "app", url: "https://b", exposure: "public" }], secrets: null },
-  ] };
-  assert.deepEqual(PlacementRules.siteNamesOf(product), ["app", "desk"]);
-  assert.deepEqual(PlacementRules.siteNamesOf({ environments: [] }), ["app"]);
-  assert.deepEqual(PlacementRules.initialSites({ ...product, environments: [] }), [{ site: "app", node: "ocharo-platform-app" }]);
+  // A site keeps the node a host already registered for it there; elsewhere it takes <product>-<site>.
+  const placed = [PlacementSchema.parse(placement())];
+  assert.equal(PlacementRules.nodeFor("ocharo-platform", "app", "ocharo-vps", placed), "ocharo-desk");
+  assert.equal(PlacementRules.nodeFor("ocharo-platform", "app", "other-vps", placed), "ocharo-platform-app");
+  assert.equal(PlacementRules.nodeFor("ocharo-platform", "admin", "ocharo-vps", placed), "ocharo-platform-admin");
+  assert.equal(PlacementRules.nodeFor("ocharo-platform", "admin", "ocharo-vps"), "ocharo-platform-admin");
   assert.deepEqual(PlacementRules.eligibleServers([server({ slug: "rig", provider: "local" }), server()]).map((item) => item.slug),
     ["ocharo-vps"]);
-  assert.deepEqual(PlacementRules.clashingRows([{ site: "app", node: "desk" }, { site: "b", node: "desk-dev" },
-    { site: "c", node: "desk" }, { site: "d", node: "studio" }]), [1, 2]);
   assert.equal(PlacementRules.nodeProblem("postgres"), "postgres is kept for the host.");
   assert.notEqual(PlacementRules.nodeProblem("Desk"), null);
-  assert.notEqual(PlacementRules.nodeProblem("desk-"), null);
   assert.equal(PlacementRules.nodeProblem("ocharo-desk"), null);
   assert.deepEqual(PlacementRules.placedSites(PlacementSchema.parse(placement())).map((site) => site.environment), ["prod", "dev"]);
 });
 
-test("the placement form starts on the first server it can use and refuses what the host would", () => {
-  const product = { slug: "ocharo-platform", environments: [] };
-  const values = placementFormOf(product, [server({ slug: "rig", provider: "local" }), server()]);
-  assert.deepEqual(values, { server: "ocharo-vps", database: true, sites: [{ site: "app", node: "ocharo-platform-app" }] });
-  assert.equal(placementFormOf(product, [server({ provider: "local" })]).server, "");
+test("the placement form starts with everything the manifest calls for ticked and sends only that", () => {
+  const plan = PlacementRules.planOf(withAdmin);
+  const values = placementFormOf(plan, [server({ slug: "rig", provider: "local" }), server()]);
+  assert.deepEqual(values, { server: "ocharo-vps", database: true, sites: ["admin"] });
+  assert.equal(placementFormOf(plan, [server({ provider: "local" })]).server, "");
+  assert.deepEqual(placementFormOf(PlacementRules.planOf({ ...studio, sites: [{ name: "ops", exposure: "private", primary: false }] }),
+    [server()]), { server: "ocharo-vps", database: false, sites: ["ops"] }, "no database box for a product without PostgreSQL");
   assert.equal(placementFormSchema.safeParse(values).success, true);
   assert.equal(placementFormSchema.safeParse({ ...values, sites: [] }).success, true, "databases alone");
   const paths = (fields) => placementFormSchema.safeParse({ ...values, ...fields }).error?.issues.map((issue) => issue.path.join("."));
   assert.deepEqual(paths({ database: false, sites: [] }), ["sites"]);
   assert.deepEqual(paths({ server: "" }), ["server"]);
-  assert.deepEqual(paths({ sites: [{ site: "app", node: "ingress" }] }), ["sites.0.node"]);
-  assert.deepEqual(paths({ sites: [{ site: "app", node: "desk" }, { site: "studio", node: "desk-dev" }] }), ["sites.1.node"]);
-  assert.deepEqual(paths({ sites: [{ site: "App", node: "desk" }] }), ["sites.0.site"]);
-  assert.deepEqual(paths({ sites: Array.from({ length: 11 }, (_, index) => ({ site: `s${index}`, node: `node-${index}` })) }), ["sites"]);
-  assert.deepEqual(placementRequestOf({ ...values, sites: [{ site: " app ", node: " ocharo-desk " }] }),
-    { server: "ocharo-vps", database: true, sites: [{ site: "app", node: "ocharo-desk" }] });
+  assert.equal(PlacementForms.hasChoice({ database: false, sites: [] }), false);
+  assert.equal(PlacementForms.hasChoice({ database: false, sites: ["admin"] }), true);
+  const two = { ...plan, sites: ["admin", "ops"] };
+  assert.deepEqual(PlacementForms.toggled(two, ["ops"], "admin", true), ["admin", "ops"], "in the plan's order");
+  assert.deepEqual(PlacementForms.toggled(two, ["admin", "ops"], "admin", false), ["ops"]);
+  const node = (site) => `ocharo-platform-${site}`;
+  assert.deepEqual(placementRequestOf(values, plan, node),
+    { server: "ocharo-vps", database: true, sites: [{ site: "admin", node: "ocharo-platform-admin" }] });
+  // Nothing beyond the plan reaches the host: no stray site, no databases a product does not need.
+  assert.deepEqual(placementRequestOf({ ...values, sites: ["admin", "app"] }, plan, node).sites.map((site) => site.site), ["admin"]);
+  assert.equal(placementRequestOf({ server: "ocharo-vps", database: true, sites: [] }, PlacementRules.planOf(studio), node).database, false);
 });
 
 const upkeepJob = (fields = {}) => ({ id: "u1", kind: "upkeep", serverId: "ocharo-vps", status: "succeeded", reason: null,

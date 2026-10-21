@@ -34,3 +34,9 @@ export {
   type ServiceIdentityView,
 } from './ProductIdentity';
 export { ProductStatusRules } from './ProductStatusRules';
+export {
+  ProductDescriptorRules,
+  type ProductDescriptor,
+  type ProductDescriptorService,
+  type ProductDescriptorSite,
+} from './ProductDescriptor';

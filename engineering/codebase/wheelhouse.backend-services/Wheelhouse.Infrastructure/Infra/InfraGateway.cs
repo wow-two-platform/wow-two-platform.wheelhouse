@@ -76,6 +76,11 @@ public sealed class InfraGateway(DeploymentSettings settings, IConfiguration con
             arguments.Add("--database");
         foreach (var site in request.Sites)
             arguments.AddRange(["--site", site.Site + "=" + site.Node]);
+        // What the product's deploy.yml declares, so the runner refuses what it does not call for.
+        foreach (var site in request.Descriptor.Sites)
+            arguments.AddRange(["--declared-site", site.Name + "=" + site.Exposure]);
+        if (request.Descriptor.NeedsPostgres)
+            arguments.Add("--needs-postgres");
         return StartAsync([.. arguments, "--no-launch"],
             job => job.TryGetProperty("id", out var id) && Guid.TryParse(id.GetString(), out var parsed)
                 ? ["place-run", "--job", parsed.ToString("D")]

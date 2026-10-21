@@ -1,6 +1,6 @@
 # Deployment operations
 
-*Last updated: 2026-10-20*
+*Last updated: 2026-10-21*
 
 ## Ownership and current boundary
 
@@ -456,9 +456,13 @@ start and finish. Dev never does any of it: its Servers page reads "prod only".
   proven over the tailnet against the first-seen host key, platform (private and public ingress), seal (keys-only SSH,
   no root, public SSH closed, one-time key removed) and verify. A rerun continues from the first step that has not
   succeeded; every step converges. A host enrolled before a kit change takes it with Refresh kit, below.
-- **Placement:** Products › a product › Hosting › Place on a server: the host converges to this console's kit (as
-  Refresh kit does), dev and prod databases are created once (passwords stay in `database.json` on the host), and each
-  site gets a node per environment.
+- **Placement:** Products › a product › Hosting › Place on a server, offered only when the product's `deploy.yml` (read
+  at its branch head, `GET /api/products/<product>/descriptor`) calls for something: dev and prod databases when a
+  service `needs: [postgres]`, and a node per environment for each private site, named `<product>-<site>` (dev adds
+  `-dev`; a site keeps the node its server already registered). Public sites need none; a product that needs nothing
+  says so on Hosting. The host converges to this console's kit (as Refresh kit does) and the databases are created once
+  (passwords stay in `database.json` on the host). The API and the runner both refuse a site the manifest does not
+  declare private, and databases for a product whose services need no PostgreSQL.
 - **Host upkeep:** Servers › a server › Kit › Refresh kit, on an enrolled host: the kit uploaded as `wheelhouse-deploy`
   to `/srv/wheelhouse/bootstrap/kit`, its root phase (`enroll-products.sh upkeep`: layout, `platform` network, UFW
   with 80 and 443 public and SSH as it is), PostgreSQL and the ingress, then the public check (80 redirects to https,

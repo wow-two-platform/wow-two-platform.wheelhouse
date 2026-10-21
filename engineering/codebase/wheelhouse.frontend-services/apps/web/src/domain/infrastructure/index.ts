@@ -49,6 +49,7 @@ export {
   RESERVED_NODES,
   type PlacedSite,
   type Placement,
+  type PlacementPlan,
   type PlacementSite,
   type StartPlacementRequest,
 } from './Placement';
