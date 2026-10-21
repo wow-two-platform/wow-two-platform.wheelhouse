@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-10-20*
+*Last updated: 2026-10-21*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -95,7 +95,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Roll prod back by promoting the previous release | feature | Dev-to-prod promotion exists |
 | Ability to see a product's deploys by hour and in other views in its details | feature | User 2026-10-19: not in the Deployments grid; product details only, after the Deployments, Products and Servers pages |
 | Ability to run one environment on several servers for uptime | feature | User 2026-10-19, future: one aggregated state (decision 44) and a per-server overlay; design first |
-| Back up Wheelhouse's own database on a schedule to at least two locations | feature | User 2026-10-19: not before Ocharo deploys; the control plane's audit, inventory and history need off-host copies |
+| Back up Wheelhouse's own database and data volume on a schedule to at least two locations | feature | User 2026-10-19: not before Ocharo deploys; the control plane's audit, inventory and history need off-host copies. 2026-10-21: the volume holds runner state the database doesn't (deploy history, infrastructure job journals, SSH identities), so a restore needs both; the vault root key stays out of every backup |
 | Snapshot Wheelhouse's database in the promote workflow before a prod promotion | feature | User 2026-10-19: make `promote-prod.yml` reliable; a migration jump (0.3.9 → 0.5.x) runs on first start |
 | v0.7 one-click infrastructure: move a product to another server, fleet moves, decommission with step-up 2FA | feature | User 2026-10-19 (decisions 56–57): backup → restore → write freeze ≤10 min → DNS switch → old host kept 7 days; design in the automation analysis |
 | Provider APIs (Contabo, OVH) for snapshots, reinstall and ordering | feature | Parked 2026-10-19: no credential that can spend money until servers are bought often |
