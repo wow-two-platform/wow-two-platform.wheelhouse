@@ -1,6 +1,6 @@
 # Platform ideation — v0.5
 
-*Last updated: 2026-10-20*
+*Last updated: 2026-10-21*
 
 Settled decisions from the v0.5 platform brainstorm: what the platform is, how products are modelled and who owns each
 fact. Iteration happens in the conversation; this file records only what the owner settled. The v0.5 version doc is
@@ -78,6 +78,7 @@ written from it when the version opens.
 | 66 | Step-up 2FA ships before Ocharo's public launch and covers every prod promotion | 2026-10-19 |
 | 67 | The vault's root key has two recoveries: the owner's offline copy, checked against the key in use on a schedule, and later a passkey-sealed copy in the database | 2026-10-20 |
 | 68 | A deployed site whose product has no domain gets a baseline public host on its server's IP through sslip.io: `<product>-dev.<ip>.sslip.io` in dev, `<product>.<ip>.sslip.io` in prod, a second site adding `-<site>` after the product; Wheelhouse fills it and a bound domain replaces it. It is served from the server's own ingress on 80 and 443 with an HTTP-01 certificate, not through Cloudflare; SSH and the control path stay on the tailnet. Narrows decision 50's Cloudflare proxy to sites with a bound domain | 2026-10-20 |
+| 69 | An environment runs every service of its product on one server; services never split across servers. Uptime comes from up to three servers per product (primary, secondary, tertiary) plus a backup-only storage, proposed in w2 `deployment/servers/redundancy.md` for review | 2026-10-21 |
 
 | Fact | Owner |
 |---|---|
