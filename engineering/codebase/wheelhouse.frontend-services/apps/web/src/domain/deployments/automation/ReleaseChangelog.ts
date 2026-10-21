@@ -1,3 +1,5 @@
+import type { NotYetPart } from '../ReleaseSets';
+
 /** One release between what a target runs and the release to promote, with its body as GitHub holds it. */
 export interface ChangelogRelease {
   readonly release: string;
@@ -31,4 +33,6 @@ export interface ReleaseChangelog {
   readonly compareUrl: string | null;
   /** Why the commits are missing, when the compare could not be read. */
   readonly reason: string | null;
+  /** The product's repositories the release set to promote does not hold yet; empty for any other release. */
+  readonly notYet: readonly NotYetPart[];
 }

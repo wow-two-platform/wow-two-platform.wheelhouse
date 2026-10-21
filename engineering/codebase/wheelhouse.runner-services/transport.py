@@ -22,6 +22,7 @@ import urllib.parse
 import uuid
 import fleet
 import artifacts
+import catalog
 import history
 import inventory
 import registry
@@ -216,17 +217,32 @@ def import_bundle(root, archive, bundle_id):
 def compose_set(root, product, parts):
     """The local server's release set: imported bundles of a product's repositories (`parts`, each `name=bundle` in
     repository order, the primary first) composed into one bundle as a product built from several repositories
-    releases (decision 70). Listed and deployed like any imported bundle; never on a deployed control plane."""
+    releases (decision 70). When the inventory names the product's repositories, a part is given for each that has
+    released, as the catalog's sets take them: the primary one always, the others in repository order, and the rest
+    named in `notYet`. Listed and deployed like any imported bundle; never on a deployed control plane."""
     require(rehearsal(), "Release sets compose from imported bundles only on the local server")
     require(isinstance(product, str) and SLUG.fullmatch(product), "Invalid product")
-    require(parts and len(parts) >= 2, "A release set takes a bundle of each repository: name=bundle, twice or more")
+    named = [str(part).partition("=")[::2] for part in parts or []]
+    require(named and all(SLUG.fullmatch(name) for name, _ in named), "Name each part name=bundle")
+    found = next((item for item in catalog.products() if item.slug == product and item.components), None)
+    if found is None:
+        require(len(named) >= 2, "A release set takes a bundle of each repository: name=bundle, twice or more")
+        repositories = {name: "local/" + name for name, _ in named}
+    else:
+        repositories = {catalog.short_name(product, repository): repository for repository, _ in found.repositories()}
+        order = list(repositories)
+        given = [name for name, _ in named]
+        unknown = next((name for name in given if name not in repositories), None)
+        require(unknown is None, str(unknown) + " is not one of the product's repositories (" + ", ".join(order) + ")")
+        require(given[0] == order[0], repositories[order[0]] + " serves the product's front door and has no release "
+                "yet; the product's release sets start with its first release")
+        require(given == [name for name in order if name in given], "Give the parts in the product's repository order: "
+                + ", ".join(order))
     pieces, identifiers = [], []
-    for part in parts:
-        name, _, bundle_id = str(part).partition("=")
-        require(SLUG.fullmatch(name), "Name each part name=bundle")
+    for name, bundle_id in named:
         bundle = child(root, "bundles", bundle_id)
         manifest = validate_bundle(bundle)
-        pieces.append((name, "local/" + name, manifest, read_json(bundle / "compose.json")))
+        pieces.append((name, repositories[name], manifest, read_json(bundle / "compose.json")))
         identifiers.append(bundle_id)
     set_id = release_sets.identifier(product, identifiers)
     destination = child(root, "bundles", set_id)
@@ -238,7 +254,8 @@ def compose_set(root, product, parts):
     # The same parts always make the same set; an older composition of them is written over.
     release_sets.write(destination, manifest, compose_bytes)
     return {"id": set_id, "product": product, "release": manifest["release"], "components": manifest["components"],
-            "sites": manifest["sites"]}
+            "sites": manifest["sites"], "notYet": artifacts.not_yet(product, {name for name, _ in named})
+            if found is not None else []}
 
 
 def facts(root, bundle_id):
@@ -977,7 +994,7 @@ def main():
     parser.add_argument("--commit")
     parser.add_argument("--repository", help="branches, commits, build: one of the product's repositories (owner/name)")
     parser.add_argument("--part", action="append", default=[],
-                        help="compose: name=bundle, one per repository of the product in order (the local server only)")
+                        help="compose: name=bundle, one per repository of the product that has released, in order (the local server only)")
     parser.add_argument("--confirm", help="submit: the target ID, typed, for prod on the local server")
     parser.add_argument("--reason", help="submit: the owner's one-line why, kept on the job")
     parser.add_argument("--fleet", help="submit: the fleet rollout the submission belongs to, kept on the job")

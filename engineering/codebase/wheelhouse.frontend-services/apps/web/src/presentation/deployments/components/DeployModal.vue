@@ -131,6 +131,15 @@ const buildRepositories = computed(() => {
   const found = products.value.find((item) => item.slug === selectedTarget.value?.product);
   return found && found.repositories.length > 1 ? found.repositories : [];
 });
+/** For a product built from several repositories with no release set yet: why, since its primary repository serves the
+ * front door and every set starts with its first release. */
+const noSetYet = computed(() =>
+  releases.data.value && buildRepositories.value.length && !available.value.length
+    ? `No release set yet: ${buildRepositories.value[0]?.repository} serves the product's front door and has no release; the product's sets start with its first release.`
+    : null,
+);
+/** The repositories the chosen release set does not hold yet, as people read them; empty for any other release. */
+const notYet = computed(() => ReleaseSets.notYet(selectedRelease.value?.notYet));
 /** The repository whose commits are listed; null for the primary one. */
 const buildRepository = ref<string | null>(null);
 const branches = useProductBranches(buildProduct, buildRepository);
@@ -438,10 +447,12 @@ function close(open: boolean): void {
               label="Release"
               :helper="
                 target && !available.length
-                  ? 'No published release is available yet.'
+                  ? (noSetYet ?? 'No published release is available yet.')
                   : release && release === preselected
                     ? 'The newest release that passed dev; pick an older one to roll back.'
-                    : ''
+                    : notYet
+                      ? `Not in this set yet: ${notYet}. Each joins a later set once it releases.`
+                      : ''
               "
             >
               <SelectPicker
@@ -660,6 +671,10 @@ function close(open: boolean): void {
             <dd>{{ targetLabel(selectedTarget) }}</dd>
             <dt class="text-muted-foreground">Release</dt>
             <dd class="font-mono">{{ releaseLabel(selectedRelease) }}</dd>
+            <template v-if="notYet">
+              <dt class="text-muted-foreground">Not in it yet</dt>
+              <dd>{{ notYet }}; each joins a later set once it releases.</dd>
+            </template>
             <template v-if="offer">
               <dt class="text-muted-foreground">Dev check</dt>
               <dd><DevCheckPill :verification="offer.verification" :verifies="offer.verifies" :has-label="false" has-hold /></dd>

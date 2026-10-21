@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DeploymentCause, FleetItemStatus, FleetStatus, FreezeScope } from '@/domain/deployments';
 import { ProductDeploy } from '@/domain/products';
+import { NotYetSchema } from './schemas';
 
 export const ProductAutomationSchema = z.object({
   product: z.string(),
@@ -58,6 +59,7 @@ export const ReleaseChangelogSchema = z.object({
   migrations: z.array(z.string()).default([]),
   compareUrl: githubUrl.nullable().default(null),
   reason: z.string().nullable().default(null),
+  notYet: z.array(NotYetSchema).default([]),
 });
 
 export const BuildFailureSchema = z.object({

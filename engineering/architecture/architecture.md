@@ -84,27 +84,32 @@ A release may declare a dev check (`verify` in `deploy.yml`: a service, a comman
 ### Release sets
 
 A product built from several repositories (decision 70) releases as a set: one release of each of its repositories that
-deploys something, composed on the control host (`release_sets.py`) into one schema-2 bundle that deploys, rolls back
-release-wide and promotes like any other, so a target still runs exactly one release and only its changed services
-restart. Each repository's `deploy.yml` names the product's slug, so each bundle, its asset (`<product>-release.tar.gz`)
+deploys something and has released, composed on the control host (`release_sets.py`) into one schema-2 bundle that
+deploys, rolls back release-wide and promotes like any other, so a target still runs exactly one release and only its
+changed services restart. A repository with no release yet, or whose `deploy.yml` names no service yet, is left out
+until it releases and joins the sets after that; the primary repository serves the front door, so the product has no
+set before its first release. Each repository's `deploy.yml` names the product's slug, so each bundle, its asset (`<product>-release.tar.gz`)
 and each service's platform name carry it; each repository keeps its own CI, `vX.Y.Z` tags and version track.
 
 - **Identity.** A set's bundle ID is `<product>-set-<12 hex>`, the first 12 hex digits of the SHA-256 of its components'
   artifact IDs in repository order, so the same components always make the same set. Its release label names each
   component by its repository's short name (the name without the owner's or the product's prefix) and release, joined
   by `_` in repository order: `platform-v0.1.8_studio-v0.1.6_assets-v0.1.0`, or `set-<12 hex>` past 96 characters.
-  The console reads it as `platform v0.1.8 + studio v0.1.6 + assets v0.1.0`, a pill as `platform 0.1.8 +2`.
+  The console reads it as `platform v0.1.8 + studio v0.1.6 + assets v0.1.0`, a pill as `platform 0.1.8 +2`. ID and
+  label cover the set's components only; the catalog entry's and the changelog's `notYet` name the product's
+  repositories it does not hold yet, which the deploy dialog and the changelog show.
 - **Listing.** The release catalog lists a product's sets, never its repositories' own releases (one alone would drop the
-  other repositories' services): after each repository release, once every deploying repository has published one, a
-  set of that release and every other repository's newest then, newest first (50 at most); and per recent commit build
-  of a repository (10 each) a candidate set beside the others' newest releases. Every listed set is remembered under
+  other repositories' services): after each repository release, once the primary repository has published one, a set
+  of that release and every other repository's newest then, leaving out each with none yet, newest first (50 at most);
+  and per recent commit build of a repository (10 each) a candidate set beside the others' newest releases. The release
+  watcher's newest set is each released repository's newest release. Every listed set is remembered under
   `<runner root>/sets/`, so one that left the listing (an older set dev proved) still composes for prod.
 - **Composition.** Each component is downloaded and checked against its own repository's release source (asset digest,
   commit, approved images) before the set is composed. Services, sites and named volumes keep their repositories'
   names and must be unique across them — a clash is refused naming both repositories, never renamed, since a rename
   would move a site's host or start a volume empty. The product's front door is the primary repository's primary site.
   A dependency may name another repository's service; the composition refuses an unknown one or a cycle. The set is
-  rollback-compatible only when every component is; `migrations` is true when any says so; `dotnetEnvironment` is a list
+  rollback-compatible only when every component in it is; `migrations` is true when any says so; `dotnetEnvironment` is a list
   of the services whose repositories opt in when not all do; the first declared `verify` runs. `release.json` adds
   `set` and `components` (each repository's name, repository, release, kind, source commit and services);
   `sourceCommit` is the primary repository's.

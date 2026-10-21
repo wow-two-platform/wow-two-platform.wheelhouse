@@ -15,9 +15,10 @@ runner key, and the runner deploys ForeverPin dev to it. Its public sites answer
 through the host's public ingress (80 redirects to 443), from another machine on the rig's network; the private entry
 point stays on loopback. Traefik's letsencrypt resolver is wired to each public router; a CA that never answers stands
 in for Let's Encrypt, so no certificate is issued here. Then ForeverPin becomes a product of two repositories (decision
-70): its release is cut into one bundle per service, as two repositories would publish them, the runner composes them
-into a release set, and the set deploys over the single-repository release with nothing restarting and both baseline
-hosts still answering.
+70) of three repositories, the third of which has not released: its release is cut into one bundle per service, as the
+two released repositories would publish them, the runner composes them into a release set that leaves the third out
+(the same set, ID and label the two make alone) and names it as not in it yet, and the set deploys over the
+single-repository release with nothing restarting and both baseline hosts still answering.
 
 `networks` proves on that host that the platform network keeps its fixed addresses: containers that start before
 Traefik take dynamic ones from .128/25, and repair-networks.sh gives a network made without the range one.
@@ -894,8 +895,8 @@ def products(bundle_id=None):
     prove_runner_authorization()
     prove_private_pull(json.loads((destination / "release.json").read_text())["images"]["redirect"])
     print("Products host proven locally: layout, platform, databases, site nodes, runner key, deploy, public routes on "
-          "baseline hosts, a two-repository release set, private image pull. Let's Encrypt itself cannot run here: no "
-          "certificate was issued.")
+          "baseline hosts, a three-repository release set without its unreleased repository, private image pull. "
+          "Let's Encrypt itself cannot run here: no certificate was issued.")
 
 
 def split_bundle(source, service, release):
@@ -932,13 +933,38 @@ def split_bundle(source, service, release):
     return {"release.json": json.dumps(manifest, indent=2).encode(), "compose.json": content}
 
 
+def three_repositories():
+    """ForeverPin as the inventory would name it once built from three repositories (decision 70): `app` (the front door,
+    management) and `go` (redirect), which have released, and `marketing`, whose deploy.yml names a service but which
+    has not released yet."""
+    def release(*services):
+        return {"asset": PRODUCT + "-release.tar.gz", "workflow": "publish-docker-image.yml",
+                "images": [{"service": service, "image": REGISTRY + "/" + PRODUCT + "/" + service} for service in services]}
+    return {"slug": PRODUCT, "name": "ForeverPin", "description": "ForeverPin as three repositories.",
+            "repository": "local-rig/" + PRODUCT + "-app", "defaultBranch": "main", "release": release("management"),
+            "components": [{"repository": "local-rig/" + PRODUCT + "-go", "release": release("redirect")},
+                           {"repository": "local-rig/" + PRODUCT + "-marketing", "release": release("marketing")}]}
+
+
+def refused(*arguments, root):
+    """A transport call that must be refused; returns its message."""
+    result = subprocess.run([sys.executable, str(TRANSPORT), *arguments, "--root", str(root)], env=environment(),
+                            capture_output=True, text=True)
+    if result.returncode == 0:
+        sys.exit("The transport accepted: " + " ".join(arguments[:3]))
+    return (result.stderr or result.stdout).strip().splitlines()[-1]
+
+
 def prove_release_set(bundle_id, network, address, hosts):
-    """ForeverPin as a product of two repositories (decision 70): one bundle per service, as each repository's publish
-    workflow writes it, composed by the runner into a release set and deployed over the single-repository release. The
-    services are the same images and settings, so nothing restarts; both baseline hosts keep answering."""
+    """ForeverPin as a product of three repositories (decision 70), the third of which has not released: one bundle per
+    released service, as each repository's publish workflow writes it, composed by the runner into a release set that
+    leaves the third out and deployed over the single-repository release. The set is the one the two released
+    repositories make on their own (same ID and label), and names the third as not in it yet. The services are the same
+    images and settings, so nothing restarts; both baseline hosts keep answering."""
+    import hashlib
     source = PRODUCTS_INVENTORY / "bundles" / bundle_id
     release = json.loads((source / "release.json").read_text())["release"]
-    parts = []
+    parts, identifiers = [], []
     for name, service in (("app", "management"), ("go", "redirect")):
         part_id = PRODUCT + "-" + name + "-" + re.sub(r"[^a-z0-9-]+", "-", release.lower())
         folder = PRODUCTS_INVENTORY / "bundles" / part_id
@@ -947,16 +973,35 @@ def prove_release_set(bundle_id, network, address, hosts):
             for file, content in split_bundle(source, service, release).items():
                 (folder / file).write_bytes(content)
         parts += ["--part", name + "=" + part_id]
-    made = transport("compose", "--product", PRODUCT, *parts, root=PRODUCTS_INVENTORY)
-    print("Composed " + made["id"] + " (" + made["release"] + ") from " + ", ".join(
-        component["name"] + " " + component["release"] for component in made["components"]))
-    outcome = deploy(made["id"], "dev", root=PRODUCTS_INVENTORY)
-    if outcome.get("status") != "succeeded":
-        sys.exit("The release set did not deploy to the products host")
-    rollout = outcome.get("serviceRollout") or {}
-    changes = {item["name"]: item["change"] for item in rollout.get("services") or []}
-    state = transport("state", "--target", PRODUCT + "-dev", root=PRODUCTS_INVENTORY)["current"]
+        identifiers.append(part_id)
+    two = transport("compose", "--product", PRODUCT, *parts, root=PRODUCTS_INVENTORY)
+    snapshot = PRODUCTS_INVENTORY / "inventory.json"
+    kept = snapshot.read_text()
+    document = json.loads(kept)
+    document["products"] = [three_repositories()]
+    private_file(snapshot, json.dumps(document, indent=2) + "\n")
+    try:
+        made = transport("compose", "--product", PRODUCT, *parts, root=PRODUCTS_INVENTORY)
+        front_door = refused("compose", "--product", PRODUCT, "--part", parts[3], root=PRODUCTS_INVENTORY)
+        print("Composed " + made["id"] + " (" + made["release"] + ") from " + ", ".join(
+            component["name"] + " " + component["release"] for component in made["components"])
+            + "; not in it yet: " + ", ".join(item["name"] for item in made["notYet"]))
+        outcome = deploy(made["id"], "dev", root=PRODUCTS_INVENTORY)
+        if outcome.get("status") != "succeeded":
+            sys.exit("The release set did not deploy to the products host")
+        rollout = outcome.get("serviceRollout") or {}
+        changes = {item["name"]: item["change"] for item in rollout.get("services") or []}
+        state = transport("state", "--target", PRODUCT + "-dev", root=PRODUCTS_INVENTORY)["current"]
+    finally:
+        private_file(snapshot, kept)
+    digest = hashlib.sha256("\n".join(identifiers).encode()).hexdigest()[:12]
     proofs = {
+        "the set holds the two released repositories, in order": [item["name"] for item in made["components"]] == ["app", "go"],
+        "the unreleased repository is named as not in it yet": [item["name"] for item in made["notYet"]] == ["marketing"],
+        "its ID and label cover the released repositories only (" + made["id"] + ", " + made["release"] + ")":
+            (made["id"], made["release"]) == (two["id"], two["release"])
+            == (PRODUCT + "-set-" + digest, "app-" + release + "_go-" + release),
+        "a set without the front door is refused (" + front_door + ")": "serves the product's front door" in front_door,
         "the target runs the release set": state.get("release") == made["release"],
         "the set restarted no service (" + ", ".join(name + " " + change for name, change in sorted(changes.items())) + ")":
             bool(changes) and set(changes.values()) == {"unchanged"},

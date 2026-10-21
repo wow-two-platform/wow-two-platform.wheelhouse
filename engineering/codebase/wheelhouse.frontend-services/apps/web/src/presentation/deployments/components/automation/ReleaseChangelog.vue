@@ -6,6 +6,7 @@ import { Badge } from '@wow-two-beta/fe/presentation/display';
 import { Alert, Spinner } from '@wow-two-beta/fe/presentation/feedback';
 
 import { useReleaseChangelog } from '@/application/deployments';
+import { ReleaseSets } from '@/domain/deployments';
 
 /**
  * What changed between what a target runs and the release to promote, read when it is first opened: each release's
@@ -27,7 +28,9 @@ const changelog = useReleaseChangelog(
   () => expanded.value,
 );
 const data = computed(() => changelog.data.value);
-const title = computed(() => (props.from ? `What changed since ${props.from}` : `What ${props.to} holds`));
+const title = computed(() =>
+  props.from ? `What changed since ${ReleaseSets.text(props.from)}` : `What ${ReleaseSets.text(props.to)} holds`,
+);
 </script>
 
 <template>
@@ -37,6 +40,9 @@ const title = computed(() => (props.from ? `What changed since ${props.from}` : 
       <Spinner v-if="changelog.loading.value && !data" size="sm" label="Reading the changelog" />
       <Alert v-else-if="changelog.error.value" severity="warning" title="Couldn't read the changelog" :description="changelog.error.value.message" />
       <template v-else-if="data">
+        <p v-if="data.notYet.length" class="text-xs text-muted-foreground">
+          Not in this set yet: {{ ReleaseSets.notYet(data.notYet) }}. A repository joins the product's sets with its first release.
+        </p>
         <p v-if="data.migrations.length" class="flex flex-wrap items-center gap-2">
           <Badge variant="warning">Has migrations</Badge>
           <span class="text-xs text-muted-foreground">{{ data.migrations.length }} changed {{ data.migrations.length === 1 ? 'file' : 'files' }} under Migrations/</span>

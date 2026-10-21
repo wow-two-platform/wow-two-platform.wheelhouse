@@ -94,6 +94,10 @@ export const ReleaseComponentSchema = z
     kind: component.kind ?? null,
     sourceCommit: component.sourceCommit ?? commit ?? null,
   }));
+/** A repository of the product a release set does not hold yet. */
+export const NotYetSchema = z
+  .object({ name: nullableText.optional(), repository: nullableText.optional() })
+  .transform((item) => ({ name: item.name ?? null, repository: item.repository ?? null }));
 export const ReleaseArtifactSchema = z.object({
   id: z.string(),
   product: z.string(),
@@ -106,6 +110,7 @@ export const ReleaseArtifactSchema = z.object({
   branch: nullableText.optional(),
   expiresAt: nullableText.optional(),
   components: z.array(ReleaseComponentSchema).nullish(),
+  notYet: z.array(NotYetSchema).nullish(),
 });
 const ServiceVersionSchema = z.object({
   version: z.string(),

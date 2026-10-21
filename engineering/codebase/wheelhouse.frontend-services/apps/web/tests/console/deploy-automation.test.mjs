@@ -119,6 +119,9 @@ test("a changelog keeps release bodies as text and only GitHub links", () => {
   });
   assert.equal(parsed.releases[0].body, "<script>alert(1)</script>");
   assert.deepEqual(parsed.migrations, []);
+  assert.deepEqual(parsed.notYet, [], "a host before partial release sets names none");
+  assert.deepEqual(ReleaseChangelogSchema.parse({ to: "platform-v0.1.9", notYet: [{ name: "marketing", repository: "o/m" }] }).notYet,
+    [{ name: "marketing", repository: "o/m" }]);
   assert.throws(() =>
     ReleaseChangelogSchema.parse({ to: "v1", releases: [{ release: "v1", name: "v1", publishedAt: "x", url: "javascript:alert(1)" }] }),
   );

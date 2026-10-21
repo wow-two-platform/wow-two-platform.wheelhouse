@@ -29,10 +29,21 @@ test("a release set's label reads as each repository's release, and every other 
   assert.equal(ReleaseSets.text("brand-desk-v0.1.0-rc.1_studio-v1.0.0"), "brand-desk v0.1.0-rc.1 + studio v1.0.0");
   assert.equal(ReleaseSets.isSet(label), true);
   assert.equal(ReleaseSets.isSet("set-0123456789ab"), true);
-  for (const other of ["v1.2.0", "sha-abcdef1", "platform-v0.1.8", "platform_v1", "a-v1.0.0_a-v1.0.1", null])
+  // While only the primary repository has released, its set holds it alone.
+  assert.equal(ReleaseSets.isSet("platform-v0.1.8"), true);
+  assert.equal(ReleaseSets.text("platform-v0.1.8"), "platform v0.1.8");
+  for (const other of ["v1.2.0", "v1.2.0-rc.1", "sha-abcdef1", "platform_v1", "a-v1.0.0_a-v1.0.1", null])
     assert.equal(ReleaseSets.isSet(other), false, String(other));
   assert.equal(ReleaseSets.text("v1.2.0"), "v1.2.0");
   assert.equal(ReleaseSets.text(null), "");
+});
+
+test("a set names the repositories that are not in it yet", () => {
+  assert.equal(ReleaseSets.notYet([{ name: "marketing", repository: "ocharo-hq/ocharo-marketing" }]), "marketing");
+  assert.equal(ReleaseSets.notYet([{ name: "studio", repository: "s" }, { name: null, repository: "o/assets" },
+    { name: "marketing", repository: "m" }]), "studio, o/assets and marketing");
+  assert.equal(ReleaseSets.notYet([]), "");
+  assert.equal(ReleaseSets.notYet(undefined), "");
 });
 
 test("a pill shows a set's first repository and how many more", () => {
@@ -47,7 +58,7 @@ test("releases, history items and promotions carry a set's components; a product
   globalThis.fetch = async (url) => url === "/api/deployments/releases"
     ? json({ data: [{ id: "ocharo-set-0123456789ab", product: "ocharo", release: "platform-v0.1.8_studio-v0.1.6",
       kind: "release", prerelease: false, publishedAt: "2026-10-20T10:00:00Z", provider: "ReleaseSet",
-      components: [component] }] })
+      components: [component], notYet: [{ name: "marketing", repository: "ocharo-hq/ocharo-marketing" }] }] })
     : json({ data: [{ id: "p-1", slug: "ocharo", name: "Ocharo", description: "", homepage: null,
       identity: { source: "record", commit: null, problem: null, services: [] }, workspaceId: null, status: "active",
       deploy: "wheelhouse", inactiveServices: [], repository: { name: "ocharo-hq/ocharo-platform", url: "u", defaultBranch: "main" },
@@ -58,6 +69,7 @@ test("releases, history items and promotions carry a set's components; a product
       release: null, iconUrl: "/i", environments: [],
       repositories: undefined }] });
   const releases = await deploymentsApi.listReleases();
+  assert.deepEqual(releases.value[0].notYet, [{ name: "marketing", repository: "ocharo-hq/ocharo-marketing" }]);
   assert.deepEqual(releases.value[0].components, [{ name: "studio", repository: "ocharo-hq/ocharo-studio", release: "v0.1.6",
     kind: "release", sourceCommit: "c".repeat(40) }]);
   const products = await productsApi.listProducts();

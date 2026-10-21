@@ -1,9 +1,11 @@
 """Discovery of completed release assets and per-commit candidate builds from the inventory's repositories.
 
 A product built from several repositories (decision 70) lists release sets instead of its repositories' own releases:
-one release of each repository, composed into one bundle (release_sets.py). Its release sets follow its repositories'
-releases in time — each repository release makes one set with every other repository's newest release then — and each
-commit build of one repository makes a candidate set with every other repository's newest release."""
+one release of each repository that has released, composed into one bundle (release_sets.py). Its release sets follow
+its repositories' releases in time — each repository release makes one set with every other repository's newest release
+then — and each commit build of one repository makes a candidate set with every other repository's newest release. A
+repository with no release yet is left out of the sets until it releases (`notYet` names it); the primary repository
+serves the front door, so no set exists before its first release."""
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -387,9 +389,24 @@ SETS_LISTED = 50
 CANDIDATE_SETS = 10
 
 
+def not_yet(product, names):
+    """The product's repositories a set does not hold yet, in repository order: each that has not released, or whose
+    deploy.yml names no service yet. `names` are the short names of the repositories in the set."""
+    found = next((item for item in catalog.products() if item.slug == product), None)
+    repositories = [repository for repository, _ in found.repositories()] if found is not None else []
+    return [{"name": catalog.short_name(product, repository), "repository": repository} for repository in repositories
+            if catalog.short_name(product, repository) not in names]
+
+
 def set_item(group, parts):
-    """The catalog entry of one release set: `parts` are one artifact of each repository, in repository order."""
-    product, names = group[0].product, [source.component for source in group]
+    """The catalog entry of one release set: `parts` hold one artifact of each repository, in repository order, None
+    for a repository that has not released. The set, its ID and its label cover the repositories that have; the
+    primary repository serves the front door, so it must be one of them."""
+    require(parts and parts[0] is not None, group[0].repository + " serves the product's front door and has no release "
+            "yet; the product's release sets start with its first release")
+    product = group[0].product
+    names = [source.component for source, part in zip(group, parts) if part is not None]
+    parts = [part for part in parts if part is not None]
     set_id = release_sets.identifier(product, [part["id"] for part in parts])
     kind = "candidate" if any(part["kind"] == "candidate" for part in parts) else "release"
     published_at = max((str(part["publishedAt"]) for part in parts if part.get("publishedAt")), default=None)
@@ -397,7 +414,8 @@ def set_item(group, parts):
             "release": release_sets.label(set_id, [(name, part["release"]) for name, part in zip(names, parts)]),
             "kind": kind, "repository": group[0].repository, "provider": ArtifactProvider.RELEASE_SET.value,
             "publishedAt": published_at, "prerelease": kind == "candidate" or any(part.get("prerelease") for part in parts),
-            "components": [{"name": name, **part} for name, part in zip(names, parts)]}
+            "components": [{"name": name, **part} for name, part in zip(names, parts)],
+            "notYet": not_yet(product, names)}
     build = next((part for part in parts if part["kind"] == "candidate"), None)
     if build is not None:
         item.update(commit=build["commit"], branch=build.get("branch"), expiresAt=build.get("expiresAt"))
@@ -410,25 +428,26 @@ def component_releases(group, per_page=100):
 
 
 def newest_set(group):
-    """The set of each repository's newest published release, or None while one repository has none."""
+    """The set of each released repository's newest published release, or None while the primary repository has none."""
     newest = [max(items, key=lambda item: item["publishedAt"], default=None)
               for items in component_releases(group, per_page=10)]
-    return set_item(group, newest) if all(newest) else None
+    return set_item(group, newest) if newest[0] is not None else None
 
 
 def sets_of(group):
-    """A product's release sets, newest first: one after each repository release once every repository has released,
-    holding every other repository's newest release then; then one candidate set per recent commit build of a
-    repository, beside every other repository's newest release."""
+    """A product's release sets, newest first: one after each repository release once the primary repository has
+    released, holding every other repository's newest release then and leaving out each that has none yet; then one
+    candidate set per recent commit build of a repository, beside every other repository's newest release. None while
+    the primary repository has no release."""
     listings = component_releases(group)
-    if not all(listings):
+    if not listings[0]:
         return []
     events = sorted(((item["publishedAt"], index, item) for index, items in enumerate(listings) for item in items),
                     key=lambda event: (event[0], event[1]))
     newest, result = [None] * len(group), []
     for _, index, item in events:
         newest[index] = item
-        if all(newest):
+        if newest[0] is not None:
             result.append(set_item(group, list(newest)))
     result = list(reversed(result))[:SETS_LISTED]
     for index, source in enumerate(group):
@@ -472,13 +491,15 @@ def set_parts(product, text, root):
 
 
 def set_changelog(product, group, start, end, root):
+    """A repository the set to promote leaves out (it has not released yet) has no part in the changelog and is named
+    in `notYet`; one that joins it lists its releases up to the one it brings."""
     require(end is not None, "A changelog needs the release to promote")
     before, after = set_parts(product, start, root), set_parts(product, end, root)
     components = []
     for source in group:
         to, since = after.get(source.component), before.get(source.component)
         if to is None or to == since or not VERSION.fullmatch(to):
-            continue  # unchanged, or a commit build, which prod never takes
+            continue  # not in the set yet, unchanged, or a commit build, which prod never takes
         one = source_changelog(product, source, since if since and VERSION.fullmatch(since) else None, to)
         components.append({"name": source.component, "repository": source.repository, **one})
     releases = sorted(({**item, "name": component["name"] + " " + item["name"], "repository": component["repository"]}
@@ -493,7 +514,7 @@ def set_changelog(product, group, start, end, root):
                                  for path in component["migrations"])[:50],
             "compareUrl": compared[0]["compareUrl"] if len(compared) == 1 else None,
             "reason": next((component["reason"] for component in components if component["reason"]), None),
-            "components": components}
+            "components": components, "notYet": not_yet(product, set(after))}
 
 
 def source_changelog(product, source, start, end):
@@ -794,10 +815,15 @@ def prepare_set(root, identifier, importer):
     require(item is not None, "Release set is no longer available")
     group = product_sources(item["product"])
     components = item.get("components") if isinstance(item.get("components"), list) else []
-    require(several(group) and [source.repository for source in group] == [part.get("repository") for part in components],
+    # A set holds the repositories that had released, in repository order and always the primary one; the rest join a
+    # later set when they release.
+    order = {source.repository: index for index, source in enumerate(group)}
+    places = [order.get(part.get("repository")) if isinstance(part, dict) else None for part in components]
+    require(several(group) and places and places[0] == 0 and None not in places and places == sorted(set(places)),
             "The product's repositories changed since this release set; deploy a newer one")
     parts = []
-    for source, component in zip(group, components):
+    for component in components:
+        source = group[order[component["repository"]]]
         artifact = {key: value for key, value in component.items() if key != "name"}
         folder = prepare_artifact(root, artifact, source, importer)
         parts.append((source.component, source.repository, read_json(folder / "release.json"),

@@ -1,8 +1,11 @@
-"""A product built from several repositories releases as a set (decision 70): one release of each repository,
-composed on the control host into one bundle that deploys, rolls back and promotes like any single-repository release.
+"""A product built from several repositories releases as a set (decision 70): one release of each repository that has
+released, composed on the control host into one bundle that deploys, rolls back and promotes like any single-repository
+release. A repository with no release yet (or a deploy.yml that names no service yet) is left out until it releases, and
+later sets take it; the primary repository serves the front door, so no set exists before its first release.
 
 - Identity: a set's bundle ID is `<product>-set-<12 hex>`, the first 12 hex digits of the SHA-256 of its components'
-  artifact IDs in repository order, so the same components always make the same set. Its release label names each
+  artifact IDs in repository order, so the same components always make the same set; a repository not in it yet
+  changes neither its ID nor its label. Its release label names each
   component as `<short name>-<release>`, joined by `_` in repository order (`platform-v0.1.2_studio-v0.1.2`), or
   `set-<12 hex>` when that would pass 96 characters.
 - Composition: services, sites and named volumes keep the names their repositories give them, and no two repositories
@@ -12,7 +15,8 @@ composed on the control host into one bundle that deploys, rolls back and promot
   primary site (another repository's primary site is an ordinary one), so the repository that serves the front door
   goes first. A service may depend on another repository's service.
 - The set bundle is schema 2: the product's sites and each service's routes. Rollback compatibility holds only when
-  every component declares it; .NET environments stay with the services whose repository opted in.
+  every component in the set declares it (a repository not in it yet declares nothing); .NET environments stay with the
+  services whose repository opted in.
 """
 from __future__ import annotations
 import hashlib

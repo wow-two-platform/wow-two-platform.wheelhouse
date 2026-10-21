@@ -427,7 +427,8 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
         var warnings = result.GetProperty("warnings").EnumerateArray()
             .Select(warning => (warning.GetProperty("slug").GetString(), warning.GetProperty("message").GetString()!)).ToList();
         warnings.Select(warning => warning.Item1).Should().Equal("secrets-vault", "notes-app", "pipelines");
-        warnings[0].Item2.Should().Contain("has no engineering/deployment/deploy.yml").And.Contain("no images");
+        warnings[0].Item2.Should().Be(
+            "wow-two-platform/wow-two-platform.secrets-vault@main has no engineering/deployment/deploy.yml, so the product has no images yet.");
         warnings[1].Item2.Should().Contain("no GitHub repository");
         warnings[2].Item2.Should().Contain("deploy: none");
 

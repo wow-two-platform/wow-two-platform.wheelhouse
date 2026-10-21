@@ -308,9 +308,12 @@ class ReleaseSetTests(unittest.TestCase):
 
     def test_each_repository_release_makes_a_set_with_the_others_newest_release(self):
         listed = artifacts.available(self.root)
-        self.assertEqual(['app-v0.1.1_studio-v0.2.0', 'app-v0.1.0_studio-v0.2.0'], [item['release'] for item in listed])
+        # The first app release came before studio's, so its set holds app alone.
+        self.assertEqual(['app-v0.1.1_studio-v0.2.0', 'app-v0.1.0_studio-v0.2.0', 'app-v0.1.0'],
+                         [item['release'] for item in listed])
         newest = listed[0]
         self.assertEqual(release_sets.identifier('pilot', ['pilot-gh-12', 'pilot-gh-21']), newest['id'])
+        self.assertEqual([], newest['notYet'])
         self.assertEqual(('release', 'ReleaseSet', '2026-10-03T00:00:00Z', False),
                          (newest['kind'], newest['provider'], newest['publishedAt'], newest['prerelease']))
         self.assertEqual([('app', APP, 'v0.1.1'), ('studio', STUDIO, 'v0.2.0')],
@@ -322,10 +325,82 @@ class ReleaseSetTests(unittest.TestCase):
                                                                         ('id', 'release', 'publishedAt')}}],
                          artifacts.latest())
 
-    def test_no_set_lists_until_every_repository_has_released(self):
+    def test_a_repository_with_no_release_yet_is_left_out_until_it_releases(self):
         self.github.releases[STUDIO] = []
+        listed = artifacts.available(self.root)
+        self.assertEqual(['app-v0.1.1', 'app-v0.1.0'], [item['release'] for item in listed])
+        newest = listed[0]
+        # The set, its ID and its label cover the released repositories only; the rest are named as not in it yet.
+        self.assertEqual(release_sets.identifier('pilot', ['pilot-gh-12']), newest['id'])
+        self.assertEqual(['app'], [part['name'] for part in newest['components']])
+        self.assertEqual([{'name': 'studio', 'repository': STUDIO}], newest['notYet'])
+        self.assertEqual([{'product': 'pilot', 'ok': True, 'release': {key: newest[key] for key in
+                                                                        ('id', 'release', 'publishedAt')}}],
+                         artifacts.latest())
+        manifest = runner.validate_bundle(artifacts.prepare(self.root, newest['id'], transport.import_bundle))
+        self.assertEqual(('app-v0.1.1', newest['id'], {'api', 'web'}, True),
+                         (manifest['release'], manifest['set'], set(manifest['images']), manifest['rollbackCompatible']))
+        self.assertEqual(['app'], [part['name'] for part in history.bundle_facts(self.root, newest['id'])['components']])
+        changes = artifacts.changelog('pilot', 'app-v0.1.0', 'app-v0.1.1', self.root)
+        self.assertEqual((['app'], [{'name': 'studio', 'repository': STUDIO}]),
+                         ([item['name'] for item in changes['components']], changes['notYet']))
+
+        # Once studio releases, later sets take it and the watcher's newest set is the whole product.
+        self.github.release(STUDIO, 'v0.2.0', '2026-10-04T00:00:00Z', 21, *bundle('v0.2.0', self.studio_images,
+                                                                                    '2' * 40))
+        listed = artifacts.available(self.root)
+        self.assertEqual(['app-v0.1.1_studio-v0.2.0', 'app-v0.1.1', 'app-v0.1.0'], [item['release'] for item in listed])
+        self.assertEqual((release_sets.identifier('pilot', ['pilot-gh-12', 'pilot-gh-21']), []),
+                         (listed[0]['id'], listed[0]['notYet']))
+        self.assertEqual(listed[0]['id'], artifacts.latest()[0]['release']['id'])
+        joined = artifacts.changelog('pilot', 'app-v0.1.1', 'app-v0.1.1_studio-v0.2.0', self.root)
+        self.assertEqual((['studio'], ['studio v0.2.0'], []),
+                         ([item['name'] for item in joined['components']], [item['name'] for item in joined['releases']],
+                          joined['notYet']))
+        # The dev-proven set without studio still promotes as it was, from what was remembered.
+        self.github.releases[APP] = self.github.releases[APP][:1]
+        older = release_sets.identifier('pilot', ['pilot-gh-11'])
+        self.assertNotIn(older, [item['id'] for item in artifacts.available(self.root)])
+        self.assertEqual('app-v0.1.0', runner.validate_bundle(
+            artifacts.prepare(self.root, older, transport.import_bundle))['release'])
+
+    def test_a_commit_build_joins_the_released_repositories_as_a_candidate_set(self):
+        self.github.releases[STUDIO] = []
+        manifest, compose_bytes = bundle('sha-5555555', self.studio_images, '5' * 40, kind='candidate')
+        self.github.build(STUDIO, 77, manifest, compose_bytes)
+        manifest, compose_bytes = bundle('sha-6666666', self.app_images, '6' * 40, kind='candidate',
+                                         sites={'web': {'app': {'port': 8080, 'path': '/', 'exposure': 'public'}}})
+        self.github.build(APP, 78, manifest, compose_bytes)
+        candidates = {item['release']: item for item in artifacts.available(self.root) if item['kind'] == 'candidate'}
+        self.assertEqual({'app-v0.1.1_studio-sha-5555555', 'app-sha-6666666'}, set(candidates))
+        self.assertEqual([], candidates['app-v0.1.1_studio-sha-5555555']['notYet'])
+        self.assertEqual(['studio'], [item['name'] for item in candidates['app-sha-6666666']['notYet']])
+
+    def test_no_set_exists_before_the_primary_repository_releases(self):
+        self.github.releases[APP] = []
+        manifest, compose_bytes = bundle('sha-5555555', self.studio_images, '5' * 40, kind='candidate')
+        self.github.build(STUDIO, 77, manifest, compose_bytes)
         self.assertEqual([], artifacts.available(self.root))
         self.assertEqual([{'product': 'pilot', 'ok': True, 'release': None}], artifacts.latest())
+        group = artifacts.product_sources('pilot')
+        with self.assertRaisesRegex(ValueError, "owner/pilot-app serves the product's front door and has no release yet"):
+            artifacts.set_item(group, [None, artifacts.published(group[1])[0]])
+        # A remembered set must hold the primary repository's release, in repository order.
+        studio_only = {'id': release_sets.identifier('pilot', ['pilot-gh-21']), 'product': 'pilot', 'release': 'studio-v0.2.0',
+                       'components': [{'name': 'studio', 'repository': STUDIO, 'id': 'pilot-gh-21'}]}
+        release_sets.remember(self.root, studio_only)
+        with self.assertRaisesRegex(ValueError, 'repositories changed'):
+            artifacts.prepare(self.root, studio_only['id'], transport.import_bundle)
+
+    def test_a_repository_without_services_yet_is_named_as_not_in_the_set(self):
+        marketing = catalog.Component('owner/pilot-marketing', catalog.Release('pilot-release.tar.gz', ()))
+        three = catalog.Product('pilot', 'Pilot', '', APP, release=product().release,
+                                components=product().components + (marketing,))
+        with patch.object(catalog, 'PRODUCTS', (three,)):
+            newest = artifacts.available(self.root)[0]
+        self.assertEqual(('app-v0.1.1_studio-v0.2.0', release_sets.identifier('pilot', ['pilot-gh-12', 'pilot-gh-21'])),
+                         (newest['release'], newest['id']))
+        self.assertEqual([{'name': 'marketing', 'repository': 'owner/pilot-marketing'}], newest['notYet'])
 
     def test_a_set_composes_from_each_repositorys_checked_release_and_deploys_as_one_bundle(self):
         newest = artifacts.available(self.root)[0]
@@ -448,6 +523,26 @@ class LocalSetTests(unittest.TestCase):
                 self.assertIn(made['id'], [item['id'] for item in artifacts.imported(root)])
                 self.assertEqual(root / 'bundles' / made['id'],
                                  artifacts.prepare(root, made['id'], transport.import_bundle))
+                self.assertEqual([], made['notYet'])
+            # A product of three repositories whose third has not released: the set is the same one, named so.
+            marketing = catalog.Component('owner/pilot-marketing', catalog.Release(
+                'pilot-release.tar.gz', (('marketing', 'ghcr.io/owner/pilot-marketing/marketing'),)))
+            three = catalog.Product('pilot', 'Pilot', '', APP, release=product().release,
+                                    components=product().components + (marketing,))
+            with patch.dict(os.environ, {'WHEELHOUSE_REHEARSAL': '1'}), patch.object(catalog, 'PRODUCTS', (three,)):
+                partial = transport.compose_set(root, 'pilot', ['app=pilot-a', 'studio=pilot-b'])
+                self.assertEqual((made['id'], made['release']), (partial['id'], partial['release']))
+                self.assertEqual([STUDIO], [item['repository'] for item in partial['components'][1:]])
+                self.assertEqual([{'name': 'marketing', 'repository': 'owner/pilot-marketing'}], partial['notYet'])
+                alone = transport.compose_set(root, 'pilot', ['app=pilot-a'])
+                self.assertEqual(('app-v0.1.0', ['studio', 'marketing']),
+                                 (alone['release'], [item['name'] for item in alone['notYet']]))
+                with self.assertRaisesRegex(ValueError, "owner/pilot-app serves the product's front door"):
+                    transport.compose_set(root, 'pilot', ['studio=pilot-b'])
+                with self.assertRaisesRegex(ValueError, "repository order: app, studio, marketing"):
+                    transport.compose_set(root, 'pilot', ['app=pilot-a', 'marketing=pilot-b', 'studio=pilot-b'])
+                with self.assertRaisesRegex(ValueError, "go is not one of the product's repositories"):
+                    transport.compose_set(root, 'pilot', ['app=pilot-a', 'go=pilot-b'])
 
 
 if __name__ == '__main__':

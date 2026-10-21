@@ -1,7 +1,9 @@
 /**
- * A product built from several repositories releases as a set (decision 70): one release of each repository. Its label
- * names each as `<name>-<release>`, joined by `_` in repository order (`platform-v0.1.8_studio-v0.1.6`), or
- * `set-<12 hex>` when that would be too long. These rules read such a label for people; every other label passes as is.
+ * A product built from several repositories releases as a set (decision 70): one release of each repository that has
+ * released; one that has not yet is left out until it does, and the set names it as not in it yet. Its label names each
+ * as `<name>-<release>`, joined by `_` in repository order (`platform-v0.1.8_studio-v0.1.6`, or `platform-v0.1.8` while
+ * only the primary repository has released), or `set-<12 hex>` when that would be too long. These rules read such a
+ * label for people; every other label passes as is.
  */
 export interface ReleasePart {
   /** The repository's name within the product. */
@@ -13,11 +15,21 @@ export interface ReleasePart {
 const PART = /^([a-z][a-z0-9-]*?)-(v\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?|sha-[0-9a-f]{7})$/;
 const DIGEST = /^set-[0-9a-f]{12}$/;
 
-/** Each repository's release in a set's joined label; null for any other label, a single release's included. */
+/** A repository of the product that a set does not hold yet: it has not released, or names no service yet. */
+export interface NotYetPart {
+  /** The repository's name within the product. */
+  readonly name: string | null;
+  /** The repository, as `owner/name`. */
+  readonly repository: string | null;
+}
+
+/**
+ * Each repository's release in a set's joined label; null for any other label. A repository's own release tag
+ * (`v0.1.8`) or commit build (`sha-…`) carries no name, so it never reads as a set.
+ */
 function parts(label: string | null | undefined): ReleasePart[] | null {
   if (!label) return null;
   const pieces = label.split('_');
-  if (pieces.length < 2) return null;
   const result: ReleasePart[] = [];
   for (const piece of pieces) {
     const match = PART.exec(piece);
@@ -40,6 +52,11 @@ export const ReleaseSets = {
   text: (label: string | null | undefined): string => {
     const found = parts(label);
     return found ? found.map((part) => `${part.name} ${part.release}`).join(' + ') : (label ?? '');
+  },
+  /** The repositories a set does not hold yet, as people read them: `marketing`, `studio and marketing`; empty for none. */
+  notYet: (items: readonly NotYetPart[] | null | undefined): string => {
+    const names = (items ?? []).map((item) => item.name ?? item.repository ?? '').filter(Boolean);
+    return names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : (names[0] ?? '');
   },
   /** A label as a pill shows it: the first repository's version and how many more (`platform 0.1.8 +2`). */
   short: (label: string): string => {

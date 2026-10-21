@@ -1,3 +1,4 @@
+import type { NotYetPart } from '../ReleaseSets';
 import type { ReleaseComponent } from './ReleaseComponent';
 
 /** Distinguishes a published release (a version tag) from a build of a commit, which only dev takes. */
@@ -19,4 +20,6 @@ export interface ReleaseArtifact {
   expiresAt?: string | null;
   /** Each repository's release, for a release set of a product built from several repositories. */
   components?: ReleaseComponent[] | null;
+  /** The product's repositories a release set does not hold yet: each has not released, or names no service yet. */
+  notYet?: NotYetPart[] | null;
 }

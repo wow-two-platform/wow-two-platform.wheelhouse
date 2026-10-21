@@ -22,6 +22,7 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
     private const string Platform = "ocharo-hq/ocharo-platform";
     private const string Studio = "ocharo-hq/ocharo-studio";
     private const string Assets = "ocharo-hq/ocharo-assets";
+    private const string Marketing = "ocharo-hq/ocharo-marketing";
 
     /// <summary>The Ocharo hub as the merge leaves it: one product of three repositories that replaces two older ones.</summary>
     private const string Catalog =
@@ -239,6 +240,35 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
     }
 
     [Fact]
+    public async Task Import_ShouldNoteThatARepositoryWithoutADescriptorAddsNoServicesYet()
+    {
+        PushRepositories();
+        Fixture.RepositoryFiles.Push(Hub, "catalog.yml", Catalog.Replace(Assets + "]", Assets + ", " + Marketing + "]"));
+        Fixture.RepositoryFiles.PushEmpty(Marketing);
+
+        var result = await DataAsync(await ActionClient("catalog").PostJsonAsync("api/catalog/import", new { slugs = new[] { "ocharo" } }));
+
+        Strings(result.GetProperty("createdProducts")).Should().Equal("ocharo");
+        result.GetProperty("warnings").EnumerateArray().Select(item => item.GetProperty("message").GetString()).Should().Equal(
+            "ocharo-hq/ocharo-marketing@main has no engineering/deployment/deploy.yml yet, so it adds no services until it has one and releases.");
+        var marketing = (await ProductAsync("ocharo")).GetProperty("repositories").EnumerateArray().Last();
+        (marketing.GetProperty("name").GetString(), marketing.GetProperty("release").GetProperty("images").GetArrayLength())
+            .Should().Be(("marketing", 0));
+    }
+
+    [Fact]
+    public async Task Import_ShouldNoteThatThePrimaryRepositoryWithoutADescriptorHoldsBackEverySet()
+    {
+        PushRepositories();
+        Fixture.RepositoryFiles.PushEmpty(Platform);
+
+        var result = await DataAsync(await ActionClient("catalog").PostJsonAsync("api/catalog/import", new { slugs = new[] { "ocharo" } }));
+
+        result.GetProperty("warnings").EnumerateArray().Select(item => item.GetProperty("message").GetString()).Should().Equal(
+            "ocharo-hq/ocharo-platform@main has no engineering/deployment/deploy.yml yet; it serves the product's front door, so the product has no release sets until it has one and releases.");
+    }
+
+    [Fact]
     public async Task Import_ShouldGiveAnExistingProductTheEntrysRepositories()
     {
         PushRepositories();
@@ -338,6 +368,10 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
         changelog.StatusCode.Should().Be(HttpStatusCode.OK);
         Fixture.Deployments.LastChangelog.Should().Be(("ocharo", "platform-v0.1.8_studio-v0.1.6", "platform-v0.1.9_studio-sha-abcdef1"));
         (await AdminClient.GetAsync("api/deployments/products/ocharo/changelog?to=set-0123456789ab")).StatusCode.Should().Be(HttpStatusCode.OK);
+        // A set the repositories that have not released yet are left out of: here the primary one alone.
+        (await AdminClient.GetAsync("api/deployments/products/ocharo/changelog?from=platform-v0.1.8&to=platform-v0.1.9_assets-v0.1.1"))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        Fixture.Deployments.LastChangelog.Should().Be(("ocharo", "platform-v0.1.8", "platform-v0.1.9_assets-v0.1.1"));
         (await AdminClient.GetAsync("api/deployments/products/ocharo/changelog?to=platform_v1")).StatusCode
             .Should().Be(HttpStatusCode.BadRequest);
     }
