@@ -112,23 +112,29 @@ const state = computed(() =>
       @update:selection="emit('select', $event)"
     >
       <template #cell="{ row, column }">
-        <template v-if="column.key === 'app'">
+        <div v-if="column.key === 'app'" class="min-w-0">
           <span class="block font-medium">{{ row.name }}</span>
           <span class="block font-mono text-xs text-muted-foreground">{{ row.slug }}</span>
-          <!-- One product of several repositories (decision 70), and the products importing it retires. -->
+          <!-- One product of several repositories (decision 70), and the products importing it retires: one line, so a
+               phone's card keeps it under the name. -->
           <span
-            v-if="row.repositories.length > 1"
+            v-if="row.repositories.length > 1 || row.replaces.length"
             class="block text-xs text-muted-foreground"
-            :title="row.repositories.join(', ')"
-            >{{ row.repositories.length }} repositories</span
+            :title="
+              [row.repositories.join(', '), row.replaces.length ? 'Importing retires the products it replaces when nothing was deployed to them' : '']
+                .filter(Boolean)
+                .join(' · ')
+            "
+            >{{
+              [
+                row.repositories.length > 1 ? `${row.repositories.length} repositories` : '',
+                row.replaces.length ? `replaces ${row.replaces.join(', ')}` : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')
+            }}</span
           >
-          <span
-            v-if="row.replaces.length"
-            class="block text-xs text-muted-foreground"
-            :title="'Importing retires these when nothing was deployed to them'"
-            >Replaces {{ row.replaces.join(", ") }}</span
-          >
-        </template>
+        </div>
         <span v-else-if="column.key === 'kind'" class="capitalize">{{ row.kind }}</span>
         <Badge
           v-else-if="column.key === 'state'"
