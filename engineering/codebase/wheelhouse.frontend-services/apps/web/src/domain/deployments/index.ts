@@ -7,6 +7,8 @@ export type { DeploymentTarget } from './models/DeploymentTarget';
 export type { SelfDeployment, SelfDeploymentRun } from './models/SelfDeployment';
 export { SelfDeployRules, SelfProduct, type SelfNotice, type SelfNoticeTone } from './SelfDeployRules';
 export type { ReleaseArtifact, ReleaseKind } from './models/ReleaseArtifact';
+export type { ReleaseComponent } from './models/ReleaseComponent';
+export { ReleaseSets, type ReleasePart } from './ReleaseSets';
 export type { PublishedSite, SiteProbe } from './models/PublishedSite';
 export type { ServiceVersion } from './models/ServiceVersion';
 export type { CommitEntry } from './models/CommitEntry';

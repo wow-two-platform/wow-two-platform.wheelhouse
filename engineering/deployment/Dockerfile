@@ -29,7 +29,7 @@ WORKDIR /app
 COPY --from=build /app ./
 COPY wheelhouse.runner-services/runner.py wheelhouse.runner-services/transport.py wheelhouse.runner-services/fleet.py \
      wheelhouse.runner-services/artifacts.py wheelhouse.runner-services/catalog.py wheelhouse.runner-services/inventory.py \
-     wheelhouse.runner-services/history.py wheelhouse.runner-services/registry.py \
+     wheelhouse.runner-services/history.py wheelhouse.runner-services/registry.py wheelhouse.runner-services/release_sets.py \
      wheelhouse.runner-services/infra.py wheelhouse.runner-services/infra_jobs.py wheelhouse.runner-services/tailnet.py \
      wheelhouse.runner-services/enroll.py wheelhouse.runner-services/placement.py wheelhouse.runner-services/kit.py \
      wheelhouse.runner-services/upkeep.py wheelhouse.runner-services/self_check.py \

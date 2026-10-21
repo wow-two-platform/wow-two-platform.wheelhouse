@@ -20,4 +20,8 @@ public sealed record SnapshotProductModel
 
     /// <summary>Gets the release source, or <c>null</c> when only hand-imported bundles deploy.</summary>
     public SnapshotReleaseModel? Release { get; init; }
+
+    /// <summary>Gets the product's further repositories after its primary one; absent from a snapshot written before
+    /// decision 70, and empty for a product of one repository.</summary>
+    public IReadOnlyList<SnapshotComponentModel> Components { get; init; } = [];
 }

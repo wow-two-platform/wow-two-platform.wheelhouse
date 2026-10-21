@@ -26,6 +26,10 @@ public sealed record CatalogEntryModel
     /// <summary>Gets the entry's GitHub repositories as <c>owner/name</c>, the primary first; empty while none exists.</summary>
     public required IReadOnlyList<string> Repositories { get; init; }
 
+    /// <summary>Gets the slugs of the products the entry supersedes: importing it retires each one nothing ever deployed
+    /// to — its environments, then the product.</summary>
+    public IReadOnlyList<string> Replaces { get; init; } = [];
+
     /// <summary>Gets the repository of the hub that lists the entry; empty until the reader tags it.</summary>
     public string Source { get; init; } = "";
 }

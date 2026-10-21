@@ -9,53 +9,71 @@ import {
 } from "@/domain/products";
 import { requestAccepted, requestData, requestEmpty } from "@/integration/common";
 
-const ProductSchema = z.object({
-  id: z.string().optional(),
-  slug: z.string(),
-  name: z.string(),
-  description: z.string(),
-  homepage: z.string().nullable(),
-  identity: z.object({
-    source: z.enum(ProductIdentitySource),
-    commit: z.string().nullable(),
-    problem: z.string().nullable(),
-    services: z.array(
-      z.object({ service: z.string(), name: z.string().nullable(), description: z.string().nullable() }),
-    ),
-  }),
-  workspaceId: z.string().nullable(),
-  status: z.enum(ProductStatus),
-  // A host before the stored mode sends none; every product it deploys is Wheelhouse's.
-  deploy: z.enum(ProductDeploy).default(ProductDeploy.Wheelhouse),
-  inactiveServices: z.array(z.string()),
-  repository: z.object({
-    name: z.string(),
-    url: z.string(),
-    defaultBranch: z.string(),
-  }),
-  release: z
-    .object({
-      asset: z.string(),
-      workflow: z.string().nullable(),
-      images: z.array(z.object({ service: z.string(), image: z.string() })),
-    })
-    .nullable(),
-  iconUrl: z.string(),
-  environments: z.array(
-    z.object({
-      name: z.string(),
-      sites: z.array(
-        z.object({
-          name: z.string(),
-          url: z.string(),
-          exposure: z.enum(["public", "private"]),
-          primary: z.boolean().default(false),
-        }),
-      ),
-      secrets: z.object({ vault: z.string(), namespace: z.string() }).nullable(),
-    }),
-  ),
+const ReleaseSourceSchema = z.object({
+  asset: z.string(),
+  workflow: z.string().nullable(),
+  images: z.array(z.object({ service: z.string(), image: z.string() })),
 });
+
+const ProductSchema = z
+  .object({
+    id: z.string().optional(),
+    slug: z.string(),
+    name: z.string(),
+    description: z.string(),
+    homepage: z.string().nullable(),
+    identity: z.object({
+      source: z.enum(ProductIdentitySource),
+      commit: z.string().nullable(),
+      problem: z.string().nullable(),
+      services: z.array(
+        z.object({ service: z.string(), name: z.string().nullable(), description: z.string().nullable() }),
+      ),
+    }),
+    workspaceId: z.string().nullable(),
+    status: z.enum(ProductStatus),
+    // A host before the stored mode sends none; every product it deploys is Wheelhouse's.
+    deploy: z.enum(ProductDeploy).default(ProductDeploy.Wheelhouse),
+    inactiveServices: z.array(z.string()),
+    repository: z.object({
+      name: z.string(),
+      url: z.string(),
+      defaultBranch: z.string(),
+    }),
+    release: ReleaseSourceSchema.nullable(),
+    // Every repository, primary first (decision 70); a host before it sends none, so the primary one stands alone.
+    repositories: z
+      .array(
+        z.object({ name: z.string(), repository: z.string(), url: z.string(), release: ReleaseSourceSchema.nullable() }),
+      )
+      .optional(),
+    iconUrl: z.string(),
+    environments: z.array(
+      z.object({
+        name: z.string(),
+        sites: z.array(
+          z.object({
+            name: z.string(),
+            url: z.string(),
+            exposure: z.enum(["public", "private"]),
+            primary: z.boolean().default(false),
+          }),
+        ),
+        secrets: z.object({ vault: z.string(), namespace: z.string() }).nullable(),
+      }),
+    ),
+  })
+  .transform((product) => ({
+    ...product,
+    repositories: product.repositories ?? [
+      {
+        name: product.repository.name.split("/").pop() ?? product.repository.name,
+        repository: product.repository.name,
+        url: product.repository.url,
+        release: product.release,
+      },
+    ],
+  }));
 
 /** What a product's deploy.yml declares; a descriptor that cannot be read comes with its reason and nothing else. */
 export const ProductDescriptorSchema = z.object({

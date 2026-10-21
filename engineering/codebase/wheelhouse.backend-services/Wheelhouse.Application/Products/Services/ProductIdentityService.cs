@@ -6,7 +6,8 @@ using Wheelhouse.Domain.Products.Enums;
 namespace Wheelhouse.Application.Products.Services;
 
 /// <summary>Decides what each product is called and described as: the cached manifest of its repository when it has a
-/// valid one, otherwise the product's own row — and keeps that cache current.</summary>
+/// valid one, otherwise the product's own row — and keeps that cache current. A product built from several repositories
+/// always reads as its own row.</summary>
 /// <remarks>
 /// The cache is a projection with one row per product holding the manifest values and the commit they were read from.
 /// Nothing expires it on a timer: a row is replaced only by a copy read at a newer commit, and dropped when a newer
@@ -60,6 +61,10 @@ public sealed class ProductIdentityService(IProductManifestsRepository manifests
                 ? stored
                 : null;
         var outcome = new Outcome { Product = product, Stored = stored, Kept = kept };
+        // A product built from several repositories is named by its own row (its catalog entry): each repository's
+        // manifest describes that repository, not the product (decision 70).
+        if (product.Components.Count > 0)
+            return outcome with { Kept = null };
 
         try
         {

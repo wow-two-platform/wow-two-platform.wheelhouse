@@ -7,6 +7,7 @@ export interface ReleaseCatalogPanelProps {
 </script>
 
 <script setup lang="ts">
+import { ReleaseSets } from "@/domain/deployments";
 import { computed, ref } from "vue";
 import { Rocket } from "lucide-vue-next";
 
@@ -125,7 +126,7 @@ const rows = useSkeletonItems(() => (releases.data.value ? visible.value : undef
             <!-- The kind sits beside the version and wraps under it only when the cell is too narrow. -->
             <TableCell>
               <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <Text as="span" class="font-mono text-xs font-medium">{{ artifact?.release }}</Text>
+                <Text as="span" class="font-mono text-xs font-medium">{{ ReleaseSets.text(artifact?.release) }}</Text>
                 <Badge :variant="artifact?.kind === 'candidate' ? 'neutral' : 'success'">{{
                   artifact?.kind === "candidate" ? "Commit build" : artifact?.prerelease ? "Pre-release" : "Release"
                 }}</Badge>

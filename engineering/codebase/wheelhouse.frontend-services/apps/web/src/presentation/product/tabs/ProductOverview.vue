@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ReleaseSets } from "@/domain/deployments";
 import { computed, nextTick, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
@@ -844,7 +845,7 @@ function openDeploy(job?: DeploymentJob): void {
                 ><div>
                   <Rocket :size="26" class="mb-4 text-primary" />
                   <h3 class="break-all text-lg font-semibold">
-                    {{ inspectedJob.release ?? "Deployment" }}
+                    {{ ReleaseSets.text(inspectedJob.release) || "Deployment" }}
                   </h3>
                   <DeploymentStatusPill class="mt-2" v-bind="stateOf(inspectedJob)" />
                 </div>

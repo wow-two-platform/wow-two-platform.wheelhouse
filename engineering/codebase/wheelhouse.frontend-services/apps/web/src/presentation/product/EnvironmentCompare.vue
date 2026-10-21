@@ -13,6 +13,7 @@ export interface EnvironmentCompareProps {
 </script>
 
 <script setup lang="ts">
+import { ReleaseSets } from "@/domain/deployments";
 import { computed } from "vue";
 import { ArrowRight } from "lucide-vue-next";
 
@@ -121,7 +122,7 @@ const rows = computed(() => comparison.value.rows.filter((row) => !props.hiddenS
               release: column.promotion.bundleId,
             })
           "
-          >Promote {{ column.promotion.release }} to {{ column.promotion.environment
+          >Promote {{ ReleaseSets.text(column.promotion.release) }} to {{ column.promotion.environment
           }}<template #trailing><ArrowRight :size="14" /></template
         ></Button>
       </template>

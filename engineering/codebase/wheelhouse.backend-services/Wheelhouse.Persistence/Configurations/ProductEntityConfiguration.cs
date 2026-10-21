@@ -24,6 +24,11 @@ public sealed class ProductEntityConfiguration : IEntityTypeConfiguration<Produc
             .HasColumnType("jsonb")
             .HasJsonConversion();
         builder
+            .Property(entity => entity.Components)
+            .HasColumnName("components")
+            .HasColumnType("jsonb")
+            .HasJsonConversion();
+        builder
             .Property(entity => entity.CreatedAt)
             .HasColumnName("created_at_utc");
         builder

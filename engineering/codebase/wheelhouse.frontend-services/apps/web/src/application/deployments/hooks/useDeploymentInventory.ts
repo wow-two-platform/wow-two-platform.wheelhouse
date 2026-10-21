@@ -64,12 +64,16 @@ export function useTargetState(target: MaybeRefOrGetter<string | null>) {
   });
 }
 
-/** A product's branches, for choosing a commit to build or deploy to dev. */
-export function useProductBranches(product: MaybeRefOrGetter<string | null>) {
+/** A product's branches, for choosing a commit to build or deploy to dev; in a product built from several repositories,
+ * `repository`'s (its primary one when null). */
+export function useProductBranches(
+  product: MaybeRefOrGetter<string | null>,
+  repository: MaybeRefOrGetter<string | null> = null,
+) {
   return useAppQuery({
-    key: () => DeploymentKeys.branches(toValue(product) ?? ""),
+    key: () => DeploymentKeys.branches(toValue(product) ?? "", toValue(repository) ?? ""),
     queryFn: ({ signal }) =>
-      deploymentsApi.listBranches(toValue(product) ?? "", signal),
+      deploymentsApi.listBranches(toValue(product) ?? "", signal, toValue(repository)),
     enabled: () => Boolean(toValue(product)),
     meta: { suppressGlobalError: true },
   });
@@ -79,15 +83,17 @@ export function useProductBranches(product: MaybeRefOrGetter<string | null>) {
 export function useProductCommits(
   product: MaybeRefOrGetter<string | null>,
   branch: MaybeRefOrGetter<string | null>,
+  repository: MaybeRefOrGetter<string | null> = null,
 ) {
   return useAppQuery({
     key: () =>
-      DeploymentKeys.commits(toValue(product) ?? "", toValue(branch) ?? ""),
+      DeploymentKeys.commits(toValue(product) ?? "", toValue(branch) ?? "", toValue(repository) ?? ""),
     queryFn: ({ signal }) =>
       deploymentsApi.listCommits(
         toValue(product) ?? "",
         toValue(branch) ?? "",
         signal,
+        toValue(repository),
       ),
     enabled: () => Boolean(toValue(product) && toValue(branch)),
     meta: { suppressGlobalError: true },

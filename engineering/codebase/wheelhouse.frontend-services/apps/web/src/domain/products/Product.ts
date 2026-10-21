@@ -53,6 +53,17 @@ export interface ProductRepository {
   defaultBranch: string;
 }
 
+/** One repository of a product with its release source: its primary one, or a further one of a product built from
+ * several repositories (decision 70), whose releases are sets of theirs. */
+export interface ProductComponent {
+  /** The repository's name within the product, as a release set's label names it (`studio`). */
+  name: string;
+  /** `owner/name`. */
+  repository: string;
+  url: string;
+  release: ProductRelease | null;
+}
+
 /** One service's image repository. */
 export interface ReleaseImage {
   service: string;
@@ -115,6 +126,8 @@ export interface Product {
   repository: ProductRepository;
   /** Null when only hand-imported bundles deploy. */
   release: ProductRelease | null;
+  /** Every repository of the product, primary first: one for most products, several for one built from several. */
+  repositories: ProductComponent[];
   iconUrl: string;
   environments: ProductEnvironment[];
 }

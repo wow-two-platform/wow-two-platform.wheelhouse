@@ -86,6 +86,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
             Repository = request.Repository,
             DefaultBranch = request.DefaultBranch,
             Release = request.Release,
+            Components = request.Components,
             Deploy = request.Deploy,
             WorkspaceId = request.WorkspaceId,
         }, ct), envelope => CreatedAtAction(nameof(GetBySlug), new { slug = envelope.Data.Slug }, envelope));
@@ -106,6 +107,7 @@ public sealed class ProductsController(ISender sender) : ControllerBase
             Repository = request.Repository,
             DefaultBranch = request.DefaultBranch,
             Release = request.Release,
+            Components = request.Components,
             Deploy = request.Deploy,
         }, ct));
 

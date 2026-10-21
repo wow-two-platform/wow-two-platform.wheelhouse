@@ -16,6 +16,10 @@ public sealed record CatalogImportResultDto
     /// <c>deploy</c>.</summary>
     public IReadOnlyList<string> UpdatedProducts { get; init; } = [];
 
+    /// <summary>Gets the slugs of the products the import retired because an imported entry replaces them: nothing had
+    /// deployed to them, so their environments and then the products went.</summary>
+    public IReadOnlyList<string> RetiredProducts { get; init; } = [];
+
     /// <summary>Gets one note per entry the import skipped or created without images.</summary>
     public required IReadOnlyList<CatalogImportWarningDto> Warnings { get; init; }
 }

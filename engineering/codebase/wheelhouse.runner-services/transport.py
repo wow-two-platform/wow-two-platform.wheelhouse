@@ -25,6 +25,8 @@ import artifacts
 import history
 import inventory
 import registry
+import release_sets
+from fleet import rehearsal
 from runner import (PROXIES, SLUG, TERMINAL, CommandFailed, Rejected, now, reason, rejection, require, read_json,
                     write_json, validate_bundle, validate_target, empty_topology, provided_values, settings_declarations)
 
@@ -209,6 +211,34 @@ def import_bundle(root, archive, bundle_id):
         for name in ("compose.json", "release.json"):
             (destination / name).write_bytes((source / name).read_bytes())
     return {"id": bundle_id, "product": manifest["product"], "release": manifest["release"]}
+
+
+def compose_set(root, product, parts):
+    """The local server's release set: imported bundles of a product's repositories (`parts`, each `name=bundle` in
+    repository order, the primary first) composed into one bundle as a product built from several repositories
+    releases (decision 70). Listed and deployed like any imported bundle; never on a deployed control plane."""
+    require(rehearsal(), "Release sets compose from imported bundles only on the local server")
+    require(isinstance(product, str) and SLUG.fullmatch(product), "Invalid product")
+    require(parts and len(parts) >= 2, "A release set takes a bundle of each repository: name=bundle, twice or more")
+    pieces, identifiers = [], []
+    for part in parts:
+        name, _, bundle_id = str(part).partition("=")
+        require(SLUG.fullmatch(name), "Name each part name=bundle")
+        bundle = child(root, "bundles", bundle_id)
+        manifest = validate_bundle(bundle)
+        pieces.append((name, "local/" + name, manifest, read_json(bundle / "compose.json")))
+        identifiers.append(bundle_id)
+    set_id = release_sets.identifier(product, identifiers)
+    destination = child(root, "bundles", set_id)
+    manifest, compose_bytes = release_sets.compose(product, set_id, pieces)
+    with tempfile.TemporaryDirectory() as temporary:
+        staged = Path(temporary) / "set"
+        release_sets.write(staged, manifest, compose_bytes)
+        validate_bundle(staged)
+    # The same parts always make the same set; an older composition of them is written over.
+    release_sets.write(destination, manifest, compose_bytes)
+    return {"id": set_id, "product": product, "release": manifest["release"], "components": manifest["components"],
+            "sites": manifest["sites"]}
 
 
 def facts(root, bundle_id):
@@ -931,7 +961,7 @@ def main():
                                            "status", "jobs", "follow", "state", "check", "reconcile", "vitals", "stats", "topology",
                                            "branches", "commits", "build", "logs", "history", "observation",
                                            "latest", "facts", "changelog", "watch", "builds", "retention", "usage",
-                                           "settings", "registry"])
+                                           "settings", "registry", "compose"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
@@ -945,6 +975,9 @@ def main():
     parser.add_argument("--product")
     parser.add_argument("--branch")
     parser.add_argument("--commit")
+    parser.add_argument("--repository", help="branches, commits, build: one of the product's repositories (owner/name)")
+    parser.add_argument("--part", action="append", default=[],
+                        help="compose: name=bundle, one per repository of the product in order (the local server only)")
     parser.add_argument("--confirm", help="submit: the target ID, typed, for prod on the local server")
     parser.add_argument("--reason", help="submit: the owner's one-line why, kept on the job")
     parser.add_argument("--fleet", help="submit: the fleet rollout the submission belongs to, kept on the job")
@@ -986,7 +1019,9 @@ def main():
         elif args.action == "usage":
             result = artifacts.usage(root, args.product)
         elif args.action == "changelog":
-            result = artifacts.changelog(args.product, args.start, args.end)
+            result = artifacts.changelog(args.product, args.start, args.end, root)
+        elif args.action == "compose":
+            result = compose_set(root, args.product, args.part)
         elif args.action == "template":
             print(json.dumps(template(root, args.bundle, args.service), indent=2))
             return 0
@@ -998,11 +1033,11 @@ def main():
         elif args.action == "registry":
             result = registry.probe(root, args.product)
         elif args.action == "branches":
-            result = artifacts.branches(args.product)
+            result = artifacts.branches(args.product, args.repository)
         elif args.action == "commits":
-            result = artifacts.commits(args.product, args.branch)
+            result = artifacts.commits(args.product, args.branch, args.repository)
         elif args.action == "build":
-            result = artifacts.request_build(args.product, args.commit)
+            result = artifacts.request_build(args.product, args.commit, args.repository)
         elif args.action == "jobs":
             result = jobs(root)
         elif args.action == "history":

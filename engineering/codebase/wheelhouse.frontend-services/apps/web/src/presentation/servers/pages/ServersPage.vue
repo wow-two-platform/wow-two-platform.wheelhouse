@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ReleaseSets } from "@/domain/deployments";
 import { computed, ref } from 'vue';
 import { RouterLink } from 'vue-router';
 import { ExternalLink, KeyRound, Pencil, Plus, Server as ServerIcon } from 'lucide-vue-next';
@@ -369,7 +370,7 @@ const trendWindow = computed(() => {
               <div class="mb-3 flex flex-wrap items-center gap-2">
                 <ServerIcon :size="15" />
                 <h3 class="text-sm font-medium">{{ target.targetId }}</h3>
-                <span class="ml-auto text-xs text-muted-foreground">{{ target.release ?? 'Release unknown' }}</span>
+                <span class="ml-auto text-xs text-muted-foreground">{{ ReleaseSets.text(target.release) || 'Release unknown' }}</span>
               </div>
               <p v-if="!target.ok" role="alert" class="text-sm text-destructive">
                 {{ target.reason ?? 'This target could not be read.' }}

@@ -115,6 +115,19 @@ const state = computed(() =>
         <template v-if="column.key === 'app'">
           <span class="block font-medium">{{ row.name }}</span>
           <span class="block font-mono text-xs text-muted-foreground">{{ row.slug }}</span>
+          <!-- One product of several repositories (decision 70), and the products importing it retires. -->
+          <span
+            v-if="row.repositories.length > 1"
+            class="block text-xs text-muted-foreground"
+            :title="row.repositories.join(', ')"
+            >{{ row.repositories.length }} repositories</span
+          >
+          <span
+            v-if="row.replaces.length"
+            class="block text-xs text-muted-foreground"
+            :title="'Importing retires these when nothing was deployed to them'"
+            >Replaces {{ row.replaces.join(", ") }}</span
+          >
         </template>
         <span v-else-if="column.key === 'kind'" class="capitalize">{{ row.kind }}</span>
         <Badge

@@ -145,7 +145,8 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Teardown with a final backup and archive | feature | |
 | Fix the console requesting icons a repository doesn't have | fix | Return no icon URL when the repo has none; the console now remembers each 404 for 12 hours |
 | Zero-to-live scaffold from the product template | feature | Repository, CI, first deployment |
-| Ability to build one product from several repositories | feature | Parked 2026-10-17: components, each repo with its own manifest and releases, grouped Product → Environment → Component → Service; every product is single-repo today |
+| Ability to declare `dependsOn` on another repository's service | feature | Built in v0.5 Iteration 24 for the runner (a release set checks and orders dependencies across repositories); the shared generator in `wow-two-platform.pipelines` still refuses a `dependsOn` outside its own descriptor, so it waits for a pipelines tag |
+| Ability to compose a release set by hand, one build per repository | feature | Sets follow repository releases, and a commit build joins the other repositories' newest releases; picking a commit of two repositories at once needs a composer in the deploy dialog |
 
 ---
 

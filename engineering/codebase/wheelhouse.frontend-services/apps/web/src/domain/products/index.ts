@@ -4,6 +4,7 @@ export {
   ProductIdentitySource,
   ProductStatus,
   type Product,
+  type ProductComponent,
   type ProductEnvironment,
   type ProductIdentity,
   type ProductRelease,

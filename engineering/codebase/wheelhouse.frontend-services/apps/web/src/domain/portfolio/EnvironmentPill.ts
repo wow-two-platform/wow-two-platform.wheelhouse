@@ -1,5 +1,6 @@
 import { Attention, DeployState, StatusState, StatusWords } from '@/domain/common/StatusVocabulary';
 import { DeploymentStates } from '@/domain/deployments/DeploymentStatus';
+import { ReleaseSets } from '@/domain/deployments/ReleaseSets';
 import { EnvironmentHealth, type EnvironmentReading } from '@/domain/overview/EnvironmentHealth';
 import { ProductDeploy } from '@/domain/products/Product';
 import { RolloutOutcome, type PortfolioDeploy, type PortfolioEnvironment } from './PortfolioSummary';
@@ -88,9 +89,11 @@ export interface CiProduct {
   readonly console: { readonly environment: string | null; readonly version: string | null } | null;
 }
 
-/** A release label as a pill shows it: `v1.2.0` reads `1.2.0`, build metadata after `+` dropped. */
+/** A release label as a pill shows it: `v1.2.0` reads `1.2.0`, build metadata after `+` dropped; a release set reads
+ * as its first repository's version and how many more (`platform 0.1.8 +2`). */
 export function shortRelease(release: string | null | undefined): string | null {
   if (!release) return null;
+  if (ReleaseSets.isSet(release)) return ReleaseSets.short(release);
   const plain = release.split('+')[0] ?? release;
   return /^v\d/.test(plain) ? plain.slice(1) : plain;
 }

@@ -108,6 +108,22 @@ public sealed class DeploymentGateway(
         RunAsync(["build", "--product", product, "--commit", commit], ct);
 
     /// <inheritdoc />
+    public Task<AppResult<JsonElement>> BranchesAsync(string product, string? repository, CancellationToken ct) =>
+        RunAsync(repository is null ? ["branches", "--product", product] : ["branches", "--product", product, "--repository", repository], ct);
+
+    /// <inheritdoc />
+    public Task<AppResult<JsonElement>> CommitsAsync(string product, string branch, string? repository, CancellationToken ct) =>
+        RunAsync(repository is null
+            ? ["commits", "--product", product, "--branch", branch]
+            : ["commits", "--product", product, "--branch", branch, "--repository", repository], ct);
+
+    /// <inheritdoc />
+    public Task<AppResult<JsonElement>> RequestBuildAsync(string product, string commit, string? repository, CancellationToken ct) =>
+        RunAsync(repository is null
+            ? ["build", "--product", product, "--commit", commit]
+            : ["build", "--product", product, "--commit", commit, "--repository", repository], ct);
+
+    /// <inheritdoc />
     public Task<AppResult<JsonElement>> LogsAsync(string target, string service, int tail, CancellationToken ct) =>
         RunAsync(["logs", "--target", target, "--service", service, "--tail", tail.ToString(CultureInfo.InvariantCulture)], ct);
 

@@ -66,7 +66,7 @@ const services = computed(() => {
   const read = descriptor.data.value;
   return read && !read.problem
     ? ProductDescriptorRules.serviceNames(read)
-    : (props.product.release?.images.map((image) => image.service) ?? []);
+    : props.product.repositories.flatMap((item) => item.release?.images.map((image) => image.service) ?? []);
 });
 
 /** Opens the environment form: blank to add one, or filled to edit one. */
@@ -94,10 +94,15 @@ async function refreshIdentity(): Promise<void> {
   }
 }
 
-/** Opens the repository in a new tab. @internal */
-function openRepository(): void {
-  globalThis.open?.(repositoryUrl.value, "_blank", "noopener,noreferrer");
+/** Opens a repository in a new tab: the named one, else the primary. @internal */
+function openRepository(url: string = repositoryUrl.value): void {
+  globalThis.open?.(url, "_blank", "noopener,noreferrer");
 }
+
+/** Every repository a product built from several has (decision 70), primary first; empty for a product of one. */
+const repositories = computed(() =>
+  props.product.repositories.length > 1 ? props.product.repositories : [],
+);
 
 /** The product's environments in promotion order. @internal */
 function ordered(list: readonly InventoryTarget[]): InventoryTarget[] {
@@ -137,8 +142,13 @@ defineExpose({ addEnvironment: () => openTarget(null) });
       >
       <MenuItem @select="openTarget(null)"><Plus :size="15" />Add environment</MenuItem>
       <MenuSeparator />
-      <MenuLabel>Repository</MenuLabel>
-      <MenuItem @select="openRepository"
+      <MenuLabel>{{ repositories.length ? "Repositories" : "Repository" }}</MenuLabel>
+      <template v-if="repositories.length">
+        <MenuItem v-for="item in repositories" :key="item.repository" @select="openRepository(item.url)"
+          ><Github :size="15" /><span class="min-w-0 flex-1 truncate">{{ item.repository }}</span></MenuItem
+        >
+      </template>
+      <MenuItem v-else @select="openRepository()"
         ><Github :size="15" /><span class="min-w-0 flex-1 truncate">{{ props.product.repository.name }}</span></MenuItem
       >
       <MenuItem @select="cloning = true"><Copy :size="15" />Clone…</MenuItem>

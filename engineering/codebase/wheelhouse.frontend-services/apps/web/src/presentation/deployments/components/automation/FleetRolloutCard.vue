@@ -12,6 +12,7 @@ export interface FleetRolloutCardProps {
 </script>
 
 <script setup lang="ts">
+import { ReleaseSets } from "@/domain/deployments";
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import { ArrowRight, Ban, CircleCheck, CircleDashed, CircleX, Clock, LoaderCircle } from "lucide-vue-next";
@@ -108,7 +109,7 @@ function itemTone(item: FleetRolloutItem): string {
             }}</RouterLink>
             <span class="font-mono text-xs text-muted-foreground">{{ item.fromRelease ?? "nothing" }}</span>
             <ArrowRight :size="12" aria-label="to" />
-            <span class="font-mono text-xs">{{ item.release ?? item.bundleId }}</span>
+            <span class="font-mono text-xs">{{ ReleaseSets.text(item.release) || item.bundleId }}</span>
             <span :class="itemTone(item)" class="text-xs">{{ FleetRollouts.itemLabel(item.status) }}</span>
             <RouterLink
               v-if="item.deploymentId"

@@ -27,6 +27,10 @@ public sealed record CatalogEntryDto
     /// entry not importable.</summary>
     public required IReadOnlyList<string> Repositories { get; init; }
 
+    /// <summary>Gets the slugs of the products the entry supersedes: importing it retires each one nothing ever deployed
+    /// to — its environments, then the product.</summary>
+    public IReadOnlyList<string> Replaces { get; init; } = [];
+
     /// <summary>Gets the repository of the hub that lists the entry.</summary>
     public required string Source { get; init; }
 

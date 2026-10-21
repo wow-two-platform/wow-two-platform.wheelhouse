@@ -240,4 +240,31 @@ public sealed class CatalogParserTests
         CatalogParser.Parse(Bytes(Minimal.Replace("catalog: 1\n", "catalog: 1\nhub: [ventures]\n")))
             .Problem.Should().Be("line 2: hub must be a mapping.");
     }
+
+    [Fact]
+    public void Parse_ShouldReadAnEntrysRepositoriesInOrder_AndTheProductsItReplaces()
+    {
+        var text = Minimal.Replace(
+            "repositories: [wow-two-platform/wow-two-platform.secrets-vault]",
+            "repositories: [wow-two-platform/wow-two-platform.secrets-vault, wow-two-platform/vault-ui]\n    replaces: [vault, vault-ui]");
+
+        var entry = CatalogParser.Parse(Bytes(text)).Value!.Entries[0];
+
+        entry.Repositories.Should().Equal("wow-two-platform/wow-two-platform.secrets-vault", "wow-two-platform/vault-ui");
+        entry.Replaces.Should().Equal("vault", "vault-ui");
+        CatalogParser.Parse(Bytes(Minimal)).Value!.Entries[0].Replaces.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("replaces: [secrets-vault]", "names the entry itself or repeats a slug")]
+    [InlineData("replaces: [vault, vault]", "names the entry itself or repeats a slug")]
+    [InlineData("replaces: [Not_A_Slug]", "must be a lowercase slug")]
+    public void Parse_ShouldRefuseAReplacesListThatNamesItselfRepeatsOrIsNoSlug(string replaces, string expected)
+    {
+        var text = Minimal.Replace(
+            "repositories: [wow-two-platform/wow-two-platform.secrets-vault]",
+            "repositories: [wow-two-platform/wow-two-platform.secrets-vault]\n    " + replaces);
+
+        CatalogParser.Parse(Bytes(text)).Problem.Should().Contain("entries[0].replaces").And.Contain(expected);
+    }
 }

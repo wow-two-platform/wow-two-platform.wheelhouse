@@ -15,6 +15,7 @@ export interface DeployModalProps {
 </script>
 
 <script setup lang="ts">
+import { ReleaseSets } from "@/domain/deployments";
 import { computed, ref, shallowRef, watch } from "vue";
 import { ArrowLeft, Hammer, Rocket, ShieldCheck } from "lucide-vue-next";
 
@@ -57,6 +58,7 @@ import {
   useTargetCheck,
   useTargetState,
 } from "@/application/deployments";
+import { useProducts } from "@/application/products";
 import { useApiConnection } from "@/application/system";
 import {
   DeployFreezes,
@@ -122,8 +124,17 @@ const branch = ref("main");
 const requested = ref<string | null>(null);
 const buildProduct = () =>
   takesBuilds.value ? (selectedTarget.value?.product ?? null) : null;
-const branches = useProductBranches(buildProduct);
-const commits = useProductCommits(buildProduct, branch);
+const { products } = useProducts();
+/** A product built from several repositories (decision 70) builds a commit of one of them; a build joins the others'
+ * newest releases as a candidate set. Empty for a product of one repository. */
+const buildRepositories = computed(() => {
+  const found = products.value.find((item) => item.slug === selectedTarget.value?.product);
+  return found && found.repositories.length > 1 ? found.repositories : [];
+});
+/** The repository whose commits are listed; null for the primary one. */
+const buildRepository = ref<string | null>(null);
+const branches = useProductBranches(buildProduct, buildRepository);
+const commits = useProductCommits(buildProduct, branch, buildRepository);
 /** True when the product has no build workflow: unbuilt commits then offer no Build action. */
 const cannotBuild = computed(() =>
   (commits.data.value ?? []).some((entry) => entry.canBuild === false),
@@ -278,9 +289,10 @@ function targetLabel(item?: DeploymentTarget): string {
 /** Formats a catalog release without substituting a bundle identifier; a commit's build names its branch. */
 function releaseLabel(item?: ReleaseArtifact): string {
   if (!item) return "";
+  const label = ReleaseSets.text(item.release);
   if (item.kind === "candidate")
-    return `${item.release} · ${item.branch ?? "commit"} build`;
-  return item.release + (item.prerelease ? " (prerelease)" : "");
+    return `${label} · ${item.branch ?? "commit"} build`;
+  return label + (item.prerelease ? " (prerelease)" : "");
 }
 
 /** Selects a commit's existing build, re-reading the catalog when the build is newer than it. */
@@ -295,7 +307,7 @@ async function requestBuild(commit: string): Promise<void> {
   const product = selectedTarget.value?.product;
   if (!product || build.loading.value) return;
   requested.value = commit;
-  const result = await build.mutateAsync({ product, commit });
+  const result = await build.mutateAsync({ product, commit, repository: buildRepository.value });
   if (!result.ok) requested.value = null;
 }
 
@@ -303,6 +315,7 @@ async function requestBuild(commit: string): Promise<void> {
 function selectTarget(value: string | null): void {
   target.value = value ?? "";
   release.value = "";
+  buildRepository.value = null;
 }
 
 /** Records readiness only if the inspected target and bundle remain selected. */
@@ -459,6 +472,29 @@ function close(open: boolean): void {
                 Deploy a commit
               </summary>
               <div class="mt-3 flex flex-col gap-3">
+                <Field v-if="buildRepositories.length" label="Repository">
+                  <SelectPicker
+                    :model-value="buildRepository ?? buildRepositories[0]?.repository ?? null"
+                    @update:model-value="
+                      (value: string | null) => {
+                        buildRepository = value === buildRepositories[0]?.repository ? null : value;
+                        branch = 'main';
+                      }
+                    "
+                  >
+                    <SelectPickerTrigger aria-label="Repository">
+                      <SelectPickerValue placeholder="Select a repository" />
+                    </SelectPickerTrigger>
+                    <SelectPickerContent>
+                      <SelectPickerItem
+                        v-for="item in buildRepositories"
+                        :key="item.repository"
+                        :item-key="item.repository"
+                        :label="item.repository"
+                      />
+                    </SelectPickerContent>
+                  </SelectPicker>
+                </Field>
                 <Field label="Branch">
                   <SelectPicker
                     :model-value="branch"
@@ -608,7 +644,7 @@ function close(open: boolean): void {
       <template v-else-if="step === 'confirm'">
         <ModalHeader class="pr-8">
           <ModalTitle
-            >Deploy {{ selectedRelease?.release }} to {{ target }}?</ModalTitle
+            >Deploy {{ ReleaseSets.text(selectedRelease?.release) }} to {{ target }}?</ModalTitle
           >
           <ModalDescription>
             The target pulls every image, replaces its containers, and waits for
@@ -758,7 +794,7 @@ function close(open: boolean): void {
                 ? "Deploying"
                 : "Deployment settled"
             }}
-            {{ selectedRelease?.release }}</ModalTitle
+            {{ ReleaseSets.text(selectedRelease?.release) }}</ModalTitle
           >
           <ModalDescription
             >Closing keeps the rollout running. Deployment history records its

@@ -11,8 +11,9 @@ OBSERVED = ("status", "reason", "failure", "startedAt", "completedAt", "mutation
 
 def bundle_facts(root, bundle_id):
     """What a cached bundle declares: product, kind, branch, rollback compatibility, whether it carries schema
-    migrations (null while the bundle does not say), whether it declares an end-to-end check for dev (`verifies`) and
-    each service's image and version, plus when its source published it. None when the bundle is not cached or not
+    migrations (null while the bundle does not say), whether it declares an end-to-end check for dev (`verifies`),
+    each service's image and version and, for a release set, each repository's release (`components`), plus when its
+    source published it. None when the bundle is not cached or not
     readable."""
     if not isinstance(bundle_id, str) or not SLUG.fullmatch(bundle_id):
         return None
@@ -31,7 +32,12 @@ def bundle_facts(root, bundle_id):
         services[name] = {"image": image if isinstance(image, str) else None,
                           "version": entry.get("version") if isinstance(entry.get("version"), str) else None}
     published = source.get("publishedAt") if isinstance(source, dict) else None
+    # A release set (decision 70) names each repository's release; null for a release of one repository.
+    components = manifest.get("components") if isinstance(manifest.get("components"), list) else None
     return {"product": manifest.get("product") if isinstance(manifest.get("product"), str) else None,
+            "components": None if components is None else [
+                {key: component.get(key) for key in ("name", "repository", "release", "kind", "sourceCommit", "services")}
+                for component in components if isinstance(component, dict)],
             "kind": manifest.get("kind", "release"), "branch": manifest.get("branch"),
             "rollbackCompatible": manifest.get("rollbackCompatible") is True,
             "migrations": manifest["migrations"] if type(manifest.get("migrations")) is bool else None,
@@ -100,7 +106,7 @@ def records(root, submissions):
         item = {**job, "product": bundle.get("product"), "kind": bundle.get("kind"), "branch": bundle.get("branch"),
                 "rollbackCompatible": bundle.get("rollbackCompatible"), "migrations": bundle.get("migrations"),
                 "verifies": bundle.get("verifies"), "services": bundle.get("services"),
-                "publishedAt": bundle.get("publishedAt")}
+                "publishedAt": bundle.get("publishedAt"), "components": bundle.get("components")}
         observed = observed_of(root, job["id"])
         rollout = service_rollout_of(observed)
         if rollout is not None:

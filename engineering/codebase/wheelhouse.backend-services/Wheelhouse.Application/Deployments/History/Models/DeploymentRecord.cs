@@ -82,6 +82,10 @@ public sealed record DeploymentRecord
     /// <summary>Gets when the release source published the bundle.</summary>
     public DateTimeOffset? PublishedAt { get; init; }
 
+    /// <summary>Gets each repository's release when the bundle is a release set of a product built from several
+    /// repositories; <c>null</c> for a release of one repository or a bundle the cache no longer holds.</summary>
+    public IReadOnlyList<ReleaseComponentDto>? Components { get; init; }
+
     /// <summary>Gets whether the release declares an end-to-end check for dev; null when the bundle is unknown.</summary>
     public bool? Verifies { get; init; }
 

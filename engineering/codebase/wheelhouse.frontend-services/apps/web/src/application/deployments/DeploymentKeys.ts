@@ -10,9 +10,9 @@ export const DeploymentKeys = {
   outcome: (id: string) => ["deployments", "outcome", id] as const,
   /** This console's own newest rollout. */
   self: ["deployments", "self"] as const,
-  branches: (product: string) => ["deployments", "branches", product] as const,
-  commits: (product: string, branch: string) =>
-    ["deployments", "commits", product, branch] as const,
+  branches: (product: string, repository = "") => ["deployments", "branches", product, repository] as const,
+  commits: (product: string, branch: string, repository = "") =>
+    ["deployments", "commits", product, branch, repository] as const,
   commitsAll: ["deployments", "commits"] as const,
   logs: (target: string, service: string, tail: number) =>
     ["deployments", "logs", target, service, tail] as const,

@@ -31,6 +31,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "026-deployment-intents",
         "027-environment-settings",
         "030-built-in-vault",
+        "031-product-components",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -797,6 +798,31 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         (await Scalar(connection, "SELECT count(*) FROM information_schema.schemata WHERE schema_name = 'vault'")).Should().Be(0L);
         (await migrator.HasTableAsync("deployment_renders")).Should().BeFalse();
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("030-built-in-vault"));
+    }
+
+    [Fact]
+    public async Task ProductComponents_ShouldGiveEveryProductNoFurtherRepositories_AndRollBackToOneRepository_WhenApplied()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        var ordinal = Ordinals[Array.IndexOf(Migrations, "031-product-components") - 1];
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: ordinal, CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        (await ReadColumnsAsync(connection, "products")).Select(column => column.Name).Should().NotContain("components");
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000001", "pilot"));
+
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("031-product-components"));
+        (await ReadColumnsAsync(connection, "products")).Should().Contain(("components", "jsonb", false));
+        (await Scalar(connection, "SELECT components::text FROM products WHERE slug = 'pilot'")).Should().Be("[]");
+        await Execute(connection, "UPDATE products SET components = '[{\"repository\": \"owner/pilot-studio\", \"release\": null}]' " +
+                                  "WHERE slug = 'pilot'");
+        (await Scalar(connection, "SELECT components->0->>'repository' FROM products WHERE slug = 'pilot'"))
+            .Should().Be("owner/pilot-studio");
+
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: ordinal, CancellationToken.None));
+        (await ReadColumnsAsync(connection, "products")).Select(column => column.Name).Should().NotContain("components");
+        (await Scalar(connection, "SELECT repository FROM products WHERE slug = 'pilot'")).Should().Be("owner/pilot");
     }
 
     /// <summary>The SQL that stores one vitals reading of a target slug, or of its server's host for <c>NULL</c>.</summary>

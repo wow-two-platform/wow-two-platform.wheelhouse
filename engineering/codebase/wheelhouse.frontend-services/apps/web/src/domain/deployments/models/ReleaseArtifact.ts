@@ -1,3 +1,5 @@
+import type { ReleaseComponent } from './ReleaseComponent';
+
 /** Distinguishes a published release (a version tag) from a build of a commit, which only dev takes. */
 export type ReleaseKind = 'release' | 'candidate';
 
@@ -15,4 +17,6 @@ export interface ReleaseArtifact {
   branch?: string | null;
   /** When a commit's build expires from the catalog. */
   expiresAt?: string | null;
+  /** Each repository's release, for a release set of a product built from several repositories. */
+  components?: ReleaseComponent[] | null;
 }

@@ -13,6 +13,7 @@ export interface FleetPromoteModalProps {
 </script>
 
 <script setup lang="ts">
+import { ReleaseSets } from "@/domain/deployments";
 import { computed, ref, watch } from "vue";
 import { ArrowRight, Layers } from "lucide-vue-next";
 
@@ -144,7 +145,7 @@ function close(open: boolean): void {
               <span class="font-mono text-xs">{{ item.prodTargetId }}</span>
               <span class="font-mono text-xs text-foreground">{{ item.prodRelease ?? "nothing" }}</span>
               <ArrowRight :size="14" aria-label="to" />
-              <span class="font-mono text-xs font-medium text-foreground">{{ item.release }}</span>
+              <span class="font-mono text-xs font-medium text-foreground">{{ ReleaseSets.text(item.release) }}</span>
               <DevCheckPill :verification="item.verification" :verifies="item.verifies" />
             </p>
             <ReleaseChangelog :product="item.product" :from="item.prodRelease" :to="item.release" />

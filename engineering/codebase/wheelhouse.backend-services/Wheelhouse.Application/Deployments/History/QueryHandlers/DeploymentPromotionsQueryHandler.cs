@@ -63,7 +63,7 @@ public sealed class DeploymentPromotionsQueryHandler(DeploymentHistoryService hi
                 result.Add(new DeploymentPromotionDto(product.Key, workspace, proven.Record.Release!, proven.Record.BundleId!,
                     proven.Record.PublishedAt, proven.Record.TargetId!, proven.Record.CompletedAt ?? proven.Record.SubmittedAt,
                     prod.Slug, runs?.Record.Release, proven.Record.RollbackCompatible, proven.Record.Migrations,
-                    proven.Record.Verifies, proven.Record.Verification));
+                    proven.Record.Verifies, proven.Record.Verification, proven.Record.Components));
             }
         }
 

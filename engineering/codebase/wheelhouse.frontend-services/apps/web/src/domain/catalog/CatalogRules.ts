@@ -186,6 +186,7 @@ export const CatalogRules = {
       result.createdWorkspaces ? `created ${count(result.createdWorkspaces, 'workspace')}` : null,
       result.movedProducts ? `moved ${count(result.movedProducts, 'product')}` : null,
       result.updatedProducts ? `set how ${count(result.updatedProducts, 'product')} deploy${result.updatedProducts === 1 ? 's' : ''}` : null,
+      result.retiredProducts ? `retired ${count(result.retiredProducts, 'replaced product')}` : null,
     ].filter((part): part is string => part !== null);
     if (!parts.length) return 'Nothing to import; the catalog and Wheelhouse already agree.';
     const text = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : (parts[0] ?? '');

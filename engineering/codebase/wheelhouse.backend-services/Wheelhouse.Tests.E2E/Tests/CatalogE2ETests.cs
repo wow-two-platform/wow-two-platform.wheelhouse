@@ -81,7 +81,7 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
             deploy: wheelhouse
             status: "v0.1 built"
             purpose: "Sample app Wheelhouse deploys to prove every flow"
-            repositories: [wow-two-platform/wow-two-platform.wheelhouse-canary, wow-two-platform/canary-fixtures]
+            repositories: [wow-two-platform/wow-two-platform.wheelhouse-canary]
           - slug: notes-app
             name: Notes
             workspace: personal
@@ -265,8 +265,7 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
         (vault.GetProperty("name").GetString(), vault.GetProperty("workspace").GetString(), vault.GetProperty("kind").GetString(),
                 vault.GetProperty("deploy").GetString(), vault.GetProperty("purpose").GetString())
             .Should().Be(("Secrets Vault", "wow2-platform", "platform", "wheelhouse", "Secrets vault — envelope-encrypted store + management UI"));
-        Strings(entries[2].GetProperty("repositories")).Should().Equal(
-            "wow-two-platform/wow-two-platform.wheelhouse-canary", "wow-two-platform/canary-fixtures");
+        Strings(entries[2].GetProperty("repositories")).Should().Equal("wow-two-platform/wow-two-platform.wheelhouse-canary");
         Strings(entries[3].GetProperty("repositories")).Should().BeEmpty();
         vault.TryGetProperty("status", out _).Should().BeFalse();
         vault.TryGetProperty("local", out _).Should().BeFalse();

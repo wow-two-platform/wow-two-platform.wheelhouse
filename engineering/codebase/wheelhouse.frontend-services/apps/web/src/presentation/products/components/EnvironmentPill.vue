@@ -10,6 +10,7 @@ export interface EnvironmentPillProps {
 }
 </script>
 <script setup lang="ts">
+import { ReleaseSets } from "@/domain/deployments";
 import { computed } from "vue";
 import { Clock, Eye, X } from "lucide-vue-next";
 import { RelativeTime } from "@wow-two-beta/fe/presentation/display";
@@ -125,7 +126,7 @@ const showsLatest = computed(
         <template v-if="props.pill.release && props.pill.state !== PillState.None">
           <dt class="text-muted-foreground">Serving</dt>
           <dd class="truncate font-medium tabular-nums">
-            {{ props.pill.release }}
+            {{ ReleaseSets.text(props.pill.release) }}
             <RelativeTime
               v-if="props.pill.running?.completedAt ?? props.pill.running?.submittedAt"
               :value="(props.pill.running?.completedAt ?? props.pill.running?.submittedAt)!"
@@ -136,7 +137,7 @@ const showsLatest = computed(
         <template v-if="showsLatest && props.pill.lastDeploy">
           <dt class="text-muted-foreground">Latest</dt>
           <dd class="min-w-0">
-            <span class="font-medium tabular-nums">{{ props.pill.lastDeploy.release ?? "Build" }}</span>
+            <span class="font-medium tabular-nums">{{ ReleaseSets.text(props.pill.lastDeploy.release) || "Build" }}</span>
             · {{ stateWords(props.pill.lastDeploy) }}
             · <RelativeTime :value="props.pill.lastDeploy.submittedAt" />
             <template v-if="props.pill.lastDeploy.actor"> · {{ props.pill.lastDeploy.actor }}</template>
@@ -149,7 +150,7 @@ const showsLatest = computed(
         <template v-if="props.pill.marker === 'attempt' && props.pill.lastAttempt">
           <dt class="text-muted-foreground">Last try</dt>
           <dd class="min-w-0">
-            <span class="font-medium tabular-nums">{{ props.pill.lastAttempt.release ?? "Build" }}</span>
+            <span class="font-medium tabular-nums">{{ ReleaseSets.text(props.pill.lastAttempt.release) || "Build" }}</span>
             · {{ stateWords(props.pill.lastAttempt) }} · <RelativeTime :value="props.pill.lastAttempt.submittedAt" />
             <span v-if="props.pill.lastAttempt.reason" class="mt-0.5 line-clamp-2 block text-muted-foreground">{{
               props.pill.lastAttempt.reason

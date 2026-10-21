@@ -15,6 +15,7 @@ export interface RunningNowPanelProps {
 </script>
 
 <script setup lang="ts">
+import { ReleaseSets } from "@/domain/deployments";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { LoaderCircle } from "lucide-vue-next";
@@ -68,7 +69,7 @@ function elapsed(item: DeploymentItem): string {
             <span class="flex flex-wrap items-center gap-2">
               <span class="font-medium">{{ item.product ? (props.productNames.get(item.product) ?? item.product) : item.targetId }}</span>
               <Badge :variant="item.environment === 'prod' ? 'info' : 'neutral'">{{ item.environment ?? item.targetId }}</Badge>
-              <span class="font-mono text-xs">{{ item.release ?? item.bundleId }}</span>
+              <span class="font-mono text-xs">{{ ReleaseSets.text(item.release) || item.bundleId }}</span>
               <FrozenBadge :product="item.product" :environment="item.environment" />
             </span>
             <span class="mt-0.5 block truncate text-sm text-muted-foreground">

@@ -29,6 +29,10 @@ public sealed record ProductCreateCommand : ICommand<AppResult<ProductDto>>, IAu
     /// <summary>Gets where published releases and commit builds come from, or <c>null</c> for none.</summary>
     public ProductReleaseValueObject? Release { get; init; }
 
+    /// <summary>Gets the product's further repositories after its primary one, each with its own release source
+    /// (decision 70); empty for a product of one repository.</summary>
+    public IReadOnlyList<ProductComponentValueObject>? Components { get; init; }
+
     /// <summary>Gets what deploys the product, or <c>null</c> to start with Wheelhouse.</summary>
     public ProductDeployMode? Deploy { get; init; }
 

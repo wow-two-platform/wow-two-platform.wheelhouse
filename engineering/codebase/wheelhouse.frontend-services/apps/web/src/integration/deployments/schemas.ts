@@ -77,6 +77,23 @@ export const SelfDeploymentSchema = z.object({
   latest: SelfDeploymentRunSchema.nullable(),
 });
 const releaseKind = z.enum(["release", "candidate"]);
+/** One repository's release inside a release set (decision 70); the catalog's entries name their commit `commit`. */
+export const ReleaseComponentSchema = z
+  .object({
+    name: nullableText.optional(),
+    repository: nullableText.optional(),
+    release: nullableText.optional(),
+    kind: releaseKind.nullish(),
+    sourceCommit: nullableText.optional(),
+    commit: nullableText.optional(),
+  })
+  .transform(({ commit, ...component }) => ({
+    name: component.name ?? null,
+    repository: component.repository ?? null,
+    release: component.release ?? null,
+    kind: component.kind ?? null,
+    sourceCommit: component.sourceCommit ?? commit ?? null,
+  }));
 export const ReleaseArtifactSchema = z.object({
   id: z.string(),
   product: z.string(),
@@ -88,6 +105,7 @@ export const ReleaseArtifactSchema = z.object({
   commit: nullableText.optional(),
   branch: nullableText.optional(),
   expiresAt: nullableText.optional(),
+  components: z.array(ReleaseComponentSchema).nullish(),
 });
 const ServiceVersionSchema = z.object({
   version: z.string(),

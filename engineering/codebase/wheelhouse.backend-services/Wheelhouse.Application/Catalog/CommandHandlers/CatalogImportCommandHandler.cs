@@ -4,9 +4,11 @@ using Wheelhouse.Application.Catalog.Commands;
 using Wheelhouse.Application.Catalog.Models;
 using Wheelhouse.Application.Catalog.Services;
 using Wheelhouse.Application.Inventory.Constants;
+using Wheelhouse.Application.Products;
 using Wheelhouse.Domain.Catalog.Enums;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Products.Enums;
+using Wheelhouse.Domain.Products.Models;
 using Wheelhouse.Domain.Workspaces.Entities;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
@@ -15,15 +17,20 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Catalog.CommandHandlers;
 
 /// <summary>Handles <see cref="CatalogImportCommand"/> over the merged hubs. Each chosen entry, in catalog order: an existing product with its
-/// slug moves into the entry's workspace and takes the entry's <c>deploy</c> as its deploy mode; otherwise an entry Wheelhouse deploys (<c>deploy: wheelhouse</c>) with a
-/// repository becomes a product, whose release source <see cref="CatalogReleaseService"/> derives; any other entry is
-/// skipped with a warning. A workspace is created, last in the order, only when a product needs it. Every step checks
-/// what exists first, so an interrupted import completes when run again.</summary>
+/// slug moves into the entry's workspace and takes the entry's <c>deploy</c> as its deploy mode, and takes the entry's
+/// repositories when they changed; otherwise an entry Wheelhouse deploys (<c>deploy: wheelhouse</c>) with a
+/// repository becomes a product — one product for all its repositories (decision 70) — whose release sources
+/// <see cref="CatalogReleaseService"/> derives; any other entry is skipped with a warning, as is one whose repositories
+/// share a service. Then each product the entry <c>replaces</c> retires when nothing ever deployed to it: its
+/// environments, then the product. A workspace is created, last in the order, only when a product needs it. Every step
+/// checks what exists first, so an interrupted import completes when run again.</summary>
 public sealed class CatalogImportCommandHandler(
     CatalogReader reader,
     CatalogReleaseService releases,
     IProductsRepository products,
-    IWorkspacesRepository workspaces)
+    IWorkspacesRepository workspaces,
+    ITargetsRepository targets,
+    IDeploymentRecords records)
     : ICommandHandler<CatalogImportCommand, AppResult<CatalogImportResultDto>>
 {
     /// <inheritdoc />
@@ -43,15 +50,20 @@ public sealed class CatalogImportCommandHandler(
             {
                 var workspace = await import.WorkspaceAsync(entry.Workspace, cancellationToken);
                 var deploy = ModeOf(entry.Deploy);
-                if (existing.WorkspaceId == workspace.Id && existing.Deploy == deploy)
+                var regrouped = await RegroupAsync(existing, entry, import, cancellationToken);
+                if (existing.WorkspaceId == workspace.Id && existing.Deploy == deploy && !regrouped)
+                {
+                    await RetireAsync(entry, import, cancellationToken);
                     continue;
+                }
                 if (existing.WorkspaceId != workspace.Id)
                     import.Moved.Add(entry.Slug);
-                if (existing.Deploy != deploy)
+                if (existing.Deploy != deploy || regrouped)
                     import.Updated.Add(entry.Slug);
                 existing.WorkspaceId = workspace.Id;
                 existing.Deploy = deploy;
                 await products.UpdateAsync(existing, cancellationToken);
+                await RetireAsync(entry, import, cancellationToken);
                 continue;
             }
 
@@ -61,23 +73,38 @@ public sealed class CatalogImportCommandHandler(
                 continue;
             }
 
-            var repository = entry.Repositories[0];
-            var derived = await releases.DeriveAsync(entry.Slug, repository, cancellationToken);
+            var derived = await releases.DeriveAllAsync(entry.Slug, entry.Repositories, cancellationToken);
+            var repositories = derived.Select(item => (item.Repository, (ProductReleaseValueObject?)item.Derived.Release)).ToList();
+            if (ProductRepositories.Problem(entry.Slug, repositories) is { } problem)
+            {
+                import.Warn(entry.Slug, problem + " No product was created.");
+                continue;
+            }
+
             await products.CreateAsync(new ProductEntity
             {
                 Id = Guid.CreateVersion7(),
                 Slug = entry.Slug,
                 Name = Clip(entry.Name, CatalogConstants.NameLength),
                 Description = Clip(entry.Purpose, CatalogConstants.DescriptionLength),
-                Repository = repository,
+                Repository = derived[0].Repository,
                 DefaultBranch = CatalogConstants.ReleaseBranch,
                 WorkspaceId = (await import.WorkspaceAsync(entry.Workspace, cancellationToken)).Id,
-                Release = derived.Release,
+                Release = derived[0].Derived.Release,
+                Components = [.. derived.Skip(1).Select(item => new ProductComponentValueObject
+                {
+                    Repository = item.Repository, Release = item.Derived.Release,
+                })],
                 Deploy = ModeOf(entry.Deploy),
             }, cancellationToken);
             import.Created.Add(entry.Slug);
-            if (derived.Note is { } note)
-                import.Warn(entry.Slug, note);
+            foreach (var (_, item) in derived)
+            {
+                if (item.Note is { } note)
+                    import.Warn(entry.Slug, note);
+            }
+
+            await RetireAsync(entry, import, cancellationToken);
         }
 
         return AppResult<CatalogImportResultDto>.Ok(new CatalogImportResultDto
@@ -85,9 +112,85 @@ public sealed class CatalogImportCommandHandler(
             CreatedWorkspaces = import.CreatedWorkspaces,
             CreatedProducts = import.Created,
             MovedProducts = import.Moved,
-            UpdatedProducts = import.Updated,
+            UpdatedProducts = [.. import.Updated.Distinct(StringComparer.Ordinal)],
+            RetiredProducts = import.Retired,
             Warnings = import.Warnings,
         });
+    }
+
+    /// <summary>Gives an existing product the entry's repositories when the entry lists others, or the same ones in
+    /// another order, with release sources derived again; their services must stand together. Says whether it changed.</summary>
+    private async Task<bool> RegroupAsync(ProductEntity existing, CatalogEntryModel entry, Import import, CancellationToken ct)
+    {
+        var current = ProductRepositories.Of(existing).Select(item => item.Repository).ToList();
+        if (entry.Deploy != CatalogDeploy.Wheelhouse || entry.Repositories.Count == 0
+            || current.SequenceEqual(entry.Repositories, StringComparer.OrdinalIgnoreCase)
+            || entry.Repositories.Any(repository => !Regex.IsMatch(repository, InventoryPatternConstants.Repository)))
+            return false;
+
+        var derived = await releases.DeriveAllAsync(entry.Slug, entry.Repositories, ct);
+        var repositories = derived.Select(item => (item.Repository, (ProductReleaseValueObject?)item.Derived.Release)).ToList();
+        if (ProductRepositories.Problem(entry.Slug, repositories) is { } problem)
+        {
+            import.Warn(entry.Slug, problem + " Its repositories stay as they were.");
+            return false;
+        }
+
+        existing.Repository = derived[0].Repository;
+        existing.Release = derived[0].Derived.Release;
+        existing.Components = [.. derived.Skip(1).Select(item => new ProductComponentValueObject
+        {
+            Repository = item.Repository, Release = item.Derived.Release,
+        })];
+        foreach (var (_, item) in derived)
+        {
+            if (item.Note is { } note)
+                import.Warn(entry.Slug, note);
+        }
+
+        await products.UpdateAsync(existing, ct);
+        return true;
+    }
+
+    /// <summary>Retires each product the entry replaces that nothing ever deployed to: its environments go, then the
+    /// product, with its settings, secrets and pins. One with a recorded deploy stays, with a warning; so does every one
+    /// while the deploy history cannot be read.</summary>
+    private async Task RetireAsync(CatalogEntryModel entry, Import import, CancellationToken ct)
+    {
+        if (entry.Replaces.Count == 0)
+            return;
+
+        IReadOnlyList<Wheelhouse.Application.Deployments.History.Models.DeploymentRecord>? history = null;
+        foreach (var slug in entry.Replaces)
+        {
+            var replaced = await products.GetBySlugAsync(slug, ct);
+            if (replaced is null || slug == entry.Slug)
+                continue;
+
+            if (history is null)
+            {
+                if (await records.ListAsync(ct) is not AppResult<IReadOnlyList<Wheelhouse.Application.Deployments.History.Models.DeploymentRecord>>.Success { Data: var read })
+                {
+                    import.Warn(slug, $"'{entry.Slug}' replaces it, but the deploy history could not be read, so it stays; import again to retire it.");
+                    continue;
+                }
+
+                history = read;
+            }
+
+            var environments = (await targets.GetAllAsync(ct)).Where(target => target.ProductId == replaced.Id).ToList();
+            var slugs = environments.Select(target => target.Slug).ToHashSet(StringComparer.Ordinal);
+            if (history.Any(record => (record.TargetId is { } target && slugs.Contains(target)) || record.Product == slug))
+            {
+                import.Warn(slug, $"'{entry.Slug}' replaces it, but it has deploys on record, so it stays; remove its environments and the product by hand once it is torn down.");
+                continue;
+            }
+
+            foreach (var environment in environments)
+                await targets.DeleteAsync(environment, ct);
+            await products.DeleteAsync(replaced, ct);
+            import.Retired.Add(slug);
+        }
     }
 
     /// <summary>Names the slugs no readable hub lists, and each hub that could not be read, since it may list them.</summary>
@@ -130,6 +233,8 @@ public sealed class CatalogImportCommandHandler(
         public List<string> Moved { get; } = [];
 
         public List<string> Updated { get; } = [];
+
+        public List<string> Retired { get; } = [];
 
         public List<CatalogImportWarningDto> Warnings { get; } = [];
 

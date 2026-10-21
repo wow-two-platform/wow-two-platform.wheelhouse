@@ -53,6 +53,25 @@ public sealed class DeploymentGatewayTests : IDisposable
     }
 
     [Fact]
+    public async Task BranchesCommitsAndBuilds_ShouldNameTheRepository_OnlyWhenOneIsChosen()
+    {
+        File.WriteAllText(_transport, "import json, sys\nprint(json.dumps({'argv': sys.argv[1:]}))\n");
+        var gateway = new DeploymentGateway(new DeploymentSettings() with { TransportPath = _transport, Root = _root }, new RunnerFailureParser());
+
+        static string[] Args(AppResult<JsonElement> result) =>
+            [.. result.Should().BeOfType<AppResult<JsonElement>.Success>().Subject.Data.GetProperty("argv").EnumerateArray()
+                .Select(item => item.GetString()!).TakeWhile(item => item != "--root")];
+
+        Args(await gateway.BranchesAsync("ocharo", "ocharo-hq/ocharo-studio", CancellationToken.None))
+            .Should().Equal("branches", "--product", "ocharo", "--repository", "ocharo-hq/ocharo-studio");
+        Args(await gateway.BranchesAsync("ocharo", null, CancellationToken.None)).Should().Equal("branches", "--product", "ocharo");
+        Args(await gateway.CommitsAsync("ocharo", "main", "ocharo-hq/ocharo-assets", CancellationToken.None))
+            .Should().Equal("commits", "--product", "ocharo", "--branch", "main", "--repository", "ocharo-hq/ocharo-assets");
+        Args(await gateway.RequestBuildAsync("ocharo", new string('c', 40), null, CancellationToken.None))
+            .Should().Equal("build", "--product", "ocharo", "--commit", new string('c', 40));
+    }
+
+    [Fact]
     public async Task ReadAsync_ShouldFailAsTransientlyUnavailable_WhenTheRunnerCannotStart()
     {
         var settings = new DeploymentSettings { Python = Path.Combine(_root, "missing-python") };

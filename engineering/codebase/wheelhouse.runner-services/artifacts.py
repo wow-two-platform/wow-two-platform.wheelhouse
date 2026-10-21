@@ -1,4 +1,9 @@
-"""Discovery of completed release assets and per-commit candidate builds from the inventory's repositories."""
+"""Discovery of completed release assets and per-commit candidate builds from the inventory's repositories.
+
+A product built from several repositories (decision 70) lists release sets instead of its repositories' own releases:
+one release of each repository, composed into one bundle (release_sets.py). Its release sets follow its repositories'
+releases in time — each repository release makes one set with every other repository's newest release then — and each
+commit build of one repository makes a candidate set with every other repository's newest release."""
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -18,13 +23,16 @@ from urllib.parse import quote, urlparse
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 import catalog
 from fleet import rehearsal
-from runner import SHA, SLUG, CommandFailed, require, validate_bundle, write_json
+import release_sets
+from runner import SHA, SLUG, CommandFailed, read_json, require, validate_bundle, write_json
 
 
 class ArtifactProvider(str, Enum):
     GITHUB_RELEASES = "GitHubReleases"
     GITHUB_ACTIONS = "GitHubActions"
     LOCAL_IMPORT = "LocalImport"
+    # A product release composed from one release of each of a product's repositories (decision 70).
+    RELEASE_SET = "ReleaseSet"
 
 
 @dataclass(frozen=True)
@@ -38,13 +46,52 @@ class Source:
     # Without one, the product offers published releases only.
     workflow: str | None = None
     default_branch: str = "main"
+    # The repository's short name in a product built from several repositories; None for a product's only one.
+    component: str | None = None
 
 
 def sources():
-    """Every release source comes from the product inventory; a product without one deploys hand-imported bundles."""
-    return tuple(Source(product.slug, product.repository, product.release.asset, product.release.images,
-                        workflow=product.release.workflow, default_branch=product.default_branch)
-                 for product in catalog.products() if product.release is not None)
+    """Every release source comes from the product inventory, one per repository that has one; a product without one
+    deploys hand-imported bundles."""
+    result = []
+    for product in catalog.products():
+        several = bool(product.components)
+        for repository, release in product.repositories():
+            # A further repository whose deploy.yml names no service yet deploys nothing, so it holds up no set.
+            if release is not None and (not several or release.images):
+                result.append(Source(product.slug, repository, release.asset, release.images,
+                                     workflow=release.workflow, default_branch=product.default_branch,
+                                     component=catalog.short_name(product.slug, repository) if several else None))
+    return tuple(result)
+
+
+def product_sources(product):
+    """A product's release sources in repository order, primary first."""
+    return [source for source in sources() if source.product == product]
+
+
+def grouped():
+    """Each product's release sources, in inventory order."""
+    result = {}
+    for source in sources():
+        result.setdefault(source.product, []).append(source)
+    return list(result.values())
+
+
+def several(group):
+    """Whether a product's sources are the repositories of a product built from several."""
+    return any(source.component is not None for source in group)
+
+
+def repository_source(product, repository=None):
+    """The release source of one of a product's repositories: the named one, else its primary one."""
+    group = product_sources(product)
+    require(group, "Product has no approved release source")
+    if repository is None:
+        return group[0]
+    found = next((source for source in group if source.repository.lower() == str(repository).lower()), None)
+    require(found is not None, "The repository is not one of the product's")
+    return found
 
 
 VERSION = re.compile(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?")
@@ -259,6 +306,7 @@ def release_asset(repository, tag, name, asset_id):
 def source_of(product):
     source = next((item for item in sources() if item.product == product), None)
     require(source is not None, "Product has no approved release source")
+    require(source.component is None, "A product built from several repositories deploys release sets")
     return source
 
 
@@ -312,20 +360,86 @@ def published(source, per_page=100):
 
 
 def latest():
-    """Each release source's newest published release (a pre-release never counts), for the release watcher: one
-    small GitHub read per product. A source GitHub cannot serve says so and names no release."""
+    """Each product's newest published release (a pre-release never counts), for the release watcher: one small GitHub
+    read per repository. A product of several repositories names its newest release set, made of each repository's
+    newest release. A source GitHub cannot serve says so and names no release."""
     result = []
-    for source in sources():
+    for group in grouped():
         try:
-            releases = [item for item in published(source, per_page=10) if not item["prerelease"]]
+            if several(group):
+                newest = newest_set(group)
+            else:
+                releases = [item for item in published(group[0], per_page=10) if not item["prerelease"]]
+                newest = max(releases, key=lambda item: item["publishedAt"], default=None)
         except (CommandFailed, ValueError) as error:
-            result.append({"product": source.product, "ok": False,
+            result.append({"product": group[0].product, "ok": False,
                            "reason": str(error)[:300] if isinstance(error, CommandFailed) else "Unreadable releases"})
             continue
-        newest = max(releases, key=lambda item: item["publishedAt"], default=None)
-        result.append({"product": source.product, "ok": True,
+        result.append({"product": group[0].product, "ok": True,
                        "release": None if newest is None else {key: newest[key] for key in
                                                                ("id", "release", "publishedAt")}})
+    return result
+
+
+# How many of a product's newest release sets the catalog lists, and how many commit builds per repository make
+# candidate sets.
+SETS_LISTED = 50
+CANDIDATE_SETS = 10
+
+
+def set_item(group, parts):
+    """The catalog entry of one release set: `parts` are one artifact of each repository, in repository order."""
+    product, names = group[0].product, [source.component for source in group]
+    set_id = release_sets.identifier(product, [part["id"] for part in parts])
+    kind = "candidate" if any(part["kind"] == "candidate" for part in parts) else "release"
+    published_at = max((str(part["publishedAt"]) for part in parts if part.get("publishedAt")), default=None)
+    item = {"id": set_id, "product": product,
+            "release": release_sets.label(set_id, [(name, part["release"]) for name, part in zip(names, parts)]),
+            "kind": kind, "repository": group[0].repository, "provider": ArtifactProvider.RELEASE_SET.value,
+            "publishedAt": published_at, "prerelease": kind == "candidate" or any(part.get("prerelease") for part in parts),
+            "components": [{"name": name, **part} for name, part in zip(names, parts)]}
+    build = next((part for part in parts if part["kind"] == "candidate"), None)
+    if build is not None:
+        item.update(commit=build["commit"], branch=build.get("branch"), expiresAt=build.get("expiresAt"))
+    return item
+
+
+def component_releases(group, per_page=100):
+    """Each repository's published releases that a set may take (no pre-release), in repository order."""
+    return [[item for item in published(source, per_page) if not item["prerelease"]] for source in group]
+
+
+def newest_set(group):
+    """The set of each repository's newest published release, or None while one repository has none."""
+    newest = [max(items, key=lambda item: item["publishedAt"], default=None)
+              for items in component_releases(group, per_page=10)]
+    return set_item(group, newest) if all(newest) else None
+
+
+def sets_of(group):
+    """A product's release sets, newest first: one after each repository release once every repository has released,
+    holding every other repository's newest release then; then one candidate set per recent commit build of a
+    repository, beside every other repository's newest release."""
+    listings = component_releases(group)
+    if not all(listings):
+        return []
+    events = sorted(((item["publishedAt"], index, item) for index, items in enumerate(listings) for item in items),
+                    key=lambda event: (event[0], event[1]))
+    newest, result = [None] * len(group), []
+    for _, index, item in events:
+        newest[index] = item
+        if all(newest):
+            result.append(set_item(group, list(newest)))
+    result = list(reversed(result))[:SETS_LISTED]
+    for index, source in enumerate(group):
+        try:
+            builds = candidates(source)[:CANDIDATE_SETS]
+        except (CommandFailed, ValueError):
+            continue  # commit builds are a convenience for dev; the release sets stay usable
+        for build in builds:
+            parts = list(newest)
+            parts[index] = build
+            result.append(set_item(group, parts))
     return result
 
 
@@ -333,12 +447,56 @@ NOTES_LIMIT = 20000
 MIGRATION_PATH = re.compile(r"(^|/)(Migrations|migrations)/")
 
 
-def changelog(product, start, end):
+def changelog(product, start, end, root=None):
     """What changed between two releases of a product: the bodies of the releases published after `start` up to `end`,
     newest first, and the compare commit list as a fallback for bodies that say little, with the changed files that
     look like schema migrations. `start` is what the target runs now, or None when it runs nothing. Bodies are
-    returned as plain text for the console to show, never rendered."""
-    source = source_of(product)
+    returned as plain text for the console to show, never rendered. A product of several repositories compares two
+    release sets repository by repository (`components`); the merged lists name each release and commit's repository."""
+    group = product_sources(product)
+    if several(group):
+        return set_changelog(product, group, start, end, root)
+    return source_changelog(product, source_of(product), start, end)
+
+
+def set_parts(product, text, root):
+    """A release set label's releases by repository short name; {} for no label."""
+    if text is None:
+        return {}
+    parts = release_sets.label_parts(text)
+    if parts is None and root is not None:
+        remembered = release_sets.recall_label(root, product, text)
+        parts = {item["name"]: item["release"] for item in remembered["components"]} if remembered else None
+    require(parts is not None, "A changelog runs between two release sets of the product")
+    return parts
+
+
+def set_changelog(product, group, start, end, root):
+    require(end is not None, "A changelog needs the release to promote")
+    before, after = set_parts(product, start, root), set_parts(product, end, root)
+    components = []
+    for source in group:
+        to, since = after.get(source.component), before.get(source.component)
+        if to is None or to == since or not VERSION.fullmatch(to):
+            continue  # unchanged, or a commit build, which prod never takes
+        one = source_changelog(product, source, since if since and VERSION.fullmatch(since) else None, to)
+        components.append({"name": source.component, "repository": source.repository, **one})
+    releases = sorted(({**item, "name": component["name"] + " " + item["name"], "repository": component["repository"]}
+                       for component in components for item in component["releases"]),
+                      key=lambda item: item["publishedAt"], reverse=True)
+    compared = [component for component in components if component["commits"] is not None]
+    return {"product": product, "from": start, "to": end, "releases": releases,
+            "commits": [{**commit, "message": component["name"] + ": " + commit["message"]}
+                        for component in compared for commit in component["commits"]][:100] if compared else None,
+            "totalCommits": sum(component["totalCommits"] or 0 for component in compared) if compared else None,
+            "migrations": sorted(component["name"] + "/" + path for component in components
+                                 for path in component["migrations"])[:50],
+            "compareUrl": compared[0]["compareUrl"] if len(compared) == 1 else None,
+            "reason": next((component["reason"] for component in components if component["reason"]), None),
+            "components": components}
+
+
+def source_changelog(product, source, start, end):
     for label in (start, end):
         require(label is None or VERSION.fullmatch(label), "A changelog runs between two release tags")
     require(end is not None, "A changelog needs the release to promote")
@@ -425,14 +583,30 @@ def builds(root, clock=None):
     except (OSError, ValueError, KeyError, TypeError):
         pass
     result = []
-    for source in sources():
-        if not source.workflow:
+    for group in grouped():
+        entries = []
+        for source in group:
+            if not source.workflow:
+                continue
+            try:
+                failing = failed_build(source)
+                if failing is not None and source.component is not None:
+                    failing = {**failing, "repository": source.repository,
+                               "title": (source.component + ": " + failing["title"])[:200]}
+                entries.append({"product": source.product, "ok": True, "failing": failing})
+            except (CommandFailed, ValueError) as error:
+                entries.append({"product": source.product, "ok": False, "failing": None,
+                                "reason": str(error)[:300] if isinstance(error, CommandFailed) else "Unreadable runs"})
+        if len(entries) <= 1:
+            result += entries
             continue
-        try:
-            result.append({"product": source.product, "ok": True, "failing": failed_build(source)})
-        except (CommandFailed, ValueError) as error:
-            result.append({"product": source.product, "ok": False, "failing": None,
-                           "reason": str(error)[:300] if isinstance(error, CommandFailed) else "Unreadable runs"})
+        # A product of several repositories: its newest failing build, else a repository GitHub could not serve.
+        failing = [entry["failing"] for entry in entries if entry["failing"]]
+        if failing:
+            result.append({"product": group[0].product, "ok": True,
+                           "failing": max(failing, key=lambda item: str(item.get("at") or ""))})
+        else:
+            result.append(next((entry for entry in entries if not entry["ok"]), entries[0]))
     write_json(cache, {"fetchedAt": now, "products": result})
     return result
 
@@ -456,29 +630,37 @@ def usage(root, product, clock=None):
             return kept["usage"]
     except (OSError, ValueError, KeyError, TypeError):
         pass
-    repository = catalog.product(product).repository
+    found = catalog.product(product)
+    repositories = [repository for repository, _ in found.repositories()]
     since = datetime.fromtimestamp(now - USAGE_DAYS * 24 * 60 * 60, timezone.utc).date().isoformat()
-    runs, seconds, workflows = 0, 0.0, {}
-    for page in range(1, USAGE_PAGES + 1):
-        listing = json.loads(fetch(API + repository + "/actions/runs?per_page=100&page=" + str(page)
-                                   + "&created=%3E%3D" + since))
-        items = listing.get("workflow_runs") if isinstance(listing, dict) else None
-        for run in items or []:
-            if not isinstance(run, dict):
-                continue
-            runs += 1
-            started, ended = parse_time(run.get("run_started_at")), parse_time(run.get("updated_at"))
-            if run.get("status") == "completed" and started and ended and ended >= started:
-                seconds += (ended - started).total_seconds()
-                name = str(run.get("name") or "workflow")[:100]
-                workflows[name] = workflows.get(name, 0.0) + (ended - started).total_seconds()
-        if not items or len(items) < 100:
-            break
-    result = {"product": product, "repository": repository, "since": since, "days": USAGE_DAYS,
+    runs, seconds, workflows, complete = 0, 0.0, {}, True
+    for repository in repositories:
+        # A product of several repositories counts each repository's runs; workflow names carry the repository's.
+        prefix = catalog.short_name(product, repository) + ": " if found.components else ""
+        counted = 0
+        for page in range(1, USAGE_PAGES + 1):
+            listing = json.loads(fetch(API + repository + "/actions/runs?per_page=100&page=" + str(page)
+                                       + "&created=%3E%3D" + since))
+            items = listing.get("workflow_runs") if isinstance(listing, dict) else None
+            for run in items or []:
+                if not isinstance(run, dict):
+                    continue
+                runs += 1
+                counted += 1
+                started, ended = parse_time(run.get("run_started_at")), parse_time(run.get("updated_at"))
+                if run.get("status") == "completed" and started and ended and ended >= started:
+                    seconds += (ended - started).total_seconds()
+                    name = (prefix + str(run.get("name") or "workflow"))[:100]
+                    workflows[name] = workflows.get(name, 0.0) + (ended - started).total_seconds()
+            if not items or len(items) < 100:
+                break
+        complete = complete and counted < USAGE_PAGES * 100
+    result = {"product": product, "repository": repositories[0], "repositories": repositories, "since": since,
+              "days": USAGE_DAYS,
               "actions": {"runs": runs, "minutes": round(seconds / 60, 1),
                           "workflows": [{"name": name, "minutes": round(value / 60, 1)}
                                         for name, value in sorted(workflows.items(), key=lambda item: -item[1])],
-                          "complete": runs < USAGE_PAGES * 100},
+                          "complete": complete},
               "packages": packages(product), "storageBytes": None,
               "storageNote": "GitHub's API does not report container package sizes"}
     write_json(cache, {"fetchedAt": now, "usage": result})
@@ -495,9 +677,8 @@ def parse_time(value):
 
 def packages(product):
     """Each service image's GHCR package and how many versions it holds; null where the token may not read packages."""
-    source = next((item for item in sources() if item.product == product), None)
     result = []
-    for service, image in (source.images if source else ()):
+    for service, image in (image for source in product_sources(product) for image in source.images):
         parts = image.split("/")
         if len(parts) < 3 or parts[0] != "ghcr.io":
             continue
@@ -517,7 +698,20 @@ def packages(product):
 
 def available(root=None):
     result = []
-    for source in sources():
+    for group in grouped():
+        if several(group):
+            try:
+                found = sets_of(group)
+            except CommandFailed:
+                if rehearsal():
+                    continue
+                raise
+            # Each listed set is remembered, so one that leaves the listing still deploys (a promotion of an older set).
+            for item in found if root is not None else ():
+                release_sets.remember(root, item)
+            result += found
+            continue
+        source = group[0]
         # A bounded recent catalog; old deployed bundles remain in the target recovery journal.
         try:
             result += published(source)
@@ -579,9 +773,50 @@ def candidate_archive(payload):
 def prepare(root, identifier, importer):
     if rehearsal() and any(item["id"] == identifier for item in imported(root)):
         return Path(root) / "bundles" / identifier
+    if release_sets.is_set(identifier):
+        return prepare_set(root, identifier, importer)
     artifact = next((item for item in available() if item["id"] == identifier), None)
     require(artifact is not None, "Release artifact is no longer available")
-    source = source_of(artifact["product"])
+    return prepare_artifact(root, artifact, source_of(artifact["product"]), importer)
+
+
+def prepare_set(root, identifier, importer):
+    """A release set's bundle: each repository's release prepared and checked against that repository's source, then
+    composed (release_sets.compose). A composed set is cached like any bundle, with the set as its receipt."""
+    bundle = Path(root) / "bundles" / identifier
+    require(SLUG.fullmatch(identifier) and not bundle.is_symlink(), "Release cache cannot be a symlink")
+    if (bundle / "release.json").is_file() and (bundle / "source.json").is_file():
+        manifest = validate_bundle(bundle)
+        require(manifest.get("set") == identifier, "Release receipt changed")
+        return bundle
+    item = release_sets.recall(root, identifier) or next(
+        (entry for entry in available(root) if entry["id"] == identifier), None)
+    require(item is not None, "Release set is no longer available")
+    group = product_sources(item["product"])
+    components = item.get("components") if isinstance(item.get("components"), list) else []
+    require(several(group) and [source.repository for source in group] == [part.get("repository") for part in components],
+            "The product's repositories changed since this release set; deploy a newer one")
+    parts = []
+    for source, component in zip(group, components):
+        artifact = {key: value for key, value in component.items() if key != "name"}
+        folder = prepare_artifact(root, artifact, source, importer)
+        parts.append((source.component, source.repository, read_json(folder / "release.json"),
+                      read_json(folder / "compose.json")))
+    manifest, compose_bytes = release_sets.compose(item["product"], identifier, parts)
+    require(manifest["release"] == item["release"], "Release set label mismatch")
+    with tempfile.TemporaryDirectory() as directory:
+        staged = Path(directory) / "set"
+        release_sets.write(staged, manifest, compose_bytes)
+        validate_bundle(staged)
+    release_sets.write(bundle, manifest, compose_bytes)
+    write_json(bundle / "source.json", item)
+    return bundle
+
+
+def prepare_artifact(root, artifact, source, importer):
+    """One repository's release or commit build in the local cache, downloaded and checked once."""
+    identifier = artifact["id"]
+    require(isinstance(identifier, str) and SLUG.fullmatch(identifier), "Invalid release artifact")
     bundle = Path(root) / "bundles" / identifier
     require(not bundle.is_symlink(), "Release cache cannot be a symlink")
     if not bundle.exists():
@@ -610,6 +845,10 @@ def prepare(root, identifier, importer):
 
 def validate_source(bundle, source, artifact):
     manifest = validate_bundle(bundle)
+    # Every repository of a product built from several names the product's slug in its deploy.yml (decision 70).
+    require(source.component is None or manifest["product"] == source.product,
+            source.repository + "'s release names product " + str(manifest["product"]) + "; its deploy.yml must name "
+            + source.product)
     require(manifest["product"] == source.product and manifest["release"] == artifact["release"], "Release identity mismatch")
     expected = dict(source.images)
     require(manifest["images"].keys() == expected.keys(), "Unexpected release service")
@@ -626,9 +865,10 @@ def validate_source(bundle, source, artifact):
     return manifest
 
 
-def request_build(product, commit):
-    """Starts the product's build workflow for a commit that has no build yet."""
-    source = source_of(product)
+def request_build(product, commit, repository=None):
+    """Starts the build workflow of one of the product's repositories (its primary one unless named) for a commit that
+    has no build yet."""
+    source = repository_source(product, repository)
     require(source.workflow and WORKFLOW.fullmatch(source.workflow), "This product has no build workflow")
     require(isinstance(commit, str) and SHA.fullmatch(commit), "Give the full commit SHA")
     require(not any(item["commit"] == commit for item in candidates(source)), "A build of this commit already exists")
@@ -639,21 +879,37 @@ def request_build(product, commit):
     return {"product": product, "commit": commit, "status": "requested"}
 
 
-def branches(product):
+def product_repository(product, repository=None):
+    """One of a catalog product's repositories: the named one, else its primary one."""
+    found = catalog.product(product)
+    if repository is None:
+        return found.repository
+    match = next((name for name, _ in found.repositories() if name.lower() == str(repository).lower()), None)
+    require(match is not None, "The repository is not one of the product's")
+    return match
+
+
+def branches(product, repository=None):
     # Any catalog product lists its branches; a release source is needed only to build or deploy them.
-    repository = catalog.product(product).repository
+    repository = product_repository(product, repository)
     listing = json.loads(fetch(API + repository + "/branches?per_page=100"))
     return sorted(item["name"] for item in listing if isinstance(item, dict)
                   and isinstance(item.get("name"), str) and BRANCH.fullmatch(item["name"]))
 
 
-def commits(product, branch):
-    """A branch's recent commits, each with its build when one exists."""
-    repository = catalog.product(product).repository
-    source = next((item for item in sources() if item.product == product), None)
+def commits(product, branch, repository=None):
+    """A branch's recent commits, each with its build when one exists. In a product of several repositories, a build
+    is the candidate set that takes it beside every other repository's newest release."""
+    repository = product_repository(product, repository)
+    group = product_sources(product)
+    source = next((item for item in group if item.repository == repository), None)
     require(isinstance(branch, str) and BRANCH.fullmatch(branch), "Invalid branch")
     listing = json.loads(fetch(API + repository + "/commits?per_page=30&sha=" + quote(branch, safe="")))
-    built = {item["commit"]: item["id"] for item in candidates(source)} if source else {}
+    if source is not None and several(group):
+        built = {item["commit"]: item["id"] for item in sets_of(group) if item["kind"] == "candidate"
+                 and any(part["repository"] == repository and part["kind"] == "candidate" for part in item["components"])}
+    else:
+        built = {item["commit"]: item["id"] for item in candidates(source)} if source else {}
     result = []
     for item in listing if isinstance(listing, list) else []:
         sha = item.get("sha") if isinstance(item, dict) else None

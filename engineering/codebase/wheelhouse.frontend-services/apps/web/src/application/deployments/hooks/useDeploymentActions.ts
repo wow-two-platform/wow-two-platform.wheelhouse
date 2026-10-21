@@ -74,9 +74,9 @@ export function useReconcileTarget() {
 export function useRequestBuild() {
   return useAppMutation({
     mutationFn: (
-      { product, commit }: { product: string; commit: string },
+      { product, commit, repository }: { product: string; commit: string; repository?: string | null },
       { signal },
-    ) => deploymentsApi.requestBuild(product, commit, signal),
+    ) => deploymentsApi.requestBuild(product, commit, signal, repository),
     invalidates: () => [DeploymentKeys.releases, DeploymentKeys.commitsAll],
     meta: { suppressGlobalError: true },
   });

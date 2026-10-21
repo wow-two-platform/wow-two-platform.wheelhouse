@@ -149,6 +149,27 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
             new { id = Guid.NewGuid(), status = "queued" })));
     }
 
+    /// <summary>Gets the repository the last branches, commits or build call named; <c>null</c> for the primary one.</summary>
+    public string? LastRepository { get; private set; }
+
+    public Task<AppResult<JsonElement>> BranchesAsync(string product, string? repository, CancellationToken ct)
+    {
+        LastRepository = repository;
+        return ReadAsync("branches", product, ct);
+    }
+
+    public Task<AppResult<JsonElement>> CommitsAsync(string product, string branch, string? repository, CancellationToken ct)
+    {
+        LastRepository = repository;
+        return CommitsAsync(product, branch, ct);
+    }
+
+    public Task<AppResult<JsonElement>> RequestBuildAsync(string product, string commit, string? repository, CancellationToken ct)
+    {
+        LastRepository = repository;
+        return RequestBuildAsync(product, commit, ct);
+    }
+
     public Task<AppResult<JsonElement>> CommitsAsync(string product, string branch, CancellationToken ct)
     {
         LastCommits = (product, branch);

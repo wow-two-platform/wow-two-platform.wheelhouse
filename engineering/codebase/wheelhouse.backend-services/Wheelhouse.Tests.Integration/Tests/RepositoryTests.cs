@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Dapper;
 using Microsoft.EntityFrameworkCore;
+using Wheelhouse.Domain.Products.Models;
 using Wheelhouse.Domain.Targets.Enums;
 using Wheelhouse.Persistence.Repositories;
 using Wheelhouse.Tests.Integration.Harness;
@@ -90,6 +91,35 @@ public sealed class RepositoryTests(WheelhouseTestDb db) : IAsyncLifetime
         var raw = await read.Database.GetDbConnection()
             .ExecuteScalarAsync<string>("select cast(release as text) from products where slug = 'pilot'");
         raw.Should().Contain("\"asset\"").And.Contain("\"images\"");
+    }
+
+    [Fact]
+    public async Task ProductComponents_ShouldRoundTripTheFurtherRepositoriesInOrder_AndDefaultToNone_WhenStored()
+    {
+        var stored = InventoryRows.Product("ocharo") with
+        {
+            Components =
+            [
+                new ProductComponentValueObject { Repository = "ocharo-hq/ocharo-studio", Release = InventoryRows.Product("studio").Release },
+                new ProductComponentValueObject { Repository = "ocharo-hq/ocharo-assets" },
+            ],
+        };
+        await using (var ctx = db.NewContext())
+        {
+            var products = new ProductsRepository(ctx);
+            await products.CreateAsync(stored);
+            await products.CreateAsync(InventoryRows.Product("single"));
+        }
+
+        await using var read = db.NewContext();
+        var loaded = await new ProductsRepository(read).GetBySlugAsync("ocharo");
+        loaded!.Components.Select(item => item.Repository).Should().Equal("ocharo-hq/ocharo-studio", "ocharo-hq/ocharo-assets");
+        loaded.Components[0].Release!.Images.Should().BeEquivalentTo(stored.Components[0].Release!.Images);
+        loaded.Components[1].Release.Should().BeNull();
+        (await new ProductsRepository(read).GetBySlugAsync("single"))!.Components.Should().BeEmpty();
+        var raw = await read.Database.GetDbConnection()
+            .ExecuteScalarAsync<string>("select cast(components as text) from products where slug = 'ocharo'");
+        raw.Should().Contain("\"repository\"").And.Contain("ocharo-hq/ocharo-studio");
     }
 
     [Fact]

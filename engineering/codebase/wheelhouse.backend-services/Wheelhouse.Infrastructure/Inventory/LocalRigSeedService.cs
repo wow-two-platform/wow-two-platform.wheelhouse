@@ -58,6 +58,7 @@ public sealed partial class LocalRigSeedService(
                     DefaultBranch = fixture.DefaultBranch,
                     WorkspaceId = (await defaultWorkspace.GetAsync(ct)).Id,
                     Release = InventorySnapshotMapper.Map(fixture.Release),
+                    Components = InventorySnapshotMapper.Map(fixture.Components),
                 }, ct);
         }
 

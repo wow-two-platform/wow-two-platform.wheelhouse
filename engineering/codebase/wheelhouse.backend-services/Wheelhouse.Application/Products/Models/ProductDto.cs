@@ -48,6 +48,10 @@ public sealed record ProductDto
     /// bundles deploy.</summary>
     public ProductReleaseDto? Release { get; init; }
 
+    /// <summary>Gets every repository of the product with its release source, primary first: one for a product of one
+    /// repository, several for a product built from several (decision 70), whose releases are sets of theirs.</summary>
+    public IReadOnlyList<ProductComponentDto> Repositories { get; init; } = [];
+
     /// <summary>Gets the path of the product's icon; it answers not found when the repository carries none.</summary>
     public required string IconUrl { get; init; }
 

@@ -34,7 +34,10 @@ export interface CatalogEntry {
   /** Who deploys the app; only `wheelhouse` apps can be imported. */
   deploy: string;
   purpose: string;
+  /** GitHub `owner/name`, primary first; several make one product built from several repositories (decision 70). */
   repositories: string[];
+  /** The products the entry supersedes: importing it retires each one nothing ever deployed to. */
+  replaces: string[];
   /** The Wheelhouse product the entry already is; null while it is not in Wheelhouse. */
   productId: string | null;
 }
@@ -61,6 +64,8 @@ export interface CatalogImportResult {
   movedProducts: number;
   /** Existing products whose deploy mode the import set from their entry's `deploy`. */
   updatedProducts: number;
+  /** Products the import retired because an imported entry replaces them and nothing had deployed to them. */
+  retiredProducts: number;
   warnings: CatalogImportWarning[];
 }
 

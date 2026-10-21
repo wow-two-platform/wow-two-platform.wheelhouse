@@ -11,5 +11,5 @@ public sealed class DeploymentCommitsQueryHandler(IDeploymentGateway gateway)
 {
     /// <inheritdoc />
     public async ValueTask<AppResult<JsonElement>> HandleAsync(DeploymentCommitsQuery request, CancellationToken cancellationToken) =>
-        await gateway.CommitsAsync(request.Product, request.Branch, cancellationToken);
+        await gateway.CommitsAsync(request.Product, request.Branch, request.Repository, cancellationToken);
 }

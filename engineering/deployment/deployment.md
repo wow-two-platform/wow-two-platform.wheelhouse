@@ -65,6 +65,42 @@ project, platform-network alias, database, settings files and hostnames. No hard
 Open VPS wiring and launch work waits in the [backlog](../planning/backlog.md) § Hosting.
 Local image builds use the current working tree; publishing requires all intended source/dependency changes committed together.
 
+## Products of several repositories
+
+A product may span several repositories (decision 70); Ocharo is the first: `ocharo` = `ocharo-hq/ocharo-platform`
+(primary: Desk, jobs, image worker), `ocharo-studio`, `ocharo-marketing` (deploys nothing yet) and `ocharo-assets`
+(the motion lab). Release sets: [architecture](../architecture/architecture.md#release-sets).
+
+- Every repository's `deploy.yml` names `product: ocharo`; services (`desk`, `jobs`, `image-worker`, `studio`,
+  `motion`), sites (`desk` public, the front door; `studio` public; `motion` private) and volumes (`keys`, `models`,
+  `studio-data`, `motion-data`) are unique across them.
+- One set of environments: `ocharo-dev` and `ocharo-prod`, each on one server, root `/srv/wheelhouse/ocharo-<env>/`,
+  databases `ocharo_dev` and `ocharo_prod`, one secrets namespace per environment, baseline hosts
+  `ocharo[-dev].<ip>.sslip.io` (Desk) and `ocharo-studio[-dev].<ip>.sslip.io`.
+- The product has no release until each deploying repository has published one after its `product: ocharo` change;
+  from then on, every repository release queues a new set for dev, and Ready to promote offers the set dev proved.
+- Settings and secrets stay per service: Studio's `OcharoPlatform:BaseUrl` names Desk (its public origin, or
+  `http://ocharo-<env>-desk:8080` on the platform network).
+
+### Moving prod to the merged product (owner, after promoting this release)
+
+Prod holds `ocharo-platform` and `ocharo-studio`, with Studio's dev and prod environments; nothing was deployed to
+them, they hold no data and no placement ran. In the prod console:
+
+1. **Catalog → Ocharo → select `ocharo` → Import.** The entry `replaces: [ocharo-platform, ocharo-studio]`, so the
+   import creates `ocharo` with its four repositories and retires both: Studio's two environments first, then each
+   product with its settings, secrets and pins. The result says `retired 2 replaced products`; a warning instead
+   means one has deploys on record and stays (remove its environments and the product by hand once torn down).
+2. **Products → Ocharo → Manage → Add environment**, twice: `ocharo-dev` (dev) and `ocharo-prod` (prod) on the products
+   server; leave site hosts empty for baseline hosts.
+3. **Overview → Hosting → Place on a server** (prod console only): PostgreSQL databases `ocharo_dev` and `ocharo_prod`
+   (Desk and jobs need it) and the private `motion` site's tailnet nodes, offered from the merged `deploy.yml`s.
+4. **Deployments → Deploy**, `ocharo-dev`, the newest set (`platform-v… + studio-v… + assets-v…`): the dialog asks for
+   each required key no layer sets (Desk's `DataProtection:*`, Studio's `OcharoPlatform:BaseUrl`, the image worker's
+   `ImageWorker:Key` secret), then deploys. Auto-deploy takes every later set to dev.
+5. **Deployments → Ready to promote → the set → Promote** to `ocharo-prod`, with a reason; its changelog lists each
+   repository that changed.
+
 ## Wheelhouse's own releases
 
 Wheelhouse ships like the products it deploys. `engineering/deployment/deploy.yml` declares one service, `console`,
@@ -795,6 +831,10 @@ python3 rehearse.py down --volumes
   `host.env`), so Traefik's log shows the `letsencrypt` order for each baseline host and no certificate is issued:
   a real HTTP-01 validation needs a public address. A stand-in prod console proves `authorize-runner.sh --remote` and
   `--accept` at a stand-in tailnet address.
+- Then ForeverPin becomes a product of two repositories: the release is cut into one bundle per service (`app`:
+  management, `go`: redirect), as two repositories would publish them; `transport.py compose` (local server only) makes
+  them a release set, `app-<release>_go-<release>`, which deploys over the single-repository release with no service
+  restarted and both baseline hosts still answering.
 - A password-protected local registry stands in for GHCR: the deploy account signs in through `prepare.py`'s GHCR
   sign-in, and the runner's SSH session pulls a private image that root, without a sign-in, cannot.
 - Packages, the firewall, unattended updates and the tailnet need a real Ubuntu host; `products` leaves them out, and

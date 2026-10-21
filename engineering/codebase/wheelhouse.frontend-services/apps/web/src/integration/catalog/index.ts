@@ -33,6 +33,7 @@ const CatalogSchema = z.object({
       deploy: z.string(),
       purpose: z.string().nullish().transform((value) => value ?? ""),
       repositories: z.array(z.string()),
+      replaces: z.array(z.string()).default([]),
       productId: nullable,
     }),
   ),
@@ -45,6 +46,7 @@ const ImportResultSchema = z.object({
   createdProducts: Changed,
   movedProducts: Changed,
   updatedProducts: Changed.default(0),
+  retiredProducts: Changed.default(0),
   warnings: z.array(z.object({ slug: z.string(), message: z.string() })).default([]),
 });
 

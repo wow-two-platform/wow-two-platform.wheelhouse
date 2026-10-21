@@ -19,7 +19,26 @@ public sealed class CatalogReleaseService(IRepositoryFileSource files)
     /// <param name="repository">The primary repository, as <c>owner/name</c>.</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The release source and, when its images are missing, why.</returns>
-    public async Task<DerivedRelease> DeriveAsync(string product, string repository, CancellationToken ct)
+    public Task<DerivedRelease> DeriveAsync(string product, string repository, CancellationToken ct) =>
+        DeriveAsync(product, repository, several: false, ct);
+
+    /// <summary>Derives the release source of every repository of a product, primary first. Each repository of a
+    /// product built from several (decision 70) publishes the same asset, since its <c>deploy.yml</c> names the
+    /// product's slug.</summary>
+    /// <param name="product">The product's slug.</param>
+    /// <param name="repositories">The repositories, as <c>owner/name</c>, primary first.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>Each repository's release source and note, in order.</returns>
+    public async Task<IReadOnlyList<(string Repository, DerivedRelease Derived)>> DeriveAllAsync(
+        string product, IReadOnlyList<string> repositories, CancellationToken ct)
+    {
+        var result = new List<(string, DerivedRelease)>();
+        foreach (var repository in repositories)
+            result.Add((repository, await DeriveAsync(product, repository, repositories.Count > 1, ct)));
+        return result;
+    }
+
+    private async Task<DerivedRelease> DeriveAsync(string product, string repository, bool several, CancellationToken ct)
     {
         var where = $"{repository}@{CatalogConstants.ReleaseBranch}";
         var commit = await files.HeadAsync(repository, CatalogConstants.ReleaseBranch, fresh: true, ct);
@@ -52,7 +71,9 @@ public sealed class CatalogReleaseService(IRepositoryFileSource files)
 
         var note = descriptor.Product == product
             ? null
-            : $"deploy.yml in {where} names the product '{descriptor.Product}', not '{product}'; the release asset follows the catalog slug.";
+            : several
+                ? $"deploy.yml in {where} names the product '{descriptor.Product}', not '{product}'; every repository of '{product}' must name it before its releases join the product's."
+                : $"deploy.yml in {where} names the product '{descriptor.Product}', not '{product}'; the release asset follows the catalog slug.";
         return new DerivedRelease(Release(product, images), note);
     }
 

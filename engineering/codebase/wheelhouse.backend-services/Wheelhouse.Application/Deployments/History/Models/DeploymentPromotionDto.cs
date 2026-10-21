@@ -17,8 +17,10 @@ namespace Wheelhouse.Application.Deployments.History.Models;
 /// <param name="Verifies">Whether the release declares an end-to-end check for dev; null when the bundle is unknown.</param>
 /// <param name="Verification">The check's result on the dev rollout that proved the release; null when it ran none.
 /// A manual promote shows it; auto-promote takes only a release whose check passed.</param>
+/// <param name="Components">Each repository's release when the release is a set of a product built from several
+/// repositories (decision 70): prod takes the very set dev proved; null otherwise.</param>
 public sealed record DeploymentPromotionDto(
     string Product, string? Workspace, string Release, string BundleId, DateTimeOffset? PublishedAt,
     string DevTargetId, DateTimeOffset DevSucceededAt, string ProdTargetId, string? ProdRelease,
     bool? RollbackCompatible = null, bool? HasMigrations = null, bool? Verifies = null,
-    DeploymentVerificationDto? Verification = null);
+    DeploymentVerificationDto? Verification = null, IReadOnlyList<ReleaseComponentDto>? Components = null);

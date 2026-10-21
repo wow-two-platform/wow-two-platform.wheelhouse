@@ -13,6 +13,7 @@ export interface ReconcileModalProps {
 </script>
 
 <script setup lang="ts">
+import { ReleaseSets } from "@/domain/deployments";
 import { failureReason } from "@/integration/common";
 import { computed, ref, watch } from "vue";
 
@@ -85,7 +86,7 @@ async function confirm(): Promise<void> {
       </ModalHeader>
       <ModalBody class="flex flex-col gap-4">
         <p class="text-sm text-muted-foreground">
-          Stopped rollout: {{ props.active.release ?? props.active.id }}
+          Stopped rollout: {{ ReleaseSets.text(props.active.release) || props.active.id }}
           <span v-if="props.active.reason"> · {{ props.active.reason }}</span>
         </p>
         <Field :label="`Type ${props.target} to confirm`">

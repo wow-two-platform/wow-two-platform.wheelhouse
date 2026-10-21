@@ -38,6 +38,7 @@ public sealed class CatalogGetQueryHandler(CatalogReader reader, IProductsReposi
                     Deploy = entry.Deploy,
                     Purpose = entry.Purpose,
                     Repositories = entry.Repositories,
+                    Replaces = entry.Replaces,
                     Source = entry.Source,
                     ProductId = bySlug.TryGetValue(entry.Slug, out var id) ? id : null,
                 }),

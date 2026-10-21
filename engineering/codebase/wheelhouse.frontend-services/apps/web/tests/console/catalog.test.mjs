@@ -147,8 +147,10 @@ test("the catalog decodes, and an import posts its slugs with the catalog action
     [[null, null, "o/ventures@main has no catalog.yml."], ["R", "abc", null]]);
   assert.equal(catalog.value.entries[0].source, "o/ventures");
   const result = await catalogApi.importEntries(["hijinx", "museums"]);
-  assert.deepEqual(result.value, { createdWorkspaces: 1, createdProducts: 2, movedProducts: 0, updatedProducts: 0, warnings: [] },
-    "a host that reports no deploy-mode changes counts none");
+  assert.deepEqual(result.value,
+    { createdWorkspaces: 1, createdProducts: 2, movedProducts: 0, updatedProducts: 0, retiredProducts: 0, warnings: [] },
+    "a host that reports no deploy-mode changes or retirements counts none");
+  assert.deepEqual(catalog.value.entries[0].replaces, [], "an entry without replaces supersedes nothing");
   assert.equal(requests[1].url, "/api/catalog/import");
   assert.equal(requests[1].options.method, "POST");
   assert.equal(requests[1].options.headers.get("X-Wheelhouse-Action"), "catalog");
@@ -183,4 +185,18 @@ test("workspaces and pins decode absent optional fields as empty", async () => {
     service: null, order: 0 });
   globalThis.fetch = async () => json({ data: [{ id: "pin-1", kind: "folder", order: 0 }] });
   assert.equal((await pinsApi.listPins()).failure.code, "protocol");
+});
+
+test("an entry of several repositories lists them, retires what it replaces, and the summary says so", async () => {
+  globalThis.fetch = async (url) => url === "/api/catalog"
+    ? json({ data: { sources: [], workspaces: [], entries: [entry("ocharo", {
+      repositories: ["ocharo-hq/ocharo-platform", "ocharo-hq/ocharo-studio"], replaces: ["ocharo-platform", "ocharo-studio"] })] } })
+    : json({ data: { createdWorkspaces: [], createdProducts: ["ocharo"], movedProducts: [], updatedProducts: [],
+      retiredProducts: ["ocharo-platform", "ocharo-studio"], warnings: [] } });
+  const catalog = await catalogApi.getCatalog();
+  assert.deepEqual(catalog.value.entries[0].replaces, ["ocharo-platform", "ocharo-studio"]);
+  assert.equal(catalog.value.entries[0].repositories.length, 2);
+  const result = await catalogApi.importEntries(["ocharo"]);
+  assert.equal(result.value.retiredProducts, 2);
+  assert.equal(CatalogRules.summary(result.value), "Added 1 product and retired 2 replaced products.");
 });

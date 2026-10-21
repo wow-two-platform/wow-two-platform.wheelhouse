@@ -1,4 +1,5 @@
 import type { DeploymentVerification } from '../../automation/DevCheck';
+import type { ReleaseComponent } from '../../models/ReleaseComponent';
 
 /** The newest release that succeeded on a product's dev and is not what its prod runs. */
 export interface DeploymentPromotion {
@@ -21,4 +22,6 @@ export interface DeploymentPromotion {
   verifies: boolean | null;
   /** The check's result on the dev rollout that proved the release; null when it ran none. */
   verification: DeploymentVerification | null;
+  /** Each repository's release when the release is a set: prod takes the very set dev proved. */
+  components: ReleaseComponent[] | null;
 }

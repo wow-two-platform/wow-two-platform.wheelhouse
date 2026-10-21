@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Attention, DeployState, ServiceResult } from '@/domain/common';
 import { DeploymentIssueKind, DeploymentOutcome, DeploymentStates, JobStatus, StepStatus } from '@/domain/deployments';
+import { ReleaseComponentSchema } from './schemas';
 
 const nullableText = z.string().nullable();
 // Site links open in the owner's browser, so only http(s) addresses survive decoding.
@@ -51,6 +52,8 @@ const DeploymentItemFields = z.object({
   workspace: nullableText.default(null),
   release: nullableText.default(null),
   bundleId: nullableText.default(null),
+  /** Each repository's release when the release is a set of a product built from several (decision 70). */
+  components: z.array(ReleaseComponentSchema).nullable().catch(null).default(null),
   kind: z.enum(['release', 'candidate']).nullable().catch(null).default(null),
   branch: nullableText.default(null),
   sourceCommit: nullableText.default(null),
@@ -190,6 +193,7 @@ export const DeploymentPromotionSchema = z.object({
   hasMigrations: z.boolean().nullable().default(null),
   verifies: z.boolean().nullable().default(null),
   verification: VerificationSchema.nullable().default(null),
+  components: z.array(ReleaseComponentSchema).nullable().catch(null).default(null),
 });
 
 export const DeploymentIssueSchema = z.object({

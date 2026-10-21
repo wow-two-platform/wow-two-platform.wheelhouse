@@ -11,5 +11,5 @@ public sealed class DeploymentBuildCommandHandler(IDeploymentGateway gateway)
 {
     /// <inheritdoc />
     public async ValueTask<AppResult<JsonElement>> HandleAsync(DeploymentBuildCommand request, CancellationToken cancellationToken) =>
-        await gateway.RequestBuildAsync(request.Product, request.Commit, cancellationToken);
+        await gateway.RequestBuildAsync(request.Product, request.Commit, request.Repository, cancellationToken);
 }

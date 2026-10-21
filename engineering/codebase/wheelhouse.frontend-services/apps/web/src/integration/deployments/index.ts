@@ -113,26 +113,28 @@ export const deploymentsApi = {
       },
     }),
 
-  listBranches: (product: string, signal?: AbortSignal) =>
+  /** A product's branches; `repository` names one of a product's repositories (its primary one when absent). */
+  listBranches: (product: string, signal?: AbortSignal, repository?: string | null) =>
     requestData<string[]>(
-      `/api/deployments/products/${encodeURIComponent(product)}/branches`,
+      `/api/deployments/products/${encodeURIComponent(product)}/branches${repository ? `?repository=${encodeURIComponent(repository)}` : ""}`,
       z.array(z.string()),
       { signal },
     ),
 
-  listCommits: (product: string, branch: string, signal?: AbortSignal) =>
+  listCommits: (product: string, branch: string, signal?: AbortSignal, repository?: string | null) =>
     requestData<CommitEntry[]>(
-      `/api/deployments/products/${encodeURIComponent(product)}/commits?branch=${encodeURIComponent(branch)}`,
+      `/api/deployments/products/${encodeURIComponent(product)}/commits?branch=${encodeURIComponent(branch)}${repository ? `&repository=${encodeURIComponent(repository)}` : ""}`,
       CommitEntrySchema.array(),
       { signal },
     ),
 
-  /** Starts the product's build workflow for a commit that has no build yet. */
-  requestBuild: (product: string, commit: string, signal?: AbortSignal) =>
+  /** Starts the build workflow of one of the product's repositories (its primary one when absent) for a commit that has
+   * no build yet. */
+  requestBuild: (product: string, commit: string, signal?: AbortSignal, repository?: string | null) =>
     requestData<BuildRequest>(
       `/api/deployments/products/${encodeURIComponent(product)}/builds`,
       BuildRequestSchema,
-      { signal, method: "POST", action: "build", body: { commit } },
+      { signal, method: "POST", action: "build", body: { commit, ...(repository ? { repository } : {}) } },
     ),
 
   reconcile: (target: string, job: string, signal?: AbortSignal) =>

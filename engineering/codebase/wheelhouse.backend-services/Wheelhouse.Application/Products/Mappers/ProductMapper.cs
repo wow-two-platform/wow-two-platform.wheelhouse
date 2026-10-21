@@ -54,6 +54,16 @@ internal static class ProductMapper
             DefaultBranch = product.DefaultBranch,
         },
         Release = product.Release is { } release ? Map(release) : null,
+        Repositories =
+        [
+            .. ProductRepositories.Of(product).Select(item => new ProductComponentDto
+            {
+                Name = ProductRepositories.ShortName(product.Slug, item.Repository),
+                Repository = item.Repository,
+                Url = "https://github.com/" + item.Repository,
+                Release = item.Release is { } source ? Map(source) : null,
+            }),
+        ],
         IconUrl = "/api/products/" + product.Slug + "/icon",
         Environments =
         [

@@ -73,14 +73,21 @@ def pairs(items, first, second):
     return tuple((text(entry, first), text(entry, second)) for entry in items)
 
 
+def release_of(release):
+    return None if release is None else catalog.Release(text(release, "asset"),
+                                                        pairs(release["images"], "service", "image"),
+                                                        text(release, "workflow", optional=True))
+
+
 def product_of(item):
-    release = item.get("release")
+    # `components`, a product's further repositories, is absent from a snapshot written before decision 70.
+    components = item.get("components") or []
+    require(isinstance(components, list), "Inventory snapshot is malformed")
     return catalog.Product(
         text(item, "slug"), text(item, "name"), text(item, "description"), text(item, "repository"),
-        text(item, "defaultBranch"),
-        None if release is None else catalog.Release(text(release, "asset"),
-                                                     pairs(release["images"], "service", "image"),
-                                                     text(release, "workflow", optional=True)))
+        text(item, "defaultBranch"), release_of(item.get("release")),
+        tuple(catalog.Component(text(component, "repository"), release_of(component.get("release")))
+              for component in components))
 
 
 def server_of(item):
@@ -114,13 +121,20 @@ def vault_of(item):
     return fleet.Vault(text(item, "id"), text(item, "name"), text(item, "serverId"), text(item, "url"))
 
 
+def release_json(release):
+    return None if release is None else {
+        "asset": release.asset, "workflow": release.workflow,
+        "images": [{"service": service, "image": image} for service, image in release.images]}
+
+
 def product_json(product):
-    release = product.release
-    return {"slug": product.slug, "name": product.name, "description": product.description,
-            "repository": product.repository, "defaultBranch": product.default_branch,
-            "release": None if release is None else {
-                "asset": release.asset, "workflow": release.workflow,
-                "images": [{"service": service, "image": image} for service, image in release.images]}}
+    result = {"slug": product.slug, "name": product.name, "description": product.description,
+              "repository": product.repository, "defaultBranch": product.default_branch,
+              "release": release_json(product.release)}
+    if product.components:
+        result["components"] = [{"repository": item.repository, "release": release_json(item.release)}
+                                for item in product.components]
+    return result
 
 
 def server_json(server):

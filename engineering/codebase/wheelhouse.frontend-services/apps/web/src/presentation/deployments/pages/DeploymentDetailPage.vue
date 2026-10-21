@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ReleaseSets } from "@/domain/deployments";
 import { computed, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { ArrowRight, Crosshair, ExternalLink, FileText, RotateCcw, TriangleAlert, Undo2, Wrench } from "lucide-vue-next";
@@ -141,12 +142,18 @@ const facts = computed(() => {
   if (!item) return [];
   return [
     { label: "Target", value: item.targetId ?? "—" },
-    { label: "Previous success", value: detail.data.value?.previous?.release ?? "—" },
+    { label: "Previous success", value: ReleaseSets.text(detail.data.value?.previous?.release) || "—" },
     { label: "Actor", value: item.actor ?? "—" },
     ...(item.deployReason ? [{ label: "Reason", value: item.deployReason }] : []),
     { label: "Submitted", value: Measures.moment(item.submittedAt) },
     { label: "Duration", value: item.durationSeconds !== null ? Measures.duration(item.durationSeconds) : isLive.value ? "running" : "—" },
-    { label: "Commit", value: item.sourceCommit ? item.sourceCommit.slice(0, 12) : "—" },
+    // A release set names each repository's release and commit (decision 70); one repository has one commit.
+    ...(item.components?.length
+      ? item.components.map((component) => ({
+          label: component.name ?? component.repository ?? "Repository",
+          value: [component.release, component.sourceCommit?.slice(0, 12)].filter(Boolean).join(" · ") || "—",
+        }))
+      : [{ label: "Commit", value: item.sourceCommit ? item.sourceCommit.slice(0, 12) : "—" }]),
     { label: "Kind", value: item.kind === "candidate" ? `commit build${item.branch ? ` · ${item.branch}` : ""}` : (item.kind ?? "—") },
   ];
 });
@@ -222,7 +229,7 @@ function rollBack(): void {
     >
       <div class="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div class="flex min-w-0 flex-col gap-6">
-          <Panel :title="deployment?.release ?? deployment?.bundleId ?? 'Deployment'">
+          <Panel :title="ReleaseSets.text(deployment?.release) || deployment?.bundleId || 'Deployment'">
             <template #title>
               <span class="flex min-w-0 flex-wrap items-center gap-3">
                 <ProductIcon :product-slug="deployment?.product" :name="productName" size="md" />
@@ -234,7 +241,7 @@ function rollBack(): void {
                     >{{ productName }}</RouterLink
                   >
                   <span class="flex flex-wrap items-center gap-2">
-                    <span class="font-mono text-base font-semibold">{{ deployment?.release ?? deployment?.bundleId ?? "—" }}</span>
+                    <span class="font-mono text-base font-semibold">{{ ReleaseSets.text(deployment?.release) || deployment?.bundleId || "—" }}</span>
                     <Badge :variant="deployment?.environment === 'prod' ? 'info' : 'neutral'">{{
                       deployment?.environment ?? deployment?.targetId ?? "—"
                     }}</Badge>
@@ -396,7 +403,7 @@ function rollBack(): void {
             <template #info>
               <InfoPopover title="Services">
                 <p>
-                  Each service against {{ detail.data.value?.previous?.release ?? "what the target ran before" }}: its
+                  Each service against {{ ReleaseSets.text(detail.data.value?.previous?.release) || "what the target ran before" }}: its
                   versions from and to (and back, when restored), how it ended in this deploy, and how the target last
                   reported it. The ringed result is where the trouble started.
                 </p>
@@ -555,7 +562,7 @@ function rollBack(): void {
               </li>
               <li v-if="detail.data.value?.previous">
                 <RouterLink :to="`${ConsolePaths.deployments}/${detail.data.value.previous.id}`" class="hover:text-primary"
-                  >Previous success on this target · {{ detail.data.value.previous.release }}</RouterLink
+                  >Previous success on this target · {{ ReleaseSets.text(detail.data.value.previous.release) }}</RouterLink
                 >
               </li>
               <li>

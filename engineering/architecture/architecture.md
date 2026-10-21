@@ -1,6 +1,6 @@
 # Wheelhouse architecture
 
-*Last updated: 2026-10-20*
+*Last updated: 2026-10-21*
 
 ## Runtime
 
@@ -80,6 +80,36 @@ dev `Development`, prod `Production` — in the same override; it is opt-in beca
 
 A release may declare a dev check (`verify` in `deploy.yml`: a service, a command and a timeout, default 5 minutes,
 10 seconds to 30 minutes), which the generator writes into `release.json` (pipelines `v0.5.0`).
+
+### Release sets
+
+A product built from several repositories (decision 70) releases as a set: one release of each of its repositories that
+deploys something, composed on the control host (`release_sets.py`) into one schema-2 bundle that deploys, rolls back
+release-wide and promotes like any other, so a target still runs exactly one release and only its changed services
+restart. Each repository's `deploy.yml` names the product's slug, so each bundle, its asset (`<product>-release.tar.gz`)
+and each service's platform name carry it; each repository keeps its own CI, `vX.Y.Z` tags and version track.
+
+- **Identity.** A set's bundle ID is `<product>-set-<12 hex>`, the first 12 hex digits of the SHA-256 of its components'
+  artifact IDs in repository order, so the same components always make the same set. Its release label names each
+  component by its repository's short name (the name without the owner's or the product's prefix) and release, joined
+  by `_` in repository order: `platform-v0.1.8_studio-v0.1.6_assets-v0.1.0`, or `set-<12 hex>` past 96 characters.
+  The console reads it as `platform v0.1.8 + studio v0.1.6 + assets v0.1.0`, a pill as `platform 0.1.8 +2`.
+- **Listing.** The release catalog lists a product's sets, never its repositories' own releases (one alone would drop the
+  other repositories' services): after each repository release, once every deploying repository has published one, a
+  set of that release and every other repository's newest then, newest first (50 at most); and per recent commit build
+  of a repository (10 each) a candidate set beside the others' newest releases. Every listed set is remembered under
+  `<runner root>/sets/`, so one that left the listing (an older set dev proved) still composes for prod.
+- **Composition.** Each component is downloaded and checked against its own repository's release source (asset digest,
+  commit, approved images) before the set is composed. Services, sites and named volumes keep their repositories'
+  names and must be unique across them — a clash is refused naming both repositories, never renamed, since a rename
+  would move a site's host or start a volume empty. The product's front door is the primary repository's primary site.
+  A dependency may name another repository's service; the composition refuses an unknown one or a cycle. The set is
+  rollback-compatible only when every component is; `migrations` is true when any says so; `dotnetEnvironment` is a list
+  of the services whose repositories opt in when not all do; the first declared `verify` runs. `release.json` adds
+  `set` and `components` (each repository's name, repository, release, kind, source commit and services);
+  `sourceCommit` is the primary repository's.
+- **Promotion.** Prod takes the very set dev proved (the dev rollout's bundle ID). The changelog compares two sets
+  repository by repository and merges them (`components` keeps each repository's own).
 
 Bundles are privileged owner inputs: hashes bind files together, not publishers to identities.
 The API accepts target and release IDs only. It cannot upload arbitrary Compose, run shell commands or disclose SSH keys.
@@ -202,6 +232,10 @@ repositories, else none; a credential goes only to the GitHub API and
 is stripped from cross-origin redirects ([GitHub access](../deployment/deployment.md#github-access)). Release rules:
 [deploy descriptor](../../../../../conventions/deployment/descriptor/deploy-descriptor.md) § *Builds and versions*.
 
+A product of several repositories lists sets instead of its repositories' releases ([release sets](#release-sets)); its
+builds, usage and failing-build reads cover every repository, and `branches`, `commits` and `build` take
+`--repository` (the API's `repository`), defaulting to the primary one.
+
 ## Inventory
 
 PostgreSQL is the source of truth for products, servers, targets (one product environment on one server) and vaults.
@@ -228,8 +262,16 @@ and an explicit cutover; a second host definition does not make a service redund
 ## Product catalog
 
 A product is one inventory row: slug, name, description, repository, default branch, an optional release source, its
-workspace, its status and its deploy mode. The slug never changes once created; the runner
-refuses a target or release source for a product the snapshot lacks. While the repository carries a valid manifest,
+workspace, its status and its deploy mode, and its further repositories (`products.components`, migration
+`031-product-components`: each `{ repository, release }` after the primary, empty for a product of one repository,
+decision 70). The slug never changes once created; the runner refuses a target or release source for a product the
+snapshot lacks. The product's repositories are primary first, each listed once, and no two declare one service; the API
+refuses a save that breaks it (`ProductRepositories`). `ProductDto.repositories` lists every repository with its short
+name and release source; the product form's `components` replaces the further ones and a save without it keeps them.
+The snapshot carries `components`; one environment set, one placement (databases `<product>_{dev,prod}`, folder
+`<root>/<product>-<environment>/`), one secrets space and baseline hosts serve the whole product.
+`/api/products/{product}/descriptor` reads every repository that deploys something and merges their services, needs and
+sites, refusing a service or site two repositories declare; placement and the environment form read it. While the repository carries a valid manifest,
 its name, description and homepage replace the row's ([product identity](#product-identity)).
 
 The deploy mode (`products.deploy`, migration `025-product-deploy-mode`) is the catalog entry's `deploy`: `wheelhouse`
@@ -322,16 +364,20 @@ field of the first problem.
   shows in its `error`. Signed-in session only.
 - `POST /api/catalog/import` `{ slugs }` (action header `catalog`, audited as `catalog.import`) walks the chosen
   entries in merged order: an existing product with the slug moves into the entry's workspace and takes the entry's
-  `deploy` as its deploy mode; an entry with
-  `deploy: wheelhouse` and a repository becomes a product; anything else is skipped with a warning (an entry with
-  `repositories: []` is not importable). A workspace is created from its catalog declaration, last in the order, only
-  when a product needs it. It answers `{ createdWorkspaces, createdProducts, movedProducts, updatedProducts, warnings:
-  [{ slug, message }] }` (slugs; `updatedProducts` names the existing products whose deploy mode changed); a second run
-  changes nothing. A slug no readable hub lists is 400, naming each hub that could
+  `deploy` as its deploy mode, and its repositories when the entry lists others; an entry with
+  `deploy: wheelhouse` and a repository becomes a product, one product for all its repositories; anything else is
+  skipped with a warning (an entry with `repositories: []` is not importable, and one whose repositories share a service
+  creates nothing). An entry's `replaces` names products it supersedes: each one no runner record shows a deploy to
+  retires — its environments, then the product with its settings, secrets and pins — and one with deploys on record, or
+  every one while the history cannot be read, stays with a warning. A workspace is created from its catalog declaration, last in the order, only
+  when a product needs it. It answers `{ createdWorkspaces, createdProducts, movedProducts, updatedProducts,
+  retiredProducts, warnings: [{ slug, message }] }` (slugs; `updatedProducts` names the existing products whose deploy
+  mode or repositories changed); a second run changes nothing. A slug no readable hub lists is 400, naming each hub that could
   not be read, and nothing changes.
 - A product created from the catalog needs no typed release config: name and description (clipped to 200) from the
-  entry, the primary (first) repository, branch `main`, asset `{slug}-release.tar.gz`, workflow
-  `publish-docker-image.yml`, and one image per service key of `engineering/deployment/deploy.yml` at `main`'s head:
+  entry, the primary (first) repository and each further one, branch `main`, asset `{slug}-release.tar.gz` (every
+  repository of a product publishes it), workflow `publish-docker-image.yml`, and, per repository, one image per service
+  key of its `engineering/deployment/deploy.yml` at `main`'s head:
   the service's own `image`, else `ghcr.io/{owner/repo, lowercase}/{service}`, the shared publish workflow's
   convention (`release.py` `repository_of`). Without a readable, valid descriptor the product gets no images and the
   warning says why; a descriptor naming another `product` keeps its images with a warning.
@@ -352,6 +398,8 @@ the manifest; the repository is where identity is edited.
   again now and answers with the product; it answers 503 when GitHub cannot serve the branch, and the row stays.
 - A newer commit with no manifest drops the row; the product reads as its own row again. A row also goes when the
   product's repository or branch changes, and with the product.
+- A product of several repositories always reads as its own row (its catalog entry): each repository's manifest
+  describes that repository, not the product.
 - An invalid, oversized or unparsable manifest is ignored whole: the previous row stays and `identity.problem` carries
   one display-safe reason, never file content beyond a shortened key name. An unreadable repository changes nothing.
 - `/api/products` and the `list_projects` tool return the effective name, description and homepage plus
@@ -527,7 +575,8 @@ request acts as `automation`, so every automatic submission goes through the ord
   itself, until it deploys itself) or `none` never deploys on its own, whatever its row says; the API refuses turning
   either choice on (409).
 - **Release watcher:** for every auto-deploying product with a release source and a dev target, the runner's `latest`
-  read lists its newest published release (one GitHub call per product, pre-releases ignored). A product's first read
+  read lists its newest published release (one GitHub call per repository, pre-releases ignored); a product of several
+  repositories names its newest release set, so any repository's release queues the set for dev. A product's first read
   only records its watermark (`release_watermarks`), so turning automation on never deploys a backlog; a release
   published after the watermark is queued for each dev target. A webhook can feed the same watermark later.
 - **Queue:** one slot per target (`deployment_queue`), latest wins: a newer release replaces a queued older one. A

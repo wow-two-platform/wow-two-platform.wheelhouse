@@ -5,8 +5,9 @@ using YamlDotNet.RepresentationModel;
 
 namespace Wheelhouse.Application.Catalog.Parsers;
 
-/// <summary>Parses a hub's catalog (<c>catalog: 1</c>): its hub, workspaces and entries. <c>orgs</c>, <c>hubs</c>, an
-/// entry's <c>status</c> and <c>local</c>, and any key Wheelhouse does not know are ignored; <c>hub</c> is optional.
+/// <summary>Parses a hub's catalog (<c>catalog: 1</c>): its hub, workspaces and entries, each entry's repositories (the
+/// primary first; several make one product, decision 70) and the products it <c>replaces</c>. <c>orgs</c>, <c>hubs</c>,
+/// an entry's <c>status</c> and <c>local</c>, and any key Wheelhouse does not know are ignored; <c>hub</c> is optional.
 /// Every entry's workspace must be declared, and slugs are unique. A refusal names the line and the field.</summary>
 public static class CatalogParser
 {
@@ -100,6 +101,21 @@ public static class CatalogParser
             }
         }
 
+        // Products an entry supersedes, such as the products of the repositories a product built from several merges.
+        var replaces = new List<string>();
+        if (YamlReader.Get(node, "replaces") is { } replacedNodes)
+        {
+            var list = YamlReader.Sequence(replacedNodes, field + ".replaces");
+            for (var index = 0; index < list.Children.Count; index++)
+            {
+                var replaced = YamlReader.Matching(
+                    list.Children[index], $"{field}.replaces[{index}]", InventoryPatternConstants.Slug, "a lowercase slug");
+                if (replaced == slug || replaces.Contains(replaced, StringComparer.Ordinal))
+                    throw YamlReader.Refuse(list.Children[index], $"{field}.replaces[{index}]", "names the entry itself or repeats a slug");
+                replaces.Add(replaced);
+            }
+        }
+
         return new CatalogEntryModel
         {
             Slug = slug,
@@ -109,6 +125,7 @@ public static class CatalogParser
             Deploy = YamlReader.Word<CatalogDeploy>(YamlReader.Required(node, "deploy", field + ".deploy"), field + ".deploy"),
             Purpose = YamlReader.Get(node, "purpose") is { } purpose ? YamlReader.Text(purpose, field + ".purpose") : "",
             Repositories = repositories,
+            Replaces = replaces,
         };
     }
 }

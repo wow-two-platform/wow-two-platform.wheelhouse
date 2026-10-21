@@ -29,6 +29,7 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
     // Route regex constraints ignore case; a validated parameter keeps catalog ids exact.
     private const string Slug = Wheelhouse.Application.Inventory.Constants.InventoryPatternConstants.Slug;
     private const string Branch = "^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$";
+    private const string Repository = Wheelhouse.Application.Inventory.Constants.InventoryPatternConstants.Repository;
 
     /// <summary>Lists recent deployments with their last observed outcome.</summary>
     [HttpGet]
@@ -222,16 +223,20 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
     public async Task<IActionResult> ReleaseFacts([RegularExpression(Slug)] string release, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentReadQuery("facts", release), ct));
 
-    /// <summary>Lists a product's branches, to choose which commits to build or deploy to dev.</summary>
+    /// <summary>Lists a product's branches, to choose which commits to build or deploy to dev; <c>repository</c> names one
+    /// of a product's repositories (its primary one when omitted).</summary>
     [HttpGet("products/{product}/branches")]
-    public async Task<IActionResult> Branches([RegularExpression(Slug)] string product, CancellationToken ct) =>
-        this.ToActionResult(await sender.SendAsync(new DeploymentReadQuery("branches", product), ct));
+    public async Task<IActionResult> Branches(
+        [RegularExpression(Slug)] string product, [FromQuery, RegularExpression(Repository)] string? repository, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentBranchesQuery(product, repository), ct));
 
-    /// <summary>Lists a branch's recent commits, each with its build when one exists.</summary>
+    /// <summary>Lists a branch's recent commits, each with its build when one exists; in a product built from several
+    /// repositories, <c>repository</c> names which one and a build is the candidate set that takes it.</summary>
     [HttpGet("products/{product}/commits")]
     public async Task<IActionResult> Commits(
-        [RegularExpression(Slug)] string product, [FromQuery, Required, RegularExpression(Branch)] string branch, CancellationToken ct) =>
-        this.ToActionResult(await sender.SendAsync(new DeploymentCommitsQuery(product, branch), ct));
+        [RegularExpression(Slug)] string product, [FromQuery, Required, RegularExpression(Branch)] string branch,
+        [FromQuery, RegularExpression(Repository)] string? repository, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentCommitsQuery(product, branch, repository), ct));
 
     /// <summary>Reads what a product's builds cost over the last 30 days: GitHub Actions runs and their wall-clock
     /// minutes per workflow, and each service's GHCR package versions when the token may read packages (GitHub reports
@@ -254,7 +259,7 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
     public async Task<IActionResult> Build(
         [RegularExpression(Slug)] string product, DeploymentBuildRequest request, CancellationToken ct)
     {
-        var result = await sender.SendAsync(new DeploymentBuildCommand(product, request.Commit, actor.Actor), ct);
+        var result = await sender.SendAsync(new DeploymentBuildCommand(product, request.Commit, actor.Actor, request.Repository), ct);
         return this.ToActionResult(result, envelope => Accepted(envelope));
     }
 

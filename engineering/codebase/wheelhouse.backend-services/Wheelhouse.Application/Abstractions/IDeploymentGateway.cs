@@ -40,6 +40,32 @@ public interface IDeploymentGateway
     Task<AppResult<JsonElement>> ChangelogAsync(string product, string? from, string to, CancellationToken ct);
     /// <summary>Starts the product's build workflow for a commit that has no build yet.</summary>
     Task<AppResult<JsonElement>> RequestBuildAsync(string product, string commit, CancellationToken ct);
+
+    /// <summary>Lists one of a product's repositories' branches: the named one, else its primary one (decision 70).</summary>
+    /// <param name="product">The product's slug.</param>
+    /// <param name="repository">One of the product's repositories, as <c>owner/name</c>, or <c>null</c> for the primary.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The branch names, or the runner's failure.</returns>
+    Task<AppResult<JsonElement>> BranchesAsync(string product, string? repository, CancellationToken ct) =>
+        ReadAsync("branches", product, ct);
+
+    /// <summary>Lists a branch's recent commits in one of a product's repositories, each with its build when one exists.</summary>
+    /// <param name="product">The product's slug.</param>
+    /// <param name="branch">The branch.</param>
+    /// <param name="repository">One of the product's repositories, or <c>null</c> for the primary.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The commits, or the runner's failure.</returns>
+    Task<AppResult<JsonElement>> CommitsAsync(string product, string branch, string? repository, CancellationToken ct) =>
+        CommitsAsync(product, branch, ct);
+
+    /// <summary>Starts the build workflow of one of a product's repositories for a commit that has no build yet.</summary>
+    /// <param name="product">The product's slug.</param>
+    /// <param name="commit">The full commit SHA.</param>
+    /// <param name="repository">One of the product's repositories, or <c>null</c> for the primary.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The request's receipt, or the runner's failure.</returns>
+    Task<AppResult<JsonElement>> RequestBuildAsync(string product, string commit, string? repository, CancellationToken ct) =>
+        RequestBuildAsync(product, commit, ct);
     /// <summary>Reads the last <paramref name="tail"/> lines one service's container wrote on a target.</summary>
     Task<AppResult<JsonElement>> LogsAsync(string target, string service, int tail, CancellationToken ct);
 }

@@ -109,9 +109,10 @@ def probe(root, product=None, check=accepts, login=token_login):
         os.environ["WHEELHOUSE_GITHUB_TOKENS_FILE"] = str(tokens)
     result = []
     for item in catalog.products():
-        if (product is not None and item.slug != product) or item.release is None:
+        if (product is not None and item.slug != product) or not item.images():
             continue
-        repos = repositories(image for _, image in item.release.images)
+        # Every repository's images: a product built from several pulls all of them in one deploy.
+        repos = repositories(image for _, image in item.images())
         if not repos:
             continue
         owners = sorted({repo.split("/", 1)[0] for repo in repos})

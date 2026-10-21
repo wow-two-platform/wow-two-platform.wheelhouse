@@ -17,6 +17,7 @@ export interface IssuesPanelProps {
 </script>
 
 <script setup lang="ts">
+import { ReleaseSets } from "@/domain/deployments";
 import { computed } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { ArrowUpRight, Hammer, KeyRound, RotateCcw, TriangleAlert, Wrench } from "lucide-vue-next";
@@ -97,7 +98,7 @@ function describe(issue: DeploymentIssue): string {
             <Badge :variant="issue.deployment.environment === 'prod' ? 'info' : 'neutral'">{{
               issue.deployment.environment ?? issue.deployment.targetId
             }}</Badge>
-            <span class="font-mono text-xs">{{ issue.deployment.release ?? issue.deployment.bundleId ?? "—" }}</span>
+            <span class="font-mono text-xs">{{ ReleaseSets.text(issue.deployment.release) || issue.deployment.bundleId || "—" }}</span>
             <FrozenBadge :product="issue.deployment.product" :environment="issue.deployment.environment" />
           </p>
           <div v-if="issue.kind !== DeploymentIssueKind.Stuck" class="mt-1.5 text-sm">

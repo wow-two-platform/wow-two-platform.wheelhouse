@@ -14,7 +14,10 @@ steps lay it out, prepare.py creates its platform, databases and site nodes, aut
 runner key, and the runner deploys ForeverPin dev to it. Its public sites answer on their baseline sslip.io hosts
 through the host's public ingress (80 redirects to 443), from another machine on the rig's network; the private entry
 point stays on loopback. Traefik's letsencrypt resolver is wired to each public router; a CA that never answers stands
-in for Let's Encrypt, so no certificate is issued here.
+in for Let's Encrypt, so no certificate is issued here. Then ForeverPin becomes a product of two repositories (decision
+70): its release is cut into one bundle per service, as two repositories would publish them, the runner composes them
+into a release set, and the set deploys over the single-repository release with nothing restarting and both baseline
+hosts still answering.
 
 `networks` proves on that host that the platform network keeps its fixed addresses: containers that start before
 Traefik take dynamic ones from .128/25, and repair-networks.sh gives a network made without the range one.
@@ -887,10 +890,83 @@ def products(bundle_id=None):
     if outcome.get("status") != "succeeded":
         sys.exit("The deploy to the products host did not succeed")
     prove_public_ingress(network, address, hosts)
+    prove_release_set(bundle_id, network, address, hosts)
     prove_runner_authorization()
     prove_private_pull(json.loads((destination / "release.json").read_text())["images"]["redirect"])
     print("Products host proven locally: layout, platform, databases, site nodes, runner key, deploy, public routes on "
-          "baseline hosts, private image pull. Let's Encrypt itself cannot run here: no certificate was issued.")
+          "baseline hosts, a two-repository release set, private image pull. Let's Encrypt itself cannot run here: no "
+          "certificate was issued.")
+
+
+def split_bundle(source, service, release):
+    """One repository's bundle of a product built from several (decision 70): `source` cut down to `service`, its site,
+    settings and image, under the repository's own release label."""
+    import hashlib
+    manifest = json.loads((source / "release.json").read_text())
+    compose_file = json.loads((source / "compose.json").read_text())
+
+    def keep(mapping):
+        return {key: value for key, value in (mapping or {}).items() if key == service}
+
+    compose_file["services"] = keep(compose_file["services"])
+    used = {mount["source"] for mount in compose_file["services"][service].get("volumes") or []
+            if isinstance(mount, dict) and mount.get("type") == "volume"}
+    if compose_file.get("volumes"):
+        compose_file["volumes"] = {name: value for name, value in compose_file["volumes"].items() if name in used}
+        if not compose_file["volumes"]:
+            del compose_file["volumes"]
+    for key in ("images", "requiredConfiguration", "versions", "ports", "needs", "settings"):
+        if key in manifest:
+            manifest[key] = keep(manifest[key])
+    if manifest.get("schemaVersion") == 2:
+        manifest["routes"] = keep(manifest.get("routes"))
+        served = {site for sites in manifest["routes"].values() for site in sites}
+        manifest["sites"] = {site: role for site, role in manifest["sites"].items() if site in served}
+    else:
+        manifest["sites"] = keep(manifest.get("sites"))
+    if isinstance(manifest.get("verify"), dict) and manifest["verify"].get("service") != service:
+        del manifest["verify"]
+    manifest["release"] = release
+    content = json.dumps(compose_file, indent=2).encode()
+    manifest["composeSha256"] = hashlib.sha256(content).hexdigest()
+    return {"release.json": json.dumps(manifest, indent=2).encode(), "compose.json": content}
+
+
+def prove_release_set(bundle_id, network, address, hosts):
+    """ForeverPin as a product of two repositories (decision 70): one bundle per service, as each repository's publish
+    workflow writes it, composed by the runner into a release set and deployed over the single-repository release. The
+    services are the same images and settings, so nothing restarts; both baseline hosts keep answering."""
+    source = PRODUCTS_INVENTORY / "bundles" / bundle_id
+    release = json.loads((source / "release.json").read_text())["release"]
+    parts = []
+    for name, service in (("app", "management"), ("go", "redirect")):
+        part_id = PRODUCT + "-" + name + "-" + re.sub(r"[^a-z0-9-]+", "-", release.lower())
+        folder = PRODUCTS_INVENTORY / "bundles" / part_id
+        if not folder.exists():
+            private_dir(folder)
+            for file, content in split_bundle(source, service, release).items():
+                (folder / file).write_bytes(content)
+        parts += ["--part", name + "=" + part_id]
+    made = transport("compose", "--product", PRODUCT, *parts, root=PRODUCTS_INVENTORY)
+    print("Composed " + made["id"] + " (" + made["release"] + ") from " + ", ".join(
+        component["name"] + " " + component["release"] for component in made["components"]))
+    outcome = deploy(made["id"], "dev", root=PRODUCTS_INVENTORY)
+    if outcome.get("status") != "succeeded":
+        sys.exit("The release set did not deploy to the products host")
+    rollout = outcome.get("serviceRollout") or {}
+    changes = {item["name"]: item["change"] for item in rollout.get("services") or []}
+    state = transport("state", "--target", PRODUCT + "-dev", root=PRODUCTS_INVENTORY)["current"]
+    proofs = {
+        "the target runs the release set": state.get("release") == made["release"],
+        "the set restarted no service (" + ", ".join(name + " " + change for name, change in sorted(changes.items())) + ")":
+            bool(changes) and set(changes.values()) == {"unchanged"},
+        "the set's sites keep their names (" + ", ".join(sorted(made["sites"])) + ")": set(made["sites"]) == set(SITES.values()),
+    }
+    for name, ok in proofs.items():
+        print("  " + ("ok" if ok else "FAILED").ljust(9) + " " + name)
+    if not all(proofs.values()):
+        sys.exit("The release set did not deploy as one product")
+    prove_public_ingress(network, address, hosts)
 
 
 def prove_public_ingress(network, address, hosts):

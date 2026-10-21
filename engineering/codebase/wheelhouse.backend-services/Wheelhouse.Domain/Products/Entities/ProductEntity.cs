@@ -39,6 +39,10 @@ public sealed record ProductEntity : IKeyedEntity<Guid>, IHasTableName, IAuditab
     /// hand-imported bundles deploy.</summary>
     public ProductReleaseValueObject? Release { get; set; }
 
+    /// <summary>Gets or sets the product's further repositories after its primary one, in the order its release sets
+    /// name them; empty for a product of one repository (decision 70).</summary>
+    public IReadOnlyList<ProductComponentValueObject> Components { get; set; } = [];
+
     /// <summary>Gets or sets what deploys the product, from its catalog entry or the owner's choice.</summary>
     public ProductDeployMode Deploy { get; set; } = ProductDeployMode.Wheelhouse;
 

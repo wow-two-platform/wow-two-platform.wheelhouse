@@ -15,6 +15,7 @@ export interface ReadyToPromotePanelProps {
 </script>
 
 <script setup lang="ts">
+import { ReleaseSets } from "@/domain/deployments";
 import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { ArrowRight, Layers, Rocket } from "lucide-vue-next";
@@ -137,7 +138,7 @@ function name(item: DeploymentPromotion): string {
             <p v-if="item" class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
               <span class="font-mono text-xs text-foreground">{{ item.prodRelease ?? "nothing" }}</span>
               <ArrowRight :size="14" aria-label="to" />
-              <span class="font-mono text-xs font-medium text-foreground">{{ item.release }}</span>
+              <span class="font-mono text-xs font-medium text-foreground">{{ ReleaseSets.text(item.release) }}</span>
               <span>· succeeded on dev <RelativeTime :value="item.devSucceededAt" /></span>
             </p>
             <p v-if="item" class="mt-1.5 flex flex-wrap items-center gap-1.5">

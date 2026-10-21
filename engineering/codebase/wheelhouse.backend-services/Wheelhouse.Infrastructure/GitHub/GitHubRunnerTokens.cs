@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Products;
 using Wheelhouse.Infrastructure.Settings;
 
 namespace Wheelhouse.Infrastructure.GitHub;
@@ -31,7 +32,8 @@ public sealed partial class GitHubRunnerTokens(
             return null;
 
         var owners = (await products.GetAllAsync(ct))
-            .Select(product => GitHubOwners.FromRepository(product.Repository))
+            .SelectMany(product => ProductRepositories.Of(product).Select(item => item.Repository))
+            .Select(GitHubOwners.FromRepository)
             .OfType<string>()
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal);

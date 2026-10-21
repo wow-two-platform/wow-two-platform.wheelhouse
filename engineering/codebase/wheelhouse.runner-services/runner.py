@@ -221,9 +221,41 @@ def validate_bundle(bundle):
     require(isinstance(ports, dict) and set(ports) <= set(services)
             and all(type(port) is int and 1 <= port <= 65535 for port in ports.values()), "Invalid service ports")
     release_sites(manifest)
-    require(type(manifest.get("dotnetEnvironment", False)) is bool, "dotnetEnvironment must be true or false")
+    dotnet = manifest.get("dotnetEnvironment", False)
+    # A release set (decision 70) names the services whose repository opted in when not all of them did.
+    require(type(dotnet) is bool or (isinstance(dotnet, list) and dotnet and set(dotnet) <= set(services)
+                                     and all(isinstance(name, str) for name in dotnet)),
+            "dotnetEnvironment must be true, false or a list of the release's services")
+    release_components(manifest)
     release_verification(manifest)
     return manifest
+
+
+def release_components(manifest):
+    """A release set's components (decision 70): each repository's release, kind, source commit and services, which
+    together are every service of the release. None for a release of one repository."""
+    components = manifest.get("components")
+    if components is None:
+        return None
+    require(isinstance(components, list) and components, "Invalid release components")
+    services = []
+    for component in components:
+        require(isinstance(component, dict) and isinstance(component.get("repository"), str)
+                and SLUG.fullmatch(str(component.get("name", ""))) and RELEASE.fullmatch(str(component.get("release", "")))
+                and component.get("kind", "release") in KINDS and SHA.fullmatch(str(component.get("sourceCommit", "")))
+                and isinstance(component.get("services"), list), "Invalid release components")
+        services += component["services"]
+    require(sorted(services) == sorted(manifest.get("images", {})), "Release components name other services")
+    return components
+
+
+def dotnet_services(manifest, services):
+    """The services of a release that run under .NET's own environment names: all of them for `dotnetEnvironment:
+    true`, the listed ones for a release set whose repositories differ, none otherwise."""
+    declared = manifest.get("dotnetEnvironment") if isinstance(manifest, dict) else None
+    if declared is True:
+        return set(services)
+    return set(declared) & set(services) if isinstance(declared, list) else set()
 
 
 def release_settings(manifest):
@@ -329,8 +361,9 @@ def rollout_plan(compose, environment, prior=None, prior_environment=None, same_
     and `prior_environment`, the runner's override it ran with): `added`, `updated` or `unchanged`, and `removed` for
     what it drops. A service's `reason` says why it changes: `added`; its `image`; the rest of its Compose `definition`
     (a `depends_on` change alone is none); or its `settings` — its settings file's contents (`settings` against
-    `prior_settings`, each service's fingerprint), the environment the runner gives it (`dotnet` is the release's
-    `dotnetEnvironment`), or a changed interpolation input (`same_inputs` false), which changes every service.
+    `prior_settings`, each service's fingerprint), the environment the runner gives it (`dotnet`, the services the
+    release runs under .NET's environment names, or true for all), or a changed interpolation input (`same_inputs`
+    false), which changes every service.
     A dependency's change never changes a dependent. `from` and `to` name the release each side runs (`versions`, the
     release's map, and `prior_versions`, the running one's). A changed service starts in its dependency wave; `staged`
     holds when starting the changed services wave by wave differs from one Compose `up`: some service keeps running
@@ -339,7 +372,7 @@ def rollout_plan(compose, environment, prior=None, prior_environment=None, same_
     dependencies = service_dependencies(compose)
     before = (prior or {}).get("services") or {}
     overrides = ((prior_environment or {}).get("services") or {}) if isinstance(prior_environment, dict) else {}
-    expected = {"environment": service_environment(environment, dotnet)}
+    dotnet = set(services) if dotnet is True else set(dotnet or ())
     settings = settings if isinstance(settings, dict) else {}
     # A release copied by an older runner kept no fingerprints: its settings count as unchanged, not as a restart.
     prior_settings = prior_settings if isinstance(prior_settings, dict) else {}
@@ -352,7 +385,8 @@ def rollout_plan(compose, environment, prior=None, prior_environment=None, same_
             reasons[name] = "image"
         elif canonical(definition_of(services[name])) != canonical(definition_of(old)):
             reasons[name] = "definition"
-        elif (not same_inputs or canonical(overrides.get(name)) != canonical(expected)
+        elif (not same_inputs or canonical(overrides.get(name))
+              != canonical({"environment": service_environment(environment, name in dotnet)})
               or (name in prior_settings and prior_settings[name] != settings.get(name))):
             reasons[name] = "settings"
         else:
@@ -376,12 +410,13 @@ def settings_fingerprints(target, compose, manifest):
     """Each service's own settings as one hash: its settings file's contents (none for a service that takes no file)
     and the environment the runner gives it. Kept beside the release on the target, never in a job record, so the
     next rollout restarts a service whose settings changed although its definition did not."""
-    values = service_environment(target["environment"], manifest.get("dotnetEnvironment") is True)
+    dotnet = dotnet_services(manifest, compose["services"])
     required = manifest.get("requiredConfiguration") or {}
     result = {}
     for name in sorted(compose["services"]):
         path = settings_file(target, name) if name in required else None
         contents = hashlib.sha256(Path(path).read_bytes()).hexdigest() if path else None
+        values = service_environment(target["environment"], name in dotnet)
         result[name] = hashlib.sha256(canonical({"settings": contents, "environment": values}).encode()).hexdigest()
     return result
 
@@ -1648,8 +1683,9 @@ def environment_override(bundle, environment):
     services = read_json(bundle / "compose.json").get("services")
     require(isinstance(services, dict) and services, "Compose declares no services")
     manifest = read_json(bundle / "release.json")
-    values = service_environment(environment, isinstance(manifest, dict) and manifest.get("dotnetEnvironment") is True)
-    override = {"services": {name: {"environment": dict(values)} for name in sorted(services)}}
+    dotnet = dotnet_services(manifest, services)
+    override = {"services": {name: {"environment": service_environment(environment, name in dotnet)}
+                             for name in sorted(services)}}
     path = bundle / ENVIRONMENT_OVERRIDE
     try:
         current = read_json(path)
@@ -1944,7 +1980,7 @@ def plan_against(root, previous, compose, target, manifest, settings=None):
             same_inputs = read_json(root / "jobs" / (identifier + ".json")).get("interpolation") == \
                 interpolation_inputs(target, manifest)
     return rollout_plan(compose, target["environment"], prior if isinstance(prior, dict) else None, prior_environment,
-                        same_inputs, manifest.get("dotnetEnvironment") is True, settings, prior_settings,
+                        same_inputs, dotnet_services(manifest, compose["services"]), settings, prior_settings,
                         manifest.get("versions"), (previous or {}).get("versions"))
 
 

@@ -24,7 +24,7 @@ written from it when the version opens.
 | 12 | A settings editor offers declared choices (enum values, numeric sets) and flags missing values per service and product | 2026-10-17 |
 | 13 | Products and services carry a binary status, active or inactive; inactive ones stay hidden until a toggle shows them | 2026-10-17 |
 | 14 | One `catalog.yml` in wow-two-ws lists every wow2 app (platform, backbone, apps); `repo-registry.md` is generated from it | 2026-10-17 |
-| 15 | One repo per product for now; products spanning several repos (components) wait in the backlog | 2026-10-17 |
+| 15 | One repo per product for now; products spanning several repos (components) wait in the backlog. Superseded by decision 70 | 2026-10-17 |
 | 16 | Secrets Vault keeps its name; the console's two editors are labelled Settings and Secrets | 2026-10-17 |
 | 17 | Ocharo gets its own `ocharo` workspace in the catalog | 2026-10-17 |
 | 18 | Prod skips v0.4 and takes v0.5 after the owner's review | 2026-10-17 |
@@ -79,6 +79,7 @@ written from it when the version opens.
 | 67 | The vault's root key has two recoveries: the owner's offline copy, checked against the key in use on a schedule, and later a passkey-sealed copy in the database | 2026-10-20 |
 | 68 | A deployed site whose product has no domain gets a baseline public host on its server's IP through sslip.io: `<product>-dev.<ip>.sslip.io` in dev, `<product>.<ip>.sslip.io` in prod, a second site adding `-<site>` after the product; Wheelhouse fills it and a bound domain replaces it. It is served from the server's own ingress on 80 and 443 with an HTTP-01 certificate, not through Cloudflare; SSH and the control path stay on the tailnet. Narrows decision 50's Cloudflare proxy to sites with a bound domain | 2026-10-20 |
 | 69 | An environment runs every service of its product on one server; services never split across servers. Uptime comes from up to three servers per product (primary, secondary, tertiary) plus a backup-only storage, proposed in w2 `deployment/servers/redundancy.md` for review | 2026-10-21 |
+| 70 | A product may span several repositories: Ocharo is one brand and one domain, and Studio depends on Desk's sign-in tickets, so `ocharo` is one product of Platform, Studio, Marketing and Assets. A product has one set of environments, one placement, one secrets space and one redundancy setup (decision 69); every service of every repo runs in each environment on its one server, and every deployable service deploys. A product release is a set of repository releases: each repo keeps its CI, `vX.Y.Z` tags and version track, Wheelhouse composes the set; only a changed service restarts (37), and `dependsOn` and release-wide rollback (36) span the repos | 2026-10-21 |
 
 | Fact | Owner |
 |---|---|

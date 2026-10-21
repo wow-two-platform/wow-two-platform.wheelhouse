@@ -1,4 +1,5 @@
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Products;
 using Wheelhouse.Application.Products.Commands;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Products.Services;
@@ -25,6 +26,8 @@ public sealed class ProductCreateCommandHandler(
     {
         if (await products.GetBySlugAsync(request.Slug, cancellationToken) is not null)
             return AppResult<ProductDto>.Fail(AppErrorFactory.Conflict($"A product is already named '{request.Slug}'."));
+        if (ProductRepositories.Problem(request.Slug, ProductRepositories.Of(request.Repository, request.Release, request.Components)) is { } problem)
+            return AppResult<ProductDto>.Fail(AppErrorFactory.Validation(problem));
         var workspace = request.WorkspaceId is { } workspaceId
             ? await workspaces.GetByIdAsync(workspaceId, cancellationToken)
             : await defaultWorkspace.GetAsync(cancellationToken);
@@ -41,6 +44,7 @@ public sealed class ProductCreateCommandHandler(
             DefaultBranch = request.DefaultBranch,
             WorkspaceId = workspace.Id,
             Release = request.Release,
+            Components = request.Components ?? [],
             Deploy = request.Deploy ?? ProductDeployMode.Wheelhouse,
         }, cancellationToken);
         return AppResult<ProductDto>.Ok(await projection.ProjectAsync(product, cancellationToken));

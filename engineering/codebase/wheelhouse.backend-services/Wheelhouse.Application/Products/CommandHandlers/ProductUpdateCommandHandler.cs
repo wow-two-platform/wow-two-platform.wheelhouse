@@ -1,4 +1,5 @@
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Products;
 using Wheelhouse.Application.Products.Commands;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Products.Services;
@@ -22,9 +23,14 @@ public sealed class ProductUpdateCommandHandler(
         if (product is null)
             return AppResult<ProductDto>.Fail(AppErrorFactory.NotFound($"Product '{request.Slug}' was not found."));
 
+        // The repositories this save leaves the product with must stand together: a service belongs to one of them.
+        var components = request.Components ?? product.Components;
+        if (ProductRepositories.Problem(product.Slug, ProductRepositories.Of(request.Repository, request.Release, components)) is { } problem)
+            return AppResult<ProductDto>.Fail(AppErrorFactory.Validation(problem));
+
         // Whether a manifest governs is decided for the repository and branch this save leaves the product with. A copy
         // of the row stands in for it, so nothing is half-saved while the manifest is read.
-        var saved = product with { Repository = request.Repository, DefaultBranch = request.DefaultBranch };
+        var saved = product with { Repository = request.Repository, DefaultBranch = request.DefaultBranch, Components = components };
         var identity = (await identities.ResolveAsync([saved], cancellationToken))[product.Id];
         if (identity.Source == ProductIdentitySource.Record)
         {
@@ -35,6 +41,7 @@ public sealed class ProductUpdateCommandHandler(
         product.Repository = request.Repository;
         product.DefaultBranch = request.DefaultBranch;
         product.Release = request.Release;
+        product.Components = components;
         product.Deploy = request.Deploy ?? product.Deploy;
         await products.UpdateAsync(product, cancellationToken);
         return AppResult<ProductDto>.Ok(await projection.ProjectAsync(product, cancellationToken));

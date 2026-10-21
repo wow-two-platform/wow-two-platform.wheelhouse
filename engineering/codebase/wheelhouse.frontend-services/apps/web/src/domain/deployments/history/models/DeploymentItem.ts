@@ -2,6 +2,7 @@ import type { SettingChange } from "@/domain/settings";
 import type { Attention, DeployState, ServiceResult } from '@/domain/common/StatusVocabulary';
 import type { JobStatus } from '../../enums/JobStatus';
 import type { ReleaseKind } from '../../models/ReleaseArtifact';
+import type { ReleaseComponent } from '../../models/ReleaseComponent';
 
 /** What a deployment status amounted to before the status taxonomy; kept one release beside the state. */
 export const DeploymentOutcome = {
@@ -77,6 +78,8 @@ export interface DeploymentItem {
   release: string | null;
   /** The bundle a redeploy submits again. */
   bundleId: string | null;
+  /** Each repository's release when the release is a set of a product built from several (decision 70). */
+  components: ReleaseComponent[] | null;
   kind: ReleaseKind | null;
   branch: string | null;
   sourceCommit: string | null;

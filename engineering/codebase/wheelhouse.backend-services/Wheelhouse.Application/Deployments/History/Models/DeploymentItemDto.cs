@@ -24,6 +24,9 @@ public sealed record DeploymentItemDto
     /// <summary>Gets the release bundle's catalog identifier, which a redeploy submits again.</summary>
     public string? BundleId { get; init; }
 
+    /// <summary>Gets each repository's release when the release is a set (decision 70); <c>null</c> otherwise.</summary>
+    public IReadOnlyList<ReleaseComponentDto>? Components { get; init; }
+
     /// <summary>Gets <c>release</c> or <c>candidate</c>.</summary>
     public string? Kind { get; init; }
 
@@ -125,6 +128,7 @@ public sealed record DeploymentItemDto
             Workspace = entry.Workspace,
             Release = record.Release,
             BundleId = record.BundleId,
+            Components = record.Components,
             Kind = record.Kind,
             Branch = record.Branch,
             SourceCommit = record.SourceCommit,

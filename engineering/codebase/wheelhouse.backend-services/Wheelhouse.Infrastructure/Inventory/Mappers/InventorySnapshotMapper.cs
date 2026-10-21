@@ -22,15 +22,36 @@ internal static class InventorySnapshotMapper
         Description = product.Description,
         Repository = product.Repository,
         DefaultBranch = product.DefaultBranch,
-        Release = product.Release is { } release
-            ? new SnapshotReleaseModel
+        Release = Map(product.Release),
+        Components =
+        [
+            .. product.Components.Select(component => new SnapshotComponentModel
             {
-                Asset = release.Asset,
-                Workflow = release.Workflow,
-                Images = [.. release.Images.Select(image => new SnapshotImageModel { Service = image.Service, Image = image.Image })],
-            }
-            : null,
+                Repository = component.Repository, Release = Map(component.Release),
+            }),
+        ],
     };
+
+    /// <summary>Maps a stored release source to its snapshot entry.</summary>
+    /// <param name="release">The stored release source, or <c>null</c>.</param>
+    /// <returns>The release source as the runner reads it, or <c>null</c>.</returns>
+    private static SnapshotReleaseModel? Map(ProductReleaseValueObject? release) => release is null
+        ? null
+        : new SnapshotReleaseModel
+        {
+            Asset = release.Asset,
+            Workflow = release.Workflow,
+            Images = [.. release.Images.Select(image => new SnapshotImageModel { Service = image.Service, Image = image.Image })],
+        };
+
+    /// <summary>Maps snapshot further repositories to the stored ones.</summary>
+    /// <param name="components">The further repositories as the runner defines them.</param>
+    /// <returns>The stored further repositories.</returns>
+    public static IReadOnlyList<ProductComponentValueObject> Map(IReadOnlyList<SnapshotComponentModel>? components) =>
+        [.. (components ?? []).Select(component => new ProductComponentValueObject
+        {
+            Repository = component.Repository, Release = Map(component.Release),
+        })];
 
     /// <summary>Maps a stored server to its snapshot entry.</summary>
     /// <param name="server">The stored server.</param>
