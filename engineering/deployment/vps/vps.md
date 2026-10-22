@@ -533,8 +533,8 @@ Products: import Ocharo from its hub catalog (the GitHub App on `ocharo-hq` give
 dev and prod environments for each product:
 
 - Server `<server-id>`, network `platform`, root `/srv/wheelhouse`; no host settings files.
-- Sites: a public site's host is prefilled with its baseline host (`ocharo-studio-dev.203-0-113-10.sslip.io` in dev);
-  leave it, or clear it and the deploy fills the same. A private site names its node: `<node>-dev.<tailnet>.ts.net`
+- Sites: the form lists each site the product declares, read-only. A public site shows its baseline host
+  (`ocharo-studio-dev.203-0-113-10.sslip.io` in dev); a private site shows its node: `<node>-dev.<tailnet>.ts.net`
   (dev) or `<node>.<tailnet>.ts.net` (prod).
 
 No settings file is written by hand: Wheelhouse renders each service's at every deploy

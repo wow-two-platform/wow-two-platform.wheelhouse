@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { TargetOperations } from "@/application/targets";
 import type { KnownSite } from "@/application/targets/TargetForms";
+import type { Placement } from "@/domain/infrastructure";
 import type { Server } from "@/domain/servers";
 import type { InventoryTarget } from "@/domain/targets";
 
@@ -13,15 +14,19 @@ export interface TargetFormModalProps {
   readonly target: InventoryTarget | null;
   readonly servers: readonly Server[];
   readonly operations: Pick<TargetOperations, "create" | "update" | "remove">;
-  /** The sites the product is known to publish: each public one is offered its baseline host. */
+  /** The sites the product declares; the form lists each, and a public one answers on its baseline host. */
   readonly knownSites?: readonly KnownSite[];
+  /** The product's placements, which name a private site's tailnet node. */
+  readonly placements?: readonly Pick<Placement, "serverId" | "facts">[];
+  /** The environments the product already has a target for; a new environment starts as the first it lacks. */
+  readonly takenEnvironments?: readonly string[];
   /** The services the product's deploy.yml declares; the environment runs every one of them on its server. */
   readonly services?: readonly string[];
 }
 </script>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge } from "@wow-two-beta/fe/presentation/display";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
@@ -46,24 +51,35 @@ import {
 import { useFormDialogSession } from "@wow-two-beta/fe/forms-engine";
 import { useAppForm } from "@/bootstrap/form";
 import {
+  firstFreeEnvironment,
   publicAddressOf,
+  siteHostsOf,
+  siteRowsOf,
+  storedHostsOf,
   suggestedTargetSlug,
+  tailnetNodeOf,
   targetFormOf,
   targetFormSchema,
   targetRequestOf,
-  withBaselineHosts,
 } from "@/application/targets/TargetForms";
 import { EnvironmentOrder, type DeploymentEnvironment } from "@/domain/targets";
-import type { TargetFormModel } from "@/application/targets/TargetForms";
+import type { SiteHostRow } from "@/application/targets/TargetForms";
 import { failureReason } from "@/integration/common";
 import { DeleteConfirm, RowsField } from "@/presentation/common/components";
 
-/** Edits where an environment runs, which settings files its services read, which requests prove a rollout and
- * which hosts its sites answer on. Shows, read-only, the services deploy.yml declares: the environment runs each of
- * them on the chosen server. Each known public site without a host of the owner's is prefilled with its baseline
- * host on the chosen server's public address, and follows the environment and server until the owner types another. */
+/** Edits where an environment runs, which settings files its services read and which requests prove a rollout.
+ * Shows, read-only, what the product declares: the services deploy.yml names (the environment runs each on the chosen
+ * server) and its sites, one row each with the host it answers on. The host is the target's stored one, else a public
+ * site's baseline host on the chosen server's public address, else a private site's tailnet node; nothing is typed, and
+ * the derived hosts follow the environment and the server. A new environment starts as the first one the product
+ * lacks, dev then prod. */
 defineOptions({ name: "TargetFormModal" });
-const props = withDefaults(defineProps<TargetFormModalProps>(), { knownSites: () => [], services: () => [] });
+const props = withDefaults(defineProps<TargetFormModalProps>(), {
+  knownSites: () => [],
+  placements: () => [],
+  takenEnvironments: () => [],
+  services: () => [],
+});
 const emit = defineEmits<{ "update:open": [open: boolean] }>();
 defineSlots<{}>();
 
@@ -82,30 +98,38 @@ const form = useAppForm({
   },
 });
 
-/** Starts each session from the target being edited, or a dev environment on the first server, once the opening
- * update has set every prop. */
+/** The site rows for an environment on a server: the product's sites with the host each answers on. @internal */
+function rowsFor(environment: DeploymentEnvironment, server: string): SiteHostRow[] {
+  return siteRowsOf(props.knownSites, storedHostsOf(props.target, environment, server), {
+    product: props.product,
+    environment,
+    address: publicAddressOf(props.servers, server),
+    node: (site) => tailnetNodeOf(props.product, site, server, environment, props.placements),
+  });
+}
+
+/** Starts each session from the target being edited, or the first environment the product lacks on the first server,
+ * once the opening update has set every prop. The sites are the hosts the rows show. */
 useFormDialogSession(form, {
   open: () => props.open,
   initialValues: () => {
-    const values = targetFormOf(props.target, props.product, props.servers[0]?.slug ?? null);
-    return { ...values, sites: baselineSites(values.sites, values.environment, values.server) };
+    const environment = props.target?.environment ?? firstFreeEnvironment(props.takenEnvironments);
+    const values = targetFormOf(props.target, props.product, props.servers[0]?.slug ?? null, environment);
+    return { ...values, sites: siteHostsOf(rowsFor(values.environment, values.server)) };
   },
   onOpen: () => (removeError.value = ""),
 });
 
-/** The site rows with each known public site's baseline host for this environment and server. @internal */
-function baselineSites(sites: TargetFormModel["sites"], environment: DeploymentEnvironment, server: string) {
-  return withBaselineHosts(sites, props.knownSites, props.product, environment, publicAddressOf(props.servers, server));
-}
+/** What the Site hosts show, and the form sends. */
+const siteRows = computed(() => rowsFor(form.state.values.environment, form.state.values.server));
 
-/** Keeps baseline hosts following the environment, the server and the sites deploy.yml declares once it is read; a
- * host the owner typed stays. */
-watch(
-  [() => form.state.values.environment, () => form.state.values.server, () => props.knownSites],
-  ([environment, server]) => {
-    if (props.open) form.setValue("sites", baselineSites(form.state.values.sites, environment, server));
-  },
-);
+/** Keeps the sent hosts as the rows show them: they follow the environment, the server, the sites deploy.yml declares
+ * once it is read and the nodes a placement registers. */
+watch(siteRows, (rows) => {
+  if (!props.open) return;
+  const sites = siteHostsOf(rows);
+  if (JSON.stringify(sites) !== JSON.stringify(form.state.values.sites)) form.setValue("sites", sites);
+});
 
 /** Keeps a new target's slug following its environment until the owner types another. */
 watch(
@@ -211,17 +235,34 @@ async function remove(): Promise<void> {
               { key: 'status', label: 'Status', isNumeric: true },
             ]"
           />
-          <RowsField
-            :form="form"
-            name="sites"
-            label="Site hosts"
-            add-label="Add site"
-            :blank="{ site: '', host: '' }"
-            :columns="[
-              { key: 'site', label: 'Site', placeholder: 'app' },
-              { key: 'host', label: 'Host', placeholder: 'app.example.com' },
-            ]"
-          />
+          <!-- The product declares its sites and Wheelhouse derives their hosts (decisions 47, 68), so nothing is typed. -->
+          <fieldset class="flex flex-col gap-2">
+            <legend class="mb-1 text-sm font-medium">Site hosts</legend>
+            <div
+              v-if="siteRows.length"
+              class="grid gap-2 text-xs text-muted-foreground max-sm:hidden sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]"
+              aria-hidden="true"
+            >
+              <span>Site</span><span>Host</span>
+            </div>
+            <div
+              v-for="row in siteRows"
+              :key="row.site"
+              class="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]"
+            >
+              <Field is-read-only
+                ><TextInput :model-value="row.site" :aria-label="`Site ${row.site}`" autocomplete="off"
+              /></Field>
+              <Field is-read-only :helper="row.note ?? ''"
+                ><TextInput
+                  :model-value="row.host || row.node || ''"
+                  :aria-label="`Host of ${row.site}`"
+                  placeholder="Not set yet"
+                  autocomplete="off"
+              /></Field>
+            </div>
+            <p v-if="!siteRows.length" class="text-sm text-muted-foreground">No sites known yet</p>
+          </fieldset>
           <Alert
             v-if="removeError || form.state.submitError"
             severity="danger"

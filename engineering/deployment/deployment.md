@@ -43,7 +43,9 @@ project, platform-network alias, database, settings files and hostnames. No hard
   kit recorded on its server: `<product>-dev.<ip>.sslip.io` in dev, `<product>.<ip>.sslip.io` in prod, the address's
   dots as dashes; a site other than the release's primary one adds `-<site>` after the product
   (`ocharo-studio-admin-dev.203-0-113-10.sslip.io`). The runner fills it at deploy, so `AllowedHosts` and
-  `Sites:<site>:Url` name it; the environment form prefills it, still editable. A private site never gets one.
+  `Sites:<site>:Url` name it. The environment form lists every site the product declares, read-only: the host the target
+  stores, else the derived baseline host (it follows the environment and server, and a stored host that differs from the
+  derived one stays with a note); nothing is typed. A private site never gets a baseline host and shows its tailnet node.
 - A baseline host is served by the server's own ingress on 80 and 443 with a Let's Encrypt HTTP-01 certificate, not
   through Cloudflare; a bound domain replaces it.
 - After a verified rollout the runner writes `<root>/ingress/<product>-<environment>.yml`, a Traefik file-provider route.
@@ -92,7 +94,7 @@ them, they hold no data and no placement ran. In the prod console:
    product with its settings, secrets and pins. The result says `retired 2 replaced products`; a warning instead
    means one has deploys on record and stays (remove its environments and the product by hand once torn down).
 2. **Products → Ocharo → Manage → Add environment**, twice: `ocharo-dev` (dev) and `ocharo-prod` (prod) on the products
-   server; leave site hosts empty for baseline hosts.
+   server; the second form starts as prod, and the site hosts fill themselves from the manifest.
 3. **Overview → Hosting → Place on a server** (prod console only): PostgreSQL databases `ocharo_dev` and `ocharo_prod`
    (Desk and jobs need it) and the private `motion` site's tailnet nodes, offered from the merged `deploy.yml`s.
 4. **Deployments → Deploy**, `ocharo-dev`, the newest set (`platform-v… + studio-v… + assets-v…`): the dialog asks for

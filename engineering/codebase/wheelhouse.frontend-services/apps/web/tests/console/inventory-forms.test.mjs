@@ -158,7 +158,7 @@ test("a public site's baseline host follows the product, site, environment and s
   assert.equal(BaselineHost.isBaseline("studio-dev.ocharo.co"), false);
 });
 
-test("the environment form offers each known public site its baseline host and keeps a host the owner named", () => {
+test("the environment form knows a product's sites from its rollouts and the public address of its server", () => {
   const known = forms.knownSitesOf({
     environments: [
       { name: "dev", sites: [{ name: "app", url: "https://a", exposure: "public", primary: true },
@@ -171,18 +171,8 @@ test("the environment form offers each known public site its baseline host and k
     { name: "app", exposure: "public", primary: true },
     { name: "status", exposure: "public", primary: false },
   ]);
-  const address = forms.publicAddressOf([{ slug: "ocharo-vps", ingress: { publicAddress: "203.0.113.10" } }], "ocharo-vps");
-  assert.equal(address, "203.0.113.10");
+  assert.equal(forms.publicAddressOf([{ slug: "ocharo-vps", ingress: { publicAddress: "203.0.113.10" } }], "ocharo-vps"), "203.0.113.10");
   assert.equal(forms.publicAddressOf([{ slug: "old", ingress: { publicAddress: null } }], "old"), null);
-  const dev = forms.withBaselineHosts([{ site: "status", host: "status.example.com" }], known, "ocharo-studio", "dev", address);
-  assert.deepEqual(dev, [
-    { site: "status", host: "status.example.com" },
-    { site: "app", host: "ocharo-studio-dev.203-0-113-10.sslip.io" },
-  ]);
-  // Switching to prod moves the baseline host it filled, never the owner's; without an address nothing changes.
-  assert.deepEqual(forms.withBaselineHosts(dev, known, "ocharo-studio", "prod", address)[1],
-    { site: "app", host: "ocharo-studio.203-0-113-10.sslip.io" });
-  assert.deepEqual(forms.withBaselineHosts([{ site: "app", host: "" }], known, "ocharo-studio", "dev", null), [{ site: "app", host: "" }]);
   // Before a rollout marked a front door, the first site by name is it.
   assert.deepEqual(forms.knownSitesOf({ environments: [{ name: "dev", sites: [
     { name: "go", url: "https://g", exposure: "public" }, { name: "app", url: "https://a", exposure: "public" }] }] })
@@ -195,12 +185,94 @@ test("the environment form knows a product's sites from its deploy.yml before an
     sites: [{ name: "app", exposure: "public", primary: true }, { name: "admin", exposure: "private", primary: false }] };
   const known = forms.knownSitesOf({ environments: [] }, descriptor);
   assert.deepEqual(known, [{ name: "admin", exposure: "private", primary: false }, { name: "app", exposure: "public", primary: true }]);
-  assert.deepEqual(forms.withBaselineHosts([], known, "ocharo-studio", "dev", "203.0.113.10"),
-    [{ site: "app", host: "ocharo-studio-dev.203-0-113-10.sslip.io" }]);
   // deploy.yml wins over what an older rollout published; one that cannot be read leaves the rollouts as the source.
   const rolled = { environments: [{ name: "dev", sites: [{ name: "old", url: "https://o", exposure: "public", primary: true }] }] };
   assert.deepEqual(forms.knownSitesOf(rolled, descriptor).map((site) => site.name), ["admin", "app"]);
   assert.deepEqual(forms.knownSitesOf(rolled, { ...descriptor, problem: "no deploy.yml", sites: [] }).map((site) => site.name), ["old"]);
+});
+
+const ocharo = [
+  { name: "desk", exposure: "public", primary: true },
+  { name: "motion", exposure: "private", primary: false },
+  { name: "studio", exposure: "public", primary: false },
+];
+const rowContext = (environment, address = "203.0.113.10") => ({ product: "ocharo", environment, address,
+  node: (site) => forms.tailnetNodeOf("ocharo", site, "ocharo-vps", environment) });
+
+test("every site the product declares is a row: the derived baseline host, or the tailnet node of a private site", () => {
+  const dev = forms.siteRowsOf(ocharo, [], rowContext("dev"));
+  assert.deepEqual(dev, [
+    { site: "desk", exposure: "public", host: "ocharo-dev.203-0-113-10.sslip.io", node: null, note: null },
+    { site: "motion", exposure: "private", host: "", node: "ocharo-motion-dev", note: "Private; tailnet node" },
+    { site: "studio", exposure: "public", host: "ocharo-studio-dev.203-0-113-10.sslip.io", node: null, note: null },
+  ]);
+  // Only the hosts are sent: a private site's node is no host.
+  assert.deepEqual(forms.siteHostsOf(dev), [
+    { site: "desk", host: "ocharo-dev.203-0-113-10.sslip.io" },
+    { site: "studio", host: "ocharo-studio-dev.203-0-113-10.sslip.io" },
+  ]);
+  const prod = forms.siteRowsOf(ocharo, [], rowContext("prod"));
+  assert.deepEqual(prod.map((row) => row.host || row.node),
+    ["ocharo.203-0-113-10.sslip.io", "ocharo-motion", "ocharo-studio.203-0-113-10.sslip.io"]);
+  // Without a public address a public site has no host to show or send; the deploy fills it.
+  const unplaced = forms.siteRowsOf(ocharo, [], rowContext("dev", null));
+  assert.deepEqual(unplaced[0], { site: "desk", exposure: "public", host: "", node: null, note: "Set once the server has a public address" });
+  assert.deepEqual(forms.siteHostsOf(unplaced), []);
+  assert.deepEqual(forms.siteRowsOf([], [], rowContext("dev")), []);
+});
+
+test("a site's private node is the one its server registered, else the product and site, with -dev in dev", () => {
+  const placements = [{ serverId: "ocharo-vps", facts: { databases: [], sites: [
+    { site: "motion", environment: "prod", node: "ocharo-motion-lab", address: "x", joined: true }] } }];
+  assert.equal(forms.tailnetNodeOf("ocharo", "motion", "ocharo-vps", "prod", placements), "ocharo-motion-lab");
+  assert.equal(forms.tailnetNodeOf("ocharo", "motion", "ocharo-vps", "dev", placements), "ocharo-motion-lab-dev");
+  assert.equal(forms.tailnetNodeOf("ocharo", "motion", "other-vps", "dev", placements), "ocharo-motion-dev");
+});
+
+test("a target keeps the hosts it stores, notes the one that is not the derived host and drops none unseen", () => {
+  const stored = [
+    { site: "desk", host: "ocharo-dev.203-0-113-10.sslip.io" },
+    { site: "studio", host: "studio-dev.ocharo.example" },
+    { site: "legacy", host: "legacy.ocharo.example" },
+  ];
+  const rows = forms.siteRowsOf(ocharo, stored, rowContext("dev"));
+  assert.deepEqual(rows.map((row) => [row.site, row.host, row.note]), [
+    ["desk", "ocharo-dev.203-0-113-10.sslip.io", null],
+    ["motion", "", "Private; tailnet node"],
+    ["studio", "studio-dev.ocharo.example", "Stored; derived: ocharo-studio-dev.203-0-113-10.sslip.io"],
+    ["legacy", "legacy.ocharo.example", "Stored; not declared by the product"],
+  ]);
+  assert.equal(rows[3].exposure, null);
+  assert.deepEqual(forms.siteHostsOf(rows), [stored[0], stored[1], stored[2]]);
+  // A private site with a host of its own keeps it, still labelled private.
+  const bound = forms.siteRowsOf(ocharo, [{ site: "motion", host: "motion.ocharo.example" }], rowContext("dev"));
+  assert.deepEqual([bound[1].host, bound[1].node, bound[1].note], ["motion.ocharo.example", "ocharo-motion-dev", "Private; stored host"]);
+  // A stored host with no address to derive from is kept, noted plainly.
+  assert.equal(forms.siteRowsOf(ocharo, stored, rowContext("dev", null))[0].note, "Stored");
+});
+
+test("moving a target to another environment or server re-derives its baseline hosts and keeps a bound one", () => {
+  const target = { environment: "dev", server: "ocharo-vps", sites: [
+    { site: "desk", host: "ocharo-dev.203-0-113-10.sslip.io" },
+    { site: "studio", host: "studio-dev.ocharo.example" },
+  ] };
+  assert.deepEqual(forms.storedHostsOf(target, "dev", "ocharo-vps"), target.sites);
+  assert.deepEqual(forms.storedHostsOf(target, "prod", "ocharo-vps"), [target.sites[1]]);
+  assert.deepEqual(forms.storedHostsOf(target, "dev", "other-vps"), [target.sites[1]]);
+  assert.deepEqual(forms.storedHostsOf(null, "dev", "ocharo-vps"), []);
+  assert.deepEqual(forms.storedHostsOf({ ...target, sites: [{ site: "desk", host: " " }] }, "dev", "ocharo-vps"), []);
+});
+
+test("a new environment is the first one on the promotion path the product lacks", () => {
+  assert.equal(forms.firstFreeEnvironment([]), "dev");
+  assert.equal(forms.firstFreeEnvironment(["dev"]), "prod");
+  assert.equal(forms.firstFreeEnvironment(["prod"]), "dev");
+  assert.equal(forms.firstFreeEnvironment(["dev", "prod"]), "dev");
+  const values = forms.targetFormOf(null, "ocharo", "hel1", "prod");
+  assert.equal(values.environment, "prod");
+  assert.equal(values.slug, "ocharo-prod");
+  assert.equal(forms.targetFormOf({ slug: "ocharo-dev", product: "ocharo", server: "hel1", environment: "dev", network: "platform",
+    root: "/srv/wheelhouse", settings: [], smokeChecks: [], sites: [] }, "ocharo", "x", "prod").environment, "dev");
 });
 
 test("a server edit never sends the public address enrollment recorded", () => {

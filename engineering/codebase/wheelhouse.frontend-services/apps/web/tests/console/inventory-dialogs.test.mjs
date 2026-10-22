@@ -159,23 +159,74 @@ test("Add environment opens as a new dev environment right after editing one", a
   assert.deepEqual(created.sites, []);
 });
 
-test("the environment form prefills each known public site's baseline host and keeps a host the owner named", async () => {
+test("the environment form lists every site the product declares with its derived host and keeps a host the target stores", async () => {
   const servers = [{ slug: "ocharo-vps", ingress: { publicAddress: "203.0.113.10" } }];
   const knownSites = [{ name: "app", exposure: "public", primary: true }, { name: "admin", exposure: "private", primary: false }];
   const mounted = mountDialog(dialogs.TargetFormModal, { product: "ocharo-studio", servers, knownSites, target: null });
   mounted.state.open = true;
   await nextTick();
   assert.deepEqual(mounted.values().sites, [{ site: "app", host: "ocharo-studio-dev.203-0-113-10.sslip.io" }]);
+  assert.deepEqual(mounted.setup().siteRows.map((row) => [row.site, row.host || row.node, row.note]), [
+    ["app", "ocharo-studio-dev.203-0-113-10.sslip.io", null],
+    ["admin", "ocharo-studio-admin-dev", "Private; tailnet node"],
+  ]);
   mounted.unmount();
-  // Prod drops -dev; a host the owner typed stays put.
+  // A stored host stays and is sent; prod's derived host drops -dev for the site that has none stored.
   const edited = mountDialog(dialogs.TargetFormModal, { product: "ocharo-studio", servers, knownSites, target: null });
   Object.assign(edited.state, { target: { slug: "ocharo-studio-prod", product: "ocharo-studio", server: "ocharo-vps",
     environment: "prod", network: "platform", root: "/srv/wheelhouse", settings: [], smokeChecks: [],
     sites: [{ site: "status", host: "status.ocharo.example" }] }, open: true });
   await nextTick();
-  assert.deepEqual(edited.values().sites, [{ site: "status", host: "status.ocharo.example" },
-    { site: "app", host: "ocharo-studio.203-0-113-10.sslip.io" }]);
+  assert.deepEqual(edited.values().sites, [{ site: "app", host: "ocharo-studio.203-0-113-10.sslip.io" },
+    { site: "status", host: "status.ocharo.example" }]);
   edited.unmount();
+});
+
+test("editing an environment keeps its stored hosts and re-derives a baseline host only when the server changes", async () => {
+  const servers = [{ slug: "ocharo-vps", ingress: { publicAddress: "203.0.113.10" } },
+    { slug: "second-vps", ingress: { publicAddress: "198.51.100.7" } }];
+  const knownSites = [{ name: "desk", exposure: "public", primary: true }, { name: "studio", exposure: "public", primary: false }];
+  const target = { slug: "ocharo-dev", product: "ocharo", server: "ocharo-vps", environment: "dev", network: "platform",
+    root: "/srv/wheelhouse", settings: [], smokeChecks: [],
+    sites: [{ site: "desk", host: "ocharo-dev.203-0-113-10.sslip.io" }, { site: "studio", host: "studio-dev.ocharo.example" }] };
+  const mounted = mountDialog(dialogs.TargetFormModal, { product: "ocharo", servers, knownSites, target });
+  mounted.state.open = true;
+  await nextTick();
+  assert.deepEqual(mounted.values().sites, target.sites);
+  assert.deepEqual(mounted.setup().siteRows.map((row) => row.note),
+    [null, "Stored; derived: ocharo-studio-dev.203-0-113-10.sslip.io"]);
+  // Moving to another server: the baseline host follows, the bound one stays.
+  mounted.setup().form.setValue("server", "second-vps");
+  await nextTick();
+  assert.deepEqual(mounted.values().sites, [{ site: "desk", host: "ocharo-dev.198-51-100-7.sslip.io" },
+    { site: "studio", host: "studio-dev.ocharo.example" }]);
+  mounted.unmount();
+});
+
+test("a new environment starts as the first the product lacks, with its slug and hosts following", async () => {
+  const servers = [{ slug: "ocharo-vps", ingress: { publicAddress: "203.0.113.10" } }];
+  const knownSites = [{ name: "desk", exposure: "public", primary: true }];
+  const mounted = mountDialog(dialogs.TargetFormModal, { product: "ocharo", servers, knownSites, target: null,
+    takenEnvironments: ["dev"] });
+  mounted.state.open = true;
+  await nextTick();
+  assert.equal(mounted.values().environment, "prod");
+  assert.equal(mounted.values().slug, "ocharo-prod");
+  assert.deepEqual(mounted.values().sites, [{ site: "desk", host: "ocharo.203-0-113-10.sslip.io" }]);
+  // Back to dev by the picker: slug and hosts follow.
+  mounted.setup().form.setValue("environment", "dev");
+  await nextTick();
+  assert.equal(mounted.values().slug, "ocharo-dev");
+  assert.deepEqual(mounted.values().sites, [{ site: "desk", host: "ocharo-dev.203-0-113-10.sslip.io" }]);
+  mounted.unmount();
+  // A product with neither environment, or both, starts at dev.
+  for (const taken of [[], ["dev", "prod"]]) {
+    const fresh = mountDialog(dialogs.TargetFormModal, { product: "ocharo", servers, knownSites, target: null, takenEnvironments: taken });
+    fresh.state.open = true;
+    await nextTick();
+    assert.equal(fresh.values().environment, "dev");
+    fresh.unmount();
+  }
 });
 
 test("New server opens with the defaults right after editing a server", async () => {

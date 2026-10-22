@@ -23,6 +23,7 @@ import {
   MenuSeparator,
 } from "@wow-two-beta/fe/presentation/nav";
 import { ConsolePaths } from "@/application/navigation";
+import { usePlacements } from "@/application/infrastructure";
 import { IconAvailability, useProductDescriptor, useProducts } from "@/application/products";
 import { useServers } from "@/application/servers";
 import { useTargets } from "@/application/targets";
@@ -61,6 +62,12 @@ const active = computed(() => ProductStatusRules.isActive(props.product));
 const repositoryUrl = computed(() => props.product.repository.url || `https://github.com/${props.product.repository.name}`);
 const descriptor = useProductDescriptor(() => props.product.slug);
 const knownSites = computed(() => knownSitesOf(props.product, descriptor.data.value));
+/** Name a private site's tailnet node: the one its server registered, else the derived one. */
+const placements = usePlacements(() => props.product.slug);
+/** The environments the product has, so a new one starts as the first it lacks. */
+const takenEnvironments = computed(() => [
+  ...new Set([...targets.targets.value.map((target) => target.environment), ...props.product.environments.map((item) => item.name)]),
+]);
 /** The services every environment runs: deploy.yml's, else the ones the release source was derived from. */
 const services = computed(() => {
   const read = descriptor.data.value;
@@ -169,6 +176,8 @@ defineExpose({ addEnvironment: () => openTarget(null) });
     :servers="servers.data.value ?? []"
     :operations="targets"
     :known-sites="knownSites"
+    :placements="placements.placements.value"
+    :taken-environments="takenEnvironments"
     :services="services"
     @update:open="(open) => (targetForm = { ...targetForm, open })"
   />
