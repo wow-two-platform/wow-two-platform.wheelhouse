@@ -179,20 +179,20 @@ function edit(key: string, event: MouseEvent): void {
           <button
             v-else
             type="button"
-            class="group grid w-full grid-cols-1 items-center gap-x-3 gap-y-0.5 px-3 py-1.5 text-left text-xs hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(0,1.4fr)_auto]"
+            class="group grid w-full grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_1rem] items-center gap-x-3 px-3 py-1.5 text-left text-xs hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60"
             :disabled="props.isDisabled"
             :aria-label="`Edit ${item.key}: ${item.secret ? 'set in the vault' : item.value || 'empty'}`"
             @click="edit(item.key, $event)"
           >
-            <span class="truncate font-mono" :title="item.key">{{ item.key }}</span>
-            <span class="truncate text-muted-foreground" :title="item.services.join(', ')">{{ item.services.join(", ") }}</span>
+            <span class="flex min-w-0 flex-col">
+              <span class="font-mono [overflow-wrap:anywhere]">{{ item.key }}</span>
+              <span class="truncate text-muted-foreground" :title="item.services.join(', ')">{{ item.services.join(", ") }}</span>
+            </span>
             <span v-if="item.secret" class="truncate italic text-muted-foreground">set in the vault</span>
             <span v-else-if="item.value" class="truncate font-mono" :title="item.value">{{ item.value }}</span>
             <span v-else class="truncate italic text-muted-foreground">empty</span>
-            <span class="hidden w-12 items-center justify-end gap-1 sm:flex" aria-hidden="true">
-              <template v-if="saver.fields[item.key]?.state === 'saved'"
-                ><Check :size="12" class="text-success" /><span class="text-success">Saved</span></template
-              >
+            <span class="flex items-center justify-end" aria-hidden="true">
+              <Check v-if="saver.fields[item.key]?.state === 'saved'" :size="14" class="text-success" />
               <Pencil v-else :size="12" class="text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
             </span>
           </button>
