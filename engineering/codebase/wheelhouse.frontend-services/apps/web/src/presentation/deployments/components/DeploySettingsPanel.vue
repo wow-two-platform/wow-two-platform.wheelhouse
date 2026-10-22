@@ -17,22 +17,24 @@ export interface DeploySettingsPanelProps {
 </script>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { KeyRound, Sparkles } from "lucide-vue-next";
+import { computed, nextTick, ref, watch } from "vue";
+import { Check, KeyRound, Pencil, Sparkles } from "lucide-vue-next";
 
+import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge } from "@wow-two-beta/fe/presentation/display";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
-import { CheckboxField } from "@wow-two-beta/fe/presentation/forms";
 
 import { useSettingSaver } from "@/application/settings";
 import { DeploySettingsRules } from "@/domain/deployments";
-import SettingField from "@/presentation/settings/components/SettingField.vue";
+
+import DeploySettingField from "./DeploySettingField.vue";
 
 /**
- * Lists the values a deploy still needs, then what the render derives on its own. Each field saves as soon as it is
- * confirmed — secrets to the vault as a new version, the rest to the store — and shows saving, saved or why it failed,
- * so what the owner gave survives closing the dialog; a required key without a saved value still holds the deploy.
- * Secrets never come back to the browser.
+ * Lists the required values a deploy still lacks first, then the values already set — key, service and value, a
+ * secret shown as set in the vault, each editable on click — then the optional keys of a first deploy, closed, and what
+ * the render derives on its own. Each field saves as soon as it is confirmed — secrets to the vault as a new version,
+ * the rest to the store — and shows saving, saved or why it failed, so what the owner gave survives closing the dialog;
+ * a required key without a saved value still holds the deploy. Secrets never come back to the browser.
  */
 defineOptions({ name: "DeploySettingsPanel" });
 const props = withDefaults(defineProps<DeploySettingsPanelProps>(), { isDisabled: false });
@@ -60,11 +62,14 @@ watch(
   },
   { immediate: true },
 );
+/** The set value being edited in place, by key. */
+const editing = ref<string | null>(null);
 /* Another target or release starts over. */
 watch(
   () => [props.target, props.release] as const,
   () => {
     shown.value = [...props.prompted];
+    editing.value = null;
     saver.reset();
   },
 );
@@ -76,7 +81,10 @@ watch(
 );
 
 const derived = computed(() => DeploySettingsRules.derived(props.settings));
-const blocking = computed(() => DeploySettingsRules.blocking(shown.value, entered.value));
+const sections = computed(() => DeploySettingsRules.sections(props.settings, shown.value, entered.value, secrets.value));
+const missing = computed(() => sections.value.missing);
+const held = computed(() => sections.value.held);
+const optional = computed(() => sections.value.optional);
 const hostFiles = computed(() => (props.settings?.services ?? []).filter((service) => service.hostFile).map((service) => service.name));
 const sealed = computed(() => props.settings?.vault?.sealed ?? null);
 
@@ -88,18 +96,20 @@ function setSecret(key: string, value: boolean): void {
   secrets.value = { ...secrets.value, [key]: value };
 }
 
-/** Saves one field; once saved, it counts as given. @internal */
+/** Saves one field; once saved, it counts as given, and an edited value closes. @internal */
 async function save(item: PromptedSetting, value: string, confirmPlain: boolean): Promise<void> {
   const secret = secretOf(item);
   const result = await saver.save([{ key: item.key, value, secret, ...(confirmPlain ? { confirmPlain: true } : {}) }]);
-  if (result.ok) entered.value = { ...entered.value, [item.key]: secret ? "saved" : value };
+  if (!result.ok) return;
+  entered.value = { ...entered.value, [item.key]: secret ? "saved" : value };
+  if (editing.value === item.key) editing.value = null;
 }
 
-function helper(item: PromptedSetting): string {
-  const where = item.services.join(", ");
-  const kind = item.type && item.type !== "text" ? `${item.type}${item.format ? ` (${item.format})` : ""}; ` : "";
-  if (item.required) return `${kind}Required by ${where}`;
-  return item.default !== null ? `${kind}Optional for ${where}; default ${item.default || "empty"}` : `${kind}Optional for ${where}`;
+/** Opens a set value for editing and puts the cursor in its field. @internal */
+function edit(key: string, event: MouseEvent): void {
+  editing.value = key;
+  const row = (event.currentTarget as HTMLElement).closest("li");
+  void nextTick(() => row?.querySelector<HTMLElement>("input, textarea, select, button")?.focus());
 }
 </script>
 
@@ -107,8 +117,13 @@ function helper(item: PromptedSetting): string {
   <section class="flex flex-col gap-3 rounded-xl border border-border p-4" aria-label="Settings">
     <div class="flex flex-wrap items-center gap-2">
       <p class="text-sm font-medium">Settings</p>
-      <Badge v-if="blocking.length" variant="warning">{{ blocking.length }} required {{ blocking.length === 1 ? "value" : "values" }} missing</Badge>
-      <Badge v-else-if="props.settings?.firstDeploy" variant="info">First deploy</Badge>
+      <Badge v-if="missing.length" variant="warning"
+        >{{ missing.length }} required {{ missing.length === 1 ? "value" : "values" }} missing{{ held.length ? ` · ${held.length} set` : "" }}</Badge
+      >
+      <template v-else>
+        <Badge v-if="held.length" variant="success">{{ held.length }} set</Badge>
+        <Badge v-if="props.settings?.firstDeploy" variant="info">First deploy</Badge>
+      </template>
     </div>
     <Alert
       v-if="sealed"
@@ -123,37 +138,83 @@ function helper(item: PromptedSetting): string {
       severity="warning"
       :description="`The vault ${props.settings.vault.id} is unreachable; the deploy waits until it answers, so no secret is dropped.`"
     />
-    <p v-if="shown.length" class="text-xs text-muted-foreground">
-      Each value saves when you leave its field or press Enter, so it stays even if you close this dialog.
-    </p>
-    <div v-if="shown.length" class="flex flex-col gap-3">
-      <div v-for="item in shown" :key="item.key" class="flex flex-col gap-1.5">
-        <SettingField
-          :setting-key="item.key"
-          :type="item.type ?? 'text'"
-          :format="item.format ?? null"
-          :choices="item.allowed"
+    <template v-if="missing.length">
+      <p class="text-xs text-muted-foreground">
+        Each value saves when you leave its field or press Enter, so it stays even if you close this dialog.
+      </p>
+      <div class="flex flex-col gap-3">
+        <DeploySettingField
+          v-for="item in missing"
+          :key="item.key"
+          :item="item"
           :secret="secretOf(item)"
-          :required="item.required"
-          :default-value="item.default"
-          :helper="helper(item)"
-          :looks-secret="item.looksSecret ?? false"
           :save="saver.fields[item.key] ?? null"
+          :can-choose-vault="!item.declaredSecret"
           :is-disabled="props.isDisabled"
           @save="(value: string, confirmPlain: boolean) => save(item, value, confirmPlain)"
-        />
-        <CheckboxField
-          v-if="!item.declaredSecret"
-          :model-value="secretOf(item)"
-          :disabled="props.isDisabled || saver.fields[item.key]?.state === 'saved'"
-          label="Secret: keep it in the vault"
-          @update:model-value="(value: boolean) => setSecret(item.key, value)"
+          @update:secret="(value: boolean) => setSecret(item.key, value)"
         />
       </div>
-    </div>
+    </template>
     <p v-else class="text-sm text-muted-foreground">
-      Every required value is set. Values save to this environment: secrets to its vault, the rest to Wheelhouse.
+      Every required value is set.{{ held.length ? " Click a value to change it." : "" }} Values save to this environment: secrets to its vault, the rest to Wheelhouse.
     </p>
+    <div v-if="held.length" class="flex flex-col gap-1.5">
+      <p class="text-xs font-medium text-muted-foreground">Set ({{ held.length }})</p>
+      <ul class="flex flex-col divide-y divide-border rounded-lg border border-border" aria-label="Values already set">
+        <li v-for="item in held" :key="item.key">
+          <div v-if="editing === item.key" class="flex flex-col gap-1.5 px-3 py-2">
+            <DeploySettingField
+              :item="item"
+              :secret="secretOf(item)"
+              :current="item.secret ? null : item.value"
+              :save="saver.fields[item.key] ?? null"
+              :is-disabled="props.isDisabled"
+              @save="(value: string, confirmPlain: boolean) => save(item, value, confirmPlain)"
+            />
+            <div class="flex justify-end">
+              <Button type="button" size="sm" variant="outline" tone="neutral" @click="editing = null">Done</Button>
+            </div>
+          </div>
+          <button
+            v-else
+            type="button"
+            class="group grid w-full grid-cols-1 items-center gap-x-3 gap-y-0.5 px-3 py-1.5 text-left text-xs hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,0.8fr)_minmax(0,1.4fr)_auto]"
+            :disabled="props.isDisabled"
+            :aria-label="`Edit ${item.key}: ${item.secret ? 'set in the vault' : item.value || 'empty'}`"
+            @click="edit(item.key, $event)"
+          >
+            <span class="truncate font-mono" :title="item.key">{{ item.key }}</span>
+            <span class="truncate text-muted-foreground" :title="item.services.join(', ')">{{ item.services.join(", ") }}</span>
+            <span v-if="item.secret" class="truncate italic text-muted-foreground">set in the vault</span>
+            <span v-else-if="item.value" class="truncate font-mono" :title="item.value">{{ item.value }}</span>
+            <span v-else class="truncate italic text-muted-foreground">empty</span>
+            <span class="hidden w-12 items-center justify-end gap-1 sm:flex" aria-hidden="true">
+              <template v-if="saver.fields[item.key]?.state === 'saved'"
+                ><Check :size="12" class="text-success" /><span class="text-success">Saved</span></template
+              >
+              <Pencil v-else :size="12" class="text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
+            </span>
+          </button>
+        </li>
+      </ul>
+    </div>
+    <details v-if="optional.length" class="text-sm">
+      <summary class="cursor-pointer text-muted-foreground">Optional ({{ optional.length }})</summary>
+      <div class="mt-3 flex flex-col gap-3">
+        <DeploySettingField
+          v-for="item in optional"
+          :key="item.key"
+          :item="item"
+          :secret="secretOf(item)"
+          :save="saver.fields[item.key] ?? null"
+          :can-choose-vault="!item.declaredSecret"
+          :is-disabled="props.isDisabled"
+          @save="(value: string, confirmPlain: boolean) => save(item, value, confirmPlain)"
+          @update:secret="(value: boolean) => setSecret(item.key, value)"
+        />
+      </div>
+    </details>
     <p v-if="hostFiles.length" class="text-xs text-muted-foreground">
       Host files of {{ hostFiles.join(", ") }} stay a layer: Wheelhouse's values and the derived keys go over them.
     </p>

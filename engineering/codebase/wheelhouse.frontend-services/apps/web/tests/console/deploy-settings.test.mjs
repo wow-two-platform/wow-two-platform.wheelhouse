@@ -74,6 +74,73 @@ test("required keys block until filled, and only filled entries save, as secrets
   ]);
 });
 
+test("the sections put the missing required values first, then the values set, then the optional keys", () => {
+  const settings = plan(true);
+  const asked = DeploySettingsRules.prompted(settings);
+  const sections = DeploySettingsRules.sections(settings, asked, {}, {});
+  assert.deepEqual(sections.missing.map((item) => item.key), ["DataProtection:ApplicationName", "ImageWorker:Key"]);
+  assert.deepEqual(sections.held.map((item) => [item.key, item.services, item.value, item.secret]), [
+    ["DataProtection:KeysPath", ["desk"], "/var/lib/keys", false],
+  ]);
+  assert.deepEqual(sections.optional.map((item) => item.key), ["Feature:Flag"]);
+});
+
+test("a value set before the dialog opened is listed with its value, and a vault secret without one", () => {
+  const settings = DeploySettingsSchema.parse({
+    ...plan(true),
+    services: [
+      {
+        name: "desk", hostFile: false,
+        keys: [
+          key("OcharoPlatform:BaseUrl", "stored", { required: true, value: "https://desk.example" }),
+          key("DataProtection:ApplicationName", "stored", { required: true, value: "ocharo-desk" }),
+          key("ImageWorker:Key", "missing", { required: true, secret: true }),
+          key("OcharoApps:Atlas", "unset"),
+          key("OcharoApps:Blog", "default", { default: "" }),
+          key("Smtp:Password", "vault", { secret: true }),
+          key("AllowedHosts", "derived", { required: true, derived: "hosts", value: "desk.example" }),
+        ],
+      },
+    ],
+  });
+  const asked = DeploySettingsRules.prompted(settings);
+  const sections = DeploySettingsRules.sections(settings, asked, {}, {});
+  assert.deepEqual(sections.missing.map((item) => item.key), ["ImageWorker:Key"]);
+  assert.deepEqual(sections.held.map((item) => [item.key, item.value, item.secret]), [
+    ["DataProtection:ApplicationName", "ocharo-desk", false],
+    ["OcharoPlatform:BaseUrl", "https://desk.example", false],
+    ["Smtp:Password", null, true],
+  ]);
+  assert.deepEqual(sections.optional.map((item) => item.key), ["OcharoApps:Atlas", "OcharoApps:Blog"]);
+});
+
+test("a value saved in the dialog moves to the set values before the plan is read again", () => {
+  const settings = plan(true);
+  const asked = DeploySettingsRules.prompted(settings);
+  const entered = { "DataProtection:ApplicationName": "ocharo-desk", "ImageWorker:Key": "saved", "Feature:Flag": "true" };
+  const sections = DeploySettingsRules.sections(settings, asked, entered, { "ImageWorker:Key": true });
+  assert.deepEqual(sections.missing, []);
+  assert.deepEqual(sections.held.map((item) => [item.key, item.value, item.secret]), [
+    ["DataProtection:ApplicationName", "ocharo-desk", false],
+    ["DataProtection:KeysPath", "/var/lib/keys", false],
+    ["ImageWorker:Key", null, true],
+    ["Feature:Flag", "true", false],
+  ]);
+  assert.deepEqual(sections.optional, []);
+});
+
+test("an edited set value shows its new value at once, and a secret never shows one", () => {
+  const settings = plan(false);
+  const sections = DeploySettingsRules.sections(settings, [], { "DataProtection:KeysPath": "/data/keys" }, {});
+  assert.equal(sections.held.find((item) => item.key === "DataProtection:KeysPath").value, "/data/keys");
+  const vault = DeploySettingsSchema.parse({
+    ...settings,
+    services: [{ name: "desk", hostFile: false, keys: [key("Smtp:Password", "vault", { secret: true })] }],
+  });
+  const held = DeploySettingsRules.sections(vault, [], { "Smtp:Password": "saved" }, {}).held;
+  assert.deepEqual(held.map((item) => [item.key, item.value, item.secret]), [["Smtp:Password", null, true]]);
+});
+
 test("the derived keys are named once each with where they come from", () => {
   const derived = DeploySettingsRules.derived(plan(false));
   assert.deepEqual(derived.map((item) => [item.key, DeploySettingsRules.describe(item)]), [

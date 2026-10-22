@@ -23,7 +23,13 @@ export type {
   DeploySettingsService,
   DeploySettingValue,
 } from './models/DeploySettings';
-export { DeploySettingsRules, type DerivedSetting, type PromptedSetting } from './DeploySettingsRules';
+export {
+  DeploySettingsRules,
+  type DerivedSetting,
+  type HeldSetting,
+  type PromptedSetting,
+  type SettingsSections,
+} from './DeploySettingsRules';
 export { DeploymentExtensions, type IndicatorTone, type ReleaseDrift, type StatusVariant } from './DeploymentExtensions';
 export {
   DeploymentStateOrder,
