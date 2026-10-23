@@ -37,10 +37,13 @@ public sealed class DeploymentSettingsSaveCommandHandler(
         if (problems.Count > 0)
             return AppResult<DeploySettingsSavedDto>.Fail(AppErrorFactory.Validation(string.Join(" ", problems)));
 
-        var removals = request.Values.Where(value => value.Remove).Select(value => value.Key).ToList();
-        var writes = request.Values.Where(value => value.Secret && !value.Remove)
+        // A generated secret's value is made here and goes to the vault only; the reply names its version alone.
+        var values = request.Values.Select(value => value.Generate is { } format ? value with { Value = SecretValues.Generate(format) } : value).ToList();
+        var generated = values.Where(value => value.Generate is not null).Select(value => value.Key).ToHashSet(StringComparer.Ordinal);
+        var removals = values.Where(value => value.Remove).Select(value => value.Key).ToList();
+        var writes = values.Where(value => value.Secret && !value.Remove)
             .Select(value => new SecretWrite(value.Key, value.Value, value.Note, value.Expiry)).ToList();
-        var plain = request.Values.Where(value => !value.Secret && !value.Remove)
+        var plain = values.Where(value => !value.Secret && !value.Remove)
             .ToDictionary(value => value.Key, value => Normalize(value, declarations), StringComparer.Ordinal);
 
         await using var transaction = await transactions.BeginAsync(cancellationToken);
@@ -61,7 +64,7 @@ public sealed class DeploymentSettingsSaveCommandHandler(
         var versions = ((AppResult<IReadOnlyList<SecretWritten>>.Success)written).Data;
         var keys = new List<SavedSettingDto>();
         keys.AddRange(versions.Select(item => new SavedSettingDto(item.Key, true, false, item.Version is > 0 ? item.Version : null,
-            string.IsNullOrEmpty(item.Fingerprint) ? null : item.Fingerprint)));
+            string.IsNullOrEmpty(item.Fingerprint) ? null : item.Fingerprint, generated.Contains(item.Key))));
         keys.AddRange(plain.Keys.Select(key => new SavedSettingDto(key, false, false)));
         keys.AddRange(removals.Where(key => removedSecrets.ContainsKey(key) || removedSettings.Contains(key))
             .Select(key => new SavedSettingDto(key, removedSecrets.ContainsKey(key), true, removedSecrets.TryGetValue(key, out var version) ? version : null)));
@@ -70,7 +73,8 @@ public sealed class DeploymentSettingsSaveCommandHandler(
     }
 
     /// <summary>Why the values cannot be saved: a value that does not fit its declared type, a declared or secret-looking
-    /// key given as a plain setting without the owner's confirmation. Never quotes a value.</summary>
+    /// key given as a plain setting without the owner's confirmation, a generated value for a key typed other than
+    /// text. Never quotes a value.</summary>
     /// <param name="values">The values.</param>
     /// <param name="declarations">What the release and the owner declare about each key.</param>
     /// <returns>The problems, one sentence each.</returns>
@@ -86,6 +90,12 @@ public sealed class DeploymentSettingsSaveCommandHandler(
                     + "; save it as a secret, or confirm it is a plain setting.");
             if (declared is null)
                 continue;
+            if (value.Generate is not null)
+            {
+                if (declared.Type != SettingType.Text)
+                    problems.Add(value.Key + " takes a " + SettingTypes.NameOf(declared.Type) + "; only a text secret's value is generated.");
+                continue;
+            }
             var candidate = declared.Type == SettingType.Boolean ? value.Value.Trim().ToLowerInvariant() : value.Value;
             if (SettingTypes.Check(declared.Type, candidate, declared.Format, declared.Choices) is { } problem)
                 problems.Add(value.Key + " " + problem + ".");

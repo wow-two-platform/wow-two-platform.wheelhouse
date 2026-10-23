@@ -7,7 +7,8 @@ namespace Wheelhouse.Application.Deployments.Settings.Commands;
 
 /// <summary>Gives a target's environment setting values: secrets go to its vault as new versions, the rest to
 /// Wheelhouse's settings store, all in one transaction. One value is one field's save; several are a bulk edit that
-/// lands whole or not at all. The audit trail names the keys and versions, never a value.</summary>
+/// lands whole or not at all. A secret may ask Wheelhouse to generate its value instead (<see cref="DeploySettingValue.Generate"/>).
+/// The audit trail names the keys and versions, and which values were generated, never a value.</summary>
 /// <param name="Target">The target's slug; the values belong to its product environment.</param>
 /// <param name="Values">The values.</param>
 /// <param name="Actor">Who gave them.</param>
@@ -34,7 +35,8 @@ public sealed record DeploymentSettingsSaveCommand(
     public override string ToString() => nameof(DeploymentSettingsSaveCommand) + " { " + Target + ": " + AuditDetail + " }";
 
     private static string Describe(SavedSettingDto key) =>
-        key.Key + (key.Removed ? " removed" : key.Secret ? " secret" + (key.Version is { } version ? " v" + version : "") : " setting");
+        key.Key + (key.Removed ? " removed" : key.Secret ? " secret" + (key.Version is { } version ? " v" + version : "")
+            + (key.Generated ? " generated" : "") : " setting");
 
     private string Describe(bool secret, string noun)
     {

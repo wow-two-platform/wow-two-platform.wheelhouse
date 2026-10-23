@@ -609,7 +609,7 @@ every settings file and the target's lock state; each failure names the rule or 
 | `GET /api/deployments/vitals/history?hours=24&target=` | Stored readings of the last 1–720 hours, oldest first: one target's, or every server's and target's |
 | `GET /api/vaults/{vault}/hygiene` | A standalone vault's secrets and product tokens due for rotation; metadata only |
 | `GET /api/deployments/targets/{target}/settings[?release=]` | The environment's keys, sources, types, secret metadata, unapplied keys and scheduled apply; never a secret's value |
-| `PUT /api/deployments/targets/{target}/settings` | Saves values in one transaction (action `settings`): one value per field, several as a bulk edit |
+| `PUT /api/deployments/targets/{target}/settings` | Saves values in one transaction (action `settings`): one value per field, several as a bulk edit; `generate` makes a secret's value on the server |
 | `POST`/`DELETE /api/deployments/targets/{target}/settings/apply` | Applies edited values now or at a set time, or cancels the schedule |
 | `GET /api/deployments/targets/{target}/secrets/{key}/versions` | A secret's versions: who, when, fingerprint, note; never a value |
 | `POST …/secrets/{key}/restore` · `PUT …/secrets/{key}/expiry` | Restores a version as the newest; sets or clears the expiry |

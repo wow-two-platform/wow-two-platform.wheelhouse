@@ -1,4 +1,4 @@
-import type { SettingType } from "../deployments/models/DeploySettings";
+import type { DeploySettingValue, SecretFormat, SettingType } from "../deployments/models/DeploySettings";
 
 const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const days = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -126,6 +126,19 @@ export const SettingTypes = {
     const sections = key.split(":");
     return /(password|passphrase|secret|token|apikey|key|pwd|credentials?|connectionstring|salt)$/i.test(sections.at(-1) ?? "")
       || (sections.length > 1 && sections[0]!.toLowerCase() === "connectionstrings");
+  },
+
+  /** The forms a generated secret value comes in, the default first. */
+  secretFormats: ["hex", "base64url"] as const satisfies readonly SecretFormat[],
+
+  /** Whether Wheelhouse can generate a secret's value of this type: text only, the type of an undeclared key. */
+  canGenerate(type: SettingType | null | undefined): boolean {
+    return !type || type === "text";
+  },
+
+  /** The save that has Wheelhouse generate a secret's value into the vault: no value travels, either way. */
+  generated(key: string, format: SecretFormat = "hex"): DeploySettingValue {
+    return { key, value: "", secret: true, generate: format };
   },
 
   /** Whether a key is a configuration path the runner accepts: sections joined by `:`. */

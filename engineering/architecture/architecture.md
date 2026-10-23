@@ -180,12 +180,18 @@ own targets keep their hand-placed files), into `<root>/config/<product>-<enviro
   metadata (version, who, when, fingerprint, expiry), the keys no service declares (`extra`: owner-added keys and values
   kept for undeclared keys), the keys changed since the target's last render (`unapplied`), a scheduled apply
   (`pending`) and the vault's state. Key names, non-secret values and versions only.
-- `PUT …/settings` (action `settings`) `{ values: [{ key, value, secret, note?, expiry?, confirmPlain?, remove? }],
-  release? }` saves in one transaction: each value is checked against its declared type, a key that reads as a secret
-  (or is declared one) is refused as a plain setting unless `confirmPlain`, secrets become new vault versions, settings
-  go to the store, a key moving between the two leaves the other, and `remove` takes a value out of both. One value is
-  one field's save (the editors and the deploy dialog save field by field); several are a bulk edit that lands whole or
-  not at all. Audited as `settings.save` with key names and versions, never a value.
+- `PUT …/settings` (action `settings`) `{ values: [{ key, value, secret, note?, expiry?, confirmPlain?, remove?,
+  generate? }], release? }` saves in one transaction: each value is checked against its declared type, a key that reads
+  as a secret (or is declared one) is refused as a plain setting unless `confirmPlain`, secrets become new vault
+  versions, settings go to the store, a key moving between the two leaves the other, and `remove` takes a value out of
+  both. One value is one field's save (the editors and the deploy dialog save field by field); several are a bulk edit
+  that lands whole or not at all. Audited as `settings.save` with key names and versions, never a value.
+- `generate` (`hex` | `base64url`, with `secret` and no `value`) has the server make the value: 32 bytes from the
+  cryptographic random source, as 64 lowercase hex characters or 43 unpadded base64url ones, written straight to the
+  vault as a new version with the note and expiry given. Only a text secret (or an undeclared key) takes one. The reply
+  names the key, version, fingerprint and `generated`, never the value; the audit detail reads `<key> secret v<n>
+  generated`. The deploy dialog's secret fields and the Secrets tab's new-version dialog offer it as Generate, and the
+  field then reads "set in the vault".
 - Products declare typed keys in `deploy.yml` (`settings.keys`: `text`, `number`, `boolean`, `choice` with values,
   `url`, `cron`, `date` with a format, `email`; required or optional with a default for non-secrets; pipelines
   `v0.10.0`). The bundle carries them as `settings.<service>.{optional, secrets, allowed, types}`, which the runner

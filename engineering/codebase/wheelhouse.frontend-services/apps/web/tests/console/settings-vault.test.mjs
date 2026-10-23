@@ -132,6 +132,22 @@ test("an older plan without the vault's fields still reads, and saves and histor
   assert.equal(SettingsApplySchema.parse({ target: "t", mode: "scheduled", at: "2026-10-20T03:00:00Z", by: "max" }).deployment, null);
 });
 
+test("a generated secret travels as a format with no value, for text keys only, and its save decodes without one", () => {
+  assert.deepEqual(SettingTypes.generated("Auth:SigningKey"),
+    { key: "Auth:SigningKey", value: "", secret: true, generate: "hex" });
+  assert.equal(SettingTypes.generated("Auth:SigningKey", "base64url").generate, "base64url");
+  assert.deepEqual([...SettingTypes.secretFormats], ["hex", "base64url"]);
+  assert.equal(SettingTypes.canGenerate("text"), true);
+  assert.equal(SettingTypes.canGenerate(undefined), true, "an undeclared key is text");
+  for (const type of ["number", "boolean", "choice", "url", "cron", "date", "email"]) {
+    assert.equal(SettingTypes.canGenerate(type), false, type);
+  }
+  const saved = DeploySettingsSavedSchema.parse({ settings: 0, secrets: 1,
+    keys: [{ key: "Auth:SigningKey", secret: true, removed: false, version: 3, fingerprint: "ab", generated: true }] });
+  assert.deepEqual([saved.keys[0].version, saved.keys[0].generated], [3, true]);
+  assert.equal(Object.values(saved.keys[0]).some((value) => typeof value === "string" && value.length >= 43), false);
+});
+
 test("an apply is scheduled from five minutes on and within 90 days", () => {
   const { min, max } = EnvironmentSettingsRules.scheduleBounds(new Date("2026-10-19T12:00:00Z"));
   assert.ok(min < max);

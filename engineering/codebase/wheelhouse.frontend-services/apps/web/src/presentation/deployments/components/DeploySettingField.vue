@@ -32,7 +32,7 @@ const props = withDefaults(defineProps<DeploySettingFieldProps>(), {
   canChooseVault: false,
   isDisabled: false,
 });
-const emit = defineEmits<{ save: [value: string, confirmPlain: boolean]; "update:secret": [value: boolean] }>();
+const emit = defineEmits<{ save: [value: string, confirmPlain: boolean]; generate: []; "update:secret": [value: boolean] }>();
 defineSlots<{}>();
 
 /** Who takes the key, and its type and default. @internal */
@@ -61,6 +61,7 @@ function helper(): string {
       :save="props.save"
       :is-disabled="props.isDisabled"
       @save="(value: string, confirmPlain: boolean) => emit('save', value, confirmPlain)"
+      @generate="emit('generate')"
     />
     <CheckboxField
       v-if="props.canChooseVault"

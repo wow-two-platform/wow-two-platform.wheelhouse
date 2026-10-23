@@ -33,6 +33,29 @@ public sealed class SettingsSaveRulesTests
     }
 
     [Fact]
+    public void Check_ShouldGenerateOnlyForATextOrUndeclaredSecret()
+    {
+        DeploymentSettingsSaveCommandHandler.Check([new DeploySettingValue("Stripe:Account", "", true) { Generate = SecretValues.Hex }], Declared)
+            .Should().BeEmpty();
+        DeploymentSettingsSaveCommandHandler.Check([new DeploySettingValue("Jobs:Token", "", true) { Generate = SecretValues.Base64Url }], Declared)
+            .Should().BeEmpty("an undeclared key is text");
+        DeploymentSettingsSaveCommandHandler.Check([new DeploySettingValue("Limits:Max", "", true) { Generate = SecretValues.Hex }], Declared)
+            .Should().Equal("Limits:Max takes a number; only a text secret's value is generated.");
+    }
+
+    [Fact]
+    public void SecretValues_ShouldBe32RandomBytes_AsHexOrBase64Url_AndNeverPrintThroughTheValue()
+    {
+        var hex = Enumerable.Range(0, 20).Select(_ => SecretValues.Generate(SecretValues.Hex)).ToList();
+        hex.Should().OnlyContain(value => System.Text.RegularExpressions.Regex.IsMatch(value, "^[0-9a-f]{64}$"));
+        hex.Distinct().Should().HaveCount(20);
+        SecretValues.Generate(SecretValues.Base64Url).Should().MatchRegex("^[A-Za-z0-9_-]{43}$");
+        FluentActions.Invoking(() => SecretValues.Generate("words")).Should().Throw<ArgumentOutOfRangeException>();
+        new DeploySettingValue("Stripe:Account", hex[0], true) { Generate = SecretValues.Hex }.ToString()
+            .Should().NotContain(hex[0]).And.Contain("generate hex");
+    }
+
+    [Fact]
     public void Check_ShouldTypeEachValue_AndPassOverRemovals()
     {
         DeploymentSettingsSaveCommandHandler.Check([new DeploySettingValue("Limits:Max", "lots", false)], Declared)

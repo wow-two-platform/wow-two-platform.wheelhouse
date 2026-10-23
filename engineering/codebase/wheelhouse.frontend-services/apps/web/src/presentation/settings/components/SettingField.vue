@@ -27,7 +27,8 @@ export interface SettingFieldProps {
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { Check, LoaderCircle, TriangleAlert } from "lucide-vue-next";
+import { Check, Dices, LoaderCircle, TriangleAlert } from "lucide-vue-next";
+import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { CheckboxField, Field } from "@wow-two-beta/fe/presentation/forms";
 import { SettingTypes } from "@/domain/settings";
 import SettingInput from "./SettingInput.vue";
@@ -35,7 +36,9 @@ import SettingInput from "./SettingInput.vue";
 /**
  * One key's field, saved as soon as it is confirmed — on blur, Enter or a pick — when its value changed and fits its
  * type; the field then shows saving, saved or why it failed. A secret's field empties once saved, since its value never
- * comes back. A key that reads as a secret, given as a plain setting, waits for the owner to confirm it is plain.
+ * comes back, and says it is set in the vault. A text secret also offers Generate: Wheelhouse makes a random value
+ * straight into the vault, and the browser never sees it. A key that reads as a secret, given as a plain setting, waits
+ * for the owner to confirm it is plain.
  */
 defineOptions({ name: "SettingField" });
 const props = withDefaults(defineProps<SettingFieldProps>(), {
@@ -49,7 +52,7 @@ const props = withDefaults(defineProps<SettingFieldProps>(), {
   save: null,
   isDisabled: false,
 });
-const emit = defineEmits<{ save: [value: string, confirmPlain: boolean] }>();
+const emit = defineEmits<{ save: [value: string, confirmPlain: boolean]; generate: [] }>();
 defineSlots<{}>();
 
 const value = ref(props.current ?? "");
@@ -89,6 +92,15 @@ const notes = computed(() => {
   return { ...(props.helper ? { helper: props.helper } : {}), ...(error ? { error } : {}) };
 });
 const needsConfirm = computed(() => !props.secret && props.looksSecret && !confirmPlain.value);
+const canGenerate = computed(() => props.secret && SettingTypes.canGenerate(props.type));
+
+/** Asks Wheelhouse for a random value in the vault; whatever the field held is dropped. @internal */
+function generate(): void {
+  if (props.isDisabled || props.save?.state === "saving") return;
+  value.value = "";
+  sent.value = "";
+  emit("generate");
+}
 
 /** Saves a changed value that fits its type. @internal */
 function confirm(): void {
@@ -111,11 +123,24 @@ function confirm(): void {
             :secret="props.secret"
             :format="props.format"
             :choices="props.choices"
-            :placeholder="props.secret ? (props.save?.state === 'saved' ? 'Saved' : '') : (props.defaultValue ?? null)"
+            :placeholder="props.secret ? (props.save?.state === 'saved' ? 'Set in the vault' : '') : (props.defaultValue ?? null)"
             :is-disabled="props.isDisabled"
             @confirm="confirm"
           />
         </div>
+        <Button
+          v-if="canGenerate"
+          type="button"
+          variant="outline"
+          tone="neutral"
+          size="sm"
+          class="shrink-0 max-md:min-h-11"
+          :is-disabled="props.isDisabled || props.save?.state === 'saving'"
+          :aria-label="`Generate ${props.settingKey} in the vault`"
+          title="32 random bytes, kept in the vault and never shown"
+          @click="generate"
+          ><template #leading><Dices :size="14" aria-hidden="true" /></template><span class="max-sm:sr-only">Generate</span></Button
+        >
         <span class="flex w-16 shrink-0 items-center gap-1 text-xs" aria-live="polite">
           <template v-if="props.save?.state === 'saving'"
             ><LoaderCircle :size="14" class="animate-spin text-muted-foreground" aria-hidden="true" /><span

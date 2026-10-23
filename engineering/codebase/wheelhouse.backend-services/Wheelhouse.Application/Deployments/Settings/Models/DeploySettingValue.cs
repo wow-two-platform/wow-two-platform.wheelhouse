@@ -1,3 +1,4 @@
+using Wheelhouse.Application.Deployments.Settings.Services;
 using Wheelhouse.Application.SecretsVault.Models;
 
 namespace Wheelhouse.Application.Deployments.Settings.Models;
@@ -20,6 +21,11 @@ public sealed record DeploySettingValue(string Key, string Value, bool Secret)
     /// <summary>Gets whether to remove the key's value, from the store and the vault alike, instead of setting one.</summary>
     public bool Remove { get; init; }
 
+    /// <summary>Gets the format of a secret Wheelhouse generates instead of taking a value (<see cref="SecretValues"/>
+    /// names them); null for a given value. A generated value goes to the vault only, never back to the caller.</summary>
+    public string? Generate { get; init; }
+
     /// <summary>Returns the value's key and kind only, so logs and exceptions cannot print a value.</summary>
-    public override string ToString() => nameof(DeploySettingValue) + " { " + Key + (Secret ? ", secret" : "") + (Remove ? ", remove" : "") + " }";
+    public override string ToString() => nameof(DeploySettingValue) + " { " + Key + (Secret ? ", secret" : "")
+        + (Generate is null ? "" : ", generate " + Generate) + (Remove ? ", remove" : "") + " }";
 }

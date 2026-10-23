@@ -4,6 +4,9 @@ export type DeploySettingSource = "derived" | "vault" | "stored" | "default" | "
 /** What a setting's value must look like; Wheelhouse checks a value against it on save. */
 export type SettingType = "text" | "number" | "boolean" | "choice" | "url" | "cron" | "date" | "email";
 
+/** How Wheelhouse writes a secret value it generates: 32 random bytes as lowercase hex or unpadded base64url. */
+export type SecretFormat = "hex" | "base64url";
+
 /** What the console may know about a secret: its version, who changed it and when, its fingerprint and expiry. */
 export interface SecretMeta {
   key: string;
@@ -99,6 +102,9 @@ export interface DeploySettingValue {
   confirmPlain?: boolean;
   /** Remove the key's value from the store and the vault. */
   remove?: boolean;
+  /** Have Wheelhouse generate a secret's value in this format instead: `value` stays empty, and the value goes to the
+   *  vault only, never back to the browser. */
+  generate?: SecretFormat;
 }
 
 /** One key a save touched. */
@@ -108,4 +114,6 @@ export interface SavedSetting {
   removed: boolean;
   version: number | null;
   fingerprint: string | null;
+  /** Whether Wheelhouse generated the secret's value. */
+  generated?: boolean;
 }

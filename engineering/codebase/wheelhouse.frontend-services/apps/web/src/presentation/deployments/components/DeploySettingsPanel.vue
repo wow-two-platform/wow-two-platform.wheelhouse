@@ -26,6 +26,7 @@ import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 
 import { useSettingSaver } from "@/application/settings";
 import { DeploySettingsRules } from "@/domain/deployments";
+import { SettingTypes } from "@/domain/settings";
 
 import DeploySettingField from "./DeploySettingField.vue";
 
@@ -34,7 +35,8 @@ import DeploySettingField from "./DeploySettingField.vue";
  * secret shown as set in the vault, each editable on click — then the optional keys of a first deploy, closed, and what
  * the render derives on its own. Each field saves as soon as it is confirmed — secrets to the vault as a new version,
  * the rest to the store — and shows saving, saved or why it failed, so what the owner gave survives closing the dialog;
- * a required key without a saved value still holds the deploy. Secrets never come back to the browser.
+ * a required key without a saved value still holds the deploy. A text secret can be generated on the server instead.
+ * Secrets never come back to the browser.
  */
 defineOptions({ name: "DeploySettingsPanel" });
 const props = withDefaults(defineProps<DeploySettingsPanelProps>(), { isDisabled: false });
@@ -105,6 +107,14 @@ async function save(item: PromptedSetting, value: string, confirmPlain: boolean)
   if (editing.value === item.key) editing.value = null;
 }
 
+/** Has Wheelhouse generate a secret's value into the vault; once saved, it counts as given. @internal */
+async function generate(item: PromptedSetting): Promise<void> {
+  const result = await saver.save([SettingTypes.generated(item.key)]);
+  if (!result.ok) return;
+  entered.value = { ...entered.value, [item.key]: "saved" };
+  if (editing.value === item.key) editing.value = null;
+}
+
 /** Opens a set value for editing and puts the cursor in its field. @internal */
 function edit(key: string, event: MouseEvent): void {
   editing.value = key;
@@ -152,6 +162,7 @@ function edit(key: string, event: MouseEvent): void {
           :can-choose-vault="!item.declaredSecret"
           :is-disabled="props.isDisabled"
           @save="(value: string, confirmPlain: boolean) => save(item, value, confirmPlain)"
+          @generate="generate(item)"
           @update:secret="(value: boolean) => setSecret(item.key, value)"
         />
       </div>
@@ -171,6 +182,7 @@ function edit(key: string, event: MouseEvent): void {
               :save="saver.fields[item.key] ?? null"
               :is-disabled="props.isDisabled"
               @save="(value: string, confirmPlain: boolean) => save(item, value, confirmPlain)"
+          @generate="generate(item)"
             />
             <div class="flex justify-end">
               <Button type="button" size="sm" variant="outline" tone="neutral" @click="editing = null">Done</Button>
@@ -211,6 +223,7 @@ function edit(key: string, event: MouseEvent): void {
           :can-choose-vault="!item.declaredSecret"
           :is-disabled="props.isDisabled"
           @save="(value: string, confirmPlain: boolean) => save(item, value, confirmPlain)"
+          @generate="generate(item)"
           @update:secret="(value: boolean) => setSecret(item.key, value)"
         />
       </div>

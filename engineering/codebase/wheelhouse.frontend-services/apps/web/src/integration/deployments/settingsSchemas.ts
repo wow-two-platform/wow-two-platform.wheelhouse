@@ -65,6 +65,7 @@ export const DeploySettingsSavedSchema = z.object({
         removed: z.boolean(),
         version: nullable(z.number().int()),
         fingerprint: nullable(z.string()),
+        generated: z.boolean().optional(),
       }),
     )
     .default([]),

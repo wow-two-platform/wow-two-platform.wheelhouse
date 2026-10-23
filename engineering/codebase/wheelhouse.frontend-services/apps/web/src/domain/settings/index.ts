@@ -16,6 +16,7 @@ export type {
   DeploySettingsVault,
   PendingApply,
   SavedSetting,
+  SecretFormat,
   SecretMeta,
   SettingType,
 } from "../deployments/models/DeploySettings";
