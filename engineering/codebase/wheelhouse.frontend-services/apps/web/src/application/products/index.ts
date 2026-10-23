@@ -89,9 +89,11 @@ export function useProducts() {
       },
     ],
   });
+  // A refresh also brings the product's approved services up to its repositories' deploy.yml, so the release sets
+  // and the settings each release takes are read again too.
   const refreshIdentity = useAppMutation({
     mutationFn: (slug: string, { signal }) => productsApi.refreshIdentity(slug, signal),
-    invalidates: () => [ProductKeys.list],
+    invalidates: () => [ProductKeys.list, DeploymentKeys.releases, DeploymentKeys.settingsAll],
     meta: { suppressGlobalError: true },
   });
   const create = useAppMutation({

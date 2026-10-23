@@ -244,6 +244,51 @@ class ArtifactTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'approved repository'):
                 artifacts.prepare(self.root, 'foreverpin-gh-123', transport.import_bundle)
 
+    def services(self, images):
+        """Repacks the release with these service images, each pinned to a digest."""
+        self.manifest['images'] = {service: image + '@sha256:' + 'a' * 64 for service, image in images.items()}
+        compose = {'services': {name: {'image': image, 'platform': 'linux/amd64', 'healthcheck': {'test': ['CMD', 'true']}}
+                                for name, image in self.manifest['images'].items()}}
+        self.compose_bytes = json.dumps(compose).encode()
+        self.manifest['composeSha256'] = hashlib.sha256(self.compose_bytes).hexdigest()
+        self.manifest['requiredConfiguration'] = {name: [] for name in images}
+        self.pack()
+
+    def test_a_service_the_release_adds_in_the_repositorys_own_namespace_validates(self):
+        # deploy.yml gained `worker` after the catalog approved management and redirect.
+        self.services({**dict(self.source.images), 'worker': 'ghcr.io/sulton-max/10x-venture-forever-pin/worker'})
+        with patch.object(artifacts, 'fetch', side_effect=self.fetch):
+            bundle = artifacts.prepare(self.root, 'foreverpin-gh-123', transport.import_bundle)
+        self.assertEqual({'management', 'redirect', 'worker'}, set(runner.validate_bundle(bundle)['images']))
+
+    def test_a_release_without_an_approved_service_validates(self):
+        # An older release, or one whose deploy.yml removed a service: it is compared with its own services.
+        self.services({'management': dict(self.source.images)['management']})
+        with patch.object(artifacts, 'fetch', side_effect=self.fetch):
+            bundle = artifacts.prepare(self.root, 'foreverpin-gh-123', transport.import_bundle)
+        self.assertEqual({'management'}, set(runner.validate_bundle(bundle)['images']))
+
+    def test_a_new_service_outside_the_repositorys_namespace_is_refused(self):
+        for image in ('ghcr.io/other/10x-venture-forever-pin/worker', 'ghcr.io/sulton-max/another-repo/worker',
+                      'ghcr.io/sulton-max/10x-venture-forever-pin/redirect', 'docker.io/sulton-max/worker'):
+            self.services({**dict(self.source.images), 'worker': image})
+            with patch.object(artifacts, 'fetch', side_effect=self.fetch):
+                with self.assertRaisesRegex(ValueError, 'Image is outside the approved repository'):
+                    artifacts.prepare(self.root, 'foreverpin-gh-123', transport.import_bundle)
+            self.assertFalse((self.root / 'bundles/foreverpin-gh-123').exists())
+
+    def test_an_image_the_catalog_approved_for_a_service_validates_and_only_for_that_service(self):
+        self.source = replace(self.source, images=self.source.images + (('edge', 'ghcr.io/shared/edge-proxy'),))
+        self.services({**dict(self.source.images)})
+        with patch.object(artifacts, 'fetch', side_effect=self.fetch):
+            artifacts.prepare(self.root, 'foreverpin-gh-123', transport.import_bundle)
+        self.source = replace(self.source, images=self.source.images[:2])
+        self.release['assets'][0]['id'] = 124
+        self.services({**dict(self.source.images), 'worker': 'ghcr.io/shared/edge-proxy'})
+        with patch.object(artifacts, 'fetch', side_effect=self.fetch):
+            with self.assertRaisesRegex(ValueError, 'Image is outside the approved repository'):
+                artifacts.prepare(self.root, 'foreverpin-gh-124', transport.import_bundle)
+
     def test_imported_bundles_deploy_only_in_rehearsal(self):
         archive = self.root / 'release.tar.gz'
         archive.write_bytes(self.archive)

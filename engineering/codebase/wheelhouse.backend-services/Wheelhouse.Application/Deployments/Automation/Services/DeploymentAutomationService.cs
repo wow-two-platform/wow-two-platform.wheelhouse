@@ -33,7 +33,8 @@ public sealed partial class DeploymentAutomationService(
     DeploymentHistoryService history,
     ISender sender,
     TimeProvider time,
-    ILogger<DeploymentAutomationService> logger)
+    ILogger<DeploymentAutomationService> logger,
+    Products.Services.ProductReleaseSourcesService releaseSources)
 {
     /// <summary>Describes every product's automation choices and the queue.</summary>
     /// <param name="ct">A cancellation token.</param>
@@ -90,6 +91,9 @@ public sealed partial class DeploymentAutomationService(
         // Retention: the runner prunes this host's bundles daily and after each rollout, and each target daily, two a pass.
         if (await gateway.ReadAsync("retention", null, ct) is AppResult<JsonElement>.Failure)
             LogRetentionFailed(logger);
+        // The release watcher reads release sets the runner composes from each product's approved services, so they
+        // catch up with the repositories' deploy.yml first: a new service, or a repository's first descriptor.
+        await releaseSources.SyncAllAsync(ct);
         var productRows = await products.GetAllAsync(ct);
         var settings = (await store.GetSettingsAsync(ct)).ToDictionary(row => row.ProductId);
         var targetRows = await targets.GetAllAsync(ct);

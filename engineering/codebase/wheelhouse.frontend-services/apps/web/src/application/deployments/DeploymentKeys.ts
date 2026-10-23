@@ -19,6 +19,8 @@ export const DeploymentKeys = {
   /** A target's settings plan for one release; a save invalidates every release's. */
   settings: (target: string, release: string) => ["deployments", "settings", target, release] as const,
   settingsOf: (target: string) => ["deployments", "settings", target] as const,
+  /** Every target's settings plans: what a change of a product's approved services invalidates. */
+  settingsAll: ["deployments", "settings"] as const,
   /** Every history view (pages, calendar, measures, promotions, issues): what a finished rollout changes. */
   historyViews: ["deployments", "history", "view"] as const,
   historyPage: (filter: string, limit: number) => ["deployments", "history", "view", "page", filter, limit] as const,

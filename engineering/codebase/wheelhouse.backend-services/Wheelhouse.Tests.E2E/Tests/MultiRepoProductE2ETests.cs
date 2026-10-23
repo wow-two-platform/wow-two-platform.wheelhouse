@@ -2,6 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AwesomeAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Deployments.Automation.Services;
 using Wheelhouse.Tests.E2E.Harness;
 using WoW.Two.Sdk.Beta.Be.Testing.Web;
 
@@ -13,7 +16,9 @@ namespace Wheelhouse.Tests.E2E.Tests;
 /// derived from their own <c>deploy.yml</c>; a service two repositories declare refuses it. The entry's <c>replaces</c>
 /// retires the products it supersedes when nothing ever deployed to them. The product form takes further repositories,
 /// the descriptor read merges every repository's services and sites, and branch, commit and build reads name the
-/// repository. The runner composes the release sets; its own tests cover them.
+/// repository. The approved services follow each repository's <c>deploy.yml</c> after the import too: a refresh, the
+/// release catalog and the release watcher take a service a repository added and a repository's first descriptor. The
+/// runner composes the release sets; its own tests cover them.
 /// </summary>
 [Collection(WheelhouseCollection.Name)]
 public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBase(fixture)
@@ -106,6 +111,43 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
               motion: {}
         """;
 
+    /// <summary>Marketing's first deploy.yml: two services, one site.</summary>
+    private const string MarketingDescriptor =
+        """
+        descriptor: 2
+        product: ocharo
+        sites:
+          marketing: {}
+        services:
+          marketing:
+            build: { dockerfile: deployment/Dockerfile }
+            paths: [codebase/**]
+            health: /health
+            sites:
+              marketing: {}
+          blog:
+            build: { dockerfile: deployment/Dockerfile.blog }
+            paths: [codebase/**]
+            health: /health
+        """;
+
+    /// <summary>Two services Platform adds after the import; one names its own image.</summary>
+    private const string PlatformAdditions =
+        """
+
+          brand:
+            build: { dockerfile: deployment/Dockerfile.brand }
+            paths: [codebase/**]
+            health: /health
+          catalogue:
+            image: ghcr.io/ocharo-hq/catalogue-edge
+            build: { dockerfile: deployment/Dockerfile.catalogue }
+            paths: [codebase/**]
+            health: /health
+        """;
+
+    private const string Descriptor = "engineering/deployment/deploy.yml";
+
     private HttpClient ActionClient(string action)
     {
         var client = AdminClient;
@@ -130,6 +172,37 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
 
     private JsonElement Snapshot() =>
         JsonDocument.Parse(File.ReadAllText(Path.Combine(Fixture.InventoryRoot, "inventory.json"))).RootElement;
+
+    private static (string?, string?)[] Images(JsonElement repository) =>
+        [.. repository.GetProperty("release").GetProperty("images").EnumerateArray()
+            .Select(item => (item.GetProperty("service").GetString(), item.GetProperty("image").GetString()))];
+
+    private string?[] ExportedServices(int repository)
+    {
+        var exported = Snapshot().GetProperty("products").EnumerateArray().Single(item => item.GetProperty("slug").GetString() == "ocharo");
+        var release = repository == 0
+            ? exported.GetProperty("release")
+            : exported.GetProperty("components")[repository - 1].GetProperty("release");
+        return [.. release.GetProperty("images").EnumerateArray().Select(item => item.GetProperty("service").GetString())];
+    }
+
+    private async Task<JsonElement[]> ServiceChangesAsync() =>
+    [
+        .. (await DataAsync(await AdminClient.GetAsync("api/audit"))).EnumerateArray()
+            .Where(entry => entry.GetProperty("action").GetString() == "product.services"),
+    ];
+
+    /// <summary>Imports Ocharo with Marketing as its last repository, before Marketing has a deploy.yml.</summary>
+    private async Task ImportWithMarketingAsync()
+    {
+        PushRepositories();
+        Fixture.RepositoryFiles.Push(Hub, "catalog.yml", Catalog.Replace(Assets + "]", Assets + ", " + Marketing + "]"));
+        Fixture.RepositoryFiles.PushEmpty(Marketing);
+        (await ActionClient("catalog").PostJsonAsync("api/catalog/import", new { slugs = new[] { "ocharo" } })).EnsureSuccessStatusCode();
+    }
+
+    private async Task<HttpResponseMessage> RefreshAsync() =>
+        await ActionClient("refresh").PostAsync("api/products/ocharo/identity/refresh", null);
 
     private async Task CreateProductAsync(string slug, string repository)
     {
@@ -266,6 +339,81 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
 
         result.GetProperty("warnings").EnumerateArray().Select(item => item.GetProperty("message").GetString()).Should().Equal(
             "ocharo-hq/ocharo-platform@main has no engineering/deployment/deploy.yml yet; it serves the product's front door, so the product has no release sets until it has one and releases.");
+    }
+
+    [Fact]
+    public async Task Refresh_ShouldApproveWhatEachRepositorysDeployYmlNamesNow_WithoutAReimport()
+    {
+        await ImportWithMarketingAsync();
+        Fixture.RepositoryFiles.Push(Platform, Descriptor, PlatformDescriptor + PlatformAdditions);
+        Fixture.RepositoryFiles.Push(Marketing, Descriptor, MarketingDescriptor);
+
+        var response = await RefreshAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var repositories = (await DataAsync(response)).GetProperty("repositories").EnumerateArray().ToList();
+        Images(repositories[0]).Should().Equal(
+            ("desk", "ghcr.io/ocharo-hq/ocharo-platform/desk"), ("jobs", "ghcr.io/ocharo-hq/ocharo-platform/jobs"),
+            ("brand", "ghcr.io/ocharo-hq/ocharo-platform/brand"), ("catalogue", "ghcr.io/ocharo-hq/catalogue-edge"));
+        Images(repositories[3]).Should().Equal(
+            ("marketing", "ghcr.io/ocharo-hq/ocharo-marketing/marketing"), ("blog", "ghcr.io/ocharo-hq/ocharo-marketing/blog"));
+        repositories[3].GetProperty("release").GetProperty("asset").GetString().Should().Be("ocharo-release.tar.gz");
+
+        // The runner's snapshot carries them, so its release sets take Marketing and Platform's new services.
+        ExportedServices(0).Should().Equal("desk", "jobs", "brand", "catalogue");
+        ExportedServices(3).Should().Equal("marketing", "blog");
+        // The environment form's services follow: Marketing deploys something now.
+        (await DataAsync(await AdminClient.GetAsync("api/products/ocharo/descriptor"))).GetProperty("services").EnumerateArray()
+            .Select(item => item.GetProperty("service").GetString())
+            .Should().Equal("desk", "jobs", "brand", "catalogue", "studio", "motion", "marketing", "blog");
+        var change = (await ServiceChangesAsync()).Should().ContainSingle().Subject;
+        (change.GetProperty("subject").GetString(), change.GetProperty("detail").GetString())
+            .Should().Be(("ocharo", "platform +brand +catalogue; marketing +marketing +blog"));
+
+        // Nothing new reads as no change; a removed service leaves.
+        (await RefreshAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ServiceChangesAsync()).Should().ContainSingle();
+        Fixture.RepositoryFiles.Push(Platform, Descriptor, PlatformDescriptor.Replace("    dependsOn: [desk]", "").Replace("  jobs:\n", "  render:\n"));
+        (await RefreshAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
+        ExportedServices(0).Should().Equal("desk", "render");
+        (await ServiceChangesAsync())[0].GetProperty("detail").GetString().Should().Be("platform +render -jobs -brand -catalogue");
+    }
+
+    [Fact]
+    public async Task ReleaseCatalogAndWatcher_ShouldTakeANewServiceBeforeTheRunnerComposesSets()
+    {
+        await ImportWithMarketingAsync();
+        Fixture.RepositoryFiles.Push(Marketing, Descriptor, MarketingDescriptor);
+
+        (await AdminClient.GetAsync("api/deployments/releases")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        ExportedServices(3).Should().Equal("marketing", "blog");
+        Fixture.RepositoryFiles.Push(Studio, Descriptor, StudioDescriptor.Replace("  studio:\n    build", "  gallery:\n    build"));
+        await using (var scope = Fixture.Host.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<DeploymentAutomationService>().RunOnceAsync(CancellationToken.None);
+        ExportedServices(1).Should().Equal("gallery");
+        (await ServiceChangesAsync()).Select(entry => (entry.GetProperty("actor").GetString(), entry.GetProperty("detail").GetString()))
+            .Should().Equal(("automation", "studio +gallery -studio"), (TestAuthExtensions.AdminLogin, "marketing +marketing +blog"));
+    }
+
+    [Fact]
+    public async Task Refresh_ShouldKeepARepositorysServices_WhenItsDescriptorIsUnusableOrTakesAnotherRepositorysService()
+    {
+        await ImportWithMarketingAsync();
+        Fixture.RepositoryFiles.Push(Studio, Descriptor, RepositoryFileStatus.Unreadable);
+        Fixture.RepositoryFiles.Push(Platform, Descriptor, PlatformDescriptor + PlatformAdditions);
+
+        (await RefreshAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        ExportedServices(0).Should().Equal("desk", "jobs", "brand", "catalogue");
+        ExportedServices(1).Should().Equal("studio");
+        ExportedServices(3).Should().BeEmpty();
+
+        // Marketing naming Platform's service would put one service in two repositories: the product stays as it was.
+        Fixture.RepositoryFiles.Push(Marketing, Descriptor, MarketingDescriptor.Replace("  blog:", "  brand:"));
+        (await RefreshAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
+        ExportedServices(3).Should().BeEmpty();
+        (await ServiceChangesAsync()).Should().ContainSingle();
     }
 
     [Fact]

@@ -22,6 +22,7 @@ const Labels: Record<string, string> = {
   'product.status': 'Changed a product’s status',
   'product.workspace': 'Moved a product to a workspace',
   'product.refresh': 'Read a product’s manifest again',
+  'product.services': 'Followed a product’s deploy.yml services',
   'service.status': 'Changed a service’s status',
   'target.create': 'Added an environment',
   'target.update': 'Updated an environment',

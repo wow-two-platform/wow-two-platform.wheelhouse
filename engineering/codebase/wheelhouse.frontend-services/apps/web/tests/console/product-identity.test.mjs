@@ -279,6 +279,8 @@ test("a refresh updates the product list: the console shows the repository's ide
     await products.reload();
     assert.equal(products.products.value[0].name, "ForeverPin");
     assert.equal(identity.isIdentityReadOnly(products.products.value[0]), false);
+    identity.queryClient.setQueryData(["deployments", "releases"], []);
+    identity.queryClient.setQueryData(["deployments", "settings", "foreverpin-dev", "set-1"], {});
 
     const result = await products.refreshIdentity("foreverpin");
     assert.equal(result.ok, true);
@@ -289,6 +291,13 @@ test("a refresh updates the product list: the console shows the repository's ide
     assert.equal(products.products.value[0].name, "Forever Pin");
     assert.equal(identity.isIdentityReadOnly(products.products.value[0]), true);
     assert.deepEqual(requests, ["GET /api/products", "POST /api/products/foreverpin/identity/refresh", "GET /api/products"]);
+    // The refresh brought the approved services up to deploy.yml, so release sets and settings plans are read again.
+    assert.deepEqual(
+      [["deployments", "releases"], ["deployments", "settings", "foreverpin-dev", "set-1"]].map(
+        (key) => identity.queryClient.getQueryState(key)?.isInvalidated,
+      ),
+      [true, true],
+    );
   } finally {
     app.unmount();
   }

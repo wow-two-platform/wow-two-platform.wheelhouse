@@ -62,12 +62,42 @@ public sealed class CatalogReleaseServiceTests
             .Should().Be("owner/gone@main could not be read from GitHub, so the product has no images yet.");
     }
 
+    [Fact]
+    public async Task DeriveAll_ShouldSayWhichImagesADescriptorNamed_AtTheBranchAndFreshnessAsked()
+    {
+        var files = new Files
+        {
+            ["ocharo-hq/ocharo-platform"] = Descriptor + "\n  brand:\n    image: ghcr.io/ocharo-hq/brand-edge\n    health: /health",
+            ["ocharo-hq/ocharo-marketing"] = null,
+        };
+
+        var derived = await new CatalogReleaseService(files).DeriveAllAsync(
+            "ocharo", ["ocharo-hq/ocharo-platform", "ocharo-hq/ocharo-marketing", "ocharo-hq/ocharo-unread"], "trunk", fresh: false,
+            CancellationToken.None);
+
+        derived[0].Derived.FromDescriptor.Should().BeTrue();
+        derived[0].Derived.Release.Images.Select(image => (image.Service, image.Image)).Should().Equal(
+            ("desk", "ghcr.io/ocharo-hq/ocharo-platform/desk"), ("brand", "ghcr.io/ocharo-hq/brand-edge"));
+        derived.Skip(1).Select(item => item.Derived.FromDescriptor).Should().Equal(false, false);
+        derived[1].Derived.Note.Should().StartWith("ocharo-hq/ocharo-marketing@trunk has no ");
+        files.Heads.Should().Equal(("trunk", false), ("trunk", false), ("trunk", false));
+        (await new CatalogReleaseService(files).DeriveAllAsync("ocharo", ["ocharo-hq/ocharo-platform"], CancellationToken.None))
+            .Should().ContainSingle();
+        files.Heads[^1].Should().Be(("main", true), "an import reads the release branch's head now");
+    }
+
     /// <summary>Each listed repository's <c>deploy.yml</c> at one commit; null for a branch without one. An unlisted
     /// repository's branch cannot be read.</summary>
     private sealed class Files : Dictionary<string, string?>, IRepositoryFileSource
     {
-        public Task<string?> HeadAsync(string repository, string branch, bool fresh, CancellationToken ct) =>
-            Task.FromResult(ContainsKey(repository) ? new string('a', 40) : null);
+        /// <summary>Every head read, as the branch and whether it was asked for now.</summary>
+        public List<(string Branch, bool Fresh)> Heads { get; } = [];
+
+        public Task<string?> HeadAsync(string repository, string branch, bool fresh, CancellationToken ct)
+        {
+            Heads.Add((branch, fresh));
+            return Task.FromResult(ContainsKey(repository) ? new string('a', 40) : null);
+        }
 
         public Task<RepositoryFileRead> ReadAsync(string repository, string commit, string path, int maxBytes, CancellationToken ct) =>
             Task.FromResult(this[repository] is { } text

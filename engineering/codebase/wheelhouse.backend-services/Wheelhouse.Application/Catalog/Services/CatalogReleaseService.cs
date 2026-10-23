@@ -14,7 +14,8 @@ namespace Wheelhouse.Application.Catalog.Services;
 /// the descriptor cannot be read or parsed, the repository gets no images and the note says what follows: a product's
 /// only repository leaves the product without images; a further repository of a product built from several adds no
 /// services until it has a usable descriptor and releases, since the product's release sets leave it out until then;
-/// and the primary one, which serves the front door, holds back every release set (decision 70).</summary>
+/// and the primary one, which serves the front door, holds back every release set (decision 70). The same derivation runs
+/// again whenever a product's approved services follow its repositories (<c>ProductReleaseSourcesService</c>).</summary>
 public sealed class CatalogReleaseService(IRepositoryFileSource files)
 {
     /// <summary>Derives a product's release source.</summary>
@@ -23,7 +24,7 @@ public sealed class CatalogReleaseService(IRepositoryFileSource files)
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The release source and, when its images are missing, why.</returns>
     public Task<DerivedRelease> DeriveAsync(string product, string repository, CancellationToken ct) =>
-        DeriveAsync(product, repository, Role.Only, ct);
+        DeriveAsync(product, repository, Role.Only, CatalogConstants.ReleaseBranch, fresh: true, ct);
 
     /// <summary>Derives the release source of every repository of a product, primary first. Each repository of a
     /// product built from several (decision 70) publishes the same asset, since its <c>deploy.yml</c> names the
@@ -32,23 +33,35 @@ public sealed class CatalogReleaseService(IRepositoryFileSource files)
     /// <param name="repositories">The repositories, as <c>owner/name</c>, primary first.</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>Each repository's release source and note, in order.</returns>
+    public Task<IReadOnlyList<(string Repository, DerivedRelease Derived)>> DeriveAllAsync(
+        string product, IReadOnlyList<string> repositories, CancellationToken ct) =>
+        DeriveAllAsync(product, repositories, CatalogConstants.ReleaseBranch, fresh: true, ct);
+
+    /// <summary>Derives the release source of every repository of a product at a branch's head, primary first.</summary>
+    /// <param name="product">The product's slug.</param>
+    /// <param name="repositories">The repositories, as <c>owner/name</c>, primary first.</param>
+    /// <param name="branch">The branch whose head's <c>deploy.yml</c> is read.</param>
+    /// <param name="fresh">Whether to ask GitHub for the head now rather than take one read a few minutes ago.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>Each repository's release source and note, in order.</returns>
     public async Task<IReadOnlyList<(string Repository, DerivedRelease Derived)>> DeriveAllAsync(
-        string product, IReadOnlyList<string> repositories, CancellationToken ct)
+        string product, IReadOnlyList<string> repositories, string branch, bool fresh, CancellationToken ct)
     {
         var result = new List<(string, DerivedRelease)>();
         for (var index = 0; index < repositories.Count; index++)
         {
             var role = repositories.Count == 1 ? Role.Only : index == 0 ? Role.Primary : Role.Further;
-            result.Add((repositories[index], await DeriveAsync(product, repositories[index], role, ct)));
+            result.Add((repositories[index], await DeriveAsync(product, repositories[index], role, branch, fresh, ct)));
         }
 
         return result;
     }
 
-    private async Task<DerivedRelease> DeriveAsync(string product, string repository, Role role, CancellationToken ct)
+    private async Task<DerivedRelease> DeriveAsync(
+        string product, string repository, Role role, string branch, bool fresh, CancellationToken ct)
     {
-        var where = $"{repository}@{CatalogConstants.ReleaseBranch}";
-        var commit = await files.HeadAsync(repository, CatalogConstants.ReleaseBranch, fresh: true, ct);
+        var where = $"{repository}@{branch}";
+        var commit = await files.HeadAsync(repository, branch, fresh, ct);
         if (commit is null)
             return Imageless(product, $"{where} could not be read from GitHub{Outcome(role, "it can be read")}");
 
@@ -102,7 +115,7 @@ public sealed class CatalogReleaseService(IRepositoryFileSource files)
         _ => $", so it adds no services until {until} and releases.",
     };
 
-    private static DerivedRelease Imageless(string product, string note) => new(Release(product, []), note);
+    private static DerivedRelease Imageless(string product, string note) => new(Release(product, []), note, FromDescriptor: false);
 
     /// <summary>A repository's place in its product: its only one, or the primary or a further one of several.</summary>
     private enum Role

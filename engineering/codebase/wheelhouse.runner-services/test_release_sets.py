@@ -104,12 +104,12 @@ class GitHub:
                                            'workflow_run': {'head_branch': 'main'}})
 
     def fetch(self, url, limit=artifacts.MAX_ARCHIVE, accept=None):
-        for repository in (APP, STUDIO):
+        for repository in self.releases:
             api = artifacts.API + repository
             if url.startswith(api + '/releases?'):
                 return json.dumps(self.releases[repository]).encode()
             if url.startswith(api + '/actions/artifacts?'):
-                return json.dumps({'artifacts': self.builds[repository]}).encode()
+                return json.dumps({'artifacts': self.builds.get(repository, [])}).encode()
             if url.startswith(api + '/actions/artifacts/') and url.endswith('/zip'):
                 return self.zips[int(url.split('/')[-2])]
             if url.startswith(api + '/commits/'):
@@ -401,6 +401,61 @@ class ReleaseSetTests(unittest.TestCase):
         self.assertEqual(('app-v0.1.1_studio-v0.2.0', release_sets.identifier('pilot', ['pilot-gh-12', 'pilot-gh-21'])),
                          (newest['release'], newest['id']))
         self.assertEqual([{'name': 'marketing', 'repository': 'owner/pilot-marketing'}], newest['notYet'])
+
+    def test_a_repository_release_that_adds_a_service_composes_before_and_after_the_catalog_approves_it(self):
+        older = artifacts.available(self.root)[0]
+        jobs = digested([('api', 'ghcr.io/owner/pilot-app/api'), ('web', 'ghcr.io/owner/pilot-app/web'),
+                         ('jobs', 'ghcr.io/owner/pilot-app/jobs')])
+        self.github.release(APP, 'v0.1.2', '2026-10-05T00:00:00Z', 13, *bundle(
+            'v0.1.2', jobs, '7' * 40, sites={'web': {'app': {'port': 8080, 'path': '/', 'exposure': 'public'}}}))
+        newest = artifacts.available(self.root)[0]
+        self.assertEqual('app-v0.1.2_studio-v0.2.0', newest['release'])
+        manifest = runner.validate_bundle(artifacts.prepare(self.root, newest['id'], transport.import_bundle))
+        self.assertEqual({'api', 'web', 'jobs', 'studio'}, set(manifest['images']))
+        self.assertEqual(['api', 'jobs', 'web'], manifest['components'][0]['services'])
+        # Once the control plane has read the new deploy.yml, the older set, without the service, still deploys.
+        approved = catalog.Release('pilot-release.tar.gz', product().release.images
+                                   + (('jobs', 'ghcr.io/owner/pilot-app/jobs'),), workflow='publish-docker-image.yml')
+        grown = catalog.Product('pilot', 'Pilot', '', APP, release=approved, components=product().components)
+        with patch.object(catalog, 'PRODUCTS', (grown,)):
+            self.assertEqual('app-v0.1.1_studio-v0.2.0', runner.validate_bundle(
+                artifacts.prepare(self.root, older['id'], transport.import_bundle))['release'])
+            # A repository may not take another's service, whatever namespace its image is in.
+            clash = digested([('studio', 'ghcr.io/owner/pilot-studio/studio'), ('jobs', 'ghcr.io/owner/pilot-studio/jobs')])
+            self.github.release(STUDIO, 'v0.2.1', '2026-10-06T00:00:00Z', 22, *bundle('v0.2.1', clash, '8' * 40))
+            with self.assertRaisesRegex(ValueError, 'Service jobs is in both owner/pilot-app and owner/pilot-studio'):
+                artifacts.prepare(self.root, artifacts.available(self.root)[0]['id'], transport.import_bundle)
+
+    def test_a_repository_that_gains_its_first_deploy_yml_joins_the_sets_once_its_services_are_approved(self):
+        marketing = 'owner/pilot-marketing'
+        self.github.releases[marketing] = []
+        site = {'marketing': {'marketing': {'port': 8080, 'path': '/', 'exposure': 'public'}}}
+        images = digested([('marketing', 'ghcr.io/owner/pilot-marketing/marketing'),
+                           ('blog', 'ghcr.io/owner/pilot-marketing/blog')])
+        self.github.release(marketing, 'v0.1.0', '2026-10-05T00:00:00Z', 31, *bundle('v0.1.0', images, '9' * 40,
+                                                                                       sites=site))
+
+        def product_with(marketing_images):
+            return catalog.Product('pilot', 'Pilot', '', APP, release=product().release,
+                                   components=product().components + (catalog.Component(marketing, catalog.Release(
+                                       'pilot-release.tar.gz', marketing_images, workflow='publish-docker-image.yml')),))
+        # Imported before it had a deploy.yml: no services approved, so its release waits outside the sets.
+        with patch.object(catalog, 'PRODUCTS', (product_with(()),)):
+            before = artifacts.available(self.root)[0]
+        self.assertEqual(('app-v0.1.1_studio-v0.2.0', ['marketing']),
+                         (before['release'], [item['name'] for item in before['notYet']]))
+        # The control plane read its deploy.yml: the newest set holds every repository and deploys.
+        approved = (('marketing', 'ghcr.io/owner/pilot-marketing/marketing'), ('blog', 'ghcr.io/owner/pilot-marketing/blog'))
+        with patch.object(catalog, 'PRODUCTS', (product_with(approved),)):
+            listed = artifacts.available(self.root)
+            newest = listed[0]
+            self.assertEqual(('app-v0.1.1_studio-v0.2.0_marketing-v0.1.0', []), (newest['release'], newest['notYet']))
+            self.assertEqual(newest['id'], artifacts.latest()[0]['release']['id'])
+            manifest = runner.validate_bundle(artifacts.prepare(self.root, newest['id'], transport.import_bundle))
+            self.assertEqual({'api', 'web', 'studio', 'marketing', 'blog'}, set(manifest['images']))
+            # The set dev ran before marketing joined still promotes.
+            self.assertEqual('app-v0.1.1_studio-v0.2.0', runner.validate_bundle(
+                artifacts.prepare(self.root, before['id'], transport.import_bundle))['release'])
 
     def test_a_set_composes_from_each_repositorys_checked_release_and_deploys_as_one_bundle(self):
         newest = artifacts.available(self.root)[0]

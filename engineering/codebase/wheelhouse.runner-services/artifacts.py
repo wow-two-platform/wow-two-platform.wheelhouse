@@ -59,7 +59,9 @@ def sources():
     for product in catalog.products():
         several = bool(product.components)
         for repository, release in product.repositories():
-            # A further repository whose deploy.yml names no service yet deploys nothing, so it holds up no set.
+            # A further repository whose deploy.yml names no service yet deploys nothing, so it holds up no set. The control
+            # plane derives each repository's services from its deploy.yml again as they change, so one that gains its
+            # first deploy.yml joins the sets once it has been read.
             if release is not None and (not several or release.images):
                 result.append(Source(product.slug, repository, release.asset, release.images,
                                      workflow=release.workflow, default_branch=product.default_branch,
@@ -869,6 +871,11 @@ def prepare_artifact(root, artifact, source, importer):
     return bundle
 
 
+def own_image(repository, service):
+    """The image the shared publish workflow pushes a repository's service to: the repository's own GHCR namespace."""
+    return "ghcr.io/" + repository.lower() + "/" + service
+
+
 def validate_source(bundle, source, artifact):
     manifest = validate_bundle(bundle)
     # Every repository of a product built from several names the product's slug in its deploy.yml (decision 70).
@@ -876,10 +883,13 @@ def validate_source(bundle, source, artifact):
             source.repository + "'s release names product " + str(manifest["product"]) + "; its deploy.yml must name "
             + source.product)
     require(manifest["product"] == source.product and manifest["release"] == artifact["release"], "Release identity mismatch")
-    expected = dict(source.images)
-    require(manifest["images"].keys() == expected.keys(), "Unexpected release service")
+    # A release's services are the ones its own deploy.yml named: a newer release may add one the catalog has not
+    # approved yet, and an older one, or one that removed a service, lacks some it approved. Each image must still be
+    # the service's own in the repository's GHCR namespace, or the one the catalog approved for that service.
+    approved = dict(source.images)
     for service, image in manifest["images"].items():
-        require(image.split("@")[0] == expected[service], "Image is outside the approved repository")
+        require(image.split("@")[0] in (approved.get(service), own_image(source.repository, service)),
+                "Image is outside the approved repository")
     if artifact.get("kind") == "candidate":
         # The artifact's name records the commit the workflow built; the bundle must agree.
         require(manifest.get("kind") == "candidate" and manifest["sourceCommit"] == artifact["commit"],

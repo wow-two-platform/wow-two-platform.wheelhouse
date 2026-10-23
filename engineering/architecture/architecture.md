@@ -255,6 +255,24 @@ stay in each target's journal. Selection downloads and validates the archive, it
 image names before any target changes. Wheelhouse dispatches a product's build workflow only for a commit that has
 no build; it never pushes, tags or builds on a host.
 
+A product's approved services follow its repositories' `deploy.yml`. The catalog import derives each repository's
+service-to-image mappings from the descriptor at its branch head (a service's own `image`, else
+`ghcr.io/<owner>/<repo>/<service>`), and `ProductReleaseSourcesService` derives them again on a refresh from the
+repository (heads read now), on each automation pass (the release watcher), when the release catalog is listed and
+before the runner prepares a release for a target (settings, check, deploy) — heads from the reader's 5-minute cache,
+each commit's descriptor read once. So a service a repository adds, and a repository whose first `deploy.yml` came
+after the import, join the product's release sets without a re-import, and a removed service leaves. A repository
+whose descriptor cannot be read or parsed keeps what it had, and so does a product whose repositories would then
+declare one service twice. A change is saved, exported to the runner's snapshot and audited as `product.services`,
+its detail naming each repository's added (`+`), removed (`-`) and re-imaged (`~`) services.
+
+The runner checks a release against its own services, not the approved list (`artifacts.py` `validate_source`): every
+image must be the service's own in its repository's GHCR namespace, `ghcr.io/<owner>/<repo>/<service>`, or the image
+approved for that service; anything else is refused ("Image is outside the approved repository"). A release that adds a
+service therefore deploys before the approval catches up, and an older release, or one that removed a service, still
+validates — rollback and older release sets keep working. Two repositories declaring one service are still refused when
+the set is composed.
+
 Images live in GitHub Container Registry, one repository per service; the digest is the deployment identity.
 Keep every deployed digest and declared rollback dependency, and at least the 10 newest releases; candidate
 bundle artifacts expire after 14 days. Deleting a release image needs a cross-host reference inventory first.
@@ -412,7 +430,8 @@ field of the first problem.
   key of its `engineering/deployment/deploy.yml` at `main`'s head:
   the service's own `image`, else `ghcr.io/{owner/repo, lowercase}/{service}`, the shared publish workflow's
   convention (`release.py` `repository_of`). Without a readable, valid descriptor the product gets no images and the
-  warning says why; a descriptor naming another `product` keeps its images with a warning.
+  warning says why; a descriptor naming another `product` keeps its images with a warning. The images then follow the
+  descriptor without a re-import ([artifacts](#artifacts-and-registry)).
 
 ### Product identity
 
@@ -427,7 +446,8 @@ the manifest; the repository is where identity is edited.
   at that commit. The head comes from `GitHubRepositoryReader`, which keeps it 5 minutes, so GitHub is asked at most
   that often per branch; a commit's file verdict is kept per commit.
 - `POST /api/products/{slug}/identity/refresh` (action header `refresh`, audited as `product.refresh`) reads the head
-  again now and answers with the product; it answers 503 when GitHub cannot serve the branch, and the row stays.
+  again now, brings the product's approved services up to its repositories' `deploy.yml`
+  ([artifacts](#artifacts-and-registry)) and answers with the product; it answers 503 when GitHub cannot serve the branch, and the row stays.
 - A newer commit with no manifest drops the row; the product reads as its own row again. A row also goes when the
   product's repository or branch changes, and with the product.
 - A product of several repositories always reads as its own row (its catalog entry): each repository's manifest

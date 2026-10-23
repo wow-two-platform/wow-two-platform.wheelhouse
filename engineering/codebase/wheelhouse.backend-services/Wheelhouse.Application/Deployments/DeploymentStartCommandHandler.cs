@@ -18,15 +18,19 @@ namespace Wheelhouse.Application.Deployments;
 /// validation — is kept as an intent, so the history lists it as a deploy that changed nothing. Before submitting, a
 /// target's settings are planned: a required key no layer sets, on a service without a host file, refuses the deploy,
 /// and the environment's stored settings and vault secrets go to the runner for the target to render. A submitted deploy
-/// records what it rendered, by fingerprint, and which keys changed, so a failure can point at them.</summary>
+/// records what it rendered, by fingerprint, and which keys changed, so a failure can point at them. The target's
+/// product's approved services catch up with its repositories' <c>deploy.yml</c> before the runner checks the release
+/// against them.</summary>
 public sealed class DeploymentStartCommandHandler(
     IDeploymentGateway gateway, ITargetsRepository targets, IProductsRepository products, DeployFreezeService freezes,
-    IDeploymentAutomationStore intents, TimeProvider time, DeploymentSettingsService settings)
+    IDeploymentAutomationStore intents, TimeProvider time, DeploymentSettingsService settings,
+    Products.Services.ProductReleaseSourcesService releaseSources)
     : ICommandHandler<DeploymentStartCommand, AppResult<JsonElement>>
 {
     /// <inheritdoc />
     public async ValueTask<AppResult<JsonElement>> HandleAsync(DeploymentStartCommand request, CancellationToken cancellationToken)
     {
+        await releaseSources.SyncTargetAsync(request.Target, cancellationToken);
         var target = await targets.GetBySlugAsync(request.Target, cancellationToken);
         if (target is not null && await freezes.CoveringAsync(target.ProductId, target.Environment, cancellationToken) is { } freeze)
         {
