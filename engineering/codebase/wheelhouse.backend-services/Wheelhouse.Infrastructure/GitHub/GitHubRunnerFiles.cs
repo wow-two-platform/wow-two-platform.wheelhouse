@@ -13,6 +13,9 @@ public static class GitHubRunnerFiles
     /// <summary>Holds the refused calls the runner notes, per owner, for the Issues panel.</summary>
     public const string Access = "access.json";
 
+    /// <summary>Holds the image packages the runner found no credential could read, for the Issues panel.</summary>
+    public const string Packages = "packages.json";
+
     /// <summary>Gets the tokens file under a runner root.</summary>
     /// <param name="root">The runner root.</param>
     public static string TokensPath(string root) => Path.Combine(root, Folder, Tokens);
@@ -20,4 +23,8 @@ public static class GitHubRunnerFiles
     /// <summary>Gets the access-notes file under a runner root.</summary>
     /// <param name="root">The runner root.</param>
     public static string AccessPath(string root) => Path.Combine(root, Folder, Access);
+
+    /// <summary>Gets the unreadable-packages file under a runner root; the runner's <c>registry.py</c> writes it.</summary>
+    /// <param name="root">The runner root.</param>
+    public static string PackagesPath(string root) => Path.Combine(root, Folder, Packages);
 }

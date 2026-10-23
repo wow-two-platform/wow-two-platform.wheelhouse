@@ -38,6 +38,22 @@ public sealed class GitHubCredentialsTests : IDisposable
     }
 
     [Fact]
+    public async Task ForOwnerAsync_ShouldReadTheTokenFileTheOwnerPlacedUnderTheRunnerRoot_WhenNoneIsConfigured()
+    {
+        _rig.Settings.GitHubTokenFile = "";
+        (await _rig.Credentials.ForOwnerAsync("wow-two", CancellationToken.None)).Should().BeNull();
+        _rig.Settings.TokenFile().Should().BeEmpty("a missing default never reaches the runner");
+
+        var placed = Path.Combine(_rig.Root, "github-token", "token");
+        Directory.CreateDirectory(Path.GetDirectoryName(placed)!);
+        File.WriteAllText(placed, "ghp_PLACED\n");
+
+        (await _rig.Credentials.ForOwnerAsync("wow-two", CancellationToken.None))
+            .Should().Be(new GitHubCredential("ghp_PLACED", GitHubCredentialSource.TokenFile));
+        _rig.Settings.TokenFile().Should().Be(placed);
+    }
+
+    [Fact]
     public async Task ForOwnerAsync_ShouldGiveNone_WithoutTheAppOrAUsableTokenFile()
     {
         File.WriteAllText(_rig.Settings.GitHubTokenFile, "two words\n");

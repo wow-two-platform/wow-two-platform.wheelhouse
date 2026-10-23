@@ -1,6 +1,6 @@
 # Wheelhouse architecture
 
-*Last updated: 2026-10-21*
+*Last updated: 2026-10-24*
 
 ## Runtime
 
@@ -209,15 +209,36 @@ own targets keep their hand-placed files), into `<root>/config/<product>-<enviro
 
 ## Registry sign-in
 
-Products hosts keep no registry token. For a release with GHCR images, the control host picks the first credential GHCR
-accepts for pulling all of them — the GitHub App's installation token for their owner, else the token file
-(`Deployment:GitHubTokenFile`) — by asking GHCR's token service first (`registry.py`). The chosen one travels on the
-submission's SSH stdin; the target signs in only when an image is missing, with `docker --config <temporary folder>
-login --password-stdin` (the folder in `/dev/shm` where the host offers it), pulls those images, signs out and deletes
-the folder, whatever happened. Compose then pulls with `--policy missing`: digests make a present image exact. The job
-keeps `registry` (`credential`: `installation` | `file` | null, and the ones GHCR `refused`), never a token.
-`transport.py registry --root <runner root> [--product <slug>]` asks GHCR, per product and credential, whether it
-grants each image repository a pull, and prints statuses only.
+Products hosts keep no registry token. For a release with GHCR images, the control host picks the first credential that
+can read every one of them — the GitHub App's installation token for their owner, else the token file
+(`Deployment:GitHubTokenFile`) — by asking GHCR first (`registry.py`): a credential counts only when GHCR's token
+service grants it a pull and the registry then answers a `HEAD` of each image's exact manifest (its digest, else its
+tag) under that grant. The token service alone is not enough: it grants an App's installation token a pull of any
+repository of its owner, yet the registry refuses that token every package that inherits a private repository's access
+(Ocharo's first deploy, 2026-10-24). So the App's token covers the packages of public repositories, and the packages of
+private ones need the owner's classic `read:packages` token as the token file
+([VPS › GHCR read access](../deployment/vps/vps.md#6-ghcr-read-access-owner-on-the-control-host)).
+
+- The chosen credential travels on the submission's SSH stdin; the target signs in only when an image is missing, with
+  `docker --config <temporary folder> login --password-stdin` (the folder in `/dev/shm` where the host offers it),
+  pulls those images, signs out and deletes the folder, whatever happened. Compose then pulls with `--policy missing`:
+  digests make a present image exact.
+- When no credential reads every image, what GHCR serves anonymously needs no sign-in, and the credential that reads
+  the most of the rest signs in. An image that neither a credential nor an anonymous pull can read — each answer a
+  401, 403 or 404 — travels on the stdin as `unreadable`; the target's `Pull images` step fails on it before any
+  sign-in when the host lacks it, naming the package and the token file it needs, and before any container changes.
+  A GHCR that does not answer names nothing unreadable.
+- The job keeps `registry` (`credential`: `installation` | `file` | null, the ones that could not read every image as
+  `refused`, and `unreadable` with each repository and status), never a token.
+- The readiness check of a release (`check --bundle`) asks the same and adds **Registry access**: which credential
+  reads the images, or the packages nothing can read with what to place; that fails the check, though the deploy fails
+  only when it must pull one.
+- Each submit, check and probe keeps the packages nothing could read in `<runner root>/github/packages.json`
+  (repository, status, product, when), and clears one once a credential reads it; Deployments › Issues lists each under
+  **GitHub access** for 24 hours from its last sighting.
+- `transport.py registry --root <runner root> [--product <slug>]` asks GHCR, per product, image repository and
+  credential (the App's token, the token file, anonymous), whether it can read it (a tag listing, since the inventory
+  names no digest), and what a deploy would sign in with; statuses only.
 
 ## Artifacts and registry
 

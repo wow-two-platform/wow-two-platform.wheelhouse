@@ -77,11 +77,41 @@ public sealed class GitHubAccessMonitorTests : IDisposable
     }
 
     [Fact]
+    public void Current_ShouldNameEachPackageNoCredentialCouldRead_ForADayAndSkipWhatItCannotTrust()
+    {
+        var at = _rig.Clock.GetUtcNow().AddMinutes(-3).ToString("O");
+        WritePackageNotes($$$"""
+            {"packages": {
+              "ocharo-hq/ocharo-assets/motion": {"status": 404, "product": "ocharo", "at": "{{{at}}}"},
+              "bad owner/x": {"status": 404, "product": "ocharo", "at": "{{{at}}}"},
+              "ocharo-hq/no-time": {"status": 404}
+            }}
+            """);
+
+        var issue = _rig.Monitor.Current().Should().ContainSingle().Subject;
+
+        (issue.Owner, issue.Status, issue.Cause).Should().Be(
+            ("ocharo-hq", (int?)404, GitHubAccessCauses.PackageUnreadable("ocharo-hq/ocharo-assets/motion", "ocharo")));
+        issue.Cause.Should().Contain("ghcr.io/ocharo-hq/ocharo-assets/motion").And.Contain("read:packages")
+            .And.Contain("Deployment:GitHubTokenFile");
+
+        _rig.Clock.Advance(GitHubAccessMonitor.SetupKeptFor);
+        _rig.Monitor.Current().Should().BeEmpty();
+    }
+
+    [Fact]
     public void Current_ShouldIgnoreAMalformedRunnerFile()
     {
         WriteRunnerNotes("{not json");
 
         _rig.Monitor.Current().Should().BeEmpty();
+    }
+
+    private void WritePackageNotes(string json)
+    {
+        var path = GitHubRunnerFiles.PackagesPath(_rig.Root);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, json);
     }
 
     private void WriteRunnerNotes(string json)

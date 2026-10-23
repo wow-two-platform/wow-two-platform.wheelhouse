@@ -47,4 +47,12 @@ public static class GitHubAccessCauses
     /// <param name="status">The HTTP status.</param>
     public static string InstallationRefused(int status) =>
         $"GitHub refused a token for this installation (HTTP {status}); it may be suspended or lack a permission.";
+
+    /// <summary>Describes an image package no credential at hand could read, so a deploy that must pull it fails.</summary>
+    /// <param name="repository">The <c>{owner}/{path}</c> image repository on GHCR.</param>
+    /// <param name="product">The product whose release needs it, when the runner named one.</param>
+    public static string PackageUnreadable(string repository, string? product) =>
+        $"No credential can read the package ghcr.io/{repository}{(product is null ? "" : $" ({product})")}: a GitHub App "
+        + "token cannot read a private repository's packages. Place a classic token with read:packages only in "
+        + "<runner root>/github-token/token (or the file Deployment:GitHubTokenFile names).";
 }

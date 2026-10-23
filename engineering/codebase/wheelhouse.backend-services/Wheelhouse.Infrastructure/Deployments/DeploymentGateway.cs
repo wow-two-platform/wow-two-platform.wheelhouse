@@ -161,7 +161,7 @@ public sealed class DeploymentGateway(
                 CreateNoWindow = true
             }
         };
-        process.StartInfo.Environment["WHEELHOUSE_GITHUB_TOKEN_FILE"] = settings.GitHubTokenFile;
+        process.StartInfo.Environment["WHEELHOUSE_GITHUB_TOKEN_FILE"] = settings.TokenFile();
         // Only the API names the per-owner tokens and the access notes; ambient values never reach the runner.
         process.StartInfo.Environment.Remove("WHEELHOUSE_GITHUB_TOKENS_FILE");
         process.StartInfo.Environment.Remove("WHEELHOUSE_GITHUB_ACCESS_FILE");

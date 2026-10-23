@@ -136,6 +136,32 @@ public sealed class DeploymentSafetyE2ETests(WheelhouseAppFixture fixture) : Whe
     }
 
     [Fact]
+    public async Task GitHubAccess_ShouldNameAPackageNoCredentialCanRead_WithTheTokenFileItNeeds()
+    {
+        var notes = Path.Combine(Fixture.InventoryRoot, "github", "packages.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(notes)!);
+        File.WriteAllText(notes, JsonSerializer.Serialize(new
+        {
+            packages = new Dictionary<string, object>
+            {
+                ["ocharo-hq/ocharo-assets/motion"] = new { status = 404, product = "ocharo", at = Fixture.Host.Clock.GetUtcNow().AddMinutes(-1) },
+            },
+        }));
+        try
+        {
+            var issue = (await DataAsync("/api/deployments/issues/github")).EnumerateArray().Single();
+
+            (issue.GetProperty("owner").GetString(), issue.GetProperty("status").GetInt32()).Should().Be(("ocharo-hq", 404));
+            issue.GetProperty("cause").GetString().Should().Contain("ghcr.io/ocharo-hq/ocharo-assets/motion")
+                .And.Contain("read:packages").And.Contain("Deployment:GitHubTokenFile");
+        }
+        finally
+        {
+            File.Delete(notes);
+        }
+    }
+
+    [Fact]
     public async Task Usage_ShouldReadOneProductsBuildCost_ForTheOwnerOnly()
     {
         (await AnonymousClient.GetAsync("/api/deployments/products/foreverpin/usage")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);

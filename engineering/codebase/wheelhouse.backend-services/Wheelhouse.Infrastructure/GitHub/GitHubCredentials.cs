@@ -28,11 +28,12 @@ public sealed class GitHubCredentials(GitHubAppTokens app, DeploymentSettings se
     /// <returns>The token, or <c>null</c>.</returns>
     public string? ReadTokenFile()
     {
-        if (settings.GitHubTokenFile.Length == 0)
+        var path = settings.TokenFile();
+        if (path.Length == 0)
             return null;
         try
         {
-            var value = File.ReadAllText(settings.GitHubTokenFile).Trim();
+            var value = File.ReadAllText(path).Trim();
             return value.Length == 0 || value.Any(char.IsWhiteSpace) ? null : value;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)

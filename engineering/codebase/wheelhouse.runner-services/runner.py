@@ -76,6 +76,11 @@ REGISTRY_HOST = re.compile(r"[a-z0-9][a-z0-9.-]{0,252}(?::[0-9]{1,5})?")
 REGISTRY_USER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}")
 # How a pull signed in, as a job record names it: the GitHub App's installation token, or the control host's token file.
 CREDENTIALS = {"installation": "the GitHub App's token", "file": "the control host's read-only token"}
+# An image repository the control host found nothing could read (`<registry>/<owner>/<path>`, lowercase).
+IMAGE_REPOSITORY = re.compile(r"[a-z0-9][a-z0-9.-]{0,252}(?::[0-9]{1,5})?(?:/[a-z0-9][a-z0-9._-]{0,127}){1,8}")
+# What the owner places when the control host has no credential that reads a private repository's package.
+UNREADABLE_HINT = ("an App token cannot read a private repository's packages; place a classic read:packages token "
+                   "in <runner root>/github-token/token (or Deployment:GitHubTokenFile)")
 # The first bytes of every SQLite database file, and the names other embedded file databases give their files (LiteDB,
 # LMDB, DuckDB, Realm, WiredTiger, Berkeley DB): a volume holding one is archived with its writers paused.
 SQLITE_HEADER = "SQLite format 3"
@@ -1530,14 +1535,19 @@ class Docker:
                                    else "unknown")
         return result
 
-    def pull(self, bundle, registry=None):
+    def pull(self, bundle, registry=None, unreadable=()):
         """Fetches a release's images that the host lacks; digests make one already present exact. A missing image on
         `registry`'s server pulls under a sign-in made for this pull only, in a temporary Docker config that is signed
-        out of and deleted straight after, so no registry credential stays on the host. Returns how many images were
-        fetched and the credential a sign-in used, if any."""
+        out of and deleted straight after, so no registry credential stays on the host. A missing image of a repository
+        the control host found nothing could read (`unreadable`) fails the pull before any sign-in, naming its package
+        and what to place. Returns how many images were fetched and the credential a sign-in used, if any."""
         self.compose(bundle, "config", "--quiet")
         images = sorted(set(read_json(Path(bundle) / "release.json")["images"].values()))
         missing = [image for image in images if not self.present(image)]
+        blocked = sorted({image_repository(image) for image in missing} & set(unreadable))
+        if blocked:
+            raise CommandFailed("No credential on the control host can read " + ", ".join(blocked) + ": "
+                                + UNREADABLE_HINT)
         signed = None
         private = [image for image in missing if registry and image.startswith(registry["server"] + "/")]
         if private:
@@ -1638,6 +1648,22 @@ def registry_login(provided):
     return {key: login[key] for key in ("server", "username", "password", "credential")}
 
 
+def registry_unreadable(provided):
+    """The image repositories the control plane found nothing could read for one deploy; empty when it sent none."""
+    unreadable = (provided or {}).get("unreadable", [])
+    require(isinstance(unreadable, list) and len(unreadable) <= 100
+            and all(isinstance(item, str) and IMAGE_REPOSITORY.fullmatch(item) for item in unreadable),
+            "Invalid unreadable images")
+    return tuple(unreadable)
+
+
+def image_repository(image):
+    """An image reference's repository: no tag, no digest, lowercase (`ghcr.io/<owner>/<path>`)."""
+    name = str(image).split("@", 1)[0]
+    head, _, last = name.rpartition("/")
+    return ((head + "/" if head else "") + last.split(":", 1)[0]).lower()
+
+
 @contextlib.contextmanager
 def registry_session(docker, registry):
     """A temporary Docker config signed in to the registry, in memory where the host offers /dev/shm; signed out of and
@@ -1714,6 +1740,7 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
         require(not active or not (active.get("mutationStarted") and active["status"] in ("failed", "rollback_failed")),
                 "Failed mutation requires reconciliation")
         registry = registry_login(provided)
+        unreadable = registry_unreadable(provided)
         rendered, render_started = None, now()
         if renders(target):
             # Every settings file the release mounts, rendered before anything else reads it; a missing required key
@@ -1786,7 +1813,8 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                 return record
         try:
             with steps.run("Pull images") as step:
-                pulled = docker.pull(destination, registry) if registry else docker.pull(destination)
+                pulled = (docker.pull(destination, registry, unreadable) if registry or unreadable
+                          else docker.pull(destination))
                 step["detail"] = pull_summary(manifest, pulled)
             mutation_started = True
             record["mutationStarted"] = True
@@ -1893,8 +1921,8 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                         prior_manifest = validate_bundle(prior_bundle)
                         prior_environment = environment_for(target, prior_manifest)
                         prior_docker = docker_factory(target, prior_environment)
-                        if registry:
-                            prior_docker.pull(prior_bundle, registry)
+                        if registry or unreadable:
+                            prior_docker.pull(prior_bundle, registry, unreadable)
                         else:
                             prior_docker.pull(prior_bundle)
                         # The whole previous release: Compose replaces only what differs, so exactly the services
@@ -2038,6 +2066,7 @@ def launch(bundle, target_path, actor, provided=None):
     if provided is not None:
         provided_values(provided)
         registry_login(provided)
+        registry_unreadable(provided)
     job_id = str(uuid.uuid4())
     jobs = root / project / "jobs"
     jobs.mkdir(parents=True, exist_ok=True, mode=0o700)

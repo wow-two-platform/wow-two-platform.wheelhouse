@@ -35,6 +35,10 @@ class TransportTests(unittest.TestCase):
             (self.root / name).touch()
         self.config = {"host": "vps.example.net", "user": "deploy", "port": 2222,
                        "keyFile": str(self.root / "key"), "knownHostsFile": str(self.root / "known_hosts")}
+        # GHCR is never asked from a test: every image reads, so a submission picks no sign-in.
+        registry = patch.object(transport.registry, "accepts", return_value=(True, 200))
+        registry.start()
+        self.addCleanup(registry.stop)
 
     def tearDown(self):
         self.temporary.cleanup()

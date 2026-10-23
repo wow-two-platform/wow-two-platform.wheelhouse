@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments.History.Models;
 using Wheelhouse.Infrastructure.Settings;
@@ -10,13 +11,14 @@ namespace Wheelhouse.Infrastructure.GitHub;
 
 /// <summary>Keeps what keeps Wheelhouse from reaching GitHub, per owner: a call refused with 401, 403 or 429, a repository
 /// no credential at hand could see while the owner lacks the GitHub App (the console's notes, and those the runner keeps
-/// in <c>{root}/github/access.json</c>), a refused installation token, and an App set up by half.</summary>
+/// in <c>{root}/github/access.json</c>), an image package no credential can read (the runner's
+/// <c>{root}/github/packages.json</c>), a refused installation token, and an App set up by half.</summary>
 /// <remarks>An owner without the App is named only when one of its repositories needs it: public ones are read with
 /// another installation's token. A later success for an owner clears its refused call, and a read of the unseen
 /// repository clears that; a working token clears an installation problem. A note nobody repeats drops after
 /// <see cref="CallKeptFor"/> (<see cref="SetupKeptFor"/> for the App's own). Only statuses, repository names and fixed
 /// words are kept, never a token or a response body.</remarks>
-public sealed class GitHubAccessMonitor(DeploymentSettings settings, TimeProvider time) : IGitHubAccessIssues
+public sealed partial class GitHubAccessMonitor(DeploymentSettings settings, TimeProvider time) : IGitHubAccessIssues
 {
     /// <summary>How long a refused call or unseen repository stays listed without being seen again.</summary>
     public static readonly TimeSpan CallKeptFor = TimeSpan.FromHours(1);
@@ -122,6 +124,7 @@ public sealed class GitHubAccessMonitor(DeploymentSettings settings, TimeProvide
         }
 
         issues.AddRange(calls.Values);
+        issues.AddRange(ReadPackageNotes().Where(issue => now - issue.At <= SetupKeptFor));
         if (SetupProblem() is { } setup && !issues.Any(issue => issue.Owner is null && issue.Cause == setup))
             issues.Add(new GitHubAccessIssueDto(null, setup, null, now));
         return [.. issues.OrderByDescending(issue => issue.At).ThenBy(issue => issue.Owner, StringComparer.Ordinal)];
@@ -199,6 +202,48 @@ public sealed class GitHubAccessMonitor(DeploymentSettings settings, TimeProvide
 
         return notes;
     }
+
+    /// <summary>Reads the packages the runner found no credential could read: <c>{"packages": {repository: {status,
+    /// product, at}}}</c>, written at each submit, readiness check and registry probe, and cleared once one reads them.
+    /// An unreadable or malformed file, or entry, counts as none.</summary>
+    private List<GitHubAccessIssueDto> ReadPackageNotes()
+    {
+        var notes = new List<GitHubAccessIssueDto>();
+        if (settings.Root.Length == 0)
+            return notes;
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllBytes(GitHubRunnerFiles.PackagesPath(settings.Root)));
+            if (!document.RootElement.TryGetProperty("packages", out var packages) || packages.ValueKind != JsonValueKind.Object)
+                return notes;
+            foreach (var entry in packages.EnumerateObject())
+            {
+                var note = entry.Value;
+                var repository = entry.Name.ToLowerInvariant();
+                var owner = repository.Split('/')[0];
+                if (!PackageRepository().IsMatch(repository) || !GitHubOwners.IsOwner(owner) || note.ValueKind != JsonValueKind.Object
+                    || !note.TryGetProperty("at", out var at) || at.ValueKind != JsonValueKind.String
+                    || !DateTimeOffset.TryParse(at.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var seen))
+                    continue;
+                int? status = note.TryGetProperty("status", out var code) && code.TryGetInt32(out var value) ? value : null;
+                var product = note.TryGetProperty("product", out var named) && named.ValueKind == JsonValueKind.String
+                              && named.GetString() is { } slug && ProductSlug().IsMatch(slug) ? slug : null;
+                notes.Add(new GitHubAccessIssueDto(owner, GitHubAccessCauses.PackageUnreadable(repository, product), status, seen));
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            // No notes, or none readable: the runner rewrites the file at its next registry check.
+        }
+
+        return notes;
+    }
+
+    [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,38}(/[a-z0-9][a-z0-9._-]{0,127}){1,7}$")]
+    private static partial Regex PackageRepository();
+
+    [GeneratedRegex("^[a-z0-9][a-z0-9-]{0,62}$")]
+    private static partial Regex ProductSlug();
 
     private static bool Flag(JsonElement note, string name) =>
         note.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.True;

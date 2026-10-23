@@ -1,6 +1,6 @@
 # Wheelhouse dev VPS
 
-*Last updated: 2026-10-21*
+*Last updated: 2026-10-24*
 
 This bootstrap prepares the private control-plane host on Ubuntu 26.04 amd64: `wheelhouse-prod` and
 `wheelhouse-dev` side by side, each with its own database and sign-in. GitHub builds the image; the existing
@@ -474,19 +474,29 @@ sudo -u wheelhouse-deploy docker compose --env-file /srv/wheelhouse/platform/hos
 
 Ocharo's images are private, and the products host keeps no registry token: every deploy lends its pull a sign-in from
 prod's console, which signs in for that pull only and signs out at once
-([registry sign-in](../../architecture/architecture.md#registry-sign-in)). Prod offers the GitHub App's installation
-token for the images' owner first, then its token file, whichever GHCR accepts:
+([registry sign-in](../../architecture/architecture.md#registry-sign-in)). The GitHub App's token reads the packages of
+public repositories only: GHCR refuses it every package that inherits a private repository's access (`ocharo-assets`,
+2026-10-24), so prod needs the token file for those.
+
+1. On a dedicated machine account with read access to the private repositories, create a classic token: scope
+   `read:packages` only, with an expiry (a fine-grained token cannot read GHCR).
+2. Place it in prod's runner volume as the console's own user, one line, mode `0600`; the console reads it at each
+   call, so no restart:
 
 ```sh
-# On the control host, once prod runs v0.5: which credential GHCR grants each Ocharo image.
+# Paste the token, then Enter and Ctrl-D; it never touches the host's disk.
+sudo docker exec -i wheelhouse-prod-console-1 sh -c \
+  'umask 077; mkdir -p /data/deployments/github-token; cat > /data/deployments/github-token/token'
+# Which credential reads each Ocharo image: the App's token, the token file, anonymous; and what a deploy signs in with.
 sudo docker exec wheelhouse-prod-console-1 python3 /app/runner/transport.py registry --root /data/deployments \
-  --product ocharo-platform
+  --product ocharo
 ```
 
-- The App's token: give the App Packages read-only (GitHub App settings › Permissions › Repository permissions) and
-  approve the change on each installation; each private package keeps "inherit access from source repository".
-- Else the token file: a classic token, scope `read:packages` only, with an expiry, from a dedicated machine account,
-  as prod's `Deployment:GitHubTokenFile` (inside its `/data/deployments` volume).
+- `/data/deployments/github-token/token` is the default; `Deployment:GitHubTokenFile` in `console-prod.json` names
+  another path. Each private package keeps "inherit access from source repository".
+- Until it is in place, a deploy that must pull a private image fails at `Pull images` naming the package, the target
+  check's **Registry access** fails, and Deployments › Issues lists the package under GitHub access.
+- Rotate by replacing the file before the token expires; the next deploy reads the new one.
 - A host that took the earlier sign-in (`prepare.py --ghcr-user …`) drops it with
   `sudo -u wheelhouse-deploy docker logout ghcr.io`.
 

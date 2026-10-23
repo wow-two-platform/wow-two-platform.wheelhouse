@@ -1,6 +1,7 @@
 """Settings Wheelhouse renders at deploy and the per-deploy registry sign-in: layers and precedence, derived keys, the
 required-key refusal before any write, file modes, the declarations the console reads, the target check, and that no
 secret value reaches a job record, an argument or the disk outside the rendered file."""
+import base64
 import hashlib
 import io
 import json
@@ -11,6 +12,8 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+import urllib.error
+import urllib.parse
 import registry
 import runner
 import transport
@@ -25,6 +28,7 @@ class RenderDocker:
     events = []
     ingress = True
     pulled = None
+    unreadable = ()
 
     def __init__(self, target, environment):
         self.environment = environment
@@ -40,8 +44,9 @@ class RenderDocker:
     def preflight(self, manifest):
         self.events.append("preflight")
 
-    def pull(self, bundle, registry=None):
+    def pull(self, bundle, registry=None, unreadable=()):
         RenderDocker.pulled = registry
+        RenderDocker.unreadable = unreadable
         self.events.append("pull")
         return {"images": 1, "fetched": 1, "signedIn": registry["credential"] if registry else None}
 
@@ -112,10 +117,12 @@ class RenderTests(unittest.TestCase):
         path.write_text(json.dumps({"ConnectionString": "Host=wheelhouse-postgres;Database=pilot_dev;Password=DB_SECRET"}))
         path.chmod(0o600)
 
-    def apply(self, values=None, registry_login=None):
+    def apply(self, values=None, registry_login=None, unreadable=None):
         provided = {"values": values if values is not None else {"Billing:SecretKey": "VAULT_SECRET"}}
         if registry_login:
             provided["registry"] = registry_login
+        if unreadable is not None:
+            provided["unreadable"] = unreadable
         return runner.apply(self.bundle, self.target, "max", docker_factory=RenderDocker, provided=provided)
 
     def rendered(self, service):
@@ -238,6 +245,15 @@ class RenderTests(unittest.TestCase):
         for bad in ({**login, "password": "two words"}, {**login, "credential": "borrowed"}, {**login, "server": "x y"}):
             with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, "Invalid registry sign-in"):
                 self.apply(registry_login=bad)
+
+    def test_what_nothing_could_read_reaches_the_pull_and_bad_lists_are_refused(self):
+        self.database()
+        result = self.apply(unreadable=["ghcr.io/ocharo-hq/ocharo-assets/motion"])
+        self.assertEqual("succeeded", result["status"], result.get("reason"))
+        self.assertEqual(("ghcr.io/ocharo-hq/ocharo-assets/motion",), RenderDocker.unreadable)
+        for bad in ("ghcr.io/x", ["two words"], ["ghcr.io/Upper/Case"], [5]):
+            with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, "Invalid unreadable images"):
+                self.apply(unreadable=bad)
 
     def test_declarations_name_required_optional_secret_and_derived_keys(self):
         self.manifest["settings"] = {"api": {"optional": {"Feature:Flag": "false"}, "secrets": ["Database:Connection"],
@@ -441,6 +457,28 @@ class RegistryPullTests(unittest.TestCase):
         self.assertEqual({"images": 2, "fetched": 0, "signedIn": None}, self.pull(self.login))
         self.assertFalse(any("login" in arguments for arguments, _ in self.calls))
 
+    def test_a_missing_image_nothing_can_read_fails_the_pull_naming_its_package(self):
+        self.configs = set()
+        docker = runner.Docker({"product": "pilot", "environment": "dev"}, {})
+        with patch.object(runner.subprocess, "run", side_effect=self.fake_run), \
+                self.assertRaisesRegex(runner.CommandFailed, "No credential on the control host can read "
+                                                             "ghcr.io/owner/pilot/api: .*read:packages.*GitHubTokenFile") \
+                as raised:
+            docker.pull(self.bundle, self.login, ("ghcr.io/owner/pilot/api",))
+        self.assertLessEqual(len(runner.reason(raised.exception)), 300)
+        self.assertFalse(any("login" in arguments or "pull" in arguments for arguments, _ in self.calls))
+        # On the host already, it needs no pull, so nothing fails.
+        self.calls, self.present = [], {self.images["api"]}
+        with patch.object(runner.subprocess, "run", side_effect=self.fake_run):
+            result = docker.pull(self.bundle, None, ("ghcr.io/owner/pilot/api",))
+        self.assertEqual({"images": 2, "fetched": 1, "signedIn": None}, result)
+
+    def test_an_image_reference_names_its_repository(self):
+        for image, repository in (("ghcr.io/Owner/pilot/api@sha256:" + "a" * 64, "ghcr.io/owner/pilot/api"),
+                                  ("ghcr.io/owner/api:1.2.0", "ghcr.io/owner/api"),
+                                  ("localhost:15000/pilot-edge:v1@sha256:" + "b" * 64, "localhost:15000/pilot-edge")):
+            self.assertEqual(repository, runner.image_repository(image))
+
     def test_a_refused_sign_in_fails_the_pull_and_still_cleans_up(self):
         def refuse(arguments, **options):
             result = self.fake_run(arguments, **options)
@@ -453,67 +491,166 @@ class RegistryPullTests(unittest.TestCase):
         self.assertTrue(all(not config.exists() for config in self.configs))
 
 
+class FakeResponse:
+    def __init__(self, status, body=b""):
+        self.status, self.body = status, body
+
+    def read(self, limit=-1):
+        return self.body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class GhcrFake:
+    """GHCR as the 2026-10-24 deploy met it: the token service grants every credential a pull of any repository of its
+    owner, and the registry answers a manifest HEAD only where the grant can read: a public package for anyone, a private
+    repository's package for the classic token only (the App's token gets a 404)."""
+
+    def __init__(self, private=("ocharo-hq/ocharo-assets/motion",), down=False):
+        self.private, self.down, self.requests = set(private), down, []
+
+    def open(self, request, timeout=None):
+        self.requests.append(request)
+        url = urllib.parse.urlparse(request.full_url)
+        if self.down:
+            raise urllib.error.URLError("unreachable")
+        if url.path == "/token":
+            scope = urllib.parse.parse_qs(url.query)["scope"][0]
+            basic = request.get_header("Authorization")
+            who = base64.b64decode(basic.split(" ", 1)[1]).decode().split(":", 1)[1] if basic else "anonymous"
+            return FakeResponse(200, json.dumps({"token": "grant:" + who + ":" + scope.split(":")[1]}).encode())
+        _, who, repository = request.get_header("Authorization").split(" ", 1)[1].split(":", 2)
+        if repository in self.private and who != "ghp_FILE":
+            raise urllib.error.HTTPError(request.full_url, 404, "Not Found", {}, None)
+        return FakeResponse(200)
+
+
 class RegistryChoiceTests(unittest.TestCase):
-    """The control host's choice of credential: GHCR is asked first, the App's token before the token file."""
+    """The control host's choice of credential: GHCR is asked first, the App's token before the token file, and a
+    credential counts only when it can read each image's manifest."""
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         root = Path(self.temporary.name)
         tokens = root / "tokens.json"
         tokens.write_text(json.dumps({"owners": {"ocharo-hq": {"token": "ghs_APP", "expiresAt": "2999-01-01T00:00:00Z"}}}))
-        fallback = root / "token"
-        fallback.write_text("ghp_FILE\n")
+        self.fallback = root / "token"
+        self.fallback.write_text("ghp_FILE\n")
         self.environment = patch.dict(os.environ, {"WHEELHOUSE_GITHUB_TOKENS_FILE": str(tokens),
-                                                   "WHEELHOUSE_GITHUB_TOKEN_FILE": str(fallback)})
+                                                   "WHEELHOUSE_GITHUB_TOKEN_FILE": str(self.fallback)})
         self.environment.start()
         self.images = ["ghcr.io/ocharo-hq/ocharo-platform/desk@sha256:" + "a" * 64,
                        "ghcr.io/Ocharo-HQ/ocharo-platform/jobs:1.2.0"]
+        self.ocharo = self.images + ["ghcr.io/ocharo-hq/ocharo-assets/motion@sha256:" + "8" * 64]
 
     def tearDown(self):
         self.environment.stop()
         self.temporary.cleanup()
 
-    def test_the_app_token_goes_first_when_ghcr_accepts_it(self):
+    def test_the_app_token_goes_first_when_it_reads_every_manifest(self):
         asked = []
 
-        def check(repository, user, password):
-            asked.append((repository, user))
+        def check(image, user, password):
+            asked.append((image, user))
             return True, 200
         login, attempt = registry.sign_in_for(self.images, check=check, login=lambda token: "machine")
         self.assertEqual({"server": "ghcr.io", "username": "x-access-token", "password": "ghs_APP",
                           "credential": "installation"}, login)
         self.assertEqual({"server": "ghcr.io", "credential": "installation", "refused": []}, attempt)
-        self.assertEqual([("ocharo-hq/ocharo-platform/desk", "x-access-token"),
-                          ("ocharo-hq/ocharo-platform/jobs", "x-access-token")], asked)
+        self.assertEqual([(("ocharo-hq/ocharo-platform/desk", "sha256:" + "a" * 64), "x-access-token"),
+                          (("ocharo-hq/ocharo-platform/jobs", "1.2.0"), "x-access-token")], asked)
+
+    def test_a_granted_pull_that_cannot_read_the_manifest_does_not_count(self):
+        # The token service says yes to the App's token for the private package; only the manifest HEAD says no.
+        ghcr = GhcrFake()
+        with patch.object(registry, "OPENER", ghcr):
+            self.assertEqual((False, 404), registry.accepts(("ocharo-hq/ocharo-assets/motion", "sha256:" + "8" * 64),
+                                                            "x-access-token", "ghs_APP"))
+            self.assertEqual((True, 200), registry.accepts(("ocharo-hq/ocharo-assets/motion", "sha256:" + "8" * 64),
+                                                           "machine", "ghp_FILE"))
+            self.assertEqual((True, 200), registry.accepts(("ocharo-hq/ocharo-studio/studio", "v1"), None, None))
+            # An inventory image names no digest or tag: the repository's tag listing answers instead.
+            self.assertEqual((False, 404), registry.accepts(("ocharo-hq/ocharo-assets/motion", None), "x-access-token",
+                                                            "ghs_APP"))
+            self.assertTrue(ghcr.requests[-1].full_url.endswith("/v2/ocharo-hq/ocharo-assets/motion/tags/list?n=1"))
+            login, attempt = registry.sign_in_for(self.ocharo, login=lambda token: "machine")
+        self.assertEqual(("file", "machine", "ghp_FILE"), (login["credential"], login["username"], login["password"]))
+        self.assertEqual({"server": "ghcr.io", "credential": "file", "refused": ["installation"]}, attempt)
+        head = next(request for request in ghcr.requests if request.get_method() == "HEAD" and "/desk/" in request.full_url)
+        self.assertEqual("https://ghcr.io/v2/ocharo-hq/ocharo-platform/desk/manifests/sha256:" + "a" * 64, head.full_url)
+        self.assertIn("application/vnd.oci.image.index.v1+json", head.get_header("Accept"))
+
+    def test_a_private_package_nothing_can_read_is_named_and_the_rest_pull_anonymously(self):
+        self.fallback.unlink()
+        with patch.object(registry, "OPENER", GhcrFake()):
+            login, attempt = registry.sign_in_for(self.ocharo, login=lambda token: "machine")
+        self.assertIsNone(login)
+        self.assertEqual({"server": "ghcr.io", "credential": None, "refused": ["installation"],
+                          "unreadable": [{"repository": "ocharo-hq/ocharo-assets/motion", "status": 404}]}, attempt)
+        self.assertEqual(["ghcr.io/ocharo-hq/ocharo-assets/motion"], registry.unreadable_images(attempt))
+        line = registry.describe(attempt)
+        self.assertIn("ghcr.io/ocharo-hq/ocharo-assets/motion", line)
+        self.assertIn("read:packages", line)
+        self.assertNotIn("ghs_APP", json.dumps(attempt) + line)
+
+    def test_no_answer_from_ghcr_names_nothing_unreadable(self):
+        with patch.object(registry, "OPENER", GhcrFake(down=True)):
+            login, attempt = registry.sign_in_for(self.ocharo, login=lambda token: "machine")
+        self.assertIsNone(login)
+        self.assertEqual({"server": "ghcr.io", "credential": None, "refused": ["installation", "file"]}, attempt)
+        self.assertEqual([], registry.unreadable_images(attempt))
 
     def test_a_refused_app_token_falls_back_to_the_token_file(self):
         login, attempt = registry.sign_in_for(
-            self.images, check=lambda repository, user, password: (password == "ghp_FILE", 200 if password == "ghp_FILE" else 403),
+            self.images, check=lambda image, user, password: (password == "ghp_FILE", 200 if password == "ghp_FILE" else 403),
             login=lambda token: "machine")
         self.assertEqual(("file", "machine", "ghp_FILE"), (login["credential"], login["username"], login["password"]))
         self.assertEqual(["installation"], attempt["refused"])
         self.assertNotIn("ghp_FILE", json.dumps(attempt))
 
-    def test_no_accepted_credential_pulls_anonymously_and_public_or_foreign_images_need_none(self):
-        login, attempt = registry.sign_in_for(self.images, check=lambda *_: (False, 403), login=lambda token: None)
+    def test_public_or_foreign_images_need_no_sign_in(self):
+        # Nothing signed reads them, yet an anonymous pull does: public packages, no sign-in, nothing unreadable.
+        login, attempt = registry.sign_in_for(self.images, check=lambda image, user, password: (user is None, 403),
+                                              login=lambda token: None)
         self.assertIsNone(login)
-        self.assertEqual(["installation", "file"], attempt["refused"])
+        self.assertEqual({"server": "ghcr.io", "credential": None, "refused": ["installation", "file"]}, attempt)
         self.assertEqual((None, None), registry.sign_in_for(["localhost:15000/api@sha256:" + "a" * 64]))
         # Images of two owners skip the App: one sign-in covers one registry.
         mixed = self.images + ["ghcr.io/other/api@sha256:" + "c" * 64]
         _, attempt = registry.sign_in_for(mixed, check=lambda *_: (True, 200), login=lambda token: None)
         self.assertEqual("file", attempt["credential"])
 
+    def test_the_packages_nothing_reads_are_noted_for_the_issues_panel_and_cleared_once_read(self):
+        root = Path(self.temporary.name)
+        attempt = {"server": "ghcr.io", "credential": None, "refused": ["installation"],
+                   "unreadable": [{"repository": "ocharo-hq/ocharo-assets/motion", "status": 404}]}
+        registry.note_packages(root, "ocharo", self.ocharo, attempt)
+        notes = json.loads((root / "github" / "packages.json").read_text())["packages"]
+        self.assertEqual({"ocharo-hq/ocharo-assets/motion"}, set(notes))
+        self.assertEqual((404, "ocharo"), (notes["ocharo-hq/ocharo-assets/motion"]["status"],
+                                           notes["ocharo-hq/ocharo-assets/motion"]["product"]))
+        registry.note_packages(root, "ocharo", self.ocharo, {"server": "ghcr.io", "credential": "file", "refused": []})
+        self.assertEqual({}, json.loads((root / "github" / "packages.json").read_text())["packages"])
+
     def test_the_probe_reports_statuses_per_product_and_never_a_token(self):
         product = transport.inventory.catalog.Product(
             "ocharo-platform", "Ocharo", "", "ocharo-hq/ocharo-platform", "main",
             transport.inventory.catalog.Release("asset.tar.gz", (("desk", "ghcr.io/ocharo-hq/ocharo-platform/desk"),), None))
         with patch.object(registry.catalog, "products", return_value=(product,)):
-            result = registry.probe(self.temporary.name, check=lambda repository, user, password: (
+            result = registry.probe(self.temporary.name, check=lambda image, user, password: (
                 password == "ghs_APP", 200 if password == "ghs_APP" else 403), login=lambda token: "machine")
-        credentials = result["products"][0]["credentials"]
-        self.assertEqual([("installation", True), ("file", False)], [(item["credential"], item["accepted"]) for item in credentials])
-        self.assertEqual(403, credentials[1]["repositories"][0]["status"])
+        item = result["products"][0]
+        credentials = item["credentials"]
+        self.assertEqual([("installation", True), ("file", False), ("anonymous", False)],
+                         [(entry["credential"], entry["accepted"]) for entry in credentials])
+        self.assertEqual((403, None), (credentials[1]["repositories"][0]["status"],
+                                       credentials[1]["repositories"][0]["reference"]))
+        self.assertEqual("installation", item["deploy"]["credential"])
+        self.assertEqual("GHCR images read with the GitHub App's token", item["summary"])
         self.assertNotIn("ghs_APP", json.dumps(result))
         self.assertNotIn("ghp_FILE", json.dumps(result))
 
@@ -578,6 +715,34 @@ class SubmitTests(unittest.TestCase):
         self.assertNotIn("VAULT_SECRET", record)
         self.assertNotIn("ghs_APP", record)
         self.assertEqual(["runner.py", "release.json", "compose.json", "target.json"], sent[1][1])
+
+    def test_an_image_nothing_can_read_travels_on_stdin_and_fails_the_readiness_check(self):
+        sent = []
+
+        class FakeSsh:
+            def __init__(self, ssh_config):
+                pass
+
+            def run(self, command, stdin=None, timeout=30):
+                sent.append((command, stdin))
+                return json.dumps({"id": "55555555-5555-4555-8555-555555555555", "status": "queued"}) if "launch" in command else ""
+
+            def copy(self, files, destination):
+                pass
+
+        attempt = {"server": "ghcr.io", "credential": None, "refused": ["installation"],
+                   "unreadable": [{"repository": "o/api", "status": 404}]}
+        with patch.object(transport.fleet, "resolve_target", return_value=self.config), \
+                patch.object(transport.artifacts, "prepare", return_value=self.bundle), \
+                patch.object(transport.registry, "sign_in_for", return_value=(None, attempt)), \
+                patch.object(transport, "Ssh", FakeSsh):
+            transport.submit(self.root, "pilot-dev", "pilot-1", "max", provided={"values": {"Billing:SecretKey": "S"}})
+            check = transport.registry_check(self.root, "pilot", transport.validate_bundle(self.bundle))
+        self.assertEqual({"values": {"Billing:SecretKey": "S"}, "unreadable": ["ghcr.io/o/api"]}, json.loads(sent[-1][1]))
+        self.assertEqual(("Registry access", False), (check["name"], check["ok"]))
+        self.assertIn("No credential can read ghcr.io/o/api", check["detail"])
+        notes = json.loads((self.root / "github" / "packages.json").read_text())["packages"]
+        self.assertEqual("pilot", notes["o/api"]["product"])
 
     def test_invalid_values_are_refused_before_anything_is_sent(self):
         with patch.object(transport.fleet, "resolve_target", return_value=self.config), \

@@ -188,8 +188,8 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.SettingsApplyWorker>();
 
         // GitHub access, per call: the GitHub App's installation token for the owner the call addresses, else the
-        // Deployment:GitHubTokenFile token, else the signed-in admin's OAuth token off the current request, else
-        // anonymous. The runner gets the same tokens through a file; refusals reach the Issues panel.
+        // Deployment:GitHubTokenFile token (by default <root>/github-token/token), else the signed-in admin's OAuth token
+        // off the current request, else anonymous. The runner gets the same tokens through a file; refusals reach the Issues panel.
         builder.Services.AddHttpClient(Wheelhouse.Infrastructure.GitHub.GitHubAppTokens.ClientName, client =>
         {
             client.BaseAddress = new Uri("https://api.github.com/");

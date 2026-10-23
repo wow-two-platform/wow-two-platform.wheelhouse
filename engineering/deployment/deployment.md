@@ -1,6 +1,6 @@
 # Deployment operations
 
-*Last updated: 2026-10-21*
+*Last updated: 2026-10-24*
 
 ## Ownership and current boundary
 
@@ -366,6 +366,7 @@ ssh/<server-id>/known_hosts
 vault/root.key            ← the built-in vault's root key: root-only, kept out of backups (Secrets Vault below)
 vaults/<vault-id>/password ← a standalone vault's, until it is imported and retired
 github-app/private-key.pem ← the GitHub App key, optional (GitHub access below)
+github-token/token        ← the token file: a classic read:packages token, one line; private repositories' images need it
 providers/tailscale/oauth-client.json ← prod only: the Tailscale OAuth client (Tailscale below)
 providers/tailscale/policy/ ← the tailnet policy before Wheelhouse's last change, for one-click revert
 infra/                    ← enrollment and placement journals, one-time enrollment keys while a host needs them
@@ -391,10 +392,14 @@ A GHCR pull remains the definitive image-availability check before container rep
 GitHub credentials, private releases included: [GitHub access](#github-access).
 
 Products hosts keep no registry token: each deploy lends its pull a sign-in from the control host
-([registry sign-in](../architecture/architecture.md#registry-sign-in)). Public GHCR images need none; for private ones
-the control host offers the GitHub App's installation token for the images' owner, else the token file
-(`Deployment:GitHubTokenFile`, a classic `read:packages` token), whichever GHCR's token service accepts. The target
-signs in to a temporary Docker config for the pull only and signs out at once. Check which credential GHCR takes:
+([registry sign-in](../architecture/architecture.md#registry-sign-in)). Public GHCR images need none. The GitHub App's
+installation token reads the packages of its owner's public repositories only; a package that inherits a private
+repository's access needs the token file, a classic token with `read:packages` only (`Deployment:GitHubTokenFile`,
+by default `<runner root>/github-token/token`, read at each call, so placing it needs no restart). The control host
+offers whichever reads each image's manifest; the target signs in to a temporary Docker config for the pull only and
+signs out at once. An image nothing can read fails the deploy's `Pull images` step, naming the package, and shows in
+the readiness check (**Registry access**) and under Deployments › Issues › GitHub access. Check which credential reads
+what:
 
 ```sh
 docker exec <console-container> python3 /app/runner/transport.py registry --root /data/deployments [--product <slug>]
@@ -436,7 +441,8 @@ Every GitHub call — hub catalogs, manifests, icons, release listings and downl
 and build dispatches — carries the first credential at hand for the owner its address names:
 
 1. The GitHub App's installation token for that owner (`Deployment:GitHubAppId`, `Deployment:GitHubAppKeyFile`).
-2. The single token file `Deployment:GitHubTokenFile` (`WHEELHOUSE_GITHUB_TOKEN_FILE` for the operator CLI).
+2. The single token file `Deployment:GitHubTokenFile`, by default `<runner root>/github-token/token` once placed
+   (`WHEELHOUSE_GITHUB_TOKEN_FILE` for the operator CLI).
 3. Console reads only: the signed-in owner's sign-in token.
 4. Another installation's token, for public repositories of an owner without the App: GitHub App tokens reach public
    resources without permissions
@@ -461,9 +467,9 @@ and build dispatches — carries the first credential at hand for the owner its 
 Owner steps, once:
 
 1. GitHub › Settings › Developer settings › GitHub Apps › New GitHub App; turn the webhook off.
-2. Repository permissions: Actions read and write, Contents read-only, Metadata read-only, and Packages read-only
-   for private image pulls where GHCR takes the App's token ([registry sign-in](../architecture/architecture.md#registry-sign-in));
-   nothing else.
+2. Repository permissions: Actions read and write, Contents read-only, Metadata read-only, and Packages read-only;
+   nothing else. GHCR still refuses the App's token the packages of a private repository, so those pulls take the token
+   file ([registry sign-in](../architecture/architecture.md#registry-sign-in)).
 3. Installable on any account. Create it, note its App ID and generate a private key.
 4. Install it with all repositories on every owner with private repositories (`sulton-max`, `ocharo-hq`,
    `wow-two-apps`, `wow-two-platform`), and on any other owner Issues names. A public-only owner (the wow2 hub's

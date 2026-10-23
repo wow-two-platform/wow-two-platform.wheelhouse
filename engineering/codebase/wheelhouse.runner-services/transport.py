@@ -338,8 +338,11 @@ def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False,
     target_root, _ = validate_target(config["target"], manifest)
     require(re.fullmatch(r"/[A-Za-z0-9/_-]+", str(target_root)), "SSH root requires a simple absolute path")
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
-    # The pull's registry sign-in, picked and checked here: the products host keeps no registry token.
+    # The pull's registry sign-in, picked and checked here: the products host keeps no registry token. An image nothing
+    # can read goes with it, so the target's pull fails on it, if the host lacks it, saying what to place.
     login, attempt = registry.sign_in_for(manifest["images"].values())
+    registry.note_packages(root, config["target"]["product"], manifest["images"].values(), attempt)
+    unreadable = registry.unreadable_images(attempt)
     ssh = Ssh(config["ssh"])
     request_id = str(uuid.uuid4())
     remote = str(target_root / "incoming" / request_id)
@@ -362,7 +365,8 @@ def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False,
     write_json(root / "jobs" / (request_id + ".json"), record)
     command = shlex.join(["python3", remote + "/runner.py", "launch", "--bundle", remote,
                           "--target", remote + "/target.json", "--actor", actor, "--stdin"])
-    document = {"values": values, **({"registry": login} if login else {})}
+    document = {"values": values, **({"registry": login} if login else {}),
+                **({"unreadable": unreadable} if unreadable else {})}
     remote_job = json.loads(ssh.run(command, json.dumps(document)))
     record.update(status=remote_job["status"], remoteJobId=remote_job["id"])
     write_json(root / "jobs" / (request_id + ".json"), record)
@@ -773,6 +777,15 @@ def logs(root, target_id, service, tail=200):
     return result
 
 
+def registry_check(root, product, manifest):
+    """Whether the control host can lend the release's pull a credential that reads each GHCR image, asked of GHCR now:
+    a package nothing can read fails the check, naming it and what to place. The target may hold the image already, so
+    the deploy itself fails only when it must pull one."""
+    _, attempt = registry.sign_in_for(manifest["images"].values())
+    registry.note_packages(root, product, manifest["images"].values(), attempt)
+    return {"name": "Registry access", "ok": not registry.unreadable_images(attempt), "detail": registry.describe(attempt)}
+
+
 def check(root, target_id, bundle_id=None, provided=None):
     """`provided` names the setting keys Wheelhouse would send ({"keys": [...]}), so the target can tell which required
     keys no layer sets."""
@@ -790,6 +803,8 @@ def check(root, target_id, bundle_id=None, provided=None):
     except Rejected as error:
         return {"targetId": target_id, "ok": False, "checks": [{"name": "SSH identity", "ok": False, "detail": str(error)}]}
     checks = [{"name": "SSH identity", "ok": True, "detail": "pinned key and known host present"}]
+    if manifest is not None and registry.repositories(manifest["images"].values()):
+        checks.append(registry_check(root, config["target"]["product"], manifest))
     try:
         keys = (provided or {}).get("keys") if isinstance(provided, dict) else None
         require(keys is None or (isinstance(keys, list) and all(isinstance(key, str) for key in keys)),
@@ -804,6 +819,7 @@ def check(root, target_id, bundle_id=None, provided=None):
         return {"targetId": target_id, "ok": False, "checks": checks}
     result["checks"] = checks + [{"name": "SSH connection", "ok": True,
                                   "detail": config["ssh"]["user"] + "@" + config["ssh"]["host"]}] + result["checks"]
+    result["ok"] = result.get("ok", False) and all(item["ok"] for item in checks)
     if manifest is not None and config.get("requiresDevPass"):
         passed = dev_pass(root, config["target"]["product"], manifest["release"])
         result["checks"].append({"name": "Dev pass", "ok": passed is not None,
