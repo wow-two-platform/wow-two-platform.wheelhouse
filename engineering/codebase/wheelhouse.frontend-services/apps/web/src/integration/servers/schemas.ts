@@ -22,6 +22,8 @@ export const ServerSchema = z.object({
     // A host before the public ingress sends none.
     publicAddress: z.string().nullable().optional(),
   }),
+  // A host before the control-host rule sends none.
+  controlHost: z.boolean().optional(),
 });
 const nullableNumber = z.number().finite().nullable();
 const HostSchema = z.object({

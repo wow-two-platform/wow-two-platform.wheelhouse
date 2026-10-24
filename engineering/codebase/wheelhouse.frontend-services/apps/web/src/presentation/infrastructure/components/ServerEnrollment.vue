@@ -22,7 +22,8 @@ import MintedKeys from "./MintedKeys.vue";
 import OneTimeKeyBlock from "./OneTimeKeyBlock.vue";
 
 /**
- * A server's enrollment: shown once one exists, or while the server is still reached on a public address. It holds
+ * A server's enrollment: shown once one exists, or while the server is still reached on a public address; the control
+ * host, which the consoles run on, says so instead, since enrollment sets up fresh public servers. It holds
  * the one-time key and where it goes, Enroll or Rerun, the live steps while it runs (read every two seconds), and once
  * it succeeded the host key and who confirmed it, the tailnet address and node, the kit and the keys it minted —
  * nothing secret. On deployed dev it says enrollment runs on prod only.
@@ -148,4 +149,14 @@ const facts = computed(() => enrollment.value?.facts ?? {});
       @update:open="enrolling = $event"
     />
   </section>
+  <p
+    v-else-if="props.server.controlHost"
+    :aria-label="`${props.server.name} control host`"
+    class="rounded-xl border border-border bg-background/40 p-3 text-sm"
+  >
+    <span class="font-medium">Control host.</span>
+    <span class="text-muted-foreground">
+      The consoles run here and reach it at its private address; enrollment is for fresh public servers.</span
+    >
+  </p>
 </template>

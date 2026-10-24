@@ -3,12 +3,15 @@ import { InventoryRules } from "@/domain/common";
 import { PlacementRules, type Placement } from "@/domain/infrastructure";
 import type { Product, ProductDescriptor } from "@/domain/products";
 import type { Server } from "@/domain/servers";
+import { SelfDeployRules } from "@/domain/deployments/SelfDeployRules";
 import {
   BaselineHost,
   DeploymentEnvironment,
   EnvironmentOrder,
   type InventoryTarget,
   type SaveTargetRequest,
+  type SelfTarget,
+  type SelfTargetEnvironment,
   type SiteHost,
   type SmokeCheck,
   type TargetSetting,
@@ -214,4 +217,54 @@ export function tailnetNodeOf(
 ): string {
   const node = PlacementRules.nodeFor(product, site, server, placements);
   return environment === DeploymentEnvironment.Prod ? node : PlacementRules.devNode(node);
+}
+
+/**
+ * The servers an environment of the product can run on: every server, except that Wheelhouse's own environments run
+ * only on the control host, the server the consoles reach at a private address (decision 64).
+ */
+export function serverChoicesOf<T extends Pick<Server, "controlHost">>(product: string, servers: readonly T[]): T[] {
+  return SelfDeployRules.isSelfProduct(product) ? servers.filter((server) => server.controlHost === true) : [...servers];
+}
+
+/** What Wheelhouse derives for one of its own environments, once the console's read has it. */
+export function selfEnvironmentOf(
+  self: SelfTarget | null | undefined,
+  environment: DeploymentEnvironment,
+): SelfTargetEnvironment | null {
+  return self?.environments.find((item) => item.environment === environment) ?? null;
+}
+
+/** The form with what Wheelhouse derives for its own environment: network, folder and settings file; the rest stays. */
+export function withSelfDefinition(values: TargetFormModel, derived: SelfTargetEnvironment): TargetFormModel {
+  return {
+    ...values,
+    network: derived.network,
+    root: derived.root,
+    settings: derived.settings.map((setting) => ({ ...setting })),
+  };
+}
+
+/**
+ * The site rows of one of Wheelhouse's own environments: the console site on this console's own hostname, which dev
+ * shares and answers on port 8443. While the console names no hostname, the row has none and says so; before the read
+ * arrives there is no row.
+ */
+export function selfSiteRowsOf(
+  derived: SelfTargetEnvironment | null,
+  environment: DeploymentEnvironment,
+  site = "console",
+): SiteHostRow[] {
+  if (!derived) return [];
+  const port = environment === DeploymentEnvironment.Dev ? "; dev on port 8443" : "";
+  const rows = derived.sites.map((item): SiteHostRow => ({
+    site: item.site,
+    exposure: "private",
+    host: item.host,
+    node: null,
+    note: `This console's hostname${port}`,
+  }));
+  return rows.length
+    ? rows
+    : [{ site, exposure: "private", host: "", node: null, note: "This console's settings name no hostname" }];
 }

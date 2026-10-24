@@ -3,7 +3,7 @@ import type { TargetOperations } from "@/application/targets";
 import type { KnownSite } from "@/application/targets/TargetForms";
 import type { Placement } from "@/domain/infrastructure";
 import type { Server } from "@/domain/servers";
-import type { InventoryTarget } from "@/domain/targets";
+import type { InventoryTarget, SelfTarget } from "@/domain/targets";
 
 /** Environment creation and editing for one product; the slug is fixed once the target exists. */
 export interface TargetFormModalProps {
@@ -22,6 +22,8 @@ export interface TargetFormModalProps {
   readonly takenEnvironments?: readonly string[];
   /** The services the product's deploy.yml declares; the environment runs every one of them on its server. */
   readonly services?: readonly string[];
+  /** What Wheelhouse derives for its own environments, read while one of them is open; null until it arrives. */
+  readonly selfTarget?: SelfTarget | null;
 }
 </script>
 
@@ -53,6 +55,9 @@ import { useAppForm } from "@/bootstrap/form";
 import {
   firstFreeEnvironment,
   publicAddressOf,
+  selfEnvironmentOf,
+  selfSiteRowsOf,
+  serverChoicesOf,
   siteHostsOf,
   siteRowsOf,
   storedHostsOf,
@@ -61,7 +66,9 @@ import {
   targetFormOf,
   targetFormSchema,
   targetRequestOf,
+  withSelfDefinition,
 } from "@/application/targets/TargetForms";
+import { SelfDeployRules } from "@/domain/deployments";
 import { EnvironmentOrder, type DeploymentEnvironment } from "@/domain/targets";
 import type { SiteHostRow } from "@/application/targets/TargetForms";
 import { failureReason } from "@/integration/common";
@@ -72,19 +79,26 @@ import { DeleteConfirm, RowsField } from "@/presentation/common/components";
  * server) and its sites, one row each with the host it answers on. The host is the target's stored one, else a public
  * site's baseline host on the chosen server's public address, else a private site's tailnet node; nothing is typed, and
  * the derived hosts follow the environment and the server. A new environment starts as the first one the product
- * lacks, dev then prod. */
+ * lacks, dev then prod. Wheelhouse's own environments (decision 64) take everything from what this console knows about
+ * itself, all read-only: the control host as their only server, the consoles' network and folder, the settings file
+ * the kit wrote and the console site on this console's hostname. */
 defineOptions({ name: "TargetFormModal" });
 const props = withDefaults(defineProps<TargetFormModalProps>(), {
   knownSites: () => [],
   placements: () => [],
   takenEnvironments: () => [],
   services: () => [],
+  selfTarget: null,
 });
 const emit = defineEmits<{ "update:open": [open: boolean] }>();
 defineSlots<{}>();
 
 const environments = EnvironmentOrder;
 const removeError = ref("");
+/** Whether this is one of Wheelhouse's own environments, which Wheelhouse derives whole. */
+const isSelf = computed(() => SelfDeployRules.isSelfProduct(props.product));
+/** The servers the environment can run on: the control host alone for Wheelhouse's own. */
+const serverChoices = computed(() => serverChoicesOf(props.product, props.servers));
 const form = useAppForm({
   defaultValues: targetFormOf(null, props.product, null),
   schema: targetFormSchema,
@@ -100,6 +114,7 @@ const form = useAppForm({
 
 /** The site rows for an environment on a server: the product's sites with the host each answers on. @internal */
 function rowsFor(environment: DeploymentEnvironment, server: string): SiteHostRow[] {
+  if (isSelf.value) return selfSiteRowsOf(selfEnvironmentOf(props.selfTarget, environment), environment);
   return siteRowsOf(props.knownSites, storedHostsOf(props.target, environment, server), {
     product: props.product,
     environment,
@@ -114,8 +129,9 @@ useFormDialogSession(form, {
   open: () => props.open,
   initialValues: () => {
     const environment = props.target?.environment ?? firstFreeEnvironment(props.takenEnvironments);
-    const values = targetFormOf(props.target, props.product, props.servers[0]?.slug ?? null, environment);
-    return { ...values, sites: siteHostsOf(rowsFor(values.environment, values.server)) };
+    const values = targetFormOf(props.target, props.product, serverChoices.value[0]?.slug ?? null, environment);
+    const derived = isSelf.value ? selfEnvironmentOf(props.selfTarget, values.environment) : null;
+    return { ...(derived ? withSelfDefinition(values, derived) : values), sites: siteHostsOf(rowsFor(values.environment, values.server)) };
   },
   onOpen: () => (removeError.value = ""),
 });
@@ -130,6 +146,18 @@ watch(siteRows, (rows) => {
   const sites = siteHostsOf(rows);
   if (JSON.stringify(sites) !== JSON.stringify(form.state.values.sites)) form.setValue("sites", sites);
 });
+
+/** Keeps Wheelhouse's own environment on what it derives as the console's read arrives and the environment changes. */
+watch(
+  () => (isSelf.value ? selfEnvironmentOf(props.selfTarget, form.state.values.environment) : null),
+  (derived) => {
+    if (!props.open || !derived) return;
+    const values = withSelfDefinition(form.state.values, derived);
+    if (values.network !== form.state.values.network) form.setValue("network", values.network);
+    if (values.root !== form.state.values.root) form.setValue("root", values.root);
+    if (JSON.stringify(values.settings) !== JSON.stringify(form.state.values.settings)) form.setValue("settings", values.settings);
+  },
+);
 
 /** Keeps a new target's slug following its environment until the owner types another. */
 watch(
@@ -171,13 +199,16 @@ async function remove(): Promise<void> {
               </Field>
             </form.Field>
             <form.Field name="server" is-required v-slot="field">
-              <Field label="Server">
+              <Field
+                label="Server"
+                :helper="isSelf ? (serverChoices.length ? 'The control host' : 'Add the control host first') : ''"
+              >
                 <SelectPicker v-model="field.value"
                   ><SelectPickerTrigger aria-label="Server"
                     ><SelectPickerValue placeholder="Choose a server" /></SelectPickerTrigger
                   ><SelectPickerContent
                     ><SelectPickerItem
-                      v-for="server in servers"
+                      v-for="server in serverChoices"
                       :key="server.slug"
                       :item-key="server.slug"
                       :label="server.name"
@@ -199,10 +230,11 @@ async function remove(): Promise<void> {
             </Field>
           </form.Field>
           <!-- Every server's kit lays out the same network and folder, so Wheelhouse fills both. The target keeps the
-               folder; each environment deploys into its own `<folder>/<product>-<environment>/`. -->
+               folder; each environment deploys into its own `<folder>/<product>-<environment>/`. Wheelhouse's own
+               consoles take the control host's network. -->
           <div class="grid gap-4 sm:grid-cols-2">
             <form.Field name="network" v-slot="field">
-              <Field label="Network" is-read-only helper="Set by the server kit"
+              <Field label="Network" is-read-only :helper="isSelf ? 'The consoles\' network' : 'Set by the server kit'"
                 ><TextInput v-model="field.value" autocomplete="off"
               /></Field>
             </form.Field>
@@ -212,7 +244,24 @@ async function remove(): Promise<void> {
               /></Field>
             </form.Field>
           </div>
+          <!-- Wheelhouse's own console reads the settings file the control host's kit wrote; nothing is typed. -->
+          <fieldset v-if="isSelf" class="flex flex-col gap-2">
+            <legend class="mb-1 text-sm font-medium">Host settings files</legend>
+            <div
+              v-for="setting in form.state.values.settings"
+              :key="setting.service"
+              class="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]"
+            >
+              <Field is-read-only
+                ><TextInput :model-value="setting.service" :aria-label="`Service ${setting.service}`" autocomplete="off"
+              /></Field>
+              <Field is-read-only helper="Written by the control host's kit"
+                ><TextInput :model-value="setting.path" :aria-label="`Settings file of ${setting.service}`" autocomplete="off"
+              /></Field>
+            </div>
+          </fieldset>
           <RowsField
+            v-else
             :form="form"
             name="settings"
             label="Host settings files (optional)"

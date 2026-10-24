@@ -49,3 +49,24 @@ export interface InventoryTarget {
 
 /** A target's editable definition; the slug is fixed once the target exists. */
 export type SaveTargetRequest = Omit<InventoryTarget, 'slug'> & { slug?: string };
+
+/** One of Wheelhouse's own environments as it derives it (decision 64): nothing about it is typed. */
+export interface SelfTargetEnvironment {
+  environment: DeploymentEnvironment;
+  /** The Docker network the consoles share with PostgreSQL and Traefik on the control host. */
+  network: string;
+  root: string;
+  /** The console's settings file the control host's kit wrote. */
+  settings: TargetSetting[];
+  /** The console site on this console's hostname; empty while the console names none. */
+  sites: SiteHost[];
+}
+
+/** What Wheelhouse derives for its own environments from what this console knows about itself. */
+export interface SelfTarget {
+  /** Wheelhouse's own product slug. */
+  product: string;
+  /** The hostname this console answers on, which both environments' console site takes; null when it names none. */
+  host: string | null;
+  environments: SelfTargetEnvironment[];
+}

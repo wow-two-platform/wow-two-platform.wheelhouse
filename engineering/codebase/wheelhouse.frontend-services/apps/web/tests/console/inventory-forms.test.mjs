@@ -263,6 +263,37 @@ test("moving a target to another environment or server re-derives its baseline h
   assert.deepEqual(forms.storedHostsOf({ ...target, sites: [{ site: "desk", host: " " }] }, "dev", "ocharo-vps"), []);
 });
 
+test("Wheelhouse's own environment runs on the control host and takes what this console derives about itself", () => {
+  const servers = [{ slug: "pilot", controlHost: false }, { slug: "control", controlHost: true }, { slug: "old" }];
+  assert.deepEqual(forms.serverChoicesOf("wheelhouse", servers).map((server) => server.slug), ["control"]);
+  assert.deepEqual(forms.serverChoicesOf("foreverpin", servers).map((server) => server.slug), ["pilot", "control", "old"]);
+
+  const host = "wheelhouse.tail1234.ts.net";
+  const derived = (environment, sites = [{ site: "console", host }]) => ({
+    environment, network: "control", root: "/srv/wheelhouse", sites,
+    settings: [{ service: "console", path: `/srv/wheelhouse/config/console-${environment}.json` }],
+  });
+  const self = { product: "wheelhouse", host, environments: [derived("dev"), derived("prod")] };
+  const dev = forms.selfEnvironmentOf(self, "dev");
+  const blank = forms.targetFormOf(null, "wheelhouse", "control", "dev");
+  assert.equal(blank.network, "platform", "a product's environment starts on the products' network");
+  const values = forms.withSelfDefinition({ ...blank, smokeChecks: [{ service: "console", path: "/health", status: 200 }] }, dev);
+  assert.deepEqual([values.network, values.root, values.settings, values.smokeChecks.length],
+    ["control", "/srv/wheelhouse", [{ service: "console", path: "/srv/wheelhouse/config/console-dev.json" }], 1]);
+  values.settings[0].path = "/edited";
+  assert.equal(dev.settings[0].path, "/srv/wheelhouse/config/console-dev.json", "the form edits a detached copy");
+
+  const rows = forms.selfSiteRowsOf(dev, "dev");
+  assert.deepEqual(forms.siteHostsOf(rows), [{ site: "console", host }]);
+  assert.equal(rows[0].note, "This console's hostname; dev on port 8443");
+  assert.equal(forms.selfSiteRowsOf(forms.selfEnvironmentOf(self, "prod"), "prod")[0].note, "This console's hostname");
+  const unnamed = forms.selfSiteRowsOf(derived("dev", []), "dev");
+  assert.deepEqual([unnamed[0].site, unnamed[0].host, unnamed[0].note], ["console", "", "This console's settings name no hostname"]);
+  assert.deepEqual(forms.siteHostsOf(unnamed), []);
+  assert.deepEqual(forms.selfSiteRowsOf(null, "dev"), [], "no row before the console's read arrives");
+  assert.equal(forms.selfEnvironmentOf(null, "dev"), null);
+});
+
 test("a new environment is the first one on the promotion path the product lacks", () => {
   assert.equal(forms.firstFreeEnvironment([]), "dev");
   assert.equal(forms.firstFreeEnvironment(["dev"]), "prod");

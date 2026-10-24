@@ -28,4 +28,8 @@ public sealed record ServerDto
 
     /// <summary>Gets how the server's ingress publishes sites.</summary>
     public required ServerIngressDto Ingress { get; init; }
+
+    /// <summary>Gets whether the server reads as the control host, the one the consoles run on
+    /// (<see cref="Services.ControlHost"/>): Wheelhouse's own environments run only there, and it is never enrolled.</summary>
+    public bool ControlHost { get; init; }
 }

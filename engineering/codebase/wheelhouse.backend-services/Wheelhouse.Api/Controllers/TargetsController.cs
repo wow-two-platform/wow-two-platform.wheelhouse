@@ -25,6 +25,13 @@ public sealed class TargetsController(ISender sender) : ControllerBase
     public async Task<IActionResult> Get([FromQuery, RegularExpression(Slug)] string? product, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new TargetGetAllQuery { Product = product }, ct));
 
+    /// <summary>Gets what Wheelhouse derives for its own environments: network, folder, settings file and the console
+    /// site on this console's own hostname.</summary>
+    [HttpGet("self")]
+    [ProducesResponseType<ApiResponse<SelfTargetDto>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> Self(CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new TargetSelfQuery(), ct));
+
     /// <summary>Adds an environment of a product on a server.</summary>
     [HttpPost]
     [RequireActionHeader("target")]

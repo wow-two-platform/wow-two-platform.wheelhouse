@@ -229,6 +229,33 @@ test("a new environment starts as the first the product lacks, with its slug and
   }
 });
 
+test("Wheelhouse's own environment takes the control host and what the console derives, as the read arrives", async () => {
+  const host = "wheelhouse.tail1234.ts.net";
+  const derived = (environment) => ({ environment, network: "control", root: "/srv/wheelhouse",
+    settings: [{ service: "console", path: `/srv/wheelhouse/config/console-${environment}.json` }], sites: [{ site: "console", host }] });
+  const servers = [{ slug: "ocharo-vps", ingress: { publicAddress: "203.0.113.10" } }, { slug: "control", controlHost: true }];
+  const knownSites = [{ name: "console", exposure: "private", primary: true }];
+  const mounted = mountDialog(dialogs.TargetFormModal, { product: "wheelhouse", servers, knownSites, target: null, selfTarget: null });
+  mounted.state.open = true;
+  await nextTick();
+  assert.equal(mounted.values().server, "control", "the control host is the only server it can run on");
+  assert.deepEqual(mounted.setup().serverChoices.map((server) => server.slug), ["control"]);
+  assert.deepEqual(mounted.values().sites, [], "no site before the console's read arrives");
+  mounted.state.selfTarget = { product: "wheelhouse", host, environments: [derived("dev"), derived("prod")] };
+  await nextTick();
+  await nextTick();
+  const values = mounted.values();
+  assert.deepEqual([values.slug, values.network, values.root, values.settings, values.sites], ["wheelhouse-dev", "control",
+    "/srv/wheelhouse", [{ service: "console", path: "/srv/wheelhouse/config/console-dev.json" }], [{ site: "console", host }]]);
+  // Prod: the same hostname, its own settings file.
+  mounted.setup().form.setValue("environment", "prod");
+  await nextTick();
+  await nextTick();
+  assert.deepEqual([mounted.values().slug, mounted.values().settings[0].path, mounted.values().sites],
+    ["wheelhouse-prod", "/srv/wheelhouse/config/console-prod.json", [{ site: "console", host }]]);
+  mounted.unmount();
+});
+
 test("New server opens with the defaults right after editing a server", async () => {
   const server = {
     slug: "fra1",

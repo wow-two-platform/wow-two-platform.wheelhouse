@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DeploymentEnvironment, type InventoryTarget, type SaveTargetRequest } from "@/domain/targets";
+import { DeploymentEnvironment, type InventoryTarget, type SaveTargetRequest, type SelfTarget } from "@/domain/targets";
 import { requestData, requestEmpty } from "@/integration/common";
 
 const TargetSchema = z.object({
@@ -14,8 +14,24 @@ const TargetSchema = z.object({
   sites: z.array(z.object({ site: z.string(), host: z.string() })),
 });
 
+const SelfTargetSchema = z.object({
+  product: z.string(),
+  host: z.string().nullish().transform((value) => value ?? null),
+  environments: z.array(
+    z.object({
+      environment: z.enum(DeploymentEnvironment),
+      network: z.string(),
+      root: z.string(),
+      settings: z.array(z.object({ service: z.string(), path: z.string() })),
+      sites: z.array(z.object({ site: z.string(), host: z.string() })),
+    }),
+  ),
+});
+
 /** Each product's environments on their servers, with explicit writes. */
 export const targetsApi = {
+  /** What Wheelhouse derives for its own environments from this console's own hostname. */
+  getSelf: (signal?: AbortSignal) => requestData<SelfTarget>("/api/targets/self", SelfTargetSchema, { signal }),
   listTargets: (product: string | null, signal?: AbortSignal) =>
     requestData<InventoryTarget[]>(
       product ? `/api/targets?product=${encodeURIComponent(product)}` : "/api/targets",

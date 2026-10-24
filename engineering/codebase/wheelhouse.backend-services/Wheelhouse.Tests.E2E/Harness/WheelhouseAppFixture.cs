@@ -45,6 +45,10 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     /// <summary>The browser origin configured in <c>Mcp:AllowedOrigins</c>.</summary>
     public const string McpAllowedOrigin = "http://localhost:6274";
 
+    /// <summary>The hostname this console answers on, as a Wheelhouse deploy renders its own site's URL
+    /// (<c>Sites:console:Url</c>); Wheelhouse's own environments take it as their console site.</summary>
+    public const string ConsoleHost = "wheelhouse.tail1234.ts.net";
+
     /// <summary>The shared runner stub — answers the deployment reads and records what was submitted.</summary>
     public StubDeploymentGateway Deployments { get; } = new();
 
@@ -109,6 +113,8 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
                 // The built-in vault reads the run's own root key; tests run scheduled settings applies themselves.
                 ["Vault:KeyFile"] = VaultKeyFile,
                 ["Deployment:ApplySeconds"] = "0",
+                // The dev console's own site, as its render names it: the hostname, on dev's port.
+                ["Sites:console:Url"] = "https://" + ConsoleHost + ":8443",
             }),
             ConfigureServicesHook = services =>
             {

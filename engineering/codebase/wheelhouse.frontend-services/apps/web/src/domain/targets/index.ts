@@ -4,6 +4,8 @@ export {
   environmentRank,
   type InventoryTarget,
   type SaveTargetRequest,
+  type SelfTarget,
+  type SelfTargetEnvironment,
   type SiteHost,
   type SmokeCheck,
   type TargetSetting,

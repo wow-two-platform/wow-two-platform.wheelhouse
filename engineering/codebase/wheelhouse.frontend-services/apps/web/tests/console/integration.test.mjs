@@ -170,6 +170,11 @@ test("round trips supported server providers and rejects an unknown provider", a
     assert.equal(refused.ok, false);
     assert.equal(refused.failure.code, "protocol");
   }
+  // The host reads the server at a private address as the control host; a host before that rule says nothing.
+  globalThis.fetch = async () => json({ data: [{ slug: "control", name: "Control", provider: "ovhcloud", host: "172.30.0.1",
+    region: "control", sshUser: "wheelhouse-deploy", sshPort: 22, controlHost: true, ingress: { scheme: "https", port: null,
+      entryPoints: ["private"], privateEntryPoints: [], certResolver: null, pattern: null, probe: null, privateProbe: null } }] });
+  assert.equal((await serversApi.listServers()).value[0].controlHost, true);
 });
 
 test("creates and revokes integration keys with explicit actions and reads the secret once", async () => {

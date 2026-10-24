@@ -118,11 +118,14 @@ export const EnrollmentRules = {
 
   /**
    * Whether a server shows its Enrollment section: once an enrollment exists, or while it is still reached on a public
-   * address and is not the local rig.
+   * address and is neither the local rig nor the control host, which the consoles run on.
    */
-  isVisible: (server: Pick<Server, 'host' | 'provider'>, enrollment: Pick<Enrollment, 'status'> | null | undefined): boolean =>
+  isVisible: (
+    server: Pick<Server, 'host' | 'provider' | 'controlHost'>,
+    enrollment: Pick<Enrollment, 'status'> | null | undefined,
+  ): boolean =>
     (enrollment != null && enrollment.status !== InfraJobStatus.NotStarted) ||
-    (server.provider !== VpsProvider.Local && !NetworkAddress.isTailnet(server.host)),
+    (server.provider !== VpsProvider.Local && !server.controlHost && !NetworkAddress.isTailnet(server.host)),
 
   /** Whether the owner can start the enrollment, or run it again after it stopped short. */
   canStart: (enrollment: Pick<Enrollment, 'status'> | null | undefined): boolean =>

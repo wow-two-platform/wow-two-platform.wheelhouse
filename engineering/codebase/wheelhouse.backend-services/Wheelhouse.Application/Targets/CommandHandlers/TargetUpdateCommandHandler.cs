@@ -2,15 +2,17 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Targets.Commands;
 using Wheelhouse.Application.Targets.Mappers;
 using Wheelhouse.Application.Targets.Models;
+using Wheelhouse.Application.Targets.Services;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Targets.CommandHandlers;
 
-/// <summary>Handles <see cref="TargetUpdateCommand"/>; its product and server must exist.</summary>
+/// <summary>Handles <see cref="TargetUpdateCommand"/>; its product and server must exist, and one of
+/// Wheelhouse's own environments must be exactly what it derives (<see cref="SelfTargets"/>).</summary>
 public sealed class TargetUpdateCommandHandler(
-    ITargetsRepository targets, IProductsRepository products, IServersRepository servers)
+    ITargetsRepository targets, IProductsRepository products, IServersRepository servers, IConsoleIdentity console)
     : ICommandHandler<TargetUpdateCommand, AppResult<TargetDto>>
 {
     /// <inheritdoc />
@@ -25,6 +27,9 @@ public sealed class TargetUpdateCommandHandler(
         var server = await servers.GetBySlugAsync(request.Server, cancellationToken);
         if (server is null)
             return AppResult<TargetDto>.Fail(AppErrorFactory.Validation($"Server '{request.Server}' was not found."));
+        if (SelfTargets.IsSelf(product.Slug) && SelfTargets.Refusal(server, request.Environment, request.Network, request.Root,
+                request.Settings, request.Sites, console.Host) is { } refusal)
+            return AppResult<TargetDto>.Fail(AppErrorFactory.Validation(refusal));
 
         target.ProductId = product.Id;
         target.ServerId = server.Id;

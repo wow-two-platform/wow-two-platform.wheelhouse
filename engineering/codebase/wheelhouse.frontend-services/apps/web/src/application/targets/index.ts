@@ -9,7 +9,19 @@ import { DeploymentKeys } from "@/application/deployments/DeploymentKeys";
 export const TargetKeys = {
   all: ["targets"] as const,
   list: (product: string | null) => ["targets", product ?? "*"] as const,
+  // "~" never starts a product slug, so this never meets a product's list.
+  self: ["targets", "~self"] as const,
 };
+
+/** What Wheelhouse derives for its own environments; read only while `enabled` holds (its environment form is open). */
+export function useSelfTarget(enabled: MaybeRefOrGetter<boolean>) {
+  return useAppQuery({
+    key: TargetKeys.self,
+    queryFn: ({ signal }) => targetsApi.getSelf(signal),
+    enabled: () => toValue(enabled),
+    meta: { suppressGlobalError: true },
+  });
+}
 
 /** One product's targets, or every target, with the owner's confirmed edits. */
 export function useTargets(product: MaybeRefOrGetter<string | null>) {

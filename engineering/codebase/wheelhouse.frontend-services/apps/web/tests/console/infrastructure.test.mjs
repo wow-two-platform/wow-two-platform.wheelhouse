@@ -190,6 +190,8 @@ test("a tailnet address is IPv4 in 100.64.0.0/10; enrollment wants any other IP 
 
 test("the Enrollment section shows once one exists, or while the server is reached publicly and is not the rig", () => {
   assert.equal(EnrollmentRules.isVisible(server(), null), true);
+  // The control host, which the consoles reach at its private platform address, is never enrolled.
+  assert.equal(EnrollmentRules.isVisible(server({ host: "172.30.0.1", controlHost: true }), null), false);
   assert.equal(EnrollmentRules.isVisible(server({ host: "100.101.1.2" }), null), false);
   assert.equal(EnrollmentRules.isVisible(server({ host: "100.101.1.2" }), { status: "not_started" }), false);
   assert.equal(EnrollmentRules.isVisible(server({ host: "100.101.1.2" }), { status: "succeeded" }), true);

@@ -1,4 +1,5 @@
 using Wheelhouse.Application.Servers.Models;
+using Wheelhouse.Application.Servers.Services;
 using Wheelhouse.Domain.Servers.Entities;
 using Wheelhouse.Domain.Servers.Models;
 
@@ -20,6 +21,7 @@ internal static class ServerMapper
         SshUser = server.SshUser,
         SshPort = server.SshPort,
         Ingress = Map(server.Ingress),
+        ControlHost = ControlHost.Is(server),
     };
 
     /// <summary>Maps a stored ingress to its projection.</summary>

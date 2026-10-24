@@ -45,10 +45,15 @@ export interface Server {
   sshUser: string;
   sshPort: number;
   ingress: ServerIngress;
+  /**
+   * Whether the host reads the server as the control host, the one the consoles run on and reach at a private address:
+   * Wheelhouse's own environments run only there, and it is never enrolled. Never sent on a save.
+   */
+  controlHost?: boolean | undefined;
 }
 
 /** A server's editable definition; the slug is fixed once the server exists. */
-export type SaveServerRequest = Omit<Server, 'slug'> & { slug?: string };
+export type SaveServerRequest = Omit<Server, 'slug' | 'controlHost'> & { slug?: string };
 
 export type {
   ContainerVitals,

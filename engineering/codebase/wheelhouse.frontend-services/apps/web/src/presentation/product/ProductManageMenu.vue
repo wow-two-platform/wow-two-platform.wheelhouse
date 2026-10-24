@@ -26,9 +26,10 @@ import { ConsolePaths } from "@/application/navigation";
 import { usePlacements } from "@/application/infrastructure";
 import { IconAvailability, useProductDescriptor, useProducts } from "@/application/products";
 import { useServers } from "@/application/servers";
-import { useTargets } from "@/application/targets";
+import { useSelfTarget, useTargets } from "@/application/targets";
 import { knownSitesOf } from "@/application/targets/TargetForms";
 import { useWorkspaces } from "@/application/workspaces";
+import { SelfDeployRules } from "@/domain/deployments";
 import { ProductDescriptorRules, ProductStatus, ProductStatusRules } from "@/domain/products";
 import { environmentRank, type InventoryTarget } from "@/domain/targets";
 import { failureReason } from "@/integration/common";
@@ -57,6 +58,8 @@ const isPhone = useIsPhone();
 const editing = ref(false);
 const cloning = ref(false);
 const targetForm = ref<{ open: boolean; target: InventoryTarget | null }>({ open: false, target: null });
+/** What Wheelhouse derives for its own environments, read while one of them is open. */
+const selfTarget = useSelfTarget(() => targetForm.value.open && SelfDeployRules.isSelfProduct(props.product.slug));
 const refreshing = ref(false);
 const active = computed(() => ProductStatusRules.isActive(props.product));
 const repositoryUrl = computed(() => props.product.repository.url || `https://github.com/${props.product.repository.name}`);
@@ -179,6 +182,7 @@ defineExpose({ addEnvironment: () => openTarget(null) });
     :placements="placements.placements.value"
     :taken-environments="takenEnvironments"
     :services="services"
+    :self-target="selfTarget.data.value ?? null"
     @update:open="(open) => (targetForm = { ...targetForm, open })"
   />
   <CloneModal
