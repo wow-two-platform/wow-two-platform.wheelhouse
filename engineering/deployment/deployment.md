@@ -159,10 +159,14 @@ In Wheelhouse prod, once it runs v0.5:
 
 - **Server** `control`: provider OVHcloud, host `172.30.0.1` (the host's `platform` address, as the consoles see it),
   SSH user `wheelhouse-deploy`, port 22, scheme `https`. Its entry points and probes matter to no Wheelhouse target; set
-  `private` and `http://127.0.0.1:18080`. Prod's runner identity for it:
+  `private` and `http://127.0.0.1:18080`. A server at a private address reads as the control host: Servers shows it so
+  and offers no Enroll (the API refuses one, 409). Prod's runner identity for it:
   `sudo bash /srv/wheelhouse/bootstrap/authorize-runner.sh wheelhouse-prod control` (same-host mode).
-- **Targets** `wheelhouse-dev` and `wheelhouse-prod`: server `control`, network `control`, root `/srv/wheelhouse`, host
-  settings file `console` -> `/srv/wheelhouse/config/console-<env>.json`, site `console` -> the host's tailnet name.
+- **Targets** `wheelhouse-dev` and `wheelhouse-prod`: Products › Wheelhouse › Add environment derives every field,
+  read-only, and the API refuses any other (400): server `control` (the only control host), network `control`, root
+  `/srv/wheelhouse`, host settings file `console` -> `/srv/wheelhouse/config/console-<env>.json`, site `console` -> this
+  console's own hostname, the host's tailnet name (its rendered `Sites:console:Url`, else the first name in its
+  `AllowedHosts`, which the kit's `console-<env>.json` sets). `GET /api/targets/self` shows what it derives.
 - Each deploy renders `/srv/wheelhouse/config/wheelhouse-<env>/console.target.json`: the host file plus the derived
   `AllowedHosts`, site URL and `Deployment:TrustedProxies` (Traefik's `control` address). CI and `self-deploy.py`
   mount the host file itself, so moving between them restarts the console once.
@@ -213,9 +217,10 @@ The owner, in order; every step up to the burn-in reverts with the switch:
    (an empty release takes the newest one dev ran; the summary names it), then approve the `prod` environment.
 2. Give prod the GitHub App (vps.md § GitHub access): its key in prod's volume, the App ID in `console-prod.json`.
 3. Install the kit's new files on the host and read both consoles (vps.md § Break-glass self-deploy, Install).
-4. In prod: Deployments › Automation, Wheelhouse's auto-deploy to dev off. Products › Wheelhouse: deploy mode
-   `wheelhouse` and its release source; in `wow-two-ws/catalog.yml`, Wheelhouse's `deploy: ci` -> `deploy: wheelhouse`,
-   or a catalog import sets it back. Servers: `control`; authorize prod's runner for it. Then both targets; Check passes.
+4. In prod: Deployments › Automation, Wheelhouse's auto-deploy to dev off. Settings › Catalog lists Wheelhouse as
+   Catalog changed (its `wow-two-ws/catalog.yml` entry says `deploy: wheelhouse`); import it for deploy mode
+   `wheelhouse`, its release source and its catalog workspace. Servers: `control`; authorize prod's runner for it. Then
+   both targets from Add environment; Check passes.
 5. From prod, deploy the release dev runs to `wheelhouse-dev`; its dev check passes; the dev console restarts once.
 6. `gh variable set WHEELHOUSE_SELF_DEPLOY --body true -R wow-two-platform/wow-two-platform.wheelhouse`, then turn
    Wheelhouse's auto-deploy to dev on in prod. The next main push reaches dev within about two minutes of publishing.

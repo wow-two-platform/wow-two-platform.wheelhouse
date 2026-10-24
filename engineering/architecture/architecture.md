@@ -410,12 +410,15 @@ field of the first problem.
   GitHub cannot serve, without the file, malformed, or repeating a workspace or entry slug an earlier hub holds (the
   error names both hubs) keeps its error and lists nothing; the other hubs still list theirs.
 - `GET /api/catalog` returns `{ sources: [{ repository, path, ref, name, commit, error }], workspaces: [{ slug, name,
-  description, source }], entries: [{ slug, name, source, workspace, kind, deploy, purpose, repositories, productId }]
-  }`; `productId` is the product with the entry's slug, else `null`. Always 200 for a valid setting; a failing hub
-  shows in its `error`. Signed-in session only.
+  description, source }], entries: [{ slug, name, source, workspace, kind, deploy, purpose, repositories, productId,
+  changes }] }`; `productId` is the product with the entry's slug, else `null`; `changes` names what an import would
+  bring in step for it (`workspace`, `deploy`, `repositories`, `release`), and the Catalog page lists such an entry as
+  Catalog changed, importable. Always 200 for a valid setting; a failing hub shows in its `error`. Signed-in session
+  only.
 - `POST /api/catalog/import` `{ slugs }` (action header `catalog`, audited as `catalog.import`) walks the chosen
   entries in merged order: an existing product with the slug moves into the entry's workspace and takes the entry's
-  `deploy` as its deploy mode, and its repositories when the entry lists others; an entry with
+  `deploy` as its deploy mode, its repositories when the entry lists others, and, when Wheelhouse deploys it, a derived
+  release source for each repository that has none (one it has stays); an entry with
   `deploy: wheelhouse` and a repository becomes a product, one product for all its repositories; anything else is
   skipped with a warning (an entry with `repositories: []` is not importable, and one whose repositories share a service
   creates nothing). An entry's `replaces` names products it supersedes: each one no runner record shows a deploy to
@@ -423,7 +426,7 @@ field of the first problem.
   every one while the history cannot be read, stays with a warning. A workspace is created from its catalog declaration, last in the order, only
   when a product needs it. It answers `{ createdWorkspaces, createdProducts, movedProducts, updatedProducts,
   retiredProducts, warnings: [{ slug, message }] }` (slugs; `updatedProducts` names the existing products whose deploy
-  mode or repositories changed); a second run changes nothing. A slug no readable hub lists is 400, naming each hub that could
+  mode, repositories or release sources changed); a second run changes nothing. A slug no readable hub lists is 400, naming each hub that could
   not be read, and nothing changes.
 - A product created from the catalog needs no typed release config: name and description (clipped to 200) from the
   entry, the primary (first) repository and each further one, branch `main`, asset `{slug}-release.tar.gz` (every
@@ -711,7 +714,9 @@ request acts as `automation`, so every automatic submission goes through the ord
   `wheelhouse-dev` through the same watcher, queue and watch window, and its declared dev check (`self_check.py`)
   replaces CI's post-deploy checks. Its prod is never auto-promoted (the API refuses turning it on, 409) and never part
   of a fleet (400); `SelfDeploymentInterceptor` refuses an automatic cause, a missing typed ID or reason, and a
-  promotion while a fleet runs (409, audited). The runner gates Wheelhouse targets on the site probe and rolls any of
+  promotion while a fleet runs (409, audited). Its targets are derived whole and run only on the control host, the
+  server at a private address (`SelfTargets`, `GET /api/targets/self`); a save that differs is 400, and the control
+  host is never enrolled (409). The runner gates Wheelhouse targets on the site probe and rolls any of
   their releases back (expand-only migrations, decision 65); `GET /api/self-deployment` reads the console's own newest
   rollout back from the host's journal, which `SelfDeploymentBootReader` does at boot
   ([deployment operations](../deployment/deployment.md#wheelhouse-deploys-itself)).
