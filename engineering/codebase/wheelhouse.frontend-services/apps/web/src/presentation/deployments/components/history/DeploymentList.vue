@@ -131,7 +131,7 @@ function open(item: DeploymentItem | undefined, event: MouseEvent): void {
               v-if="item"
               :to="pathOf(item)"
               class="inline-flex min-h-11 items-center gap-2 font-mono text-xs font-medium hover:text-primary focus-visible:outline-primary md:min-h-0"
-              :aria-label="`Deployment of ${item.release ?? item.bundleId ?? 'an unknown release'} to ${item.targetId ?? 'a removed target'}`"
+              :aria-label="`Deployment of ${ReleaseSets.text(item.release) || item.bundleId || 'an unknown release'} to ${item.targetId ?? 'a removed target'}`"
             >
               {{ ReleaseSets.text(item.release) || item.bundleId || "—" }}
               <Badge v-if="item.kind === 'candidate'" variant="neutral">build</Badge>

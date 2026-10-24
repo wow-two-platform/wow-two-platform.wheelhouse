@@ -29,7 +29,7 @@ import {
 
 import { useTargetStates } from "@/application/deployments";
 import { compareEnvironments } from "@/domain/deployments";
-import { InfoPopover } from "@/presentation/common/components";
+import { InfoPopover, ReleaseLabel } from "@/presentation/common/components";
 
 /** Lays a product's environments side by side: each service's version per environment, and the release each
  * environment could hand to the next one along dev → prod. How to read it sits behind the info button. */
@@ -68,9 +68,10 @@ const rows = computed(() => comparison.value.rows.filter((row) => !props.hiddenS
           <TableHeaderCell>Service</TableHeaderCell>
           <TableHeaderCell v-for="column in comparison.columns" :key="column.targetId">
             <span class="block capitalize">{{ column.environment }}</span>
-            <span class="block font-mono text-[11px] font-normal tracking-normal text-muted-foreground normal-case">{{
-              !column.read ? "Reading…" : (column.release ?? "Not deployed")
-            }}</span>
+            <span class="mt-0.5 block font-mono text-[11px] font-normal tracking-normal text-muted-foreground normal-case"
+              ><template v-if="!column.read">Reading…</template
+              ><ReleaseLabel v-else :release="column.release" fallback="Not deployed"
+            /></span>
           </TableHeaderCell>
         </TableRow>
       </TableHead>
@@ -81,7 +82,7 @@ const rows = computed(() => comparison.value.rows.filter((row) => !props.hiddenS
             v-for="(version, index) in row.versions"
             :key="comparison.columns[index]!.targetId"
             class="font-mono text-xs"
-            :title="version ? `Last changed in ${version.changedIn}` : ''"
+            :title="version ? `Last changed in ${ReleaseSets.text(version.changedIn)}` : ''"
           >
             <!-- Every version wears the same outlined pill; one that has not reached the next environment is tinted. -->
             <span

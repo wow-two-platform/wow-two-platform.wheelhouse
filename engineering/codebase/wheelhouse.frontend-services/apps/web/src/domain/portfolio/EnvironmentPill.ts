@@ -134,7 +134,7 @@ export const EnvironmentPillRules = {
     if (health === EnvironmentHealth.Failing) return pill(PillState.Failed);
     if (lastDeploy && !supersedes(running, lastDeploy)) {
       if (lastDeploy.state === DeployState.RolledBack)
-        return pill(PillState.Degraded, undefined, release ? `rolled back to ${release}` : 'rolled back to the previous release');
+        return pill(PillState.Degraded, undefined, release ? `rolled back to ${ReleaseSets.text(release)}` : 'rolled back to the previous release');
       if (lastDeploy.state === DeployState.Partial)
         return pill(PillState.Mixed, mixedDetail(lastDeploy), lastDeploy.reason ?? 'the environment runs two releases');
       if (lastDeploy.state === DeployState.Failed) return pill(PillState.Failed, undefined, lastDeploy.reason);

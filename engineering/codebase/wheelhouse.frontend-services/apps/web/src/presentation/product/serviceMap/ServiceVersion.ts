@@ -1,3 +1,4 @@
+import { ReleaseSets } from "@/domain/deployments/ReleaseSets";
 import type { TopologyService } from "@/domain/topology";
 
 /** A service's running version as the map shows it, and where that version comes from. */
@@ -19,13 +20,14 @@ export function describeServiceVersion(
   if (service.version)
     return {
       label: service.version.version,
-      detail: `Last changed in ${service.version.changedIn}`,
+      detail: `Last changed in ${ReleaseSets.text(service.version.changedIn)}`,
       isServiceVersion: true,
     };
   if (release)
     return {
-      label: release,
-      detail: `Release ${release}; it records no per-service versions`,
+      // A set's label stands in as a pill does (`platform 0.1.8 +2`); its detail names every repository's release.
+      label: ReleaseSets.short(release),
+      detail: `Release ${ReleaseSets.text(release)}; it records no per-service versions`,
       isServiceVersion: false,
     };
   return {

@@ -155,7 +155,7 @@ const rows = useSkeletonItems(() => (releases.data.value ? visible.value : undef
                 size="sm"
                 shape="square"
                 class="max-md:size-11"
-                :aria-label="`Deploy ${artifact?.release ?? 'release'}`"
+                :aria-label="`Deploy ${ReleaseSets.text(artifact?.release) || 'release'}`"
                 title="Deploy this release"
                 @click="artifact && emit('deploy', artifact.id)"
                 ><template #leading><Rocket :size="14" /></template

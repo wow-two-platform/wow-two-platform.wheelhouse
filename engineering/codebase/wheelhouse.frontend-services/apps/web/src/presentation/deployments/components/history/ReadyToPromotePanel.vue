@@ -119,7 +119,7 @@ function name(item: DeploymentPromotion): string {
             <CheckboxInput
               :model-value="chosen.has(FleetRollouts.key(item))"
               :is-disabled="held.has(item.prodTargetId)"
-              :aria-label="`Choose ${item.release} of ${name(item)} for a fleet rollout`"
+              :aria-label="`Choose ${ReleaseSets.text(item.release)} of ${name(item)} for a fleet rollout`"
               @update:model-value="toggle(item, $event)"
             />
           </label>
@@ -136,7 +136,7 @@ function name(item: DeploymentPromotion): string {
               </Badge>
             </p>
             <p v-if="item" class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-              <span class="font-mono text-xs text-foreground">{{ item.prodRelease ?? "nothing" }}</span>
+              <span class="font-mono text-xs text-foreground">{{ ReleaseSets.text(item.prodRelease) || "nothing" }}</span>
               <ArrowRight :size="14" aria-label="to" />
               <span class="font-mono text-xs font-medium text-foreground">{{ ReleaseSets.text(item.release) }}</span>
               <span>· succeeded on dev <RelativeTime :value="item.devSucceededAt" /></span>
@@ -153,7 +153,7 @@ function name(item: DeploymentPromotion): string {
             size="sm"
             class="max-md:min-h-11"
             :is-disabled="held.has(item.prodTargetId)"
-            :aria-label="`Promote ${item.release} of ${props.productNames.get(item.product) ?? item.product} to prod`"
+            :aria-label="`Promote ${ReleaseSets.text(item.release)} of ${props.productNames.get(item.product) ?? item.product} to prod`"
             @click="emit('promote', item)"
           >
             <template #leading><Rocket :size="14" aria-hidden="true" /></template>Promote

@@ -1,5 +1,5 @@
 import { Measures } from '@/domain/common';
-import { TargetCondition, type DeploymentStats } from '@/domain/deployments';
+import { ReleaseSets, TargetCondition, type DeploymentStats } from '@/domain/deployments';
 import { ServerExtensions, RESTART_WARNING, USAGE_THRESHOLDS, type ServerVitals } from '@/domain/servers';
 import { VaultStatus, type VaultHygiene, type VaultSummary } from '@/domain/secrets';
 
@@ -40,7 +40,7 @@ export const AttentionRules = {
           detail: 'A rollout stopped after changing containers; new deployments wait until it is reconciled.', href: '/deployments' });
       if (target.release && target.containers?.length === 0)
         items.push({ id: `empty:${id}`, tone: 'danger', title: `${id} runs no containers`,
-          detail: `It last verified ${target.release}, but none of its containers exist now.`, href: '/servers' });
+          detail: `It last verified ${ReleaseSets.text(target.release)}, but none of its containers exist now.`, href: '/servers' });
       for (const container of target.containers ?? []) {
         if (!ServerExtensions.isHealthy(container))
           items.push({ id: `container:${id}:${container.service}`, tone: 'danger',

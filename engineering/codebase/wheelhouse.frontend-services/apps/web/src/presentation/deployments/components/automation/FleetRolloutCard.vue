@@ -107,7 +107,7 @@ function itemTone(item: FleetRolloutItem): string {
             <RouterLink :to="ConsolePaths.product(item.product)" class="font-medium hover:text-primary focus-visible:outline-primary">{{
               props.productNames.get(item.product) ?? item.product
             }}</RouterLink>
-            <span class="font-mono text-xs text-muted-foreground">{{ item.fromRelease ?? "nothing" }}</span>
+            <span class="font-mono text-xs text-muted-foreground">{{ ReleaseSets.text(item.fromRelease) || "nothing" }}</span>
             <ArrowRight :size="12" aria-label="to" />
             <span class="font-mono text-xs">{{ ReleaseSets.text(item.release) || item.bundleId }}</span>
             <span :class="itemTone(item)" class="text-xs">{{ FleetRollouts.itemLabel(item.status) }}</span>

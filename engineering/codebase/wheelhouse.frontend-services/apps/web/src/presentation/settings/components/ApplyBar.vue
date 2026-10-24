@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { DeploySettings } from "@/domain/deployments";
+import { ReleaseSets, type DeploySettings } from "@/domain/deployments";
 
 /** Defines the bar that applies an environment's edited settings and secrets. */
 export interface ApplyBarProps {
@@ -52,7 +52,7 @@ async function run(): Promise<void> {
   if (!result.ok) return;
   done.value =
     result.value.mode === "now"
-      ? `Deploying ${result.value.release ?? "the running release"} again; only services whose settings changed restart.`
+      ? `Deploying ${ReleaseSets.text(result.value.release) || "the running release"} again; only services whose settings changed restart.`
       : "Scheduled.";
   mode.value = "idle";
   reason.value = "";
@@ -113,7 +113,7 @@ async function run(): Promise<void> {
           :is-loading="apply.loading.value"
           :is-disabled="!confirmed || (mode === 'later' && !at)"
           @click="run"
-          >{{ mode === "now" ? `Deploy ${props.plan.release} again now` : "Schedule the apply" }}</Button
+          >{{ mode === "now" ? `Deploy ${ReleaseSets.short(props.plan.release ?? "")} again now` : "Schedule the apply" }}</Button
         >
         <Button size="sm" variant="ghost" tone="neutral" @click="mode = 'idle'">Cancel</Button>
       </div>

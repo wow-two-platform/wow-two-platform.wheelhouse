@@ -10,6 +10,7 @@ import {
 } from '@/domain/common/StatusVocabulary';
 
 import { JobStatus } from './enums/JobStatus';
+import { ReleaseSets } from './ReleaseSets';
 import type { DeploymentStep } from './models/DeploymentStep';
 import type {
   DeploymentStateCause,
@@ -216,15 +217,17 @@ export const DeploymentStates = {
     previous: string | null,
   ): string {
     const where = environment ?? 'The target';
+    // A release set reads as each repository's release, as everywhere a person reads a label.
+    const next = ReleaseSets.text(release) || 'the new release';
     switch (reading.state) {
       case DeployState.InProgress:
-        return `${where} is changing to ${release ?? 'the new release'}`;
+        return `${where} is changing to ${next}`;
       case DeployState.Succeeded:
-        return `${where} runs ${release ?? 'the new release'}`;
+        return `${where} runs ${next}`;
       case DeployState.Degraded:
-        return `${where} runs ${release ?? 'the new release'}, not all of it healthy`;
+        return `${where} runs ${next}, not all of it healthy`;
       case DeployState.RolledBack:
-        return `${where} runs ${previous ?? 'the previous release'} again`;
+        return `${where} runs ${ReleaseSets.text(previous) || 'the previous release'} again`;
       case DeployState.Partial:
         return `${where} now runs two releases`;
       case DeployState.Failed:

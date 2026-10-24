@@ -95,9 +95,10 @@ and each service's platform name carry it; each repository keeps its own CI, `vX
   artifact IDs in repository order, so the same components always make the same set. Its release label names each
   component by its repository's short name (the name without the owner's or the product's prefix) and release, joined
   by `_` in repository order: `platform-v0.1.8_studio-v0.1.6_assets-v0.1.0`, or `set-<12 hex>` past 96 characters.
-  The console reads it as `platform v0.1.8 + studio v0.1.6 + assets v0.1.0`, a pill as `platform 0.1.8 +2`. ID and
-  label cover the set's components only; the catalog entry's and the changelog's `notYet` name the product's
-  repositories it does not hold yet, which the deploy dialog and the changelog show.
+  The console reads it as `platform v0.1.8 + studio v0.1.6 + assets v0.1.0`, a pill as `platform 0.1.8 +2`, and the
+  Overview's Verified release card and the Environments head as one chip per repository, the joined label as its
+  title. ID and label cover the set's components only; the catalog entry's and the changelog's `notYet` name the
+  product's repositories it does not hold yet, which the deploy dialog and the changelog show.
 - **Listing.** The release catalog lists a product's sets, never its repositories' own releases (one alone would drop the
   other repositories' services): after each repository release, once the primary repository has published one, a set
   of that release and every other repository's newest then, leaving out each with none yet, newest first (50 at most);

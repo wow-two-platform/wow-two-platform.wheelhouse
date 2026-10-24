@@ -3,7 +3,8 @@
  * released; one that has not yet is left out until it does, and the set names it as not in it yet. Its label names each
  * as `<name>-<release>`, joined by `_` in repository order (`platform-v0.1.8_studio-v0.1.6`, or `platform-v0.1.8` while
  * only the primary repository has released), or `set-<12 hex>` when that would be too long. These rules read such a
- * label for people; every other label passes as is.
+ * label for people, as the runner's `release_sets.label_parts` does; every other label (`set-<12 hex>`, a repository's
+ * own tag such as `v0.5.42`, a commit build) passes as is.
  */
 export interface ReleasePart {
   /** The repository's name within the product. */
@@ -12,7 +13,8 @@ export interface ReleasePart {
   readonly release: string;
 }
 
-const PART = /^([a-z][a-z0-9-]*?)-(v\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?|sha-[0-9a-f]{7})$/;
+const PART =
+  /^([a-z][a-z0-9-]*?)-(v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?|sha-[0-9a-f]{7})$/;
 const DIGEST = /^set-[0-9a-f]{12}$/;
 
 /** A repository of the product that a set does not hold yet: it has not released, or names no service yet. */
@@ -28,7 +30,7 @@ export interface NotYetPart {
  * (`v0.1.8`) or commit build (`sha-…`) carries no name, so it never reads as a set.
  */
 function parts(label: string | null | undefined): ReleasePart[] | null {
-  if (!label) return null;
+  if (!label || label.startsWith('set-')) return null;
   const pieces = label.split('_');
   const result: ReleasePart[] = [];
   for (const piece of pieces) {

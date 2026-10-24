@@ -3,9 +3,11 @@ import { after, afterEach, test } from "node:test";
 import { stop } from "esbuild";
 import { bundleModule } from "./BundleModule.mjs";
 
-const { ReleaseSets, shortRelease, deploymentsApi, productsApi, DeploymentItemSchema, DeploymentPromotionSchema } =
-  await bundleModule(`
+const { ReleaseSets, DeploymentStates, describeServiceVersion, shortRelease, deploymentsApi, productsApi,
+  DeploymentItemSchema, DeploymentPromotionSchema } = await bundleModule(`
   export { ReleaseSets } from './src/domain/deployments/ReleaseSets';
+  export { DeploymentStates } from './src/domain/deployments/DeploymentStatus';
+  export { describeServiceVersion } from './src/presentation/product/serviceMap/ServiceVersion';
   export { shortRelease } from './src/domain/portfolio/EnvironmentPill';
   export { deploymentsApi } from './src/integration/deployments';
   export { productsApi } from './src/integration/products';
@@ -36,6 +38,36 @@ test("a release set's label reads as each repository's release, and every other 
     assert.equal(ReleaseSets.isSet(other), false, String(other));
   assert.equal(ReleaseSets.text("v1.2.0"), "v1.2.0");
   assert.equal(ReleaseSets.text(null), "");
+});
+
+test("a set's label parses as the runner's label_parts does", () => {
+  const label = "platform-v0.1.10_studio-v0.1.7_marketing-v0.1.0_assets-v0.1.1";
+  assert.deepEqual(ReleaseSets.parts(label), [
+    { name: "platform", release: "v0.1.10" }, { name: "studio", release: "v0.1.7" },
+    { name: "marketing", release: "v0.1.0" }, { name: "assets", release: "v0.1.1" },
+  ]);
+  assert.equal(ReleaseSets.text(label), "platform v0.1.10 + studio v0.1.7 + marketing v0.1.0 + assets v0.1.1");
+  assert.equal(ReleaseSets.short(label), "platform 0.1.10 +3");
+  // A digest label, a repository's own tag, a commit build and a non-semver part all pass through unchanged.
+  for (const other of ["set-0123456789ab", "set-v0.1.0", "v0.5.42", "sha-abcdef1", "platform-v01.2.3", "platform-v1.2"]) {
+    assert.equal(ReleaseSets.parts(other), null, other);
+    assert.equal(ReleaseSets.text(other), other);
+  }
+  assert.equal(ReleaseSets.parts(""), null);
+  assert.equal(ReleaseSets.parts(undefined), null);
+});
+
+test("sentences and hints that name a release read a set as each repository's release", () => {
+  const label = "platform-v0.1.10_studio-v0.1.7";
+  const readable = "platform v0.1.10 + studio v0.1.7";
+  assert.equal(DeploymentStates.nowRuns({ state: "succeeded" }, "dev", label, null), `dev runs ${readable}`);
+  assert.equal(DeploymentStates.nowRuns({ state: "rolled_back" }, "prod", "v0.9.0", label), `prod runs ${readable} again`);
+  assert.equal(DeploymentStates.nowRuns({ state: "succeeded" }, "dev", null, null), "dev runs the new release");
+  const version = describeServiceVersion({ version: null }, label);
+  assert.equal(version.label, "platform 0.1.10 +1");
+  assert.equal(version.detail, `Release ${readable}; it records no per-service versions`);
+  assert.equal(describeServiceVersion({ version: { version: "0.1.7", changedIn: label } }, label).detail,
+    `Last changed in ${readable}`);
 });
 
 test("a set names the repositories that are not in it yet", () => {

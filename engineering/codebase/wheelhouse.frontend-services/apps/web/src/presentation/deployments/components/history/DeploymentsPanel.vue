@@ -33,7 +33,7 @@ import {
 } from "@/application/deployments";
 import { usePortfolio } from "@/application/portfolio";
 import { useShowAllAttempts } from "@/application/preferences";
-import { DayLanes, DeploymentFilters } from "@/domain/deployments";
+import { DayLanes, DeploymentFilters, ReleaseSets } from "@/domain/deployments";
 import { useRefresh } from "@/bootstrap/query";
 import { InfoPopover, Panel, RefreshButton } from "@/presentation/common/components";
 
@@ -106,7 +106,7 @@ const selectedIds = computed(
   () => new Set(list.items.value.filter((item) => isSelectedRelease(item, selection.value)).map((item) => item.id)),
 );
 const selectionLabel = computed(() =>
-  selection.value ? [selection.value.release, selection.value.environment].filter(Boolean).join(" on ") : "",
+  selection.value ? [ReleaseSets.text(selection.value.release), selection.value.environment].filter(Boolean).join(" on ") : "",
 );
 const isSelectionMissing = computed(
   () =>

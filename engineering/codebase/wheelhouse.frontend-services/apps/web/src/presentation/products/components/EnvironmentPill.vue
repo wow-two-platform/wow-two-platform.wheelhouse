@@ -39,7 +39,7 @@ const label = computed(() => {
   const pill = props.pill;
   if (!pill) return "";
   const state = pill.state === PillState.Degraded && pill.cause ? `${word.value}, ${pill.cause}` : word.value;
-  const base = pill.release && pill.state !== PillState.None ? `${pill.environment}: ${state} · ${pill.release}` : `${pill.environment}: ${state}`;
+  const base = pill.release && pill.state !== PillState.None ? `${pill.environment}: ${state} · ${ReleaseSets.text(pill.release)}` : `${pill.environment}: ${state}`;
   return marker.value ? `${base}; ${marker.value.words}` : base;
 });
 /** The line that explains a calm or empty state in the details. @internal */

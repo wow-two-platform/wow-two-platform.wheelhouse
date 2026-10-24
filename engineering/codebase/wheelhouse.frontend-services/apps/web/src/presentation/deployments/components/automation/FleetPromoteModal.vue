@@ -143,7 +143,7 @@ function close(open: boolean): void {
             </p>
             <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
               <span class="font-mono text-xs">{{ item.prodTargetId }}</span>
-              <span class="font-mono text-xs text-foreground">{{ item.prodRelease ?? "nothing" }}</span>
+              <span class="font-mono text-xs text-foreground">{{ ReleaseSets.text(item.prodRelease) || "nothing" }}</span>
               <ArrowRight :size="14" aria-label="to" />
               <span class="font-mono text-xs font-medium text-foreground">{{ ReleaseSets.text(item.release) }}</span>
               <DevCheckPill :verification="item.verification" :verifies="item.verifies" />

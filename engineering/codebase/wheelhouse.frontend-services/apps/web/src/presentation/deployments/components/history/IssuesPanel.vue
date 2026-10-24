@@ -129,7 +129,7 @@ function describe(issue: DeploymentIssue): string {
             tone="neutral"
             size="sm"
             class="max-md:min-h-11"
-            :aria-label="`Open the deployment of ${issue.deployment.release ?? 'a release'} to ${describe(issue)}`"
+            :aria-label="`Open the deployment of ${ReleaseSets.text(issue.deployment.release) || 'a release'} to ${describe(issue)}`"
             @click="router.push(pathOf(issue))"
           >
             <template #leading><ArrowUpRight :size="14" aria-hidden="true" /></template>Open
@@ -140,7 +140,7 @@ function describe(issue: DeploymentIssue): string {
             tone="neutral"
             size="sm"
             class="max-md:min-h-11"
-            :aria-label="`Redeploy ${issue.deployment.release ?? issue.deployment.bundleId} to ${describe(issue)}`"
+            :aria-label="`Redeploy ${ReleaseSets.text(issue.deployment.release) || issue.deployment.bundleId} to ${describe(issue)}`"
             @click="emit('redeploy', issue)"
           >
             <template #leading><RotateCcw :size="14" aria-hidden="true" /></template>Redeploy

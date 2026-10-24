@@ -74,7 +74,7 @@ import {
   ServiceLogsModal,
   useDeployModal,
 } from "@/presentation/deployments";
-import { InfoPopover, RefreshButton } from "@/presentation/common/components";
+import { InfoPopover, RefreshButton, ReleaseLabel } from "@/presentation/common/components";
 import { ResourceMeter } from "@/presentation/servers";
 import BuildUsagePanel from "../BuildUsagePanel.vue";
 import HostingPanel from "@/presentation/infrastructure/components/HostingPanel.vue";
@@ -253,6 +253,8 @@ const serviceCards = useSkeletonItems(
       : undefined,
   2,
 );
+/** The release last verified on the target: a set's joined label, a release tag or a commit build. */
+const verifiedRelease = computed(() => state.data.value?.current?.release ?? null);
 const drift = computed(() =>
   target.value
     ? DeploymentExtensions.releaseDrift(
@@ -477,9 +479,12 @@ function openDeploy(job?: DeploymentJob): void {
                   <span
                     class="flex items-center gap-2 text-xs text-muted-foreground"
                     ><Rocket :size="15" />Verified release</span
-                  ><span class="mt-3 block truncate text-xl font-semibold"
+                  ><!-- A release set shows each repository's release as a wrapping chip; any other label keeps the large line. -->
+                  <span v-if="ReleaseSets.parts(verifiedRelease)" class="mt-3 block"
+                    ><SkeletonStateSlot is-block><ReleaseLabel :release="verifiedRelease" size="md" /></SkeletonStateSlot></span
+                  ><span v-else class="mt-3 block truncate text-xl font-semibold" :title="verifiedRelease ?? undefined"
                     ><SkeletonStateSlot>{{
-                      state.data.value?.current?.release ?? "Not verified"
+                      verifiedRelease ?? "Not verified"
                     }}</SkeletonStateSlot></span
                   ><Text as="span" class="mt-2 block text-xs text-muted-foreground">{{
                     drift?.behind != null && drift.behind > 0
@@ -742,7 +747,7 @@ function openDeploy(job?: DeploymentJob): void {
                 >
                   <span class="min-w-0 flex-1"
                     ><Text as="span" class="block truncate text-sm font-medium text-inherit" skeleton-width="8rem">{{
-                      job ? (job.release ?? job.bundleId ?? "Submitted release") : ""
+                      job ? (ReleaseSets.text(job.release) || job.bundleId || "Submitted release") : ""
                     }}</Text
                     ><Text as="span" class="text-xs text-muted-foreground" skeleton-width="10rem"
                       ><template v-if="job"
@@ -919,7 +924,7 @@ function openDeploy(job?: DeploymentJob): void {
                     { label: 'Provider', value: target.provider },
                     {
                       label: 'Verified release',
-                      value: state.data.value?.current?.release ?? 'Not verified',
+                      value: ReleaseSets.text(verifiedRelease) || 'Not verified',
                     },
                     {
                       label: 'Host uptime',

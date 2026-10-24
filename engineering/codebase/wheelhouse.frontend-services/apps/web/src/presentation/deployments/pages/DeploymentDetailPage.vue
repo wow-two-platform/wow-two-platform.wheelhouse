@@ -191,7 +191,7 @@ function rollBack(): void {
         v-if="deployment?.bundleId && targetExists"
         :variant="fitting === 'redeploy' || fitting === 'retry' ? 'solid' : 'outline'"
         :tone="fitting === 'redeploy' || fitting === 'retry' ? 'primary' : 'neutral'"
-        :aria-label="`${fitting === 'retry' ? 'Retry' : 'Redeploy'} ${deployment.release ?? deployment.bundleId}`"
+        :aria-label="`${fitting === 'retry' ? 'Retry' : 'Redeploy'} ${ReleaseSets.text(deployment.release) || deployment.bundleId}`"
         @click="redeploy"
         ><template #leading><RotateCcw :size="16" /></template
         ><span class="hidden sm:inline">{{ fitting === "retry" ? "Retry" : "Redeploy" }}</span></Button
@@ -200,7 +200,7 @@ function rollBack(): void {
         v-if="detail.data.value?.rollback && targetExists"
         variant="outline"
         tone="neutral"
-        :aria-label="`Roll back to ${detail.data.value.rollback.release ?? 'the previous release'}`"
+        :aria-label="`Roll back to ${ReleaseSets.text(detail.data.value.rollback.release) || 'the previous release'}`"
         @click="rollBack"
         ><template #leading><Undo2 :size="16" /></template><span class="hidden sm:inline">Roll back</span></Button
       >
@@ -372,7 +372,7 @@ function rollBack(): void {
                   <span class="block text-sm text-muted-foreground">{{
                     rollback.stuck.length
                       ? "Reconcile the target, then deploy a fix forward or restore the snapshot."
-                      : `Back on ${restored ?? "the previous release"}.`
+                      : `Back on ${ReleaseSets.text(restored) || "the previous release"}.`
                   }}</span>
                 </span>
               </li>

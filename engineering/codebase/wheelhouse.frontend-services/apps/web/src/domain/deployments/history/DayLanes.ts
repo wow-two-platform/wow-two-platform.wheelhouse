@@ -1,6 +1,7 @@
 import { Attention, DeployState } from '@/domain/common/StatusVocabulary';
 
 import { DeploymentStates, type DeploymentStateReading } from '../DeploymentStatus';
+import { ReleaseSets } from '../ReleaseSets';
 import type { DeploymentItem } from './models/DeploymentItem';
 
 /** The environments every day row has a lane for, in order; any other environment a day holds follows them. */
@@ -166,7 +167,7 @@ export const DayLanes = {
   /** A glyph's one line: `v1.6.1 · 14:05 · Failed, rollback not allowed · sulton-max`, then `· on hel1` for a fleet. */
   hint(glyph: DayGlyph): string {
     const state = glyph.reading.detail ? `${glyph.reading.word}, ${glyph.reading.detail}` : glyph.reading.word;
-    const parts = [glyph.release, DayLanes.time(glyph.at), state, glyph.item.actor ?? 'unknown actor'];
+    const parts = [ReleaseSets.text(glyph.release), DayLanes.time(glyph.at), state, glyph.item.actor ?? 'unknown actor'];
     if (glyph.server) parts.push(`on ${glyph.server}`);
     return parts.join(' · ');
   },

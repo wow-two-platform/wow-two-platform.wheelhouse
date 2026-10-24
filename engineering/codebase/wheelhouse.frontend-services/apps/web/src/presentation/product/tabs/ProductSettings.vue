@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { Product } from "@/domain/products";
+import { ReleaseSets } from "@/domain/deployments";
 
 /** A product's Settings tab. */
 export interface ProductSettingsProps {
@@ -66,7 +67,7 @@ const refresh = useRefresh(() => invalidate(SettingsKeys.of(place.target.value?.
     <Panel
       v-else
       title="Settings"
-      :description="`${props.product.name} in ${place.environment.value}${plan.data.value?.release ? `, running ${plan.data.value.release}` : ''}.`"
+      :description="`${props.product.name} in ${place.environment.value}${plan.data.value?.release ? `, running ${ReleaseSets.text(plan.data.value.release)}` : ''}.`"
     >
       <DataRegion
         :is-first-load="place.targets.isFirstLoad.value || plan.isFirstLoad.value"
