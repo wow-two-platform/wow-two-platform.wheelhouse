@@ -277,6 +277,24 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     }
 
     [Fact]
+    public async Task Get_ShouldNameWhatAnImportWouldBringInStep_ForEachExistingProduct()
+    {
+        PushHubs();
+
+        var changes = (await CatalogAsync()).GetProperty("entries").EnumerateArray()
+            .ToDictionary(entry => entry.GetProperty("slug").GetString()!, entry => Strings(entry.GetProperty("changes")));
+
+        changes["wheelhouse"].Should().Equal(["workspace"], "the seed keeps it in own-ventures, and its entry says CI deploys it");
+        changes["foreverpin"].Should().BeEmpty("it is in its entry's workspace, deployed by Wheelhouse, with a release source");
+        changes["secrets-vault"].Should().BeEmpty("it is no product yet");
+
+        PushCatalog(Catalog.Replace("deploy: ci", "deploy: wheelhouse"));
+        var turned = (await CatalogAsync()).GetProperty("entries").EnumerateArray()
+            .Single(entry => entry.GetProperty("slug").GetString() == "wheelhouse");
+        Strings(turned.GetProperty("changes")).Should().Equal("workspace", "deploy", "release");
+    }
+
+    [Fact]
     public async Task Get_ShouldReadEachHubsNewestCommit_WhenACatalogChanges()
     {
         var first = PushHubs();
@@ -522,6 +540,41 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
             new { slugs = new[] { "wheelhouse", "pipelines", "wheelhousecanary" } }));
         Strings(again.GetProperty("updatedProducts")).Should().BeEmpty();
         Strings(again.GetProperty("movedProducts")).Should().BeEmpty("pipelines is in its entry's workspace since the first run");
+    }
+
+    [Fact]
+    public async Task Import_ShouldBringAnExistingProductInStep_WhenItsEntryTurnsToWheelhouse()
+    {
+        PushHubs();
+        PushCatalog(Catalog.Replace("deploy: ci", "deploy: wheelhouse"));
+        Fixture.RepositoryFiles.Push("wow-two-platform/wow-two-platform.wheelhouse", "engineering/deployment/deploy.yml",
+            "descriptor: 1\nproduct: wheelhouse\nservices:\n  console:\n    build: { dockerfile: deployment/Dockerfile }\n    health: /api/system/ready\n");
+
+        var result = await DataAsync(await ImportClient().PostJsonAsync("api/catalog/import", new { slugs = new[] { "wheelhouse" } }));
+
+        Strings(result.GetProperty("updatedProducts")).Should().Equal("wheelhouse");
+        Strings(result.GetProperty("movedProducts")).Should().Equal("wheelhouse");
+        Strings(result.GetProperty("createdProducts")).Should().BeEmpty();
+        result.GetProperty("warnings").GetArrayLength().Should().Be(0);
+        var platform = (await WorkspacesAsync()).Single(workspace => workspace.Slug == "wow2-platform");
+        var product = await ProductAsync("wheelhouse");
+        (product.GetProperty("deploy").GetString(), product.GetProperty("workspaceId").GetString())
+            .Should().Be(("wheelhouse", platform.Id.ToString()));
+        (product.GetProperty("name").GetString(), product.GetProperty("description").GetString())
+            .Should().Be(("Wheelhouse", "The portfolio's control plane."), "the catalog does not own an existing product's name");
+        var release = product.GetProperty("release");
+        (release.GetProperty("asset").GetString(), release.GetProperty("workflow").GetString())
+            .Should().Be(("wheelhouse-release.tar.gz", "publish-docker-image.yml"));
+        release.GetProperty("images").EnumerateArray()
+            .Select(image => (image.GetProperty("service").GetString(), image.GetProperty("image").GetString()))
+            .Should().Equal(("console", "ghcr.io/wow-two-platform/wow-two-platform.wheelhouse/console"));
+        var entry = (await CatalogAsync()).GetProperty("entries").EnumerateArray()
+            .Single(item => item.GetProperty("slug").GetString() == "wheelhouse");
+        Strings(entry.GetProperty("changes")).Should().BeEmpty();
+
+        var again = await DataAsync(await ImportClient().PostJsonAsync("api/catalog/import", new { slugs = new[] { "wheelhouse" } }));
+        Strings(again.GetProperty("updatedProducts")).Should().BeEmpty();
+        Strings(again.GetProperty("movedProducts")).Should().BeEmpty();
     }
 
     [Fact]

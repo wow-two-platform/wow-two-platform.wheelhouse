@@ -40,6 +40,11 @@ export interface CatalogEntry {
   replaces: string[];
   /** The Wheelhouse product the entry already is; null while it is not in Wheelhouse. */
   productId: string | null;
+  /**
+   * What an import would bring in step for that product, in what the catalog owns: `workspace`, `deploy`,
+   * `repositories` or `release` (a release source for a repository without one); empty while it is in step.
+   */
+  changes: string[];
 }
 
 /** The merged catalog: every hub read, in Wheelhouse's order, then the listed hubs' workspaces and apps. */
@@ -62,7 +67,7 @@ export interface CatalogImportResult {
   createdProducts: number;
   /** Existing products that moved into the workspace the catalog names. */
   movedProducts: number;
-  /** Existing products whose deploy mode the import set from their entry's `deploy`. */
+  /** Existing products the import brought in step with their entry: deploy mode, repositories or release sources. */
   updatedProducts: number;
   /** Products the import retired because an imported entry replaces them and nothing had deployed to them. */
   retiredProducts: number;
@@ -76,8 +81,10 @@ export const CatalogDeployer = { Wheelhouse: 'wheelhouse' } as const;
 export const CatalogEntryState = {
   /** Wheelhouse deploys it and it is not a product yet: importable. */
   New: 'new',
-  /** It is a Wheelhouse product already. */
+  /** It is a Wheelhouse product already, in step with its entry. */
   InWheelhouse: 'in-wheelhouse',
+  /** It is a Wheelhouse product the catalog changed since: an import brings it in step. */
+  Changed: 'changed',
   /** Something other than Wheelhouse deploys it. */
   External: 'external',
 } as const;

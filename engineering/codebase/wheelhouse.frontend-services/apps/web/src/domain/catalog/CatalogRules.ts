@@ -13,7 +13,7 @@ export interface CatalogWorkspaceGroup {
   name: string;
   description: string;
   entries: CatalogEntry[];
-  /** The slugs Wheelhouse deploys and has not imported, in catalog order. */
+  /** The slugs an import adds or brings in step, in catalog order. */
   importable: string[];
   inWheelhouse: number;
   /** Apps something other than Wheelhouse deploys, or nothing does. */
@@ -42,19 +42,40 @@ function count(value: number, noun: string): string {
   return `${value} ${noun}${value === 1 ? '' : 's'}`;
 }
 
+/** Each change an import brings an existing product, in words. */
+const ChangeWords: Readonly<Record<string, string>> = {
+  workspace: 'workspace',
+  deploy: 'deploy mode',
+  repositories: 'repositories',
+  release: 'release source',
+};
+
 /** Pure rules for the catalog page: the hubs, which entries import, the selection and the result line. */
 export const CatalogRules = {
-  /** Whether Wheelhouse deploys the entry and it is not a product yet. */
-  isImportable: (entry: Pick<CatalogEntry, 'deploy' | 'productId'>): boolean =>
-    entry.deploy === CatalogDeployer.Wheelhouse && entry.productId === null,
+  /**
+   * Whether an import does something for the entry: Wheelhouse deploys it and it is not a product yet, or it is one the
+   * catalog changed since.
+   */
+  isImportable: (entry: Pick<CatalogEntry, 'deploy' | 'productId'> & Partial<Pick<CatalogEntry, 'changes'>>): boolean =>
+    entry.productId === null ? entry.deploy === CatalogDeployer.Wheelhouse : (entry.changes?.length ?? 0) > 0,
 
   /** Where the entry stands against Wheelhouse. */
-  stateOf: (entry: Pick<CatalogEntry, 'deploy' | 'productId'>): CatalogEntryState =>
+  stateOf: (entry: Pick<CatalogEntry, 'deploy' | 'productId'> & Partial<Pick<CatalogEntry, 'changes'>>): CatalogEntryState =>
     entry.productId !== null
-      ? CatalogEntryState.InWheelhouse
+      ? (entry.changes?.length ?? 0) > 0
+        ? CatalogEntryState.Changed
+        : CatalogEntryState.InWheelhouse
       : entry.deploy === CatalogDeployer.Wheelhouse
         ? CatalogEntryState.New
         : CatalogEntryState.External,
+
+  /** `Importing updates its workspace, deploy mode and release source`, or null when an import changes nothing of it. */
+  changesLine: (entry: Partial<Pick<CatalogEntry, 'changes'>>): string | null => {
+    const words = (entry.changes ?? []).map((change) => ChangeWords[change] ?? change);
+    if (!words.length) return null;
+    const list = words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words.at(-1)}` : words[0];
+    return `Importing updates its ${list}`;
+  },
 
   /** The slugs of every importable entry, in catalog order. */
   importable: (entries: readonly CatalogEntry[]): string[] =>
@@ -185,7 +206,7 @@ export const CatalogRules = {
       result.createdProducts ? `added ${count(result.createdProducts, 'product')}` : null,
       result.createdWorkspaces ? `created ${count(result.createdWorkspaces, 'workspace')}` : null,
       result.movedProducts ? `moved ${count(result.movedProducts, 'product')}` : null,
-      result.updatedProducts ? `set how ${count(result.updatedProducts, 'product')} deploy${result.updatedProducts === 1 ? 's' : ''}` : null,
+      result.updatedProducts ? `updated ${count(result.updatedProducts, 'product')}` : null,
       result.retiredProducts ? `retired ${count(result.retiredProducts, 'replaced product')}` : null,
     ].filter((part): part is string => part !== null);
     if (!parts.length) return 'Nothing to import; the catalog and Wheelhouse already agree.';

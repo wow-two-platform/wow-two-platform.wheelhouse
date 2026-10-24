@@ -31,6 +31,7 @@ import { Panel } from "@/presentation/common/components";
 const States = {
   [CatalogEntryState.New]: { label: "New", variant: "info" },
   [CatalogEntryState.InWheelhouse]: { label: "In Wheelhouse", variant: "success" },
+  [CatalogEntryState.Changed]: { label: "Catalog changed", variant: "warning" },
   [CatalogEntryState.External]: { label: "Not deployable", variant: "neutral" },
 } as const;
 
@@ -43,7 +44,8 @@ const Columns: DataTableColumn<CatalogEntry>[] = [
 
 /**
  * One catalog workspace: its name, whether Wheelhouse has it yet, and how many of its apps can be imported, are in
- * Wheelhouse already or deploy elsewhere; then its apps, in columns as wide in every workspace. Where any can be
+ * Wheelhouse already or deploy elsewhere; then its apps, in columns as wide in every workspace. A product the catalog
+ * changed since (workspace, deploy mode, repositories or a missing release source) imports again to come in step. Where any can be
  * imported, "Select all importable" adds or clears them all in the page's selection and "Import workspace" imports them
  * at once.
  */
@@ -117,6 +119,9 @@ const state = computed(() =>
           <span class="block font-mono text-xs text-muted-foreground">{{ row.slug }}</span>
           <!-- One product of several repositories (decision 70), and the products importing it retires: one line, so a
                phone's card keeps it under the name. -->
+          <span v-if="CatalogRules.changesLine(row)" class="block text-xs text-muted-foreground">{{
+            CatalogRules.changesLine(row)
+          }}</span>
           <span
             v-if="row.repositories.length > 1 || row.replaces.length"
             class="block text-xs text-muted-foreground"
@@ -141,11 +146,13 @@ const state = computed(() =>
           size="sm"
           :variant="States[CatalogRules.stateOf(row)].variant"
           :title="
-            CatalogRules.stateOf(row) !== CatalogEntryState.External
-              ? undefined
-              : row.deploy === 'none'
-                ? 'Not deployed'
-                : `Deployed by ${row.deploy}`
+            CatalogRules.stateOf(row) === CatalogEntryState.Changed
+              ? (CatalogRules.changesLine(row) ?? undefined)
+              : CatalogRules.stateOf(row) !== CatalogEntryState.External
+                ? undefined
+                : row.deploy === 'none'
+                  ? 'Not deployed'
+                  : `Deployed by ${row.deploy}`
           "
           >{{ States[CatalogRules.stateOf(row)].label }}</Badge
         >

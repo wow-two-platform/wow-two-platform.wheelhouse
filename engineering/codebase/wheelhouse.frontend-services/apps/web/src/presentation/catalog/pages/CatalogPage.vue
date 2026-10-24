@@ -17,9 +17,10 @@ import CatalogWorkspacePanel from '../components/CatalogWorkspacePanel.vue';
 /**
  * Every app the hubs' `catalog.yml` files list — the wow2 workspace, the ventures hub and the Ocharo hub — against
  * Wheelhouse, grouped by hub and then by catalog workspace. Each hub names the commit it was read at; a hub that could
- * not be read shows why, and the others still list theirs. The apps Wheelhouse deploys and has not imported can be
- * selected one by one or a workspace at a time and imported together, or a whole workspace imported at once; an import
- * creates their products and any workspace they need.
+ * not be read shows why, and the others still list theirs. The apps Wheelhouse deploys and has not imported, and the
+ * products the catalog changed since, can be selected one by one or a workspace at a time and imported together, or a
+ * whole workspace imported at once; an import creates their products and any workspace they need, and brings the
+ * changed ones in step.
  */
 defineOptions({ name: 'CatalogPage' });
 const { catalog, importing, importEntries } = useCatalog();

@@ -36,4 +36,9 @@ public sealed record CatalogEntryDto
 
     /// <summary>Gets the identifier of the product with the entry's slug, or <c>null</c> when none exists.</summary>
     public Guid? ProductId { get; init; }
+
+    /// <summary>Gets what an import would bring in step for the existing product — <c>workspace</c>, <c>deploy</c>,
+    /// <c>repositories</c> or <c>release</c> (<see cref="Services.CatalogDrift"/>); empty while it is in step or no
+    /// product exists.</summary>
+    public IReadOnlyList<string> Changes { get; init; } = [];
 }

@@ -7,7 +7,6 @@ using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Application.Products;
 using Wheelhouse.Domain.Catalog.Enums;
 using Wheelhouse.Domain.Products.Entities;
-using Wheelhouse.Domain.Products.Enums;
 using Wheelhouse.Domain.Products.Models;
 using Wheelhouse.Domain.Workspaces.Entities;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
@@ -17,8 +16,9 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Catalog.CommandHandlers;
 
 /// <summary>Handles <see cref="CatalogImportCommand"/> over the merged hubs. Each chosen entry, in catalog order: an existing product with its
-/// slug moves into the entry's workspace and takes the entry's <c>deploy</c> as its deploy mode, and takes the entry's
-/// repositories when they changed; otherwise an entry Wheelhouse deploys (<c>deploy: wheelhouse</c>) with a
+/// slug moves into the entry's workspace and takes the entry's <c>deploy</c> as its deploy mode, takes the entry's
+/// repositories when they changed, and, when Wheelhouse deploys it, a derived release source for each repository that
+/// has none, as a new product would (<see cref="CatalogDrift"/>); otherwise an entry Wheelhouse deploys (<c>deploy: wheelhouse</c>) with a
 /// repository becomes a product — one product for all its repositories (decision 70) — whose release sources
 /// <see cref="CatalogReleaseService"/> derives; any other entry is skipped with a warning, as is one whose repositories
 /// share a service. Then each product the entry <c>replaces</c> retires when nothing ever deployed to it: its
@@ -49,7 +49,7 @@ public sealed class CatalogImportCommandHandler(
             if (existing is not null)
             {
                 var workspace = await import.WorkspaceAsync(entry.Workspace, cancellationToken);
-                var deploy = ModeOf(entry.Deploy);
+                var deploy = CatalogDrift.ModeOf(entry.Deploy);
                 var regrouped = await RegroupAsync(existing, entry, import, cancellationToken);
                 if (existing.WorkspaceId == workspace.Id && existing.Deploy == deploy && !regrouped)
                 {
@@ -95,7 +95,7 @@ public sealed class CatalogImportCommandHandler(
                 {
                     Repository = item.Repository, Release = item.Derived.Release,
                 })],
-                Deploy = ModeOf(entry.Deploy),
+                Deploy = CatalogDrift.ModeOf(entry.Deploy),
             }, cancellationToken);
             import.Created.Add(entry.Slug);
             foreach (var (_, item) in derived)
@@ -119,32 +119,38 @@ public sealed class CatalogImportCommandHandler(
     }
 
     /// <summary>Gives an existing product the entry's repositories when the entry lists others, or the same ones in
-    /// another order, with release sources derived again; their services must stand together. Says whether it changed.</summary>
+    /// another order, with release sources derived again; their services must stand together. With the same
+    /// repositories, only one without a release source takes a derived one, as a product the catalog said CI deploys
+    /// has none until its entry says Wheelhouse does; the others keep theirs. Says whether it changed.</summary>
     private async Task<bool> RegroupAsync(ProductEntity existing, CatalogEntryModel entry, Import import, CancellationToken ct)
     {
-        var current = ProductRepositories.Of(existing).Select(item => item.Repository).ToList();
-        if (entry.Deploy != CatalogDeploy.Wheelhouse || entry.Repositories.Count == 0
-            || current.SequenceEqual(entry.Repositories, StringComparer.OrdinalIgnoreCase)
-            || entry.Repositories.Any(repository => !Regex.IsMatch(repository, InventoryPatternConstants.Repository)))
+        var regroup = CatalogDrift.RepositoriesDiffer(existing, entry);
+        if (!regroup && !CatalogDrift.LacksRelease(existing, entry))
             return false;
 
+        var current = ProductRepositories.Of(existing);
         var derived = await releases.DeriveAllAsync(entry.Slug, entry.Repositories, ct);
-        var repositories = derived.Select(item => (item.Repository, (ProductReleaseValueObject?)item.Derived.Release)).ToList();
+        var taken = derived.Select((item, index) => regroup || current[index].Release is null).ToList();
+        var repositories = derived
+            .Select((item, index) => taken[index]
+                ? (item.Repository, (ProductReleaseValueObject?)item.Derived.Release)
+                : (current[index].Repository, current[index].Release))
+            .ToList();
         if (ProductRepositories.Problem(entry.Slug, repositories) is { } problem)
         {
-            import.Warn(entry.Slug, problem + " Its repositories stay as they were.");
+            import.Warn(entry.Slug, problem + (regroup ? " Its repositories stay as they were." : " Its release sources stay as they were."));
             return false;
         }
 
-        existing.Repository = derived[0].Repository;
-        existing.Release = derived[0].Derived.Release;
-        existing.Components = [.. derived.Skip(1).Select(item => new ProductComponentValueObject
+        existing.Repository = regroup ? repositories[0].Repository : existing.Repository;
+        existing.Release = repositories[0].Item2;
+        existing.Components = [.. repositories.Skip(1).Select(item => new ProductComponentValueObject
         {
-            Repository = item.Repository, Release = item.Derived.Release,
+            Repository = item.Repository, Release = item.Item2,
         })];
-        foreach (var (_, item) in derived)
+        for (var index = 0; index < derived.Count; index++)
         {
-            if (item.Note is { } note)
+            if (taken[index] && derived[index].Derived.Note is { } note)
                 import.Warn(entry.Slug, note);
         }
 
@@ -212,14 +218,6 @@ public sealed class CatalogImportCommandHandler(
             return "Its repository is not an owner/name the inventory accepts, so no product was created.";
         return null;
     }
-
-    /// <summary>The deploy mode a product takes from its catalog entry's <c>deploy</c>.</summary>
-    private static ProductDeployMode ModeOf(CatalogDeploy deploy) => deploy switch
-    {
-        CatalogDeploy.Ci => ProductDeployMode.Ci,
-        CatalogDeploy.None => ProductDeployMode.None,
-        _ => ProductDeployMode.Wheelhouse,
-    };
 
     private static string Clip(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 

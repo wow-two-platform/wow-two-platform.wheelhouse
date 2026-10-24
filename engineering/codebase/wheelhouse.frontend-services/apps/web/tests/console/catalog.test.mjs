@@ -34,6 +34,23 @@ test("only entries Wheelhouse deploys and has not imported are importable", () =
   assert.equal(CatalogRules.isImportable(entry("x", { deploy: "Wheelhouse" })), false);
 });
 
+test("a product the catalog changed since imports again to come in step, and says what changes", () => {
+  const changed = entry("wheelhouse", { productId: "p-wh", workspace: "platform", changes: ["workspace", "deploy", "release"] });
+  const steady = entry("vault", { productId: "p-vault", changes: [] });
+  assert.equal(CatalogRules.stateOf(changed), "changed");
+  assert.equal(CatalogRules.isImportable(changed), true);
+  assert.equal(CatalogRules.stateOf(steady), "in-wheelhouse");
+  assert.equal(CatalogRules.isImportable(steady), false);
+  assert.equal(CatalogRules.changesLine(changed), "Importing updates its workspace, deploy mode and release source");
+  assert.equal(CatalogRules.changesLine(entry("x", { changes: ["deploy"] })), "Importing updates its deploy mode");
+  assert.equal(CatalogRules.changesLine(steady), null);
+  const all = [...entries, changed, steady];
+  assert.deepEqual(CatalogRules.selection(all, ["wheelhouse", "vault", "hijinx"]), ["hijinx", "wheelhouse"]);
+  const [ventures, platform] = CatalogRules.groups({ workspaces: [], entries: all });
+  assert.deepEqual([platform.importable, platform.inWheelhouse], [["wheelhouse"], 0]);
+  assert.equal(CatalogRules.countsLine(ventures), "2 importable · 2 in Wheelhouse · 1 not deployable");
+});
+
 test("the selection keeps importable slugs once, in catalog order, and drops the rest", () => {
   assert.deepEqual(CatalogRules.selection(entries, ["museums", "wheelhouse", "hijinx", "museums", 7, "gone"]),
     ["hijinx", "museums"]);
@@ -116,9 +133,9 @@ test("the import result and the source read as one line each", () => {
   assert.equal(CatalogRules.summary({ createdWorkspaces: 0, createdProducts: 1, movedProducts: 0 }), "Added 1 product.");
   assert.match(CatalogRules.summary({ createdWorkspaces: 0, createdProducts: 0, movedProducts: 0, updatedProducts: 0 }), /^Nothing to import/);
   assert.equal(CatalogRules.summary({ createdWorkspaces: 0, createdProducts: 0, movedProducts: 1, updatedProducts: 1 }),
-    "Moved 1 product and set how 1 product deploys.");
+    "Moved 1 product and updated 1 product.");
   assert.equal(CatalogRules.summary({ createdWorkspaces: 0, createdProducts: 0, movedProducts: 0, updatedProducts: 2 }),
-    "Set how 2 products deploy.");
+    "Updated 2 products.");
   assert.equal(CatalogRules.sourceLabel({ repository: "wow-two/wow-two-ws", path: "catalog.yml", ref: "main",
     commit: "4f2c9e1a7b3d" }), "wow-two/wow-two-ws@4f2c9e1");
   assert.equal(CatalogRules.sourceLabel({ repository: "wow-two/wow-two-ws", path: "catalog.yml", ref: "main", commit: null }),
@@ -151,6 +168,7 @@ test("the catalog decodes, and an import posts its slugs with the catalog action
     { createdWorkspaces: 1, createdProducts: 2, movedProducts: 0, updatedProducts: 0, retiredProducts: 0, warnings: [] },
     "a host that reports no deploy-mode changes or retirements counts none");
   assert.deepEqual(catalog.value.entries[0].replaces, [], "an entry without replaces supersedes nothing");
+  assert.deepEqual(catalog.value.entries[0].changes, [], "a host that names no changes leaves the entry in step");
   assert.equal(requests[1].url, "/api/catalog/import");
   assert.equal(requests[1].options.method, "POST");
   assert.equal(requests[1].options.headers.get("X-Wheelhouse-Action"), "catalog");

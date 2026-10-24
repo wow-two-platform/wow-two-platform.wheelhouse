@@ -12,8 +12,8 @@ public sealed record CatalogImportResultDto
     /// <summary>Gets the slugs of the existing products the import moved into their entry's workspace.</summary>
     public required IReadOnlyList<string> MovedProducts { get; init; }
 
-    /// <summary>Gets the slugs of the existing products whose deploy mode the import set from their entry's
-    /// <c>deploy</c>.</summary>
+    /// <summary>Gets the slugs of the existing products the import brought in step with their entry: the deploy mode its
+    /// <c>deploy</c> names, its repositories, or a release source for a repository that had none.</summary>
     public IReadOnlyList<string> UpdatedProducts { get; init; } = [];
 
     /// <summary>Gets the slugs of the products the import retired because an imported entry replaces them: nothing had

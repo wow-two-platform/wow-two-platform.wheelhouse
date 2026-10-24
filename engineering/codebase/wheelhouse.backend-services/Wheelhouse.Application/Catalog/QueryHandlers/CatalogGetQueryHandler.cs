@@ -8,15 +8,16 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Catalog.QueryHandlers;
 
 /// <summary>Handles <see cref="CatalogGetQuery"/>: every hub's outcome, and the readable hubs' workspaces and entries; an
-/// entry's product is the product with its slug.</summary>
-public sealed class CatalogGetQueryHandler(CatalogReader reader, IProductsRepository products)
+/// entry's product is the product with its slug, with what an import would bring in step (<see cref="CatalogDrift"/>).</summary>
+public sealed class CatalogGetQueryHandler(CatalogReader reader, IProductsRepository products, IWorkspacesRepository workspaces)
     : IQueryHandler<CatalogGetQuery, AppResult<CatalogDto>>
 {
     /// <inheritdoc />
     public async ValueTask<AppResult<CatalogDto>> HandleAsync(CatalogGetQuery request, CancellationToken cancellationToken)
     {
         var snapshot = await reader.ReadAsync(cancellationToken);
-        var bySlug = (await products.GetAllAsync(cancellationToken)).ToDictionary(product => product.Slug, product => product.Id);
+        var bySlug = (await products.GetAllAsync(cancellationToken)).ToDictionary(product => product.Slug);
+        var workspaceSlugs = (await workspaces.GetAllAsync(cancellationToken)).ToDictionary(workspace => workspace.Id, workspace => workspace.Slug);
         return AppResult<CatalogDto>.Ok(new CatalogDto
         {
             Sources = [.. snapshot.Sources.Select(read => read.Source)],
@@ -40,7 +41,8 @@ public sealed class CatalogGetQueryHandler(CatalogReader reader, IProductsReposi
                     Repositories = entry.Repositories,
                     Replaces = entry.Replaces,
                     Source = entry.Source,
-                    ProductId = bySlug.TryGetValue(entry.Slug, out var id) ? id : null,
+                    ProductId = bySlug.TryGetValue(entry.Slug, out var product) ? product.Id : null,
+                    Changes = product is null ? [] : CatalogDrift.Of(product, workspaceSlugs.GetValueOrDefault(product.WorkspaceId), entry),
                 }),
             ],
         });

@@ -35,6 +35,7 @@ const CatalogSchema = z.object({
       repositories: z.array(z.string()),
       replaces: z.array(z.string()).default([]),
       productId: nullable,
+      changes: z.array(z.string()).default([]),
     }),
   ),
 });
@@ -53,7 +54,7 @@ const ImportResultSchema = z.object({
 /** The catalog Wheelhouse merges from every hub repository; imports carry the `catalog` action. */
 export const catalogApi = {
   getCatalog: (signal?: AbortSignal) => requestData<Catalog>("/api/catalog", CatalogSchema, { signal }),
-  /** Adds the chosen entries as products, creating their workspaces as needed. */
+  /** Adds the chosen entries as products, creating their workspaces as needed, and brings existing ones in step. */
   importEntries: (slugs: readonly string[], signal?: AbortSignal) =>
     requestData<CatalogImportResult>("/api/catalog/import", ImportResultSchema, {
       method: "POST", body: { slugs }, signal, action: "catalog",
