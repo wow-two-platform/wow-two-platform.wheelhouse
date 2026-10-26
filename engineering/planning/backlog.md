@@ -53,7 +53,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Close the control host's public SSH | engineering | After CI's path retires: `harden-control.sh`, then `--tailnet-only-ssh` (`vps.md` § Host hardening) |
 | Ability to manage the control host's firewall, SSH and updates like a products host | feature | |
 | Ability to rebuild the control host from backups, rehearsed | feature | |
-| Repair the control host's networks in a maintenance step | engineering | `repair-networks.sh` (`vps.md` § Network repair); a network made before 2026-10-19 lacks the reserved range |
 | Sign in to the local console through a localhost GitHub OAuth app | feature | Local rig sign-in; the `rehearse.py console` check depends on it |
 | Tell dev from prod by an environment tag beside the version | feature | Dev and prod consoles run side by side |
 | Accept the hosted console: owner sign-in, restart persistence, authenticated MCP | check | After Wheelhouse prod is live (user 2026-10-13); dev already passed CI's rollout, HTTPS and anonymous-MCP checks |
