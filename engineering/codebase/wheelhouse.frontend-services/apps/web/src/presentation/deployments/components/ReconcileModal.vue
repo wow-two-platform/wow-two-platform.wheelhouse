@@ -15,20 +15,9 @@ export interface ReconcileModalProps {
 <script setup lang="ts">
 import { ReleaseSets } from "@/domain/deployments";
 import { failureReason } from "@/integration/common";
-import { computed, ref, watch } from "vue";
+import { watch } from "vue";
 
-import { Button } from "@wow-two-beta/fe/presentation/actions";
-import { Alert } from "@wow-two-beta/fe/presentation/feedback";
-import { Field, TextInput } from "@wow-two-beta/fe/presentation/forms";
-import {
-  AlertModal,
-  AlertModalContent,
-  ModalBody,
-  ModalDescription,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-} from "@wow-two-beta/fe/presentation/overlays";
+import { TypedConfirmModal } from "@wow-two-beta/fe/presentation/overlays";
 
 import { useReconcileTarget } from "@/application/deployments";
 
@@ -37,89 +26,38 @@ defineOptions({ name: "ReconcileModal" });
 const props = defineProps<ReconcileModalProps>();
 const emit = defineEmits<{ "update:open": [open: boolean] }>();
 const reconcile = useReconcileTarget();
-const typed = ref("");
-const confirmed = computed(() => typed.value === props.target);
 
-/** Resets confirmation when its target or active rollout changes. */
+/** Resets the last refusal when the dialog, its target or its active rollout changes; the modal clears the typed ID. */
 watch(
   () => [props.open, props.target, props.active.id],
   () => {
-    typed.value = "";
     reconcile.reset();
   },
 );
 
-/** Requests dismissal without acknowledging anything. */
-function close(open: boolean): void {
-  if (reconcile.loading.value) return;
-  emit("update:open", open);
-}
-
-/** Acknowledges the exact remote rollout only after matching the target name. */
-async function confirm(): Promise<void> {
-  if (!confirmed.value || reconcile.loading.value) return;
-  const target = props.target;
-  const job = props.active.id;
-  const result = await reconcile.mutateAsync({
-    target,
-    job,
+/** Acknowledges the exact remote rollout only after matching the target name; the API receives no `confirm`. */
+function confirm() {
+  return reconcile.mutateAsync({
+    target: props.target,
+    job: props.active.id,
   });
-  if (result.ok && props.target === target && props.active.id === job)
-    emit("update:open", false);
 }
 </script>
 
 <template>
-  <AlertModal
+  <TypedConfirmModal
     :open="props.open"
-    :can-dismiss-on-escape="!reconcile.loading.value"
-    @update:open="close"
+    :title="`Reconcile ${props.target}?`"
+    description="Confirm after inspecting this target's containers and database schema. Reconciliation marks the rollout interrupted and clears its automatic rollback pointer. Containers and data stay unchanged."
+    :expected="props.target"
+    confirm-label="Reconcile"
+    :error="failureReason(reconcile.error.value)"
+    @update:open="emit('update:open', $event)"
+    @confirm="confirm"
   >
-    <AlertModalContent>
-      <ModalHeader>
-        <ModalTitle>Reconcile {{ props.target }}?</ModalTitle>
-        <ModalDescription>
-          Confirm after inspecting this target's containers and database schema.
-          Reconciliation marks the rollout interrupted and clears its automatic
-          rollback pointer. Containers and data stay unchanged.
-        </ModalDescription>
-      </ModalHeader>
-      <ModalBody class="flex flex-col gap-4">
-        <p class="text-sm text-muted-foreground">
-          Stopped rollout: {{ ReleaseSets.text(props.active.release) || props.active.id }}
-          <span v-if="props.active.reason"> · {{ props.active.reason }}</span>
-        </p>
-        <Field :label="`Type ${props.target} to confirm`">
-          <TextInput
-            v-model="typed"
-            :disabled="reconcile.loading.value"
-            autocomplete="off"
-          />
-        </Field>
-        <Alert
-          v-if="reconcile.error.value"
-          severity="danger"
-          :description="failureReason(reconcile.error.value)"
-        />
-      </ModalBody>
-      <ModalFooter>
-        <Button
-          variant="outline"
-          tone="neutral"
-          :is-disabled="reconcile.loading.value"
-          @click="close(false)"
-        >
-          Cancel
-        </Button>
-        <Button
-          variant="solid"
-          tone="danger"
-          :is-disabled="!confirmed"
-          :is-loading="reconcile.loading.value"
-          @click="confirm"
-          >Reconcile</Button
-        >
-      </ModalFooter>
-    </AlertModalContent>
-  </AlertModal>
+    <p class="text-sm text-muted-foreground">
+      Stopped rollout: {{ ReleaseSets.text(props.active.release) || props.active.id }}
+      <span v-if="props.active.reason"> · {{ props.active.reason }}</span>
+    </p>
+  </TypedConfirmModal>
 </template>

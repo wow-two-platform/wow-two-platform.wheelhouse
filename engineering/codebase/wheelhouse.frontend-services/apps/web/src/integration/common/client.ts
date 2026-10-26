@@ -1,11 +1,15 @@
 import { createAuthBridge } from "@wow-two-beta/fe/auth";
 import {
   createApiClient,
-  ApiFailureFactory,
+  ApiDecoderExtensions,
+  ApiFailureExtensions,
+  type ApiDecoder,
+  type ApiError,
   type ApiFailure,
 } from "@wow-two-beta/fe/foundation/http";
 import {
   ResultExtensions,
+  type AppError,
   type Result,
 } from "@wow-two-beta/fe/foundation/results";
 import type { ZodType } from "zod";
@@ -33,18 +37,6 @@ export interface RequestOptions {
   readonly action?: string;
 }
 
-/** Decodes the endpoint's consumed shape without exposing response diagnostics as display text. */
-function decoder<T>(
-  schema: ZodType,
-): (value: unknown) => Result<T, ApiFailure> {
-  return (value) => {
-    const parsed = schema.safeParse(value);
-    return parsed.success
-      ? ResultExtensions.ok(parsed.data as T)
-      : ResultExtensions.fail(ApiFailureFactory.create("protocol"));
-  };
-}
-
 /** Reads an un-enveloped JSON endpoint through the SDK transport. */
 export function request<T>(
   path: string,
@@ -55,7 +47,7 @@ export function request<T>(
     ...options,
     signal: options.signal ?? null,
     unwrap: false,
-    decode: decoder<T>(schema),
+    decode: ApiDecoderExtensions.fromSchema(schema) as ApiDecoder<T>,
     ...(options.action
       ? { headers: { "X-Wheelhouse-Action": options.action } }
       : {}),
@@ -71,7 +63,7 @@ export function requestData<T>(
   return client.request<T>(path, {
     ...options,
     signal: options.signal ?? null,
-    decode: decoder<T>(schema),
+    decode: ApiDecoderExtensions.fromSchema(schema) as ApiDecoder<T>,
     ...(options.action
       ? { headers: { "X-Wheelhouse-Action": options.action } }
       : {}),
@@ -114,18 +106,10 @@ export function requestEmpty(path: string, options: RequestOptions = {}) {
  * The API passes on only the runner's static reasons and contract key names, never values or command output.
  */
 export function failureReason(
-  error: { readonly message: string } | null | undefined,
+  error: AppError | ApiError | null | undefined,
 ): string {
-  const problem = (
-    error as { readonly problem?: Readonly<Record<string, unknown>> | null } | null | undefined
-  )?.problem;
-  const detail = problem?.["detail"];
-  if (typeof detail === "string") {
-    const text = detail
-      .replace(/[\u0000-\u001f\u007f]/g, "")
-      .replace(/^Deployment (?:rejected|step failed): /, "")
-      .trim();
-    if (text.length > 0 && text.length <= 300) return text;
-  }
-  return error?.message ?? "";
+  return ApiFailureExtensions.reason(error, {
+    strip: /^Deployment (?:rejected|step failed): /,
+    fields: false,
+  });
 }

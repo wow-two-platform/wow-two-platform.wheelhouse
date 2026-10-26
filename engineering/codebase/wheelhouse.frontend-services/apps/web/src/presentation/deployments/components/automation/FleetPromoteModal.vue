@@ -20,7 +20,7 @@ import { ArrowRight, Layers } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge } from "@wow-two-beta/fe/presentation/display";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
-import { CheckboxField, Field, TextInput } from "@wow-two-beta/fe/presentation/forms";
+import { CheckboxField, Field, TextInput, TypedConfirmField } from "@wow-two-beta/fe/presentation/forms";
 import {
   Modal,
   ModalBody,
@@ -149,14 +149,14 @@ function close(open: boolean): void {
               <DevCheckPill :verification="item.verification" :verifies="item.verifies" />
             </p>
             <ReleaseChangelog :product="item.product" :from="item.prodRelease" :to="item.release" />
-            <Field v-if="needsTyping.has(item.prodTargetId)" :label="`Type ${item.prodTargetId} to promote prod on the local server`">
-              <TextInput
-                :model-value="typed[item.prodTargetId] ?? ''"
-                :disabled="start.loading.value"
-                autocomplete="off"
-                @update:model-value="typed = { ...typed, [item.prodTargetId]: String($event ?? '') }"
-              />
-            </Field>
+            <TypedConfirmField
+              v-if="needsTyping.has(item.prodTargetId)"
+              :model-value="typed[item.prodTargetId] ?? ''"
+              :expected="item.prodTargetId"
+              label="Type {expected} to promote prod on the local server"
+              :is-read-only="start.loading.value"
+              @update:model-value="typed = { ...typed, [item.prodTargetId]: $event }"
+            />
           </li>
         </ol>
         <Alert

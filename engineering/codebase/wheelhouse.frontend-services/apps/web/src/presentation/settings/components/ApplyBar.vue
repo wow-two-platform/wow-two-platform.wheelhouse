@@ -15,7 +15,7 @@ import { CalendarClock, Play, X } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { RelativeTime } from "@wow-two-beta/fe/presentation/display";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
-import { Field, TextInput } from "@wow-two-beta/fe/presentation/forms";
+import { Field, TextInput, TypedConfirmField, useTypedConfirmation } from "@wow-two-beta/fe/presentation/forms";
 import { useApplySettings, useCancelApply } from "@/application/settings";
 import { EnvironmentSettingsRules } from "@/domain/settings";
 import { failureReason } from "@/integration/common";
@@ -34,12 +34,17 @@ const cancel = useCancelApply();
 const mode = ref<"idle" | "now" | "later">("idle");
 const reason = ref("");
 const at = ref("");
-const typed = ref("");
 const done = ref<string | null>(null);
 
 const bounds = computed(() => EnvironmentSettingsRules.scheduleBounds(new Date()));
 const shown = computed(() => props.plan.unapplied.length > 0 || props.plan.pending !== null || done.value !== null);
-const confirmed = computed(() => !props.needsConfirmation || typed.value === props.plan.target);
+/** The typed target ID: what the API receives as `confirm`, only while the target asks for it. */
+const {
+  typed,
+  isConfirmed: confirmed,
+  confirm: confirmation,
+  reset: resetTyped,
+} = useTypedConfirmation(() => props.plan.target, { isNeeded: () => props.needsConfirmation });
 
 async function run(): Promise<void> {
   done.value = null;
@@ -47,7 +52,7 @@ async function run(): Promise<void> {
     target: props.plan.target,
     ...(mode.value === "later" && at.value ? { at: new Date(at.value).toISOString() } : {}),
     ...(reason.value.trim() ? { reason: reason.value.trim() } : {}),
-    ...(props.needsConfirmation ? { confirm: typed.value } : {}),
+    ...(confirmation.value !== undefined ? { confirm: confirmation.value } : {}),
   });
   if (!result.ok) return;
   done.value =
@@ -56,7 +61,7 @@ async function run(): Promise<void> {
       : "Scheduled.";
   mode.value = "idle";
   reason.value = "";
-  typed.value = "";
+  resetTyped();
 }
 </script>
 
@@ -104,9 +109,7 @@ async function run(): Promise<void> {
       <Field label="Reason" helper="Kept on the deploy, such as rotated the Stripe key">
         <TextInput v-model="reason" autocomplete="off" maxlength="200" />
       </Field>
-      <Field v-if="props.needsConfirmation" :label="`Type ${props.plan.target} to confirm`" is-required>
-        <TextInput v-model="typed" autocomplete="off" spellcheck="false" />
-      </Field>
+      <TypedConfirmField v-if="props.needsConfirmation" v-model="typed" :expected="props.plan.target" />
       <div class="flex gap-2">
         <Button
           size="sm"

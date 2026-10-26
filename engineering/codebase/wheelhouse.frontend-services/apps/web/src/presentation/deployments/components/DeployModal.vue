@@ -31,6 +31,8 @@ import {
   SelectPickerValue,
   CheckboxField,
   TextInput,
+  TypedConfirmField,
+  useTypedConfirmation,
 } from "@wow-two-beta/fe/presentation/forms";
 import {
   Modal,
@@ -109,7 +111,6 @@ const available = computed(() =>
       (takesBuilds.value || item.kind === "release"),
   ),
 );
-const typed = ref("");
 const skipDev = ref(false);
 const system = useApiConnection();
 /** Wheelhouse's own prod: promoted only with its ID typed and a reason (decision 64). */
@@ -153,17 +154,21 @@ const build = useRequestBuild();
 const typedNeeded = computed(
   () => Boolean(selectedTarget.value?.needsConfirmation) || skipDev.value,
 );
-const confirmed = computed(
-  () => !typedNeeded.value || typed.value === target.value,
-);
+/** The typed target ID: what the API receives as `confirm`, only while it is needed. */
+const {
+  typed,
+  isConfirmed: confirmed,
+  confirm: confirmation,
+  reset: resetTyped,
+} = useTypedConfirmation(() => target.value, { isNeeded: () => typedNeeded.value });
 const typedLabel = computed(() =>
   selfProd.value
-    ? `Type ${target.value} to promote Wheelhouse prod`
+    ? "Type {expected} to promote Wheelhouse prod"
     : selectedTarget.value?.needsConfirmation && skipDev.value
-      ? `Type ${target.value} to confirm`
+      ? "Type {expected} to confirm"
       : selectedTarget.value?.needsConfirmation
-        ? `Type ${target.value} to deploy prod to the local server`
-        : `Type ${target.value} to deploy without a dev pass`,
+        ? "Type {expected} to deploy prod to the local server"
+        : "Type {expected} to deploy without a dev pass",
 );
 /** The freeze holding the chosen target: a deploy needs an override with a reason. */
 const freeze = useCoveringFreeze(
@@ -244,7 +249,7 @@ watch(
     release.value = props.selection?.release ?? "";
     jobId.value = null;
     readiness.value = null;
-    typed.value = "";
+    resetTyped();
     skipDev.value = false;
     overrideFreeze.value = false;
     reason.value = "";
@@ -263,7 +268,7 @@ watch(
 /** Clears readiness whenever its exact target or release changes. */
 watch([target, release], () => {
   readiness.value = null;
-  typed.value = "";
+  resetTyped();
   skipDev.value = false;
   overrideFreeze.value = false;
   entered.value = {};
@@ -356,7 +361,7 @@ async function deploy(): Promise<void> {
   const result = await start.mutateAsync({
     target: target.value,
     release: release.value,
-    ...(typedNeeded.value ? { confirm: typed.value } : {}),
+    ...(confirmation.value !== undefined ? { confirm: confirmation.value } : {}),
     ...(skipDev.value ? { skipDevPass: true } : {}),
     ...(asksReason.value && reason.value.trim() ? { reason: reason.value.trim() } : {}),
     ...(freeze.value && overrideFreeze.value ? { overrideFreeze: true } : {}),
@@ -762,13 +767,13 @@ function close(open: boolean): void {
               placeholder="Why this deploy"
             />
           </Field>
-          <Field v-if="typedNeeded" :label="typedLabel">
-            <TextInput
-              v-model="typed"
-              :disabled="start.loading.value"
-              autocomplete="off"
-            />
-          </Field>
+          <TypedConfirmField
+            v-if="typedNeeded"
+            v-model="typed"
+            :expected="target"
+            :label="typedLabel"
+            :is-read-only="start.loading.value"
+          />
           <Alert
             v-if="!canChoose"
             severity="warning"
