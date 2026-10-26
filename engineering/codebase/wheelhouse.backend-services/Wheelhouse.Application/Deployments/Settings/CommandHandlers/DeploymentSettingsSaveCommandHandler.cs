@@ -4,6 +4,7 @@ using Wheelhouse.Application.Deployments.Settings.Models;
 using Wheelhouse.Application.Deployments.Settings.Services;
 using Wheelhouse.Application.SecretsVault.Models;
 using Wheelhouse.Domain.Settings.Enums;
+using WoW.Two.Sdk.Beta.Be.Data.Sessions;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
@@ -19,8 +20,7 @@ public sealed class DeploymentSettingsSaveCommandHandler(
     IProductsRepository products,
     IEnvironmentSettingsRepository store,
     IEnvironmentSecrets secrets,
-    ISecretsVaultStore vault,
-    ITransactions transactions,
+    IDataSession session,
     DeploymentSettingsService settings)
     : ICommandHandler<DeploymentSettingsSaveCommand, AppResult<DeploySettingsSavedDto>>
 {
@@ -46,7 +46,8 @@ public sealed class DeploymentSettingsSaveCommandHandler(
         var plain = values.Where(value => !value.Secret && !value.Remove)
             .ToDictionary(value => value.Key, value => Normalize(value, declarations), StringComparer.Ordinal);
 
-        await using var transaction = await transactions.BeginAsync(cancellationToken);
+        // Completing the unit saves what the vault staged and commits; any return before it keeps nothing.
+        await using var unit = await session.BeginAsync(cancellationToken);
         var written = await secrets.WriteAsync(target, product, writes, request.Actor, cancellationToken);
         if (written is AppResult<IReadOnlyList<SecretWritten>>.Failure refused)
             return AppResult<DeploySettingsSavedDto>.Fail(refused.Error);
@@ -58,8 +59,7 @@ public sealed class DeploymentSettingsSaveCommandHandler(
         var removedSettings = await store.RemoveAsync(product.Id, target.Environment, [.. writes.Select(write => write.Key).Concat(removals)], cancellationToken);
         if (plain.Count > 0)
             await store.SetAsync(product.Id, target.Environment, plain, cancellationToken);
-        await vault.SaveAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        await unit.CompleteAsync(cancellationToken);
 
         var versions = ((AppResult<IReadOnlyList<SecretWritten>>.Success)written).Data;
         var keys = new List<SavedSettingDto>();

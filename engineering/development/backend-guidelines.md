@@ -1,6 +1,6 @@
 # Wheelhouse — Backend Development Guidelines
 
-*Last updated: 2026-10-16*
+*Last updated: 2026-10-26*
 
 > Defer to the shared conventions in `wow-two-ws/conventions/development/backend/` — do not restate them. This file
 > holds only Wheelhouse deltas.
@@ -16,6 +16,9 @@
   in one.
 - **Database:** PostgreSQL; hand-authored `Wheelhouse.Persistence/Migrations/{NNN-name}/{Apply,Rollback}.sql`, applied
   on boot. EF Core maps only; no EF migrations or `EnsureCreated`.
+- **Transactions:** writes that commit together run in a unit of the SDK `IDataSession` (`BeginAsync` →
+  `CompleteAsync`, which saves and commits); work that must follow a commit, such as the inventory export, registers
+  with `OnCommittedAsync`. One transaction per request scope.
 - **Outbound work** — the runner process, the vault admin API, GitHub — lives in `Infrastructure` behind Application
   ports, never in controllers or the Domain.
 - **Ports:** HTTPS 8210 / HTTP 8211.

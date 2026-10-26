@@ -8,6 +8,7 @@ using Wheelhouse.Persistence.Repositories;
 using WoW.Two.Sdk.Beta.Be.Caching.Hybrid;
 using WoW.Two.Sdk.Beta.Be.Data;
 using WoW.Two.Sdk.Beta.Be.Data.Migrations.Bespoke;
+using WoW.Two.Sdk.Beta.Be.Data.Sessions;
 using WoW.Two.Sdk.Beta.Be.Foundation.Audit;
 using WoW.Two.Sdk.Beta.Be.Foundation.Configuration;
 using WoW.Two.Sdk.Beta.Be.Foundation.Options;
@@ -95,6 +96,9 @@ public static partial class HostConfigurationExtensions
                 o.ConfigureMigrations = migrations =>
                     migrations.Version = MigrationVersionMapper.ToVersion(typeof(HostConfigurationExtensions).Assembly);
             });
+        // The SDK data session: writes that commit together or not at all, and the after-commit hooks (the inventory
+        // export). An export waits its turn behind another and reads the whole inventory, so its hook gets 30 seconds.
+        builder.Services.AddDataSession<WheelhouseDbContext>(o => o.HookTimeout = TimeSpan.FromSeconds(30));
 
         // /api/system/ready reports this check; /health stays liveness and skips readiness checks.
         builder.Services.AddHealthChecks()
@@ -120,7 +124,6 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddScoped<IVitalsHistory, EfVitalsHistory>();
         // The built-in Secrets Vault's tables (schema vault), the keys owners add, renders and scheduled applies.
         builder.Services.AddScoped<ISecretsVaultStore, SecretsVaultStore>();
-        builder.Services.AddScoped<ITransactions, EfTransactions>();
         builder.Services.AddScoped<IProductSettingKeysRepository, ProductSettingKeysRepository>();
         builder.Services.AddScoped<IDeploymentRenders, DeploymentRendersRepository>();
         builder.Services.AddScoped<ISettingsApplies, SettingsAppliesRepository>();

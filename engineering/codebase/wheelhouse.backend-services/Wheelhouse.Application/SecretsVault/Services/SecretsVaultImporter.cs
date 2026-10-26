@@ -4,6 +4,7 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.SecretsVault.Models;
 using Wheelhouse.Application.Vaults;
 using Wheelhouse.Domain.Targets.Enums;
+using WoW.Two.Sdk.Beta.Be.Data.Sessions;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Foundation.Security;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
@@ -22,7 +23,7 @@ public sealed class SecretsVaultImporter(
     IVaultGateway gateway,
     IVaultKeySource keys,
     SecretsVaultCrypto crypto,
-    ITransactions transactions)
+    IDataSession session)
 {
     /// <summary>Imports every version from a standalone vault's database, under that vault's master key.</summary>
     /// <param name="connectionString">The standalone vault's database, or a restore of its dump; never logged.</param>
@@ -178,17 +179,15 @@ public sealed class SecretsVaultImporter(
         int versions = 0, verified = 0;
         if (imported.Count > 0 && failures.Count == 0)
         {
-            await using var transaction = await transactions.BeginAsync(ct);
+            // Completing the unit saves what was staged and commits; leaving it without completing keeps nothing.
+            await using var unit = await session.BeginAsync(ct);
             var staged = await vault.StageImportAsync(imported, ct);
             if (staged is AppResult<(int Versions, int Verified, IReadOnlyList<string> Failures)>.Failure refused)
                 return AppResult<VaultImportDto>.Fail(refused.Error);
             (versions, verified, var stagedFailures) = ((AppResult<(int Versions, int Verified, IReadOnlyList<string> Failures)>.Success)staged).Data;
             failures.AddRange(stagedFailures);
             if (failures.Count == 0)
-            {
-                await store.SaveAsync(ct);
-                await transaction.CommitAsync(ct);
-            }
+                await unit.CompleteAsync(ct);
         }
         var kept = failures.Count == 0;
         return AppResult<VaultImportDto>.Ok(new VaultImportDto(source, matched, unmatched, kept ? imported.Count : 0,

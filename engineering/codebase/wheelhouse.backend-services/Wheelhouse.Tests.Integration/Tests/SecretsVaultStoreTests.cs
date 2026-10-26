@@ -1,14 +1,17 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Wheelhouse.Domain.Deployments.Entities;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.SecretsVault.Entities;
 using Wheelhouse.Domain.Settings.Entities;
 using Wheelhouse.Domain.Settings.Enums;
 using Wheelhouse.Domain.Targets.Enums;
+using Wheelhouse.Persistence;
 using Wheelhouse.Persistence.Repositories;
 using Wheelhouse.Tests.Integration.Harness;
 using Wheelhouse.Tests.Integration.Support;
+using WoW.Two.Sdk.Beta.Be.Data.Sessions;
 
 namespace Wheelhouse.Tests.Integration.Tests;
 
@@ -126,9 +129,10 @@ public sealed class SecretsVaultStoreTests(WheelhouseTestDb db) : IAsyncLifetime
     {
         var product = await StoreProductAsync("pilot");
         await using (var ctx = db.NewContext())
+        await using (var sessions = DataSessions(ctx))
+        await using (var scope = sessions.CreateAsyncScope())
         {
-            var transactions = new EfTransactions(ctx);
-            await using (await transactions.BeginAsync(default))
+            await using (await scope.ServiceProvider.GetRequiredService<IDataSession>().BeginAsync())
             {
                 var store = new SecretsVaultStore(ctx);
                 var (secret, version) = Secret(product.Id, "A:Key");
@@ -145,20 +149,26 @@ public sealed class SecretsVaultStoreTests(WheelhouseTestDb db) : IAsyncLifetime
         (await read.VaultSecrets.CountAsync(), await read.EnvironmentSettings.CountAsync()).Should().Be((0, 0));
 
         await using (var ctx = db.NewContext())
+        await using (var sessions = DataSessions(ctx))
+        await using (var scope = sessions.CreateAsyncScope())
         {
-            await using var transaction = await new EfTransactions(ctx).BeginAsync(default);
+            await using var unit = await scope.ServiceProvider.GetRequiredService<IDataSession>().BeginAsync();
             var store = new SecretsVaultStore(ctx);
             var (secret, version) = Secret(product.Id, "A:Key");
             store.Add(secret);
             store.Add(version);
             await new EnvironmentSettingsRepository(ctx).SetAsync(product.Id, DeploymentEnvironment.Prod,
                 new Dictionary<string, string> { ["Feature:Flag"] = "on" });
-            await store.SaveAsync(default);
-            await transaction.CommitAsync(default);
+            // Completing saves what the vault staged; the handlers rely on it.
+            await unit.CompleteAsync();
         }
         await using var committed = db.NewContext();
         (await committed.VaultSecrets.CountAsync(), await committed.EnvironmentSettings.CountAsync()).Should().Be((1, 1));
     }
+
+    /// <summary>The SDK data session as the host registers it, over one context the caller owns.</summary>
+    private static ServiceProvider DataSessions(WheelhouseDbContext ctx) =>
+        new ServiceCollection().AddSingleton(ctx).AddDataSession<WheelhouseDbContext>().BuildServiceProvider();
 
     [Fact]
     public async Task AddedKeys_ShouldStoreTheirTypeAndChoices_AndBeReplacedOrRemoved()
