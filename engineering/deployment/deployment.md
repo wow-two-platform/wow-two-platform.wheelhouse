@@ -564,10 +564,16 @@ python3 $R reconcile --root /path/to/inventory --target foreverpin-dev --job <ac
 python3 $R vitals   --root /path/to/inventory [--target foreverpin-dev]
 python3 $R stats    --root /path/to/inventory --days 30
 python3 $R logs     --root /path/to/inventory --target foreverpin-dev --service management --tail 200
+python3 $R control  --root /path/to/inventory --target foreverpin-dev --operation stop|start|restart [--service management] --actor operator [--reason "…"]
+python3 $R stops    --root /path/to/inventory
 ```
 
 `check`, `state`, `topology`, `vitals` and `logs` stream the runner over SSH stdin and leave no files on the target.
 `logs` returns one service's last 1-1000 container lines, timestamped; nothing stores them.
+`control` stops, starts or restarts the release a target runs — one service, or the whole environment without
+`--service` (a restart names one) — as a job followed like a deploy; it refuses Wheelhouse's own targets and runs only
+while no rollout or other control does. While anything stays stopped (`stops` lists it), every deploy is refused with
+`<target> is stopped; start it before deploying`: start it first ([architecture](../architecture/architecture.md#service-controls)).
 `submit --confirm <target>` carries the typed confirmation that prod on the local server requires; `submit --fleet <id>`
 keeps the fleet rollout that submitted it on the job (the API sets it).
 
@@ -590,6 +596,7 @@ every settings file and the target's lock state; each failure names the rule or 
 | `GET /api/deployments/targets/{id}/topology` | Saved Compose services, startup dependencies, logical networks and named volumes from the last successful release |
 | `GET /api/deployments/targets/{id}/check?release=` | Read-only readiness, optionally against one release |
 | `POST /api/deployments/targets/{id}/reconcile` | `{"job":"<active-id>"}` with `X-Wheelhouse-Action: reconcile` |
+| `POST /api/deployments/targets/{id}/controls` | `{"operation":"stop","service":"…","reason":"…","confirm":"…"}` with `X-Wheelhouse-Action: control`; owner only, prod needs `confirm` and `reason`; `202` means queued |
 | `GET /api/servers` | Hosts defined in code; registration and deletion return `405` |
 | `GET /api/deployments/releases` | Published releases and per-commit builds (`kind`: `release` \| `candidate`) from approved sources |
 | `GET /api/deployments/products/{product}/branches` | The product repository's branches |
@@ -934,6 +941,7 @@ drops the console's database, the vault's data and the target's state.
   lock
   active.json
   current.json                  release, service versions and site URLs of the verified rollout
+  stopped.json                  what the owner stopped (the environment or services); deploys refused while present
   jobs/<job-id>.json
   releases/<job-id>/{release,compose}.json
   releases/<job-id>/images-removed    marks an older release whose images were removed
