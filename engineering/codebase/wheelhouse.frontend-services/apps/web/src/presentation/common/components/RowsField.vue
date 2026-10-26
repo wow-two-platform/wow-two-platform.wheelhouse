@@ -30,25 +30,40 @@ import { Field, NumberInput, TextInput } from "@wow-two-beta/fe/presentation/for
 import { useFieldArray } from "@wow-two-beta/fe/forms-engine";
 
 /** Renders column headings, a row of inputs per record with its remove control, the list's own errors and one add
- * control. Cells and the list take the host's refusals at their own paths. */
+ * control. Cells and the list take the host's refusals at their own paths. Below the small breakpoint the headings
+ * give way to a label over each cell, and each record stacks in its own bordered block, its remove control last. */
 defineOptions({ name: "RowsField" });
 const props = defineProps<RowsFieldProps<TValues>>();
 defineSlots<{}>();
 
 const FormField = props.form.Field;
 const rows = useFieldArray<Record<string, string | number>>(props.form, props.name);
-const grid = computed(() => ({ gridTemplateColumns: `repeat(${props.columns.length}, minmax(0, 1fr)) auto` }));
+/** The columns from the small breakpoint up; below it each row stacks, one labelled cell per line. @internal */
+const grid = computed(() => ({ "--rows-columns": `repeat(${props.columns.length}, minmax(0, 1fr)) auto` }));
 </script>
 <template>
   <FormField :name="props.name" v-slot="list">
     <fieldset class="flex flex-col gap-2">
       <legend class="mb-1 text-sm font-medium">{{ props.label }}</legend>
-      <div v-if="rows.length" class="grid gap-2 text-xs text-muted-foreground" :style="grid" aria-hidden="true">
+      <div
+        v-if="rows.length"
+        class="hidden gap-2 text-xs text-muted-foreground sm:grid sm:[grid-template-columns:var(--rows-columns)]"
+        :style="grid"
+        aria-hidden="true"
+      >
         <span v-for="column in props.columns" :key="column.key">{{ column.label }}</span>
+        <!-- Holds the remove control's column, so each heading sits over its cells. -->
+        <span class="w-10" />
       </div>
-      <div v-for="row in rows.rows" :key="row.key" class="grid items-start gap-2" :style="grid">
+      <div
+        v-for="row in rows.rows"
+        :key="row.key"
+        class="flex min-w-0 flex-col gap-2 rounded-md border border-border p-3 sm:grid sm:items-start sm:rounded-none sm:border-0 sm:p-0 sm:[grid-template-columns:var(--rows-columns)]"
+        :style="grid"
+      >
         <rows.Field v-for="column in props.columns" :key="column.key" :index="row.index" :name="column.key" v-slot="cell">
-          <Field>
+          <Field class="min-w-0">
+            <span class="text-xs text-muted-foreground sm:hidden" aria-hidden="true">{{ column.label }}</span>
             <NumberInput
               v-if="column.isNumeric"
               :model-value="Number(cell.value)"
@@ -73,6 +88,7 @@ const grid = computed(() => ({ gridTemplateColumns: `repeat(${props.columns.leng
           tone="neutral"
           size="md"
           shape="square"
+          class="self-end sm:self-auto"
           :aria-label="`Remove row ${row.index + 1}`"
           @click="rows.remove(row.index)"
         >
