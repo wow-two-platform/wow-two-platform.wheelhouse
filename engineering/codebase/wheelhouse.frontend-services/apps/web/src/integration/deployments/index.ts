@@ -11,9 +11,11 @@ import type {
   TargetCheck,
   TargetState,
 } from "@/domain/deployments";
+import type { ControlOperation } from "@/domain/deployments/controls";
 import { requestData } from "@/integration/common";
 import {
   BuildRequestSchema,
+  ControlSubmittedSchema,
   CommitEntrySchema,
   DeploymentJobSchema,
   DeploymentStatsSchema,
@@ -136,6 +138,30 @@ export const deploymentsApi = {
       BuildRequestSchema,
       { signal, method: "POST", action: "build", body: { commit, ...(repository ? { repository } : {}) } },
     ),
+
+  /** Stops, starts or restarts the release a target runs: `service`, or the whole environment without one. Prod needs
+   *  `confirm`, its target ID typed, and a `reason`. */
+  control: (
+    target: string,
+    body: {
+      readonly operation: ControlOperation;
+      readonly service?: string | null | undefined;
+      readonly reason?: string | undefined;
+      readonly confirm?: string | undefined;
+    },
+    signal?: AbortSignal,
+  ) =>
+    requestData(`/api/deployments/targets/${encodeURIComponent(target)}/controls`, ControlSubmittedSchema, {
+      signal,
+      method: "POST",
+      action: "control",
+      body: {
+        operation: body.operation,
+        ...(body.service ? { service: body.service } : {}),
+        ...(body.reason?.trim() ? { reason: body.reason.trim() } : {}),
+        ...(body.confirm ? { confirm: body.confirm } : {}),
+      },
+    }),
 
   reconcile: (target: string, job: string, signal?: AbortSignal) =>
     requestData<DeploymentJob>(

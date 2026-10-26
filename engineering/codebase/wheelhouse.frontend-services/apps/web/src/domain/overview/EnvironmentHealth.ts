@@ -1,6 +1,7 @@
 import { TargetCondition, type DeploymentJob, type DeploymentStats, type DeploymentTarget } from '@/domain/deployments';
 import { RESTART_WARNING, ServerExtensions, type ServerVitals } from '@/domain/servers';
 import { EnvironmentOrder, type DeploymentEnvironment } from '@/domain/targets';
+import { ServiceControls } from '@/domain/deployments/controls/ServiceControls';
 
 /** What one environment of a product looks like from the readings the console already holds. */
 export const EnvironmentHealth = {
@@ -15,6 +16,8 @@ export const EnvironmentHealth = {
   Warning: 'warning',
   /** Unreachable, failing, empty after a release, or waiting on reconciliation. */
   Failing: 'failing',
+  /** Stopped whole by the owner: on purpose, so never failing. */
+  Stopped: 'stopped',
 } as const;
 export type EnvironmentHealth = (typeof EnvironmentHealth)[keyof typeof EnvironmentHealth];
 
@@ -40,6 +43,7 @@ export const EnvironmentHealthLabels: Readonly<Record<EnvironmentHealth, string>
   healthy: 'healthy',
   warning: 'needs a look',
   failing: 'failing',
+  stopped: 'stopped',
 };
 
 /** Pure rules turning targets, vitals and deployment stats into per-environment health. */
@@ -53,10 +57,13 @@ export const EnvironmentHealthRules = {
     if (reading.condition === TargetCondition.NeedsReconciliation) return EnvironmentHealth.Failing;
     if (readings.stats?.targets.some((item) => item.targetId === target.id && item.failingSince !== null))
       return EnvironmentHealth.Failing;
+    if (reading.stopped?.environment) return EnvironmentHealth.Stopped;
     const containers = reading.containers;
     if (containers == null) return EnvironmentHealth.Unknown;
     if (containers.length === 0) return reading.release ? EnvironmentHealth.Failing : EnvironmentHealth.Idle;
-    if (containers.some((container) => !ServerExtensions.isHealthy(container))) return EnvironmentHealth.Failing;
+    // A service the owner stopped is stopped on purpose, not failing.
+    if (containers.some((container) => !ServerExtensions.isHealthy(container)
+      && !ServiceControls.isStopped(reading.stopped, container.service))) return EnvironmentHealth.Failing;
     if (reading.condition === TargetCondition.Running) return EnvironmentHealth.Warning;
     if (containers.some((container) => container.restarts >= RESTART_WARNING)) return EnvironmentHealth.Warning;
     return EnvironmentHealth.Healthy;
@@ -91,6 +98,7 @@ export const EnvironmentHealthRules = {
 const Severity: Readonly<Record<EnvironmentHealth, number>> = {
   missing: 0,
   idle: 1,
+  stopped: 1,
   healthy: 2,
   unknown: 3,
   warning: 4,

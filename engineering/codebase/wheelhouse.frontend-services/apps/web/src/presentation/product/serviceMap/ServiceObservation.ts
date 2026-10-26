@@ -1,4 +1,5 @@
 import { ServerExtensions, type ContainerVitals } from "@/domain/servers";
+import { ServiceControls, type TargetStop } from "@/domain/deployments/controls";
 
 /** The observed status remains separate from the saved Compose declaration. */
 export interface ServiceObservation {
@@ -7,11 +8,15 @@ export interface ServiceObservation {
   readonly count: number | null;
 }
 
-/** Summarizes supplied observations without treating a missing snapshot as an absent container. */
+/** Summarizes supplied observations without treating a missing snapshot as an absent container; a service the owner
+ * stopped reads stopped, never failing. */
 export function describeServiceObservation(
   service: string,
   containers?: readonly ContainerVitals[] | null,
+  stopped?: TargetStop | null,
 ): ServiceObservation {
+  if (ServiceControls.isStopped(stopped, service))
+    return { label: "Stopped", tone: "neutral", count: containers?.filter((item) => item.service === service).length ?? null };
   if (containers == null)
     return { label: "Runtime unavailable", tone: "neutral", count: null };
   const matches = containers.filter(

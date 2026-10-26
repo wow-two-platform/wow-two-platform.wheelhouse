@@ -98,6 +98,14 @@ public sealed record DeploymentRecord
     /// <summary>Gets the step a live rollout is on; null once it finished or before its worker started.</summary>
     public DeploymentStepRecord? CurrentStep { get; init; }
 
+    /// <summary>Gets the control this record is — a stop, start or restart of the release its target runs — or null for
+    /// a deploy.</summary>
+    public DeploymentOperationDto? Operation { get; init; }
+
+    /// <summary>Gets what the owner kept stopped on the target once this control ended; null for a deploy, a control
+    /// that has not ended, or one that left nothing stopped.</summary>
+    public TargetStopDto? Stopped { get; init; }
+
     /// <summary>Gets how the rollout treated each service, as the target reported it; null for a rollout older than
     /// service-aware rollouts. Read by the adapter, never bound from the runner's JSON directly.</summary>
     [JsonIgnore]

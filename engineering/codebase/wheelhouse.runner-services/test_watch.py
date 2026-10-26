@@ -126,7 +126,7 @@ class TargetWatchTests(unittest.TestCase):
             result = runner.watch(self.target, prober=prober)
         self.assertEqual(["app"], asked)
         self.assertEqual((REMOTE, "v1.0.0"), (result["currentId"], result["release"]))
-        self.assertEqual([{"name": "app", "url": "http://app.example", "ok": False,
+        self.assertEqual([{"name": "app", "service": "api", "url": "http://app.example", "ok": False,
                            "detail": "The ingress did not answer (timeout)"}], result["sites"])
 
 

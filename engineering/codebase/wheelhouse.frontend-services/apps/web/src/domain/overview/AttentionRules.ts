@@ -1,6 +1,7 @@
 import { Measures } from '@/domain/common';
 import { ReleaseSets, TargetCondition, type DeploymentStats } from '@/domain/deployments';
 import { ServerExtensions, RESTART_WARNING, USAGE_THRESHOLDS, type ServerVitals } from '@/domain/servers';
+import { ServiceControls } from '@/domain/deployments/controls/ServiceControls';
 import { VaultStatus, type VaultHygiene, type VaultSummary } from '@/domain/secrets';
 
 /** How urgent an attention item is. */
@@ -42,6 +43,8 @@ export const AttentionRules = {
         items.push({ id: `empty:${id}`, tone: 'danger', title: `${id} runs no containers`,
           detail: `It last verified ${ReleaseSets.text(target.release)}, but none of its containers exist now.`, href: '/servers' });
       for (const container of target.containers ?? []) {
+        // What the owner stopped is stopped on purpose; it needs no attention.
+        if (ServiceControls.isStopped(target.stopped, container.service)) continue;
         if (!ServerExtensions.isHealthy(container))
           items.push({ id: `container:${id}:${container.service}`, tone: 'danger',
             title: `${container.service} on ${id} is ${ServerExtensions.containerLabel(container)}`,

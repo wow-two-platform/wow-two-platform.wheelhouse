@@ -9,6 +9,8 @@ import {
   Layers,
   List,
   Network,
+  Pause,
+  Play,
   Rocket,
   Server,
   ShieldCheck,
@@ -63,10 +65,13 @@ import {
   type DeploymentJob,
 } from "@/domain/deployments";
 import { ProductStatusRules } from "@/domain/products";
+import { SelfProduct } from "@/domain/deployments";
+import { ServiceControls, type ControlRequest } from "@/domain/deployments/controls";
 import { ServerExtensions } from "@/domain/servers";
 import { EnvironmentOrder, type DeploymentEnvironment } from "@/domain/targets";
 import { withoutServices } from "@/domain/topology";
 import {
+  ControlConfirmModal,
   DeployModal,
   DeploymentStatusPill,
   DeploymentSteps,
@@ -162,6 +167,17 @@ const record = computed(() => product.value?.product ?? null);
 /** The services the page leaves out: the inactive ones, until "Show inactive" is on. */
 const hiddenServices = computed(() => (showInactive.value ? [] : (record.value?.inactiveServices ?? [])));
 const state = useTargetState(() => target.value?.id ?? null);
+/** What the owner keeps stopped on the environment: the target's own word, else its vitals'. */
+const stopped = computed(() => state.data.value?.stopped ?? targetVitals.value?.stopped ?? null);
+/** The environment its stop, start and restart act on; none for Wheelhouse itself, which would stop its own console. */
+const controlTarget = computed(() =>
+  target.value && ServiceControls.offers(target.value.product, SelfProduct)
+    ? { id: target.value.id, environment: target.value.environment, product: target.value.product }
+    : null,
+);
+/** The environment's stop or start the owner is confirming. */
+const environmentControl = ref<ControlRequest | null>(null);
+const confirmingControl = ref(false);
 const topology = useTargetTopology(() => target.value?.id ?? null);
 const serviceView = ref<"map" | "list">("map");
 const selectedMapService = ref<string | null>(null);
@@ -379,6 +395,22 @@ function inspect(
       true,
     );
 }
+/** Asks to confirm stopping or starting the whole environment. @internal */
+function controlEnvironment(): void {
+  if (!controlTarget.value) return;
+  environmentControl.value = {
+    target: controlTarget.value,
+    operation: ServiceControls.forEnvironment(stopped.value),
+    service: null,
+  };
+  confirmingControl.value = true;
+}
+/** A submission's name: its control, else its release. @internal */
+function jobLabel(job: DeploymentJob): string {
+  return job.operation
+    ? ServiceControls.labelOf(job.operation)
+    : ReleaseSets.text(job.release) || job.bundleId || "Submitted release";
+}
 /** Starts the retained deployment flow with an exact target, optionally preselecting a published bundle. @internal */
 function openDeploy(job?: DeploymentJob): void {
   if (target.value)
@@ -504,9 +536,11 @@ function openDeploy(job?: DeploymentJob): void {
                     ><ShieldCheck :size="15" />Deployment state</span
                   ><span class="mt-3 block text-xl font-semibold capitalize"
                     ><SkeletonStateSlot>{{
-                      state.data.value
-                        ? DeploymentExtensions.label(state.data.value.condition)
-                        : "Unknown"
+                      state.data.value && ServiceControls.anyStopped(stopped)
+                        ? ServiceControls.stateLabel(stopped)
+                        : state.data.value
+                          ? DeploymentExtensions.label(state.data.value.condition)
+                          : "Unknown"
                     }}</SkeletonStateSlot></span
                   ><span class="mt-2 block text-xs text-muted-foreground"
                     >{{ target.host }} · {{ target.provider }}</span
@@ -580,6 +614,7 @@ function openDeploy(job?: DeploymentJob): void {
                     :key="target.id"
                     :topology="visibleTopology"
                     :containers="visibleMapContainers"
+                    :stopped="stopped"
                     :selected-service="
                       selectedMapService ??
                       (inspected?.kind === 'service'
@@ -650,12 +685,26 @@ function openDeploy(job?: DeploymentJob): void {
                             as="span"
                             class="text-xs capitalize"
                             :class="
-                              service && ServerExtensions.isHealthy(service)
-                                ? 'text-success'
-                                : 'text-destructive'
+                              service && ServiceControls.isStopped(stopped, service.service)
+                                ? 'text-muted-foreground'
+                                : service && ServerExtensions.isHealthy(service)
+                                  ? 'text-success'
+                                  : 'text-destructive'
                             "
-                            >{{ service ? ServerExtensions.containerLabel(service) : "" }}</Text
-                          ><ServiceActions v-if="service" :product="record" :service="service.service" /></span
+                            >{{
+                              service
+                                ? ServiceControls.isStopped(stopped, service.service)
+                                  ? "stopped"
+                                  : ServerExtensions.containerLabel(service)
+                                : ""
+                            }}</Text
+                          ><ServiceActions
+                            v-if="service"
+                            :product="record"
+                            :service="service.service"
+                            :target="controlTarget"
+                            :stopped="stopped"
+                        /></span
                       ></span>
                       <button
                         type="button"
@@ -747,7 +796,7 @@ function openDeploy(job?: DeploymentJob): void {
                 >
                   <span class="min-w-0 flex-1"
                     ><Text as="span" class="block truncate text-sm font-medium text-inherit" skeleton-width="8rem">{{
-                      job ? (ReleaseSets.text(job.release) || job.bundleId || "Submitted release") : ""
+                      job ? jobLabel(job) : ""
                     }}</Text
                     ><Text as="span" class="text-xs text-muted-foreground" skeleton-width="10rem"
                       ><template v-if="job"
@@ -809,10 +858,19 @@ function openDeploy(job?: DeploymentJob): void {
                     <h3 class="break-all text-lg font-semibold">
                       {{ inspected.service.service }}
                     </h3>
-                    <ServiceActions :product="record" :service="inspected.service.service" />
+                    <ServiceActions
+                      :product="record"
+                      :service="inspected.service.service"
+                      :target="controlTarget"
+                      :stopped="stopped"
+                    />
                   </div>
                   <p class="mt-1 text-sm capitalize text-muted-foreground">
-                    {{ ServerExtensions.containerLabel(inspected.service) }}
+                    {{
+                      ServiceControls.isStopped(stopped, inspected.service.service)
+                        ? "stopped"
+                        : ServerExtensions.containerLabel(inspected.service)
+                    }}
                   </p>
                 </div>
                 <ResourceMeter
@@ -850,7 +908,7 @@ function openDeploy(job?: DeploymentJob): void {
                 ><div>
                   <Rocket :size="26" class="mb-4 text-primary" />
                   <h3 class="break-all text-lg font-semibold">
-                    {{ ReleaseSets.text(inspectedJob.release) || "Deployment" }}
+                    {{ inspectedJob.operation ? jobLabel(inspectedJob) : ReleaseSets.text(inspectedJob.release) || "Deployment" }}
                   </h3>
                   <DeploymentStatusPill class="mt-2" v-bind="stateOf(inspectedJob)" />
                 </div>
@@ -957,7 +1015,18 @@ function openDeploy(job?: DeploymentJob): void {
                   @click="openDeploy()"
                   >Check a release<template #trailing
                     ><ArrowRight :size="14" /></template
-                ></Button></template
+                ></Button>
+                <Button
+                  v-if="controlTarget && state.data.value?.current"
+                  variant="outline"
+                  :tone="ServiceControls.anyStopped(stopped) ? 'primary' : 'neutral'"
+                  is-full-width
+                  @click="controlEnvironment()"
+                  ><template #leading
+                    ><Play v-if="ServiceControls.anyStopped(stopped)" :size="14" /><Pause v-else :size="14"
+                  /></template
+                  >{{ ServiceControls.anyStopped(stopped) ? "Start environment" : "Stop environment" }}</Button
+                ></template
               >
               <div class="border-t border-border pt-4">
                 <p class="text-xs text-muted-foreground">Environment</p>
@@ -1000,6 +1069,11 @@ function openDeploy(job?: DeploymentJob): void {
       :active="state.data.value.active"
       :open="reconciling"
       @update:open="reconciling = $event"
+    />
+    <ControlConfirmModal
+      :open="confirmingControl"
+      :request="environmentControl"
+      @update:open="confirmingControl = $event"
     />
     <ServiceLogsModal
       :open="logsService !== null"

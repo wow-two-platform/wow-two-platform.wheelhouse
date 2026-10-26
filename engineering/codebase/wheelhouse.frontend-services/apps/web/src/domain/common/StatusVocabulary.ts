@@ -23,6 +23,8 @@ export const StatusState = {
   None: 'none',
   /** Deployed by its own CI rather than by Wheelhouse, as Wheelhouse itself is. */
   Ci: 'ci',
+  /** Stopped by the owner, whole or some of its services: on purpose, never a failure. */
+  Stopped: 'stopped',
   /** No reading. */
   Unknown: 'unknown',
 } as const;
@@ -38,6 +40,7 @@ export const StatusWords: Readonly<Record<StatusState, string>> = {
   mixed: 'mixed',
   none: 'not deployed',
   ci: 'deployed by CI',
+  stopped: 'stopped',
   unknown: 'no reading',
 };
 
@@ -67,6 +70,7 @@ export const StatusTones: Readonly<Record<StatusState, StatusTone>> = {
   failed: 'danger',
   mixed: 'danger',
   degraded: 'warning',
+  stopped: 'quiet',
   unknown: 'quiet',
   none: 'empty',
 };

@@ -4,6 +4,7 @@ import type { DeploymentStep } from './DeploymentStep';
 import type { PublishedSite } from './PublishedSite';
 import type { ReleaseKind } from './ReleaseArtifact';
 import type { ServiceVersion } from './ServiceVersion';
+import type { DeploymentOperation, TargetStop } from '../controls/ServiceControls';
 
 /** A rollout record held on the target. */
 export interface RolloutRecord {
@@ -24,6 +25,8 @@ export interface RolloutRecord {
   sites?: PublishedSite[];
   steps?: DeploymentStep[];
   warnings?: string[];
+  /** Set when the record is a control — a stop, start or restart — rather than a rollout. */
+  operation?: DeploymentOperation | null;
 }
 
 /** What a target runs and whether it accepts a deployment. */
@@ -33,4 +36,6 @@ export interface TargetState {
   condition: TargetCondition;
   current: RolloutRecord | null;
   active: RolloutRecord | null;
+  /** What the owner keeps stopped there; null while nothing is. */
+  stopped?: TargetStop | null;
 }

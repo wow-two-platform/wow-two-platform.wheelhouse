@@ -112,6 +112,10 @@ public sealed record DeploymentItemDto
     /// back, regressed or failed its check.</summary>
     public bool SettingsSuspect { get; init; }
 
+    /// <summary>Gets the control this item is — a stop, start or restart of the release its target runs, which
+    /// <see cref="Release"/> names — or null for a deploy.</summary>
+    public DeploymentOperationDto? Operation { get; init; }
+
     /// <summary>Maps an entry.</summary>
     /// <param name="entry">The joined submission.</param>
     /// <returns>The list item.</returns>
@@ -136,6 +140,7 @@ public sealed record DeploymentItemDto
             DeployReason = record.DeployReason,
             FleetId = record.FleetId,
             Status = record.Status,
+            Operation = record.Operation,
             Outcome = entry.Outcome,
             State = entry.State.State,
             Substate = entry.State.Substate,

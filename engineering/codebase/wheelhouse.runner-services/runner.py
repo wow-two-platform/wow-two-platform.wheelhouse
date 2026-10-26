@@ -111,6 +111,13 @@ VERIFY_TIMEOUT = 300
 VERIFY_TIMEOUT_LIMIT = 1800
 VERIFY_MEMORY = "512m"
 VERIFY_SUMMARY_LIMIT = 300
+# Service controls (decision 45): what the owner may do to the release a target runs. A stop keeps containers, volumes
+# and routes and leaves `stopped.json`, which every deploy refuses until a start removes it; a start brings back the
+# same release, never pulling or recreating; a restart is one service's stop and start.
+OPERATIONS = ("stop", "start", "restart")
+STOPPED = "stopped.json"
+# How long a stopping container gets to exit before Docker kills it.
+STOP_GRACE_SECONDS = 30
 
 
 class Rejected(ValueError):
@@ -1613,6 +1620,16 @@ class Docker:
         self.compose(bundle, "up", "--detach", "--wait", "--wait-timeout", str(self.health_timeout()),
                      "--no-deps", "--force-recreate", "--pull", "never", *services)
 
+    def stop(self, bundle, services=()):
+        """Stops `services`, or the whole release without any: the containers, volumes and routes stay."""
+        self.compose(bundle, "stop", "--timeout", str(STOP_GRACE_SECONDS), *services)
+
+    def start(self, bundle, services=()):
+        """Starts `services` (never their dependencies), or the whole release without any, as the containers the
+        release created — nothing is pulled or recreated — and waits for their health checks."""
+        self.compose(bundle, "up", "--detach", "--wait", "--wait-timeout", str(self.health_timeout()),
+                     "--no-recreate", "--pull", "never", *(["--no-deps", *services] if services else []))
+
     def verify(self, bundle, manifest):
         for service, image in manifest["images"].items():
             container = self.compose(bundle, "ps", "--all", "--quiet", service).strip()
@@ -1739,6 +1756,9 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
         require(not active or active["status"] in TERMINAL, "Interrupted deployment requires reconciliation")
         require(not active or not (active.get("mutationStarted") and active["status"] in ("failed", "rollback_failed")),
                 "Failed mutation requires reconciliation")
+        # What the owner stopped stays stopped: a deploy, automatic or not, never starts it again on its own.
+        stopped = stopped_of(root)
+        require(stopped is None, stopped_refusal(project, stopped))
         registry = registry_login(provided)
         unreadable = registry_unreadable(provided)
         rendered, render_started = None, now()
@@ -2067,6 +2087,9 @@ def launch(bundle, target_path, actor, provided=None):
         provided_values(provided)
         registry_login(provided)
         registry_unreadable(provided)
+    # Refused here, before a job exists, so the control plane can tell the owner at once; the worker checks again.
+    stopped = stopped_of(root / project)
+    require(stopped is None, stopped_refusal(project, stopped))
     job_id = str(uuid.uuid4())
     jobs = root / project / "jobs"
     jobs.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -2083,6 +2106,194 @@ def launch(bundle, target_path, actor, provided=None):
     return {"id": job_id, "status": "queued"}
 
 
+# ---- Service controls ----
+
+def stopped_of(base):
+    """What the owner stopped on a target, as its `stopped.json` says: `{environment, services, at, actor}`, the whole
+    environment or the services named; None while nothing is. A marker that cannot be read counts as the whole
+    environment, so a deploy never starts what may have been stopped."""
+    path = Path(base) / STOPPED
+    if not path.is_file():
+        return None
+    try:
+        value = read_json(path)
+    except (OSError, ValueError):
+        value = None
+    if not isinstance(value, dict):
+        return {"environment": True, "services": [], "at": None, "actor": None}
+    services = value.get("services") if isinstance(value.get("services"), list) else []
+    return {"environment": value.get("environment") is not False,
+            "services": sorted({name for name in services if isinstance(name, str) and SLUG.fullmatch(name)}),
+            "at": value.get("at") if isinstance(value.get("at"), str) else None,
+            "actor": value.get("actor") if isinstance(value.get("actor"), str) else None}
+
+
+def stopped_refusal(project, stopped):
+    """Why a deploy is refused while the owner keeps something stopped; it names what to start."""
+    if stopped is None:
+        return ""
+    if stopped["environment"]:
+        return project + " is stopped; start it before deploying"
+    names = stopped["services"]
+    return (", ".join(names) + (" is" if len(names) == 1 else " are") + " stopped on " + project
+            + "; start " + ("it" if len(names) == 1 else "them") + " before deploying")
+
+
+def write_stopped(base, stopped, actor):
+    """Saves what stays stopped, or removes the marker when nothing does."""
+    path = Path(base) / STOPPED
+    if stopped is None or (not stopped["environment"] and not stopped["services"]):
+        path.unlink(missing_ok=True)
+        return None
+    value = {"environment": stopped["environment"], "services": sorted(stopped["services"]), "at": now(), "actor": actor}
+    write_json(path, value)
+    return value
+
+
+def control_label(operation, services):
+    """A control's one-line name, as its step and history read it: `Stop management`, `Start the environment`."""
+    return operation.capitalize() + " " + (", ".join(services) if services else "the environment")
+
+
+def control_plan(base, operation, services):
+    """Checks one control against the target as it is and returns the release it acts on (`current.json`), its bundle
+    folder and manifest, and what stays stopped afterwards. A control needs a release to act on; a service must be one
+    of the release's; the whole environment only stops and starts, a service also restarts; a stopped environment
+    starts whole, and a stopped service starts rather than restarts."""
+    require(operation in OPERATIONS, "Unknown control: " + str(operation))
+    require(isinstance(services, list) and len(services) <= 1
+            and all(isinstance(name, str) and SLUG.fullmatch(name) for name in services),
+            "A control names one service, or none for the whole environment")
+    require(operation != "restart" or services, "Restart one service at a time")
+    current_path = base / "current.json"
+    require(current_path.is_file(), base.name + " runs no release yet; there is nothing to stop or start")
+    current = read_json(current_path)
+    require(isinstance(current, dict) and isinstance(current.get("id"), str)
+            and str(uuid.UUID(current["id"])) == current["id"], "The release this target runs is unreadable")
+    bundle = base / "releases" / current["id"]
+    manifest = validate_bundle(bundle)
+    for name in services:
+        require(name in manifest["images"], "The release " + manifest["release"] + " has no service " + name)
+    stopped = stopped_of(base) or {"environment": False, "services": []}
+    whole = stopped["environment"]
+    if operation == "stop":
+        require(not whole, base.name + " is already stopped")
+        require(not set(services) & set(stopped["services"]), ", ".join(services) + " is already stopped")
+        after = ({"environment": True, "services": []} if not services else
+                 {"environment": False, "services": sorted(set(stopped["services"]) | set(services))})
+    elif operation == "start":
+        require(not (whole and services), base.name + " is stopped; start the environment")
+        after = (None if not services else
+                 {"environment": False, "services": sorted(set(stopped["services"]) - set(services))})
+    else:
+        require(not whole, base.name + " is stopped; start the environment")
+        require(services[0] not in stopped["services"], services[0] + " is stopped; start it instead")
+        after = stopped if stopped["services"] else None
+    return current, bundle, manifest, after
+
+
+def control_ready(base):
+    """Refuses a control while a rollout or another control runs, or one stopped mid-way waits for reconciliation."""
+    require(not lock_held(base), "A rollout or another control is running on " + base.name)
+    active = read_json(base / "active.json") if (base / "active.json").is_file() else None
+    require(not active or active.get("status") in TERMINAL, "Interrupted deployment requires reconciliation")
+    require(not active or not (active.get("mutationStarted") and active["status"] in ("failed", "rollback_failed")),
+            "Failed mutation requires reconciliation")
+
+
+def control_launch(target_path, operation, services, actor):
+    """Queues a control of the release a target runs and starts its worker detached, as a deploy's launch does; every
+    rule is checked here first, so a refusal reaches the owner before any job exists."""
+    target = read_json(target_path)
+    root, project = validate_target(target)
+    base = root / project
+    require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
+    control_ready(base)
+    current, _, _, _ = control_plan(base, operation, services)
+    job_id = str(uuid.uuid4())
+    jobs = base / "jobs"
+    jobs.mkdir(parents=True, exist_ok=True, mode=0o700)
+    write_json(jobs / (job_id + ".json"), {"id": job_id, "status": "queued", "actor": actor, "queuedAt": now(),
+                                           "operation": {"kind": operation, "services": services},
+                                           "release": current.get("release")})
+    subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "control", "--target",
+                      str(Path(target_path).resolve()), "--operation", operation, "--actor", actor,
+                      "--job", job_id, *[argument for name in services for argument in ("--service", name)]],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True, close_fds=True)
+    return {"id": job_id, "status": "queued", "release": current.get("release")}
+
+
+def control(target, operation, services, actor, job_id, docker_factory=Docker):
+    """Stops, starts or restarts the release a target runs, under the deployment lock, as a job in the target's journal
+    and its durable intent (`active.json`) like a rollout. A stop marks what it stops before stopping it; a start
+    clears its mark only once its services are healthy, so a control cut short leaves the target refusing deploys and a
+    second start finishes it. The release, its containers, volumes and routes never change."""
+    root, project = validate_target(target)
+    base = root / project
+    require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
+    require(str(uuid.UUID(job_id)) == job_id, "Invalid deployment id")
+    with deployment_lock(base):
+        active_path = base / "active.json"
+        active = read_json(active_path) if active_path.exists() else None
+        require(not active or active["status"] in TERMINAL, "Interrupted deployment requires reconciliation")
+        require(not active or not (active.get("mutationStarted") and active["status"] in ("failed", "rollback_failed")),
+                "Failed mutation requires reconciliation")
+        current, bundle, manifest, after = control_plan(base, operation, services)
+        record = {"id": job_id, "project": project, "operation": {"kind": operation, "services": services},
+                  "release": current.get("release"), "sourceCommit": current.get("sourceCommit"),
+                  "kind": current.get("kind", "release"), "actor": actor, "status": "running", "startedAt": now(),
+                  "previous": current["id"]}
+
+        def save():
+            write_json(base / "jobs" / (job_id + ".json"), record)
+            write_json(active_path, record)
+
+        steps = Steps(record, save)
+        docker = None
+        names = services or sorted(manifest["images"])
+        try:
+            docker = docker_factory(target, environment_for(target, manifest))
+            environment_override(bundle, target["environment"])
+            if operation == "stop":
+                # Marked first: a stop cut short still keeps deploys from starting what it reached.
+                write_stopped(base, after, actor)
+                with steps.run(control_label("stop", services)) as step:
+                    docker.stop(bundle, services)
+                    step["detail"] = plural(len(names), "service") + " stopped; containers, volumes and routes kept"
+            elif operation == "start":
+                with steps.run(control_label("start", services)) as step:
+                    docker.start(bundle, services)
+                    step["detail"] = plural(len(names), "service") + " healthy on " + str(current.get("release"))
+                write_stopped(base, after, actor)
+            else:
+                with steps.run(control_label("restart", services)) as step:
+                    docker.stop(bundle, services)
+                    docker.start(bundle, services)
+                    step["detail"] = services[0] + " healthy on " + str(current.get("release"))
+            record["status"] = "succeeded"
+        except (Exception, KeyboardInterrupt) as error:
+            record["status"] = "failed"
+            record["failure"] = type(error).__name__
+            if reason(error):
+                record["reason"] = reason(error)
+            if docker is not None and operation != "stop" and isinstance(error, CommandFailed):
+                with contextlib.suppress(Exception):
+                    states = docker.unhealthy(bundle)
+                    if states:
+                        record["reason"] = record.get("reason", "The control failed") + "; not healthy: " + ", ".join(states)
+        record["stopped"] = stopped_of(base)
+        if docker is not None:
+            # A service the owner keeps stopped has no health to report.
+            with contextlib.suppress(Exception):
+                record["health"] = {name: value for name, value in docker.service_health(bundle).items()
+                                    if value in HEALTH and not (record["stopped"] and (
+                                        record["stopped"]["environment"] or name in record["stopped"]["services"]))}
+        record["completedAt"] = now()
+        save()
+        return record
+
+
 def passed(target, release):
     """The newest rollout that ran `release` to success on this target, read from its journal, whoever submitted it (a
     control plane, CI or the host's own self-deploy): its id and completion, or None when none did."""
@@ -2094,8 +2305,9 @@ def passed(target, release):
             job = read_json(path)
         except (OSError, ValueError):
             continue
+        # A control's record names the release it acted on, never one it ran to success.
         if (isinstance(job, dict) and job.get("release") == release and job.get("status") == "succeeded"
-                and isinstance(job.get("completedAt"), str)
+                and "operation" not in job and isinstance(job.get("completedAt"), str)
                 and (newest is None or job["completedAt"] > newest["completedAt"])):
             newest = job
     return None if newest is None else {"id": newest.get("id"), "release": release, "completedAt": newest["completedAt"]}
@@ -2109,9 +2321,10 @@ def acknowledge(target, job_id):
                 "No matching interrupted deployment")
         require(active["status"] == "running" or active.get("mutationStarted"),
                 "The deployment changed no containers; nothing to reconcile")
-        # Acknowledgement does not assert that previous images still match the observed schema.
+        # Acknowledgement does not assert that previous images still match the observed schema. A control cut short
+        # changed no release, so the verified one stays; what it stopped stays marked until a start.
         current = root / project / "current.json"
-        if current.exists():
+        if current.exists() and "operation" not in active:
             current.unlink()
         active["status"] = "interrupted"
         active["completedAt"] = now()
@@ -2136,7 +2349,7 @@ def lock_held(base):
 def summary(record):
     fields = ("id", "release", "sourceCommit", "kind", "branch", "versions", "sites", "status", "actor", "startedAt",
               "completedAt", "failure", "reason", "mutationStarted", "previous", "steps", "warnings", "snapshot",
-              "verification")
+              "verification", "operation", "stopped", "health")
     return None if record is None else {key: record[key] for key in fields if key in record}
 
 
@@ -2151,7 +2364,8 @@ def state(target):
         condition = "running" if lock_held(base) else "needs_reconciliation"
     elif active and active.get("mutationStarted") and active.get("status") in ("failed", "rollback_failed"):
         condition = "needs_reconciliation"
-    return {"project": project, "condition": condition, "current": summary(current), "active": summary(active)}
+    return {"project": project, "condition": condition, "current": summary(current), "active": summary(active),
+            "stopped": stopped_of(base)}
 
 
 def empty_topology(availability, warning=None):
@@ -2434,6 +2648,8 @@ def check(target, manifest=None, docker_factory=None, provided=None):
     current = state(target)
     checks.append({"name": "State", "ok": current["condition"] != "needs_reconciliation",
                    "detail": current["condition"].replace("_", " ")})
+    if current["stopped"] is not None:
+        checks.append({"name": "Stopped", "ok": False, "detail": stopped_refusal(project, current["stopped"])})
     return {"project": project, "ok": all(item["ok"] for item in checks), "checks": checks, "state": current}
 
 
@@ -2582,7 +2798,8 @@ def vitals(target, docker_factory=None):
     # Container collection spans several Docker calls. A completed rollout can otherwise attach
     # the new release to observations collected from its predecessor, including same-version redeploys.
     stable = before == current and current["condition"] == "ready"
-    result.update(condition=current["condition"], release=(current["current"] or {}).get("release") if stable else None)
+    result.update(condition=current["condition"], release=(current["current"] or {}).get("release") if stable else None,
+                  stopped=current.get("stopped"))
     if before != current:
         result["problems"].append("Deployment changed during observation; release attribution was withheld.")
     elif not stable:
@@ -2606,8 +2823,10 @@ def watch(target, docker_factory=None, prober=probe_sites):
         probed = None
     return {"project": project, "currentId": current.get("id"), "release": current.get("release"),
             "condition": reading["condition"], "containers": reading["containers"], "problems": reading["problems"],
-            "sites": None if probed is None else [{"name": site["name"], "url": site.get("url"),
-                                                   "ok": site["probe"]["ok"], "detail": site["probe"].get("detail")}
+            "stopped": reading.get("stopped"),
+            "sites": None if probed is None else [{"name": site["name"], "service": site.get("service"),
+                                                   "url": site.get("url"), "ok": site["probe"]["ok"],
+                                                   "detail": site["probe"].get("detail")}
                                                   for site in probed]}
 
 
@@ -2649,7 +2868,8 @@ def read_provided(stream):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["validate", "apply", "launch", "status", "acknowledge", "state", "check",
-                                           "host", "vitals", "topology", "logs", "watch", "prune", "passed"])
+                                           "host", "vitals", "topology", "logs", "watch", "prune", "passed",
+                                           "control-launch", "control"])
     parser.add_argument("--bundle")
     parser.add_argument("--target")
     parser.add_argument("--target-json")
@@ -2657,7 +2877,8 @@ def main():
     parser.add_argument("--release", help="passed: the release label to look for in the target's journal")
     parser.add_argument("--actor", default="operator")
     parser.add_argument("--job")
-    parser.add_argument("--service")
+    parser.add_argument("--service", help="logs: the service to read; control: the service, or none for the environment")
+    parser.add_argument("--operation", choices=OPERATIONS, help="control: stop, start or restart")
     parser.add_argument("--tail", type=int, default=200)
     parser.add_argument("--stdin", action="store_true",
                         help="launch, apply: read this deploy's settings values and registry sign-in from stdin")
@@ -2693,21 +2914,28 @@ def main():
             result = prune(target or read_json(args.target))
         elif args.action == "passed":
             result = passed(target or read_json(args.target), args.release)
+        elif args.action == "control-launch":
+            result = control_launch(args.target, args.operation, [args.service] if args.service else [], args.actor)
+        elif args.action == "control":
+            result = control(read_json(args.target), args.operation, [args.service] if args.service else [],
+                             args.actor, args.job)
         else:
             result = apply(args.bundle, read_json(args.target), args.actor, args.job, provided=provided)
         print(json.dumps(result))
-        return 1 if args.action == "apply" and result.get("status") != "succeeded" else 0
+        return 1 if args.action in ("apply", "control") and result.get("status") != "succeeded" else 0
     except Exception as error:
         # A launched worker must not leave its own job queued if preflight rejected it.
-        if args.action == "apply" and args.job:
+        if args.action in ("apply", "control") and args.job:
             try:
                 root, project = validate_target(read_json(args.target))
                 refused = rejection(error)
                 failed_step = {"name": getattr(error, "step", "Check target"), "status": "failed", "completedAt": now()}
                 if refused.get("reason"):
                     failed_step["detail"] = refused["reason"]
+                kept = {"operation": {"kind": args.operation, "services": [args.service] if args.service else []}} \
+                    if args.action == "control" else {}
                 write_json(root / project / "jobs" / (args.job + ".json"),
-                           {"id": args.job, **refused, "completedAt": now(), "steps": [failed_step]})
+                           {"id": args.job, **kept, **refused, "completedAt": now(), "steps": [failed_step]})
             except Exception:
                 pass
         print(json.dumps(rejection(error)), file=sys.stderr)

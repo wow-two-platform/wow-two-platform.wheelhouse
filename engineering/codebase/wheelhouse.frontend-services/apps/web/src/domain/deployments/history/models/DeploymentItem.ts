@@ -3,6 +3,7 @@ import type { Attention, DeployState, ServiceResult } from '@/domain/common/Stat
 import type { JobStatus } from '../../enums/JobStatus';
 import type { ReleaseKind } from '../../models/ReleaseArtifact';
 import type { ReleaseComponent } from '../../models/ReleaseComponent';
+import type { DeploymentOperation } from '../../controls/ServiceControls';
 
 /** What a deployment status amounted to before the status taxonomy; kept one release beside the state. */
 export const DeploymentOutcome = {
@@ -113,4 +114,7 @@ export interface DeploymentItem {
   settingsChanged?: SettingChange[] | null;
   /** Whether those changes are the likely cause: it failed, rolled back, regressed or failed its check. */
   settingsSuspect?: boolean;
+  /** Set when the item is a control — a stop, start or restart of the release its target runs, which `release` names;
+   * null for a deploy. */
+  operation?: DeploymentOperation | null;
 }

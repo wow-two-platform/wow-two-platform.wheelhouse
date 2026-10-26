@@ -13,6 +13,10 @@ export {
   default as ReconcileModal,
   type ReconcileModalProps,
 } from "./components/ReconcileModal.vue";
+export {
+  default as ControlConfirmModal,
+  type ControlConfirmModalProps,
+} from "./components/ControlConfirmModal.vue";
 export { default as CheckResultList } from "./components/CheckResultList.vue";
 export {
   default as ServiceLogsModal,

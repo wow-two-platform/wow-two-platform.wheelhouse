@@ -4,6 +4,7 @@ import { ReleaseSets } from '@/domain/deployments/ReleaseSets';
 import { EnvironmentHealth, type EnvironmentReading } from '@/domain/overview/EnvironmentHealth';
 import { ProductDeploy } from '@/domain/products/Product';
 import { RolloutOutcome, type PortfolioDeploy, type PortfolioEnvironment } from './PortfolioSummary';
+import type { TargetStop } from '@/domain/deployments/controls/ServiceControls';
 
 /**
  * What one environment of a product looks like on its pill: a subset of the console's status vocabulary
@@ -25,6 +26,8 @@ export const PillState = {
   None: StatusState.None,
   /** Deployed by its own CI rather than by Wheelhouse, as Wheelhouse itself is. */
   Ci: StatusState.Ci,
+  /** Stopped by the owner, whole or some services; deploys wait until it starts again. */
+  Stopped: StatusState.Stopped,
   /** No reading of the target. */
   Unknown: StatusState.Unknown,
 } as const;
@@ -77,6 +80,8 @@ export interface PillInput {
   readonly reportedRelease?: string | null;
   /** Whether a deploy waits for the target: queued or scheduled. */
   readonly waiting?: boolean;
+  /** What the target reports stopped, when the vitals carry it; the summary's own reading wins. */
+  readonly stopped?: TargetStop | null;
 }
 
 /** What decides whether a product's pills read CI. */
@@ -130,6 +135,12 @@ export const EnvironmentPillRules = {
 
     if (input.ci) return { ...pill(PillState.Ci, shortRelease(input.ci.version)), release: input.ci.version, marker: null };
     if (health === EnvironmentHealth.Missing) return pill(PillState.None, null);
+    const stopped = input.summary?.stopped ?? input.stopped ?? null;
+    if (!stopped && health === EnvironmentHealth.Stopped)
+      return pill(PillState.Stopped, PillStateWords[PillState.Stopped], 'stopped by the owner');
+    if (stopped && (stopped.environment || stopped.services.length))
+      return pill(PillState.Stopped, stopped.environment ? PillStateWords[PillState.Stopped] : `${stopped.services.length} stopped`,
+        stopped.environment ? 'stopped by the owner' : `${stopped.services.join(', ')} stopped by the owner`);
     if (lastDeploy?.outcome === RolloutOutcome.Pending || lastDeploy?.state === DeployState.InProgress) return pill(PillState.Deploying);
     if (health === EnvironmentHealth.Failing) return pill(PillState.Failed);
     if (lastDeploy && !supersedes(running, lastDeploy)) {

@@ -1,5 +1,7 @@
 import { useAppMutation } from "@/bootstrap/query";
 import { TopologyKeys } from "@/application/topology";
+import { ServerKeys } from "@/application/servers/ServerKeys";
+import type { ControlOperation } from "@/domain/deployments/controls";
 import { deploymentsApi } from "@/integration/deployments";
 
 import { DeploymentKeys } from "../DeploymentKeys";
@@ -49,6 +51,36 @@ export function useStartDeployment() {
     invalidates: ({ target }) => [
       DeploymentKeys.history,
       DeploymentKeys.state(target),
+    ],
+    meta: { suppressGlobalError: true },
+  });
+}
+
+/** Stops, starts or restarts the release a target runs — `service`, or the whole environment without one; the job is
+ * followed like a deploy. Prod needs `confirm` (its target ID, typed) and a `reason`. */
+export function useTargetControl() {
+  return useAppMutation({
+    mutationFn: (
+      {
+        target,
+        operation,
+        service,
+        reason,
+        confirm,
+      }: {
+        target: string;
+        operation: ControlOperation;
+        service?: string | null | undefined;
+        reason?: string | undefined;
+        confirm?: string | undefined;
+      },
+      { signal },
+    ) => deploymentsApi.control(target, { operation, service, reason, confirm }, signal),
+    invalidates: ({ target }) => [
+      DeploymentKeys.state(target),
+      DeploymentKeys.history,
+      ServerKeys.vitals,
+      TopologyKeys.target(target),
     ],
     meta: { suppressGlobalError: true },
   });

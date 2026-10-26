@@ -70,12 +70,14 @@ public sealed class PortfolioSummaryQueryHandler(DeploymentHistoryService histor
                 var latest = entries.FirstOrDefault(entry => !entry.NotApplied);
                 var attempt = entries.TakeWhile(entry => !ReferenceEquals(entry, latest))
                     .FirstOrDefault(entry => entry.NotApplied && entry.State.Attention == DeploymentAttention.Look);
+                var slug = loaded.Targets.FirstOrDefault(target => target.Product == product && target.Environment == environment)?.Slug;
                 rows.Add(new PortfolioEnvironmentDto(
                     environment,
                     Map(latest),
                     Map(entries.FirstOrDefault(entry => entry.Outcome == DeploymentOutcome.Succeeded && !entry.NotApplied)),
                     weekly,
-                    Map(attempt)));
+                    Map(attempt),
+                    slug is null ? null : loaded.Stops.GetValueOrDefault(slug)));
             }
 
             products.Add(new PortfolioProductDto(product, workspaces[product], succeeded, failed, rows));

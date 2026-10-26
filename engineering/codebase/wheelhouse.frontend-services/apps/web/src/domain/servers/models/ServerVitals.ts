@@ -1,4 +1,5 @@
 import type { TargetCondition } from '@/domain/deployments';
+import type { TargetStop } from '@/domain/deployments/controls';
 
 /** One filesystem's capacity on a host. */
 export interface DiskUsage {
@@ -51,6 +52,8 @@ export interface TargetVitals {
   problems?: string[];
   condition?: TargetCondition;
   release?: string | null;
+  /** What the owner keeps stopped there; its containers read stopped, never failing. */
+  stopped?: TargetStop | null;
 }
 
 /** Every server's host and every target's containers from one collection pass. */

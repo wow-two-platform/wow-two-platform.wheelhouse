@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TargetCondition } from "@/domain/deployments";
 import { VpsProvider } from "@/domain/servers";
+import { TargetStopSchema } from "@/integration/deployments/schemas";
 
 export const ServerSchema = z.object({
   slug: z.string(),
@@ -75,6 +76,7 @@ export const ServerVitalsSchema = z.object({
       problems: z.string().array().optional(),
       condition: z.enum(TargetCondition).optional(),
       release: z.string().nullable().optional(),
+      stopped: TargetStopSchema.nullish().catch(null),
     }),
   ),
 });

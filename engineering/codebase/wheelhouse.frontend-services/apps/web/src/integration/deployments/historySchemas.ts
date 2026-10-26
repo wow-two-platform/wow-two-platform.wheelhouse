@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Attention, DeployState, ServiceResult } from '@/domain/common';
 import { DeploymentIssueKind, DeploymentOutcome, DeploymentStates, JobStatus, StepStatus } from '@/domain/deployments';
-import { ReleaseComponentSchema } from './schemas';
+import { DeploymentOperationSchema, ReleaseComponentSchema } from './schemas';
 
 const nullableText = z.string().nullable();
 // Site links open in the owner's browser, so only http(s) addresses survive decoding.
@@ -101,6 +101,8 @@ const DeploymentItemFields = z.object({
     .catch(null)
     .transform((value) => value ?? null),
   settingsSuspect: z.boolean().optional().catch(false).transform((value) => value ?? false),
+  /** Set when the item is a control — a stop, start or restart of the release its target runs. */
+  operation: DeploymentOperationSchema.nullish().catch(null).transform((value) => value ?? null),
 });
 
 /** A deployment as lists read it; an answer from before the status taxonomy reads its state from the runner status. */

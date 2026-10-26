@@ -2,6 +2,7 @@ import { z } from "zod";
 import { Attention, DeployState } from "@/domain/common";
 import { DeploymentStates } from "@/domain/deployments";
 import { RolloutOutcome } from "@/domain/portfolio";
+import { TargetStopSchema } from "@/integration/deployments/schemas";
 
 const nullable = <T extends z.ZodType>(schema: T) => schema.nullish().transform((value) => value ?? null);
 
@@ -37,6 +38,7 @@ const PortfolioEnvironmentSchema = z.object({
   running: nullable(PortfolioDeploySchema),
   weekly: z.array(z.number().int().nonnegative()),
   lastAttempt: nullable(PortfolioDeploySchema),
+  stopped: TargetStopSchema.nullish().catch(null),
 });
 
 /** The portfolio summary's wire shape. */

@@ -209,6 +209,25 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
         })));
     }
 
+    /// <summary>Every control submitted, in order: target, operation, service, actor and reason.</summary>
+    public List<(string Target, string Operation, string? Service, string Actor, string? Reason)> Controls { get; } = [];
+
+    /// <summary>When set, the next controls fail with this runner refusal, as a target whose state forbids it would.</summary>
+    public string? ControlRefusal { get; set; }
+
+    public Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string actor, string? reason,
+        CancellationToken ct)
+    {
+        Controls.Add((target, operation, service, actor, reason));
+        if (ControlRefusal is not null)
+            return Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(ControlRefusal)));
+        return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new
+        {
+            id = Guid.NewGuid(), targetId = target, operation = new { kind = operation, services = service is null ? [] : new[] { service } },
+            release = "v1.0.0", status = "queued",
+        })));
+    }
+
     public Task<AppResult<JsonElement>> ReconcileAsync(string target, string job, string actor, CancellationToken ct)
     {
         LastTarget = target;

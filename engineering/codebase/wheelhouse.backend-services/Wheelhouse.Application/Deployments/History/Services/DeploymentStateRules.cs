@@ -44,6 +44,8 @@ public static class DeploymentStateRules
     {
         if (intent is not null)
             return OfIntent(intent);
+        if (record.Operation is not null)
+            return OfControl(record);
 
         var pending = Pending.Contains(record.Status);
         var found = watch is { Status: "degraded" } ? Named(watch.Findings, record.ServiceRollout) : [];
@@ -95,6 +97,30 @@ public static class DeploymentStateRules
             default:
                 return Reading(DeploymentState.Unknown, record.Status == "unknown" ? "no_receipt" : "unreadable", DeploymentAttention.Muted);
         }
+    }
+
+    /// <summary>A control — a stop, start or restart of the release a target runs — read into the taxonomy: it changes
+    /// no release, so it reads as in progress, succeeded or failed, or as not applied when the runner refused it.</summary>
+    /// <param name="record">The control's record.</param>
+    /// <returns>The reading.</returns>
+    public static DeploymentStateReading OfControl(DeploymentRecord record)
+    {
+        DeploymentStateReading Reading(string state, string? substate, string attention, DeploymentCauseDto? cause = null) =>
+            new(state, substate, attention, cause, [], null);
+        var step = record.CurrentStep?.Name;
+        return record.Status switch
+        {
+            "submitting" or "queued" => Reading(DeploymentState.InProgress, "queued", DeploymentAttention.Info),
+            "running" => Reading(DeploymentState.InProgress, null, DeploymentAttention.Info),
+            "succeeded" => Reading(DeploymentState.Succeeded, null, DeploymentAttention.None),
+            "failed" => Reading(DeploymentState.Failed, null, DeploymentAttention.Act,
+                new DeploymentCauseDto("step", step, record.Reason ?? "The control failed.", record.CompletedAt)),
+            "interrupted" => Reading(DeploymentState.Failed, "interrupted", DeploymentAttention.Act,
+                new DeploymentCauseDto("runner", null, record.Reason ?? "The control stopped mid-way and was reconciled.", record.CompletedAt)),
+            "rejected" => Reading(DeploymentState.NotApplied, "refused", DeploymentAttention.Look,
+                new DeploymentCauseDto("validation", null, record.Reason ?? "The target refused the control.", record.CompletedAt)),
+            _ => Reading(DeploymentState.Unknown, record.Status == "unknown" ? "no_receipt" : "unreadable", DeploymentAttention.Muted),
+        };
     }
 
     /// <summary>The sub-state a live rollout's step puts it in.</summary>

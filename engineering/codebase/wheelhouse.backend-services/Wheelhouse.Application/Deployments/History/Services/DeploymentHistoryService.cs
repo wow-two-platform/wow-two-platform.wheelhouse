@@ -45,7 +45,9 @@ public sealed class DeploymentHistoryService(
         // Oldest first, so each submission meets its target's previous success before it.
         var lastSuccess = new Dictionary<string, DeploymentRecord>(StringComparer.Ordinal);
         var entries = new List<DeploymentEntry>(list.Count + unapplied.Count);
-        foreach (var record in list.Concat(unapplied).OrderBy(item => item.SubmittedAt).ThenBy(item => item.Id, StringComparer.Ordinal))
+        var controls = list.Where(item => item.Operation is not null).ToList();
+        foreach (var record in list.Where(item => item.Operation is null).Concat(unapplied)
+                     .OrderBy(item => item.SubmittedAt).ThenBy(item => item.Id, StringComparer.Ordinal))
         {
             var target = record.TargetId is { } id ? byTarget.GetValueOrDefault(id) : null;
             var product = target?.Product ?? record.Product;
@@ -58,7 +60,43 @@ public sealed class DeploymentHistoryService(
         }
 
         entries.Reverse();
-        return AppResult<DeploymentHistory>.Ok(new DeploymentHistory(entries, facts));
+        var controlEntries = controls
+            .OrderByDescending(item => item.SubmittedAt).ThenByDescending(item => item.Id, StringComparer.Ordinal)
+            .Select(record =>
+            {
+                var target = record.TargetId is { } id ? byTarget.GetValueOrDefault(id) : null;
+                var product = target?.Product ?? record.Product;
+                return new DeploymentEntry(record, product,
+                    target?.Workspace ?? (product is null ? null : productWorkspaces.GetValueOrDefault(product)),
+                    target?.Environment ?? record.Environment, null, null);
+            })
+            .ToList();
+        return AppResult<DeploymentHistory>.Ok(new DeploymentHistory(entries, facts)
+        {
+            Controls = controlEntries,
+            Stops = StopsOf(controlEntries),
+        });
+    }
+
+    /// <summary>What the owner keeps stopped on each target: what its newest control that ran to an end (succeeded or
+    /// failed) left stopped. A control the runner refused, or one cut short and reconciled, says nothing.</summary>
+    /// <param name="controls">The controls, newest first.</param>
+    /// <returns>Each target with something stopped.</returns>
+    public static IReadOnlyDictionary<string, TargetStopDto> StopsOf(IEnumerable<DeploymentEntry> controls)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var stops = new Dictionary<string, TargetStopDto>(StringComparer.Ordinal);
+        foreach (var entry in controls)
+        {
+            var record = entry.Record;
+            if (record.TargetId is not { } target || record.CompletedAt is null || record.Status is not ("succeeded" or "failed")
+                || !seen.Add(target))
+                continue;
+            if (record.Stopped is { } stopped && (stopped.Environment || stopped.Services.Count > 0))
+                stops[target] = stopped;
+        }
+
+        return stops;
     }
 
     /// <summary>Reads a render's recorded changes; an unreadable record reads as none.</summary>

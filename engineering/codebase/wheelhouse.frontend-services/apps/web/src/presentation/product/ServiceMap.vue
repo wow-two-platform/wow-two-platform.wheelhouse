@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { ContainerVitals } from "@/domain/servers";
 import type { ServiceTopology } from "@/domain/topology";
+import type { TargetStop } from "@/domain/deployments/controls";
 
 /** Inputs keep the saved declaration separate from optional runtime observations. */
 export interface ServiceMapProps {
@@ -8,6 +9,8 @@ export interface ServiceMapProps {
   readonly containers?: readonly ContainerVitals[] | null | undefined;
   readonly selectedService?: string | null | undefined;
   readonly observedAt?: string | null | undefined;
+  /** What the owner keeps stopped on the environment; those services read stopped. */
+  readonly stopped?: TargetStop | null | undefined;
 }
 </script>
 <script setup lang="ts">
@@ -108,7 +111,7 @@ const dependents = computed(() =>
 );
 const selectedObservation = computed(() =>
   selected.value
-    ? describeServiceObservation(selected.value.name, props.containers)
+    ? describeServiceObservation(selected.value.name, props.containers, props.stopped)
     : null,
 );
 const isolated = computed(() =>
@@ -146,7 +149,7 @@ function position(node: ServiceMapNode) {
 }
 /** Reads optional runtime data without claiming the Compose declaration proves health. @internal */
 function observation(name: string) {
-  return describeServiceObservation(name, props.containers);
+  return describeServiceObservation(name, props.containers, props.stopped);
 }
 /** Counts only declarations which explicitly reference a hub. @internal */
 function members(node: ServiceMapNode): number {

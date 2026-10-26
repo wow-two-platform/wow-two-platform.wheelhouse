@@ -28,8 +28,9 @@ import inventory
 import registry
 import release_sets
 from fleet import rehearsal
-from runner import (PROXIES, SLUG, TERMINAL, CommandFailed, Rejected, now, reason, rejection, require, read_json,
-                    write_json, validate_bundle, validate_target, empty_topology, provided_values, settings_declarations)
+from runner import (OPERATIONS, PROXIES, SLUG, TERMINAL, CommandFailed, Rejected, now, reason, rejection, require,
+                    read_json, write_json, validate_bundle, validate_target, empty_topology, provided_values,
+                    settings_declarations, stopped_refusal)
 
 RUNNER = Path(__file__).with_name("runner.py")
 # A site address a rollout recorded: http(s), a host, an optional port and path.
@@ -329,6 +330,9 @@ def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False,
     require(not config["needsConfirmation"] or confirm == target_id,
             "Type the target ID to deploy prod to the local server")
     require(not skip_dev_pass or confirm == target_id, "Type the target ID to deploy without a dev pass")
+    # What the owner stopped stays stopped: refused before anything is downloaded; the target checks again.
+    stopped = recorded_stop(root, target_id)
+    require(stopped is None, stopped_refusal(target_id, stopped))
     bundle = artifacts.prepare(root, bundle_id, import_bundle)
     manifest = validate_bundle(bundle)
     admits(config, manifest)
@@ -367,10 +371,81 @@ def submit(root, target_id, bundle_id, actor, confirm=None, skip_dev_pass=False,
                           "--target", remote + "/target.json", "--actor", actor, "--stdin"])
     document = {"values": values, **({"registry": login} if login else {}),
                 **({"unreadable": unreadable} if unreadable else {})}
-    remote_job = json.loads(ssh.run(command, json.dumps(document)))
+    remote_job = launched(root, request_id, lambda: json.loads(ssh.run(command, json.dumps(document))))
     record.update(status=remote_job["status"], remoteJobId=remote_job["id"])
     write_json(root / "jobs" / (request_id + ".json"), record)
     return {"id": request_id, "targetId": target_id, "bundleId": bundle_id, "status": record["status"]}
+
+
+def launched(root, request_id, launch):
+    """Runs a submission's launch; when the target's runner refuses it, no job exists there, so the local record goes
+    too and the refusal reaches the caller as the runner gave it."""
+    try:
+        return launch()
+    except Rejected:
+        (root / "jobs" / (request_id + ".json")).unlink(missing_ok=True)
+        raise
+
+
+def control(root, target_id, operation, service, actor, reason=None):
+    """Stops, starts or restarts the release a target runs (decision 45): one service, or the whole environment
+    without one; a restart takes one service. Submitted like a deploy — the runner and the target uploaded, the target's
+    worker detached, the job recorded here and followed — and refused while a rollout or another control runs.
+    Wheelhouse's own targets are never controlled from here: the console would stop itself."""
+    reason = deploy_reason(reason)
+    require(operation in OPERATIONS, "Unknown control: " + str(operation))
+    require(service is None or (isinstance(service, str) and SLUG.fullmatch(service)), "Invalid service")
+    require(operation != "restart" or service, "Restart one service at a time")
+    require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
+    config = fleet.resolve_target(root, target_id)
+    require(not config.get("self"), "Wheelhouse's own environments are never stopped or restarted from the console")
+    target_root, _ = validate_target(config["target"])
+    require(re.fullmatch(r"/[A-Za-z0-9/_-]+", str(target_root)), "SSH root requires a simple absolute path")
+    ssh = Ssh(config["ssh"])
+    request_id = str(uuid.uuid4())
+    remote = str(target_root / "incoming" / request_id)
+    ssh.run("umask 077; mkdir -p " + shlex.quote(remote))
+    with tempfile.TemporaryDirectory() as temporary:
+        target_path = Path(temporary) / "target.json"
+        write_json(target_path, config["target"])
+        ssh.copy([Path(__file__).with_name("runner.py"), target_path], remote)
+    services = [service] if service else []
+    record = {"id": request_id, "targetId": target_id, "environment": config["target"]["environment"],
+              "operation": {"kind": operation, "services": services}, "remote": remote, "actor": actor,
+              "status": "submitting", "submittedAt": now(), "ssh": config["ssh"], "serverId": config["serverId"]}
+    if reason:
+        record["deployReason"] = reason
+    write_json(root / "jobs" / (request_id + ".json"), record)
+    command = shlex.join(["python3", remote + "/runner.py", "control-launch", "--target", remote + "/target.json",
+                          "--operation", operation, "--actor", actor, *(["--service", service] if service else [])])
+    remote_job = launched(root, request_id, lambda: json.loads(ssh.run(command)))
+    record.update(status=remote_job["status"], remoteJobId=remote_job["id"], release=remote_job.get("release"))
+    write_json(root / "jobs" / (request_id + ".json"), record)
+    return {"id": request_id, "targetId": target_id, "operation": record["operation"], "release": record["release"],
+            "status": record["status"]}
+
+
+def recorded_stop(root, target_id):
+    """What the owner keeps stopped on a target, from the newest finished control this control plane recorded there;
+    None when nothing is. The target's own mark decides; this answers without contacting it."""
+    for job in jobs(root, limit=None, controls=True):
+        if job.get("targetId") == target_id and job.get("operation") and finalized(job) and "stopped" in job:
+            return job["stopped"]
+    return None
+
+
+def stops(root):
+    """Target ID -> what the owner keeps stopped there, from local control records; targets with nothing stopped are
+    left out."""
+    result, seen = {}, set()
+    for job in jobs(root, limit=None, controls=True):
+        target_id = job.get("targetId")
+        if target_id in seen or not job.get("operation") or not finalized(job) or "stopped" not in job:
+            continue
+        seen.add(target_id)
+        if job["stopped"]:
+            result[target_id] = job["stopped"]
+    return result
 
 
 @contextlib.contextmanager
@@ -487,7 +562,7 @@ def follow(root, clock=time.time):
         if not acquired:
             return {**result, "busy": 1}
         due = []
-        for job in jobs(root, limit=None):
+        for job in jobs(root, limit=None, controls=True):
             if finalized(job):
                 continue
             path = root / "following" / (job["id"] + ".json")
@@ -550,8 +625,14 @@ def regressions(reading, baseline):
     """What a look found wrong against the rollout's first look: a container that stopped, turned unhealthy or
     restarted since, or a site that answered at the deploy and no longer does."""
     found = []
+    stopped = reading.get("stopped") if isinstance(reading.get("stopped"), dict) else None
+    if stopped and stopped.get("environment"):
+        return found  # the owner stopped the whole environment
+    held = set(stopped.get("services") or []) if stopped else set()
     for container in reading.get("containers") or []:
         service = str(container.get("service") or "a container")
+        if service in held:
+            continue
         if container.get("state") not in (None, "running"):
             found.append(service + " is " + str(container.get("state")))
         elif container.get("health") not in (None, "healthy", "starting"):
@@ -560,7 +641,7 @@ def regressions(reading, baseline):
         if type(restarts) is int and type(before) is int and restarts > before:
             found.append(service + " restarted " + plural_of(restarts - before, "time") + " since the deploy")
     for site in reading.get("sites") or []:
-        if not site.get("ok"):
+        if not site.get("ok") and site.get("service") not in held:
             found.append("Site " + str(site.get("name")) + " stopped answering" +
                          (": " + str(site["detail"]) if site.get("detail") else ""))
     return found
@@ -716,8 +797,10 @@ def recorded_environment(record, observed, inventory):
     return fleet.environment_label(value) if isinstance(value, str) else None
 
 
-def jobs(root, limit=50):
-    # Submission records plus the last observed target outcome; SSH details and remote paths stay local.
+def jobs(root, limit=50, controls=False):
+    """Submission records plus the last observed target outcome; SSH details and remote paths stay local. A control
+    (`operation`) is left out unless `controls` asks for it: every reading of rollouts — sites, dev passes, watches,
+    statistics, retention — passes it over."""
     result = []
     inventory = {binding.id: binding.environment.value for binding in fleet.active_targets()}
     for path in (root / "jobs").glob("*.json") if (root / "jobs").is_dir() else ():
@@ -726,6 +809,8 @@ def jobs(root, limit=50):
             require(isinstance(record, dict) and isinstance(record.get("id"), str), "Invalid job record")
             require(str(uuid.UUID(record["id"])) == record["id"] == path.stem, "Invalid job record")
         except (ValueError, KeyError, TypeError, OSError):
+            continue
+        if isinstance(record.get("operation"), dict) and not controls:
             continue
         observed = observed_outcome(root, record)
         submitted = record.get("submittedAt")
@@ -738,8 +823,10 @@ def jobs(root, limit=50):
                 "status": observed.get("status") or record.get("status")}
         if isinstance(record.get("fleetId"), str):
             item["fleetId"] = record["fleetId"]
+        if isinstance(record.get("operation"), dict):
+            item["operation"] = record["operation"]
         for key in ("reason", "failure", "startedAt", "completedAt", "mutationStarted", "sourceCommit", "warnings",
-                    "verification"):
+                    "verification", "stopped"):
             if key in observed:
                 item[key] = observed[key]
         result.append(item)
@@ -994,7 +1081,7 @@ def main():
                                            "status", "jobs", "follow", "state", "check", "reconcile", "vitals", "stats", "topology",
                                            "branches", "commits", "build", "logs", "history", "observation",
                                            "latest", "facts", "changelog", "watch", "builds", "retention", "usage",
-                                           "settings", "registry", "compose"])
+                                           "settings", "registry", "compose", "control", "stops"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
@@ -1012,7 +1099,8 @@ def main():
     parser.add_argument("--part", action="append", default=[],
                         help="compose: name=bundle, one per repository of the product that has released, in order (the local server only)")
     parser.add_argument("--confirm", help="submit: the target ID, typed, for prod on the local server")
-    parser.add_argument("--reason", help="submit: the owner's one-line why, kept on the job")
+    parser.add_argument("--reason", help="submit, control: the owner's one-line why, kept on the job")
+    parser.add_argument("--operation", help="control: stop, start or restart; --service names one, none the environment")
     parser.add_argument("--fleet", help="submit: the fleet rollout the submission belongs to, kept on the job")
     parser.add_argument("--from", dest="start", help="changelog: the release the target runs now")
     parser.add_argument("--to", dest="end", help="changelog: the release to promote")
@@ -1071,10 +1159,14 @@ def main():
             result = artifacts.commits(args.product, args.branch, args.repository)
         elif args.action == "build":
             result = artifacts.request_build(args.product, args.commit, args.repository)
+        elif args.action == "control":
+            result = control(root, args.target, args.operation, args.service, args.actor, args.reason)
+        elif args.action == "stops":
+            result = stops(root)
         elif args.action == "jobs":
-            result = jobs(root)
+            result = jobs(root, controls=True)
         elif args.action == "history":
-            result = history.records(root, jobs(root, limit=None))
+            result = history.records(root, jobs(root, limit=None, controls=True))
         elif args.action == "observation":
             result = history.observation(root, args.job, observed_outcome)
         elif args.action == "follow":

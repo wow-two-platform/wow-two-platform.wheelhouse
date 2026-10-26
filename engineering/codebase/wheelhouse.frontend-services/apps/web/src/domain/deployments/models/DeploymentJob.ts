@@ -1,6 +1,7 @@
 import type { JobStatus } from '../enums/JobStatus';
 import type { DeploymentStep } from './DeploymentStep';
 import type { PublishedSite } from './PublishedSite';
+import type { DeploymentOperation } from '../controls/ServiceControls';
 
 /** One submitted deployment with its last observed outcome; reasons never carry values. */
 export interface DeploymentJob {
@@ -21,4 +22,6 @@ export interface DeploymentJob {
   /** What needs a look although the rollout succeeded. */
   warnings?: string[];
   sites?: PublishedSite[];
+  /** Set when the submission is a control — a stop, start or restart of the release the target runs. */
+  operation?: DeploymentOperation | null;
 }

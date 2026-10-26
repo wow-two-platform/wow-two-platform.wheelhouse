@@ -19,8 +19,9 @@ public sealed class DeploymentRunningQueryHandler(DeploymentHistoryService histo
             return AppResult<IReadOnlyList<DeploymentItemDto>>.Fail(((AppResult<DeploymentHistory>.Failure)read).Error);
 
         return AppResult<IReadOnlyList<DeploymentItemDto>>.Ok([
-            .. loaded.Entries
+            .. loaded.Entries.Concat(loaded.Controls)
                 .Where(entry => entry.Outcome == DeploymentOutcome.Pending && DeploymentQuerying.MatchesEntities(entry, request.Filter))
+                .OrderByDescending(entry => entry.Record.SubmittedAt)
                 .Select(DeploymentItemDto.From),
         ]);
     }

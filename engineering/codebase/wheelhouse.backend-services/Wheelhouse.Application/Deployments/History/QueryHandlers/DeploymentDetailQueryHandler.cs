@@ -21,7 +21,8 @@ public sealed class DeploymentDetailQueryHandler(DeploymentHistoryService histor
             return AppResult<DeploymentDetailDto>.Fail(((AppResult<DeploymentHistory>.Failure)read).Error);
 
         var id = request.Id.ToString();
-        var entry = loaded.Entries.FirstOrDefault(item => item.Record.Id == id);
+        var entry = loaded.Entries.FirstOrDefault(item => item.Record.Id == id)
+            ?? loaded.Controls.FirstOrDefault(item => item.Record.Id == id);
         if (entry is null)
             return AppResult<DeploymentDetailDto>.Fail(AppErrorFactory.NotFound("Deployment was not found."));
 

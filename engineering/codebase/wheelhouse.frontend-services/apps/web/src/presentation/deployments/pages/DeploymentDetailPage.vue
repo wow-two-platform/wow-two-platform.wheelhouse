@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ReleaseSets } from "@/domain/deployments";
+import { ServiceControls } from "@/domain/deployments/controls";
 import { computed, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { ArrowRight, Crosshair, ExternalLink, FileText, RotateCcw, TriangleAlert, Undo2, Wrench } from "lucide-vue-next";
@@ -229,7 +230,11 @@ function rollBack(): void {
     >
       <div class="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div class="flex min-w-0 flex-col gap-6">
-          <Panel :title="ReleaseSets.text(deployment?.release) || deployment?.bundleId || 'Deployment'">
+          <Panel
+            :title="deployment?.operation
+              ? ServiceControls.labelOf(deployment.operation)
+              : ReleaseSets.text(deployment?.release) || deployment?.bundleId || 'Deployment'"
+          >
             <template #title>
               <span class="flex min-w-0 flex-wrap items-center gap-3">
                 <ProductIcon :product-slug="deployment?.product" :name="productName" size="md" />
@@ -241,7 +246,12 @@ function rollBack(): void {
                     >{{ productName }}</RouterLink
                   >
                   <span class="flex flex-wrap items-center gap-2">
-                    <span class="font-mono text-base font-semibold">{{ ReleaseSets.text(deployment?.release) || deployment?.bundleId || "—" }}</span>
+                    <span v-if="deployment?.operation" class="text-base font-semibold">{{
+                      ServiceControls.labelOf(deployment.operation)
+                    }}</span>
+                    <span class="font-mono text-base font-semibold" :class="deployment?.operation ? 'text-muted-foreground' : ''">{{
+                      ReleaseSets.text(deployment?.release) || deployment?.bundleId || "—"
+                    }}</span>
                     <Badge :variant="deployment?.environment === 'prod' ? 'info' : 'neutral'">{{
                       deployment?.environment ?? deployment?.targetId ?? "—"
                     }}</Badge>

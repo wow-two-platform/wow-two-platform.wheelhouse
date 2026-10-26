@@ -18,6 +18,7 @@ export {
   useRequestBuild,
   useStartDeployment,
   useTargetCheck,
+  useTargetControl,
 } from "./hooks/useDeploymentActions";
 export {
   ownerTimeZone,

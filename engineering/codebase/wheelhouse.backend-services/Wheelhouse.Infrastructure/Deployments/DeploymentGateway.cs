@@ -99,6 +99,19 @@ public sealed class DeploymentGateway(
         RunAsync(["reconcile", "--target", target, "--job", job, "--actor", actor], ct);
 
     /// <inheritdoc />
+    public Task<AppResult<JsonElement>> ControlAsync(
+        string target, string operation, string? service, string actor, string? reason, CancellationToken ct)
+    {
+        List<string> arguments = ["control", "--target", target, "--operation", operation, "--actor", actor];
+        if (service is not null)
+            arguments.AddRange(["--service", service]);
+        // An argument list, never a shell: the reason reaches the runner as one value.
+        if (reason is not null)
+            arguments.AddRange(["--reason", reason]);
+        return RunAsync([.. arguments], ct);
+    }
+
+    /// <inheritdoc />
     public Task<AppResult<JsonElement>> CommitsAsync(string product, string branch, CancellationToken ct) =>
         RunAsync(["commits", "--product", product, "--branch", branch], ct);
 

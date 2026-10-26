@@ -1,4 +1,5 @@
 import type { Attention, DeployState } from '@/domain/common/StatusVocabulary';
+import type { TargetStop } from '@/domain/deployments/controls/ServiceControls';
 
 /** What a rollout's status amounts to, as the host reports it. */
 export const RolloutOutcome = {
@@ -45,6 +46,8 @@ export interface PortfolioEnvironment {
   weekly: number[];
   /** A newer deploy that changed nothing but needs a look (a failed check); it marks the pill's corner. */
   lastAttempt: PortfolioDeploy | null;
+  /** What the owner keeps stopped there; the pill reads stopped, never failed. */
+  stopped?: TargetStop | null;
 }
 
 /** One product's deployments over the summary's weeks. */

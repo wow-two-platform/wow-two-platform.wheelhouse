@@ -19,7 +19,7 @@ public sealed class DeploymentHistoryQueryHandler(DeploymentHistoryService histo
             return AppResult<DeploymentPageDto>.Fail(((AppResult<DeploymentHistory>.Failure)read).Error);
 
         var after = request.Cursor is { } cursor && DeploymentCursor.TryRead(cursor, out var position) ? position : ((long, string)?)null;
-        var matching = DeploymentQuerying.Select(loaded.Entries, request.Filter)
+        var matching = DeploymentQuerying.SelectWithControls(loaded, request.Filter)
             .Where(entry => after is not { } start || DeploymentCursor.IsAfter(entry, start))
             .Take(request.Limit + 1)
             .ToList();

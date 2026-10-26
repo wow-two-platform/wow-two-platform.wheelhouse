@@ -27,6 +27,14 @@ public static class DeploymentQuerying
             if (separator <= 0 || !service.AsSpan(0, separator).SequenceEqual(product))
                 continue;
             var key = service[(separator + 1)..];
+            // A control matches the service it named, and every service when it named the whole environment.
+            if (entry.Record.Operation is { } operation)
+            {
+                if (operation.Services.Count == 0 || operation.Services.Contains(key, StringComparer.Ordinal))
+                    return true;
+                continue;
+            }
+
             if (entry.Changes is null || entry.Changes.Any(change => change.Changed && change.Service == key))
                 return true;
         }
@@ -103,6 +111,17 @@ public static class DeploymentQuerying
             : null;
         return entries.Where(entry => Matches(entry, filter) && hidden?.Contains(entry.Record.Id) != true);
     }
+
+    /// <summary>The deploys a filter shows with the controls it shows merged in, newest first: a control never hides a
+    /// deploy, nor one of a day's latest deploys it.</summary>
+    /// <param name="history">The history.</param>
+    /// <param name="filter">The filter.</param>
+    /// <returns>The matching entries, deploys and controls.</returns>
+    public static IEnumerable<DeploymentEntry> SelectWithControls(DeploymentHistory history, DeploymentFilter filter) =>
+        Select(history.Entries, filter)
+            .Concat(history.Controls.Where(entry => Matches(entry, filter)))
+            .OrderByDescending(entry => entry.Record.SubmittedAt)
+            .ThenByDescending(entry => entry.Record.Id, StringComparer.Ordinal);
 
     /// <summary>Whether an entry matches the whole filter: entities, outcomes and range.</summary>
     /// <param name="entry">The deployment.</param>

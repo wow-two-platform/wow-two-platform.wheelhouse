@@ -153,6 +153,31 @@ needs explicit reconciliation, not a blind retry. SSH uses strict host-key check
 batch authentication, explicit identities and a bounded timeout. Compose replacement has a restart window; there is
 no zero-downtime promise.
 
+### Service controls
+
+The owner stops, starts or restarts the release a target runs (decision 45): one service, or the whole environment for
+a stop or a start. `POST /api/deployments/targets/{target}/controls` `{ operation, service?, reason?, confirm? }` (action
+header `control`, owner session only: an integration key gets 403 and no MCP tool reaches it) is audited as
+`service.<operation>` with subject `{target}/{service}`, or `environment.<operation>`. Prod needs its target ID typed
+and a reason (400); Wheelhouse's own targets are refused (409: the console would stop itself; `self-deploy.py` and a
+promotion replace them), as is a target a running fleet has yet to promote (409).
+
+- **Execution.** `transport.py control` uploads the runner and submits like a deploy; `runner.py control-launch` checks
+  and queues it, and a detached `control` worker runs it under the deployment lock, as a job in the target's journal
+  with durable intent (`active.json`), so a control cut short reconciles like a rollout (the verified release stays).
+  It refuses while a rollout or another control runs. Stop is `compose stop` (containers, volumes and routes stay);
+  start is `compose up --no-recreate --pull never --wait` of the same release; restart is one service's stop and start.
+- **Stopped stays stopped.** A stop writes `<root>/<product>-<environment>/stopped.json` before stopping; a start
+  removes its part once healthy. While it names anything, every deploy — the owner's, automatic, a fleet's or a settings
+  apply — is refused (`<target> is stopped; start it before deploying`): by the transport from local records before
+  anything downloads, and by the target at launch and in the worker. A queued automatic deploy is dropped as a refusal,
+  a fleet stops there; the owner starts the environment, then deploys.
+- **Reading.** Controls are submissions in `jobs/` with `operation` `{ kind, services }`; rollout readings (sites, dev
+  passes, watches, statistics, retention) pass them over. The history lists them beside the deploys (`operation` on each
+  item; never hiding or counting as a deploy); state, vitals and watch reads carry `stopped`, the portfolio summary a
+  stopped environment's `stopped`, so the console reads it as stopped, never failed, and a watch ignores what the owner
+  stopped.
+
 ## Settings at deploy
 
 A console-driven deploy renders each service's settings file on the target (`render` on every inventory target; CI's

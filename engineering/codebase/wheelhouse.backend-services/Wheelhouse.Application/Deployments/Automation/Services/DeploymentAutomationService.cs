@@ -263,8 +263,9 @@ public sealed partial class DeploymentAutomationService(
             if (!byId.TryGetValue(item.TargetId, out var target) || !productsById.TryGetValue(target.ProductId, out var product))
                 continue; // the slot goes with its target
             var onTarget = deployments.Entries.Where(entry => entry.Record.TargetId == target.Slug).ToList();
-            // A running rollout finishes first; the queued deploy waits for the next pass.
-            if (onTarget.Any(entry => entry.Outcome == DeploymentOutcome.Pending))
+            // A running rollout or control finishes first; the queued deploy waits for the next pass.
+            if (onTarget.Any(entry => entry.Outcome == DeploymentOutcome.Pending)
+                || deployments.Controls.Any(entry => entry.Record.TargetId == target.Slug && entry.Outcome == DeploymentOutcome.Pending))
                 continue;
 
             var choices = Describe(product, settings.GetValueOrDefault(product.Id));

@@ -6,6 +6,7 @@ import {
   CircleDashed,
   CircleHelp,
   CircleMinus,
+  CirclePause,
   CirclePlus,
   CircleX,
   Clock,
@@ -44,6 +45,7 @@ export const StatusIcons: Readonly<Record<StatusState, Component>> = {
   degraded: TriangleAlert,
   mixed: Contrast,
   none: CircleDashed,
+  stopped: CirclePause,
   unknown: CircleHelp,
 };
 

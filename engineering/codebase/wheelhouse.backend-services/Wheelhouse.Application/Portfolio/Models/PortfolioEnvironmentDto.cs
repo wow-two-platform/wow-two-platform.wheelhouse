@@ -10,6 +10,8 @@ namespace Wheelhouse.Application.Portfolio.Models;
 /// <param name="LastAttempt">The newest deploy that changed nothing and needs a look (a failed check, an expired
 /// schedule), when it is newer than <paramref name="LastDeploy"/>; it marks the pill's corner. Refused, cancelled and
 /// superseded deploys never do.</param>
+/// <param name="Stopped">What the owner keeps stopped there — the whole environment or some services — so the pill reads
+/// stopped rather than failed; null while nothing is.</param>
 public sealed record PortfolioEnvironmentDto(
     string Environment, PortfolioDeployDto? LastDeploy, PortfolioDeployDto? Running, IReadOnlyList<int> Weekly,
-    PortfolioDeployDto? LastAttempt = null);
+    PortfolioDeployDto? LastAttempt = null, Deployments.History.Models.TargetStopDto? Stopped = null);

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { JobStatus, StepStatus, TargetCondition } from "@/domain/deployments";
+import { ControlOperation } from "@/domain/deployments/controls";
 
 const jobStatus = z.enum(JobStatus);
 // Site links open in the owner's browser, so only http(s) URLs survive decoding.
@@ -28,6 +29,26 @@ const DeploymentStepSchema = z.object({
   detail: z.string().optional(),
 });
 const nullableText = z.string().nullable();
+/** What the owner keeps stopped on a target. */
+export const TargetStopSchema = z.object({
+  environment: z.boolean(),
+  services: z.array(z.string()).default([]),
+  at: z.string().nullish(),
+  actor: z.string().nullish(),
+});
+/** A control — a stop, start or restart — as its record names it. */
+export const DeploymentOperationSchema = z.object({
+  kind: z.enum(ControlOperation),
+  services: z.array(z.string()).default([]),
+});
+/** What a control queued: its submission and the release it acts on. */
+export const ControlSubmittedSchema = z.object({
+  id: z.string(),
+  targetId: z.string(),
+  operation: DeploymentOperationSchema,
+  release: z.string().nullish(),
+  status: jobStatus,
+});
 export const DeploymentJobSchema = z.object({
   id: z.string(),
   status: jobStatus,
@@ -44,6 +65,7 @@ export const DeploymentJobSchema = z.object({
   steps: z.array(DeploymentStepSchema).optional(),
   warnings: z.array(z.string()).optional(),
   sites: z.array(PublishedSiteSchema).optional(),
+  operation: DeploymentOperationSchema.nullish().catch(null),
 });
 export const DeploymentTargetSchema = z.object({
   id: z.string(),
@@ -157,6 +179,7 @@ const RolloutSchema = z.object({
   sites: z.array(PublishedSiteSchema).optional(),
   steps: z.array(DeploymentStepSchema).optional(),
   warnings: z.array(z.string()).optional(),
+  operation: DeploymentOperationSchema.nullish().catch(null),
 });
 export const TargetStateSchema = z.object({
   targetId: z.string(),
@@ -164,6 +187,7 @@ export const TargetStateSchema = z.object({
   condition: z.enum(TargetCondition),
   current: RolloutSchema.nullable(),
   active: RolloutSchema.nullable(),
+  stopped: TargetStopSchema.nullish().catch(null),
 });
 export const TargetCheckSchema = z
   .object({

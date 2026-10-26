@@ -1,4 +1,5 @@
 using System.Text.Json;
+using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Abstractions;
@@ -34,6 +35,12 @@ public interface IDeploymentGateway
         Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new { services = Array.Empty<object>() })));
     /// <summary>Records the owner's reconciliation of an interrupted or failed rollout on its target.</summary>
     Task<AppResult<JsonElement>> ReconcileAsync(string target, string job, string actor, CancellationToken ct);
+    /// <summary>Submits a control of the release a target runs: <paramref name="operation"/> (<c>stop</c>, <c>start</c>
+    /// or <c>restart</c>) of <paramref name="service"/>, or of the whole environment without one; the target's worker
+    /// runs it under the deployment lock and its journal keeps it. A gateway without controls refuses it.</summary>
+    Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string actor, string? reason,
+        CancellationToken ct) =>
+        Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("This runner cannot stop or start services.")));
     /// <summary>Reads a branch's recent commits of a product, each with its build when one exists.</summary>
     Task<AppResult<JsonElement>> CommitsAsync(string product, string branch, CancellationToken ct);
     /// <summary>Reads the release bodies and compare commits between what a target runs and the release to promote.</summary>
