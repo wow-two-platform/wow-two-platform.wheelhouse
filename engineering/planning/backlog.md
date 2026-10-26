@@ -49,8 +49,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Item | Type | Notes |
 |---|---|---|
 | Burn in Wheelhouse's self-deploy with three self-promotions | product | Runs to 2026-10-31; the first self-promotion ran 2026-10-24. Fallback in `deployment.md` § Activation |
-| Retire CI's deploy path and every deploy secret it held | engineering | After the burn-in, in the order of `deployment.md` § The fallback switch and its retirement |
-| Close the control host's public SSH | engineering | After CI's path retires: `harden-control.sh`, then `--tailnet-only-ssh` (`vps.md` § Host hardening) |
 | Ability to manage the control host's firewall, SSH and updates like a products host | feature | |
 | Ability to rebuild the control host from backups, rehearsed | feature | |
 | Sign in to the local console through a localhost GitHub OAuth app | feature | Local rig sign-in; the `rehearse.py console` check depends on it |
@@ -70,14 +68,8 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Ability to collect every service's logs in one place | feature | |
-| Ability to search logs by product, service, level and time | feature | |
-| Ability to follow a service's logs live | feature | |
-| Ability to probe every site's uptime from outside | feature | |
-| Ability to get alerts for downtime, certificates, disk and backups | feature | |
+| Ability to show a server's logs and feedback through its governance service | feature | Owner 2026-10-26: Wheelhouse keeps widgets, sign-in and forwarding over the tailnet; collection, search and alerts run in each server's governance service (wow2 `docs/server-governance.md`) |
 | Ability to get notified of deploy outcomes | feature | |
-| Ability to stop, start or restart a service immediately | feature | Decision 45 |
-| Ability to start and stop a whole environment | feature | |
 | Ability to schedule host reboots and Docker and Tailscale upgrades | feature | |
 | Ability to be warned before a credential, key or certificate expires | feature | |
 | Checkpoint the newest audit entries outside Wheelhouse | feature | The chain shows edits, not truncation of the newest entries |
@@ -95,8 +87,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Item | Type | Notes |
 |---|---|---|
 | Import the standalone vault on prod, verify it and retire it | engineering | Owner steps in `deployment.md` § Importing the standalone vault |
-| Ability to check the owner's offline root key copy against the key in use, and be reminded on a schedule | feature | Decision 67 |
-| Ability to have the root key file checked on a schedule and be warned | feature | Present, readable and unsealing the canary |
 | Ability to back up the vault with its keys kept apart, and prove a restore | feature | `vault verify` and the canary exist; waits on Wheelhouse's database backups |
 | Ability to rotate the vault's root key with a transactional rewrap | feature | 2026-10-19 merge analysis: unwrap every product key under the old root key, wrap under the new one, prove the canary, one transaction; the owner swaps the file after |
 | Ability to recover a lost root key with the owner's passkey | feature | User 2026-10-20 (decision 67): the database keeps the root key sealed by a passkey-derived key (WebAuthn PRF); after a lost key file, sign in, touch the passkey and Wheelhouse writes the file back. Waits on Wheelhouse database backups |
@@ -180,8 +170,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Ability to declare a product in one manifest file | feature | Decision 7: replaces `product/product.json` and `deploy.yml` |
-| Ability to add a product without typing its images or release asset | feature | |
 | Ability to declare `dependsOn` on another repository's service | feature | The runner orders and checks it across a release set; the shared generator in `wow-two-platform.pipelines` refuses it until a pipelines tag |
 | Add `product/product.json` to ForeverPin, every other product repository and the product template | feature | Decided 2026-10-15: identity text is a manifest in the repository ([convention](../../../../../conventions/design/identity/product-manifest.md)); Wheelhouse and the canary carry one; until a repo does, its row supplies the name and description |
 | Edit a product's identity from the console by committing its manifest | feature | Needs Contents write on the GitHub App (it reads only); the console shows manifest-sourced name, description and homepage read-only meanwhile |
@@ -221,11 +209,9 @@ User 2026-10-15: layout, motion and notifications must work flawlessly and look 
 | Ability to follow a deployment in a compact progress notification | feature | |
 | Ability to see rollout steps and page transitions animate | feature | |
 | Ability to swipe a table row on phones for its two main actions | feature | |
-| Ability to see an icon on each rollout step | feature | |
 | Analyze full-page versus modal dialogs | product | Then record the dialog convention in wow2 |
 | Ability to tour a page on a first visit | feature | User 2026-10-19: a guided tour ("storybook") that spotlights one section at a time under a blurred overlay; separate from info buttons, which always show context on click; may use different text. Name to settle (tour vs walkthrough) |
 | Analyze Home widgets: add, remove and move them | product | User 2026-10-19: pinned products leave Home (the sidebar has them); phones have no sidebar, so decide what replaces pins there |
-| Stack the rows field's columns on phones | fix | Image, host-settings and smoke-check rows keep every column side by side at phone width |
 
 ## SDK adoption
 
