@@ -15,10 +15,12 @@ import { computed } from "vue";
 import { AlertTriangle, Check, CircleMinus, LoaderCircle, Undo2, X } from "lucide-vue-next";
 
 import { Measures } from "@/domain/common";
-import { DeploymentStates, StepStatus } from "@/domain/deployments";
+import { DeploymentStates, StepKinds, StepStatus } from "@/domain/deployments";
+import { StepKindIcons } from "./StepKindIcons";
 
 /**
- * Renders each rollout step with its outcome, detail and duration, so the owner sees what the target did. Sectioned,
+ * Renders each rollout step with its outcome, a quiet mark of its kind, its detail and duration, so the owner sees what
+ * the target did. The kind's mark is decorative; the outcome stays an icon with its word for assistive technology. Sectioned,
  * the checks before any change come first — a cancel there stops cleanly — then a boundary, "Changes start here",
  * after which a cancel is refused; a roll back reads as its own nested step; then what follows once the services run.
  */
@@ -72,7 +74,7 @@ const isRollBack = (step: DeploymentStep) => step.name.startsWith("Roll back") |
         aria-label="Changes start here; a cancel is refused from now on"
       >
         <span class="h-px flex-1 border-t border-dashed border-warning/60" aria-hidden="true" />
-        <span class="shrink-0 text-center">Changes start here — a cancel is refused from now on</span>
+        <span class="min-w-0 text-center">Changes start here — a cancel is refused from now on</span>
         <span class="h-px flex-1 border-t border-dashed border-warning/60" aria-hidden="true" />
       </p>
       <section class="flex flex-col gap-1.5" :aria-label="group.title ?? 'Rollout steps'">
@@ -81,7 +83,10 @@ const isRollBack = (step: DeploymentStep) => step.name.startsWith("Roll back") |
           <li
             v-for="(step, index) in group.steps"
             :key="index + step.name"
-            :class="['grid grid-cols-[1rem_1fr_auto] items-start gap-x-2 text-sm', isRollBack(step) ? 'ms-4 border-s border-border ps-3' : '']"
+            :class="[
+              'grid grid-cols-[1rem_0.875rem_minmax(0,1fr)_auto] items-start gap-x-2 text-sm',
+              isRollBack(step) ? 'ms-4 border-s border-border ps-3' : '',
+            ]"
           >
             <span :class="['mt-0.5', tone[step.status]]" aria-hidden="true">
               <LoaderCircle v-if="step.status === StepStatus.Running" :size="16" class="animate-spin" />
@@ -91,6 +96,12 @@ const isRollBack = (step: DeploymentStep) => step.name.startsWith("Roll back") |
               <AlertTriangle v-else-if="step.status === StepStatus.Warning" :size="16" />
               <CircleMinus v-else :size="16" />
             </span>
+            <component
+              :is="StepKindIcons[StepKinds.of(step.name)]"
+              :size="14"
+              class="mt-[3px] text-muted-foreground"
+              aria-hidden="true"
+            />
             <span class="min-w-0">
               <span class="font-medium">{{ step.name }}</span>
               <span class="sr-only">, {{ label[step.status] }}</span>
