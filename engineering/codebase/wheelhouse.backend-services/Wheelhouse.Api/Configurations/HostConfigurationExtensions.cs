@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Wheelhouse.Application;
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Infrastructure.Jobs;
 using Wheelhouse.Infrastructure.Settings;
 using Wheelhouse.Persistence;
 using Wheelhouse.Persistence.Repositories;
@@ -19,6 +20,7 @@ using WoW.Two.Sdk.Beta.Be.Http.Safety;
 using WoW.Two.Sdk.Beta.Be.Identity.ApiKeys;
 using WoW.Two.Sdk.Beta.Be.Integrations;
 using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
+using WoW.Two.Sdk.Beta.Be.Integrations.Processes;
 using WoW.Two.Sdk.Beta.Be.Mediator;
 using WoW.Two.Sdk.Beta.Be.Mediator.Validation;
 using WoW.Two.Sdk.Beta.Be.Meta;
@@ -141,23 +143,25 @@ public static partial class HostConfigurationExtensions
     {
         builder.Services.AddTimeProviders();
         builder.AddDeploymentSettings();
-        builder.Services.AddSingleton<Wheelhouse.Infrastructure.Deployments.Parsers.RunnerFailureParser>();
+        // The runner (transport.py, infra.py): 110 seconds, the environment allowlist, the JSON failure line.
+        builder.Services.AddProcessClient(Wheelhouse.Infrastructure.Deployments.RunnerProcess.ClientName,
+            (options, _) => Wheelhouse.Infrastructure.Deployments.RunnerProcess.Configure(options));
         builder.Services.AddScoped<IDeploymentGateway, Wheelhouse.Infrastructure.Deployments.DeploymentGateway>();
         // The history projection: one runner read serves a page's concurrent reads for Deployment:HistorySeconds.
         builder.Services.AddSingleton<Wheelhouse.Infrastructure.Deployments.DeploymentRecordsMemo>();
         builder.Services.AddScoped<IDeploymentRecords, Wheelhouse.Infrastructure.Deployments.RunnerDeploymentRecords>();
         builder.Services.AddScoped<Wheelhouse.Application.Operations.VitalsSampling>();
-        builder.Services.AddHostedService<Wheelhouse.Infrastructure.Operations.VitalsSampler>();
+        builder.Services.AddVitalsSamplingJob();
 
         // The database owns the inventory; the runner reads the snapshot exported at startup and after every change.
         builder.Services.AddScoped<IInventorySnapshot, Wheelhouse.Infrastructure.Inventory.InventorySnapshotExporter>();
         builder.Services.AddScoped<Wheelhouse.Infrastructure.Inventory.LocalRigSeedService>();
         builder.Services.AddHostedService<Wheelhouse.Infrastructure.Inventory.InventoryStartupService>();
-        builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.DeploymentOutcomeFollower>();
-        // Automatic deploys: the release watcher and the per-target queue, every Deployment:AutomationSeconds.
-        builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.DeploymentAutomationWorker>();
-        // Fleet rollouts: the running fleet moves on every Deployment:FleetSeconds.
-        builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.FleetRolloutWorker>();
+        // The SDK periodic jobs: deployment observations every Deployment:FollowSeconds; automatic deploys (the release
+        // watcher and the per-target queue) every Deployment:AutomationSeconds; the running fleet every Deployment:FleetSeconds.
+        builder.Services.AddDeploymentFollowingJob();
+        builder.Services.AddDeploymentAutomationJob();
+        builder.Services.AddFleetRolloutJob();
         // Infrastructure: Tailscale, enrollment and placement (prod only), and the follower recording finished jobs.
         builder.Services.AddInfraAutomation();
         // The runner-sites read holds briefly in the SDK cache, in process.
@@ -188,7 +192,7 @@ public static partial class HostConfigurationExtensions
                 ? vault.KeyFile
                 : Path.Combine(deployment.Root, "vault", "root.key"));
         });
-        builder.Services.AddHostedService<Wheelhouse.Infrastructure.Deployments.SettingsApplyWorker>();
+        builder.Services.AddSettingsApplyJob();
 
         // GitHub access, per call: the GitHub App's installation token for the owner the call addresses, else the
         // Deployment:GitHubTokenFile token (by default <root>/github-token/token), else the signed-in admin's OAuth token

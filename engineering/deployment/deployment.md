@@ -1,6 +1,6 @@
 # Deployment operations
 
-*Last updated: 2026-10-24*
+*Last updated: 2026-10-26*
 
 ## Ownership and current boundary
 
@@ -875,8 +875,13 @@ project's user-secrets (`Identity:GitHub`, callback `https://localhost:8210/api/
 The build compiles the SPA with the Node pinned in `wheelhouse.frontend-services/.nvmrc` when nvm has it, so a Rider
 launched from the Dock builds even when its PATH holds an older system Node.
 
-`Deployment:Rehearsal` is the only switch: the API sets `WHEELHOUSE_REHEARSAL` for the runner from it and drops any
-inherited value, so a deployed control plane cannot be pointed at the local server by environment alone.
+`Deployment:Rehearsal` is the only switch: the API sets `WHEELHOUSE_REHEARSAL` for the runner from it, so a deployed
+control plane cannot be pointed at the local server by environment alone. The runner (`transport.py`, `infra.py` and
+their `ssh`, `scp` and `ssh-keygen` children) runs through the be sdk process client and inherits only an allowlist of the
+API's environment — `RunnerProcess.InheritedVariables`: `PATH`, `HOME`, the locale, the temporary folder, `TZ`, `USER`,
+`LOGNAME`, `SSH_AUTH_SOCK`, the interpreter's `PYTHON*` setup, `SSL_CERT_FILE`/`SSL_CERT_DIR` and the proxy variables.
+The API sets every `WHEELHOUSE_*` value and `REHEARSAL_STATE` per call; a variable the runner starts reading must be set
+there or added to that list, or the runner never sees it.
 
 ### Local console — the whole system before a VPS
 

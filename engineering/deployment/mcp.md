@@ -17,8 +17,11 @@ an authenticated external client connection remains manual acceptance.
   every `/.well-known/*` path answers 404.
 - A request carrying an `Origin` header gets 403 unless it is the console's own origin or listed in
   `Mcp:AllowedOrigins` (`scheme://host[:port]`, empty by default). CLI clients send no `Origin` and pass.
-- Request bodies over 64 KiB get 413; an `initialize` or a tool call takes a few KiB at most.
-- Both checks run before authentication, in the product's `McpRequestGuard`.
+- Request bodies over 64 KiB get 413 (`Mcp:MaxRequestBodyBytes`); an `initialize` or a tool call takes a few KiB at most.
+- Both checks are the be sdk's MCP request guard: the `Mcp` section binds into its `McpRequestGuardOptions`, and a
+  malformed origin fails the boot. The guard screens after authentication, so a caller without a key gets 401 first.
+- No deployed console sets `Mcp`: `prepare.py` writes none, so only each console's own origin passes. Add an origin to
+  the console's settings file (`Mcp:AllowedOrigins:0`) to let a browser-based client in.
 
 ## Scopes and tools
 
@@ -53,10 +56,9 @@ an authenticated external client connection remains manual acceptance.
 
 ## Delivery status
 
-The implementation uses the SDK `Ai/Mcp` host helpers. The be sdk MCP host has no Origin check or endpoint body
-limit, and its SPA fallback reserves only `/api`, so the guard and the `/.well-known/*` 404 are product-local until
-the SDK provides them. Every be sdk family reference now uses
-the publicly verified `10.0.78-beta` release. No production deployment is established here.
+The implementation uses the SDK `Ai/Mcp` host helpers: the request guard and the tool error filter come with
+`AddStatelessMcpServer` and `MapAuthenticatedMcp` since be sdk `10.0.80-beta` (v0.6 adoption). The SDK SPA fallback
+reserves only `/api`, so the `/.well-known/*` 404 stays product-local until the SDK provides it.
 
 ## Adoption verification — 2026-10-06
 

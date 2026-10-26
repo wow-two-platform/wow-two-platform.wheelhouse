@@ -5,6 +5,8 @@ using Microsoft.Extensions.Logging;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Products;
 using Wheelhouse.Infrastructure.Settings;
+using WoW.Two.Sdk.Beta.Be.Storage.FileSystem;
+using WoW.Two.Sdk.Beta.Be.Storage.FileSystem.Extensions;
 
 namespace Wheelhouse.Infrastructure.GitHub;
 
@@ -52,18 +54,7 @@ public sealed partial class GitHubRunnerTokens(
         {
             if (File.Exists(path) && await File.ReadAllTextAsync(path, ct) == content)
                 return path;
-            if (OperatingSystem.IsWindows())
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            else
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-            var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
-            if (!OperatingSystem.IsWindows())
-                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-            await using (var stream = new FileStream(temporary, options))
-            await using (var writer = new StreamWriter(stream))
-                await writer.WriteAsync(content.AsMemory(), ct);
-            File.Move(temporary, path, overwrite: true);
+            await AtomicFileExtensions.WriteAllTextAsync(path, content, WriteOptions, ct);
             return path;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -78,6 +69,13 @@ public sealed partial class GitHubRunnerTokens(
     }
 
     private static readonly JsonSerializerOptions Json = new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+
+    /// <summary>Holds the tokens file's write: owner-only (0600), in an owner-only folder (0700) when it creates one.</summary>
+    private static readonly AtomicFileWriteOptions WriteOptions = new()
+    {
+        UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+        DirectoryUnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute,
+    };
 
     private static RunnerToken Entry(GitHubAppToken token) => new(
         token.Token, token.ExpiresAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture));

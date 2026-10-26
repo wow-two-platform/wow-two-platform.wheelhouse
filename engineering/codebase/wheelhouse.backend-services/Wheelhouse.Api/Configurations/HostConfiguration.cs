@@ -36,12 +36,12 @@ public static class HostConfiguration
 
         // SDK pipeline: forwarded headers, secure headers, response compression, then the Vue workspace from wwwroot
         // (single deploy: API + UI in one host) before routing, so its public assets carry the headers and encoding and
-        // load before sign-in. Auth runs after routing and before idempotency, so keys are scoped per caller; the MCP
-        // origin and body-size screen runs just before it. The fallback policy gates the controllers while the SPA
+        // load before sign-in. Auth runs after routing and before idempotency, so keys are scoped per caller; the SDK's
+        // MCP guard screens /mcp after it. The fallback policy gates the controllers while the SPA
         // shell and the anonymous /health stay reachable. Maps OpenAPI (dev), the health probe and the SPA fallback:
         // an unmatched /api/* 404s as JSON, any other unmatched route serves index.html; fallbacks rank after the
         // endpoints below.
-        app.UseApiDefaults(useIdentity: pipeline => pipeline.UseWheelhouseMcpGuard().UseWheelhouseAuth());
+        app.UseApiDefaults(useIdentity: pipeline => pipeline.UseWheelhouseAuth());
 
         app.MapControllers();
         app.MapWheelhouseMcp();

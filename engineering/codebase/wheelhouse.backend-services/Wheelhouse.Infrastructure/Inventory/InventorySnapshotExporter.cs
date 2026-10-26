@@ -5,13 +5,16 @@ using Wheelhouse.Infrastructure.Inventory.Mappers;
 using Wheelhouse.Infrastructure.Inventory.Models;
 using Wheelhouse.Infrastructure.Settings;
 using WoW.Two.Sdk.Beta.Be.Foundation.Serialization;
+using WoW.Two.Sdk.Beta.Be.Storage.FileSystem;
+using WoW.Two.Sdk.Beta.Be.Storage.FileSystem.Extensions;
 
 namespace Wheelhouse.Infrastructure.Inventory;
 
 /// <summary>Provides the runner's inventory snapshot: products, servers, targets and vaults written from the database
 /// to <c>{root}/inventory.json</c>, replaced whole so the runner never reads half of one.</summary>
 /// <remarks>One export runs at a time and reads the database inside its turn, so an older read never overwrites a
-/// newer snapshot. A failed write is logged and left for the next change or start to repair.</remarks>
+/// newer snapshot. The SDK atomic write replaces the file in one rename, owner-only (0600). A failed write is logged and
+/// left for the next change or start to repair.</remarks>
 public sealed partial class InventorySnapshotExporter(
     IProductsRepository products,
     IServersRepository servers,
@@ -26,6 +29,9 @@ public sealed partial class InventorySnapshotExporter(
     /// <summary>Holds the turn every export in this process waits for.</summary>
     private static readonly SemaphoreSlim Turn = new(1, 1);
 
+    /// <summary>Holds the snapshot's write: owner-only, since it names every server and credential path.</summary>
+    private static readonly AtomicFileWriteOptions WriteOptions = new() { UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite };
+
     /// <inheritdoc />
     public async Task ExportAsync(CancellationToken ct)
     {
@@ -35,16 +41,8 @@ public sealed partial class InventorySnapshotExporter(
         try
         {
             var snapshot = await ReadAsync(ct);
-            Directory.CreateDirectory(settings.Root);
-            var path = Path.Combine(settings.Root, FileName);
-            var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write))
-            {
-                if (!OperatingSystem.IsWindows())
-                    File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-                await JsonSerializer.SerializeAsync(stream, snapshot, StoredJsonConstants.Default, ct);
-            }
-            File.Move(temporary, path, overwrite: true);
+            await AtomicFileExtensions.WriteJsonAsync(
+                Path.Combine(settings.Root, FileName), snapshot, StoredJsonConstants.Default, WriteOptions, ct);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {

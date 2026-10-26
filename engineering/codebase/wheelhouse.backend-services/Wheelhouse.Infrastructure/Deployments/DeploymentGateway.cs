@@ -1,20 +1,23 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Wheelhouse.Application.Abstractions;
-using Wheelhouse.Infrastructure.Deployments.Parsers;
 using Wheelhouse.Infrastructure.GitHub;
 using Wheelhouse.Infrastructure.Settings;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
+using WoW.Two.Sdk.Beta.Be.Integrations.Processes;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Infrastructure.Deployments;
 
-/// <summary>Runs the same bounded SSH adapter used by manual recovery.</summary>
+/// <summary>Runs the same bounded SSH adapter used by manual recovery, through the runner's process client
+/// (<see cref="RunnerProcess"/>): an argument list, the environment allowlist, and the process tree killed past its time.</summary>
 /// <remarks>A runner action that reaches GitHub first gets the GitHub App's per-owner tokens written for it
 /// (<see cref="GitHubRunnerTokens"/>); every action may note refused GitHub calls for the Issues panel.</remarks>
 public sealed class DeploymentGateway(
-    DeploymentSettings settings, RunnerFailureParser failures, GitHubRunnerTokens? github = null) : IDeploymentGateway
+    [FromKeyedServices(RunnerProcess.ClientName)] IProcessClient runner,
+    DeploymentSettings settings,
+    GitHubRunnerTokens? github = null) : IDeploymentGateway
 {
     /// <summary>Holds the runner actions that call GitHub: release and build listings, downloads, dispatches.</summary>
     private static readonly HashSet<string> GitHubActions = new(StringComparer.Ordinal)
@@ -148,74 +151,24 @@ public sealed class DeploymentGateway(
         if (!File.Exists(settings.TransportPath))
             return AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("Deployment runner is not installed."));
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(110));
-        using var process = new Process
+        // Only the API names the token files, the access notes and the local rig: nothing ambient passes the allowlist.
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            StartInfo = new ProcessStartInfo(settings.Python)
-            {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                RedirectStandardInput = input is not null,
-                CreateNoWindow = true
-            }
+            ["WHEELHOUSE_GITHUB_TOKEN_FILE"] = settings.TokenFile(),
         };
-        process.StartInfo.Environment["WHEELHOUSE_GITHUB_TOKEN_FILE"] = settings.TokenFile();
-        // Only the API names the per-owner tokens and the access notes; ambient values never reach the runner.
-        process.StartInfo.Environment.Remove("WHEELHOUSE_GITHUB_TOKENS_FILE");
-        process.StartInfo.Environment.Remove("WHEELHOUSE_GITHUB_ACCESS_FILE");
         if (await GitHubTokensAsync(arguments[0], ct) is { } tokens)
-            process.StartInfo.Environment["WHEELHOUSE_GITHUB_TOKENS_FILE"] = tokens;
+            environment["WHEELHOUSE_GITHUB_TOKENS_FILE"] = tokens;
         if (settings.Root.Length > 0)
-            process.StartInfo.Environment["WHEELHOUSE_GITHUB_ACCESS_FILE"] = GitHubRunnerFiles.AccessPath(settings.Root);
-        // Only configuration exposes the local rig; a stray environment variable cannot.
-        process.StartInfo.Environment.Remove("WHEELHOUSE_REHEARSAL");
-        process.StartInfo.Environment.Remove("REHEARSAL_STATE");
+            environment["WHEELHOUSE_GITHUB_ACCESS_FILE"] = GitHubRunnerFiles.AccessPath(settings.Root);
         if (settings.IsLocalRig)
-            process.StartInfo.Environment["WHEELHOUSE_REHEARSAL"] = settings.Rehearsal == DeploymentSettings.RigNetwork ? "network" : "1";
+            environment["WHEELHOUSE_REHEARSAL"] = settings.Rehearsal == DeploymentSettings.RigNetwork ? "network" : "1";
         if (settings.RehearsalState.Length > 0)
-            process.StartInfo.Environment["REHEARSAL_STATE"] = settings.RehearsalState;
-        process.StartInfo.ArgumentList.Add(settings.TransportPath);
-        foreach (var argument in arguments)
-            process.StartInfo.ArgumentList.Add(argument);
-        process.StartInfo.ArgumentList.Add("--root");
-        process.StartInfo.ArgumentList.Add(settings.Root);
-        try
-        {
-            process.Start();
-            if (input is not null)
-            {
-                await process.StandardInput.WriteAsync(input.AsMemory(), timeout.Token);
-                process.StandardInput.Close();
-            }
-            var output = process.StandardOutput.ReadToEndAsync(timeout.Token);
-            var error = process.StandardError.ReadToEndAsync(timeout.Token);
-            await process.WaitForExitAsync(timeout.Token);
-            var standardError = await error;
-            if (process.ExitCode != 0)
-                return AppResult<JsonElement>.Fail(failures.Parse(standardError)
-                    ?? AppErrorFactory.Unexpected("Deployment operation failed. Inspect the target privately."));
-            using var document = JsonDocument.Parse(await output);
-            return AppResult<JsonElement>.Ok(document.RootElement.Clone());
-        }
-        catch (OperationCanceledException)
-        {
-            try
-            {
-                if (!process.HasExited) process.Kill(entireProcessTree: true);
-            }
-            catch (InvalidOperationException)
-            {
-                // The process may exit between the state check and cancellation.
-            }
-            ct.ThrowIfCancellationRequested();
-            // Timeouts and an unreachable runner are transient kinds, so callers (the MCP tools) can mark them retryable.
-            return AppResult<JsonElement>.Fail(AppErrorFactory.OperationTimeout("Deployment response timed out. Reconcile target state before retrying."));
-        }
-        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or JsonException or IOException)
-        {
-            return AppResult<JsonElement>.Fail(AppErrorFactory.ExternalUnavailable("Deployment runner is unavailable."));
-        }
+            environment["REHEARSAL_STATE"] = settings.RehearsalState;
+
+        // The settings values reach the runner's standard input, never an argument a process listing would show.
+        var result = await runner.RunJsonAsync(RunnerProcess.Spec(settings, settings.TransportPath, arguments, environment, input), ct);
+        return result.Match(
+            data => AppResult<JsonElement>.Ok(data),
+            error => AppResult<JsonElement>.Fail(RunnerFailureWording.Deployment.Describe(error)));
     }
 }

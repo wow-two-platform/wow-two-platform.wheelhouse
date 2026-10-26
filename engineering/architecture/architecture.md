@@ -1,6 +1,6 @@
 # Wheelhouse architecture
 
-*Last updated: 2026-10-24*
+*Last updated: 2026-10-26*
 
 ## Runtime
 
@@ -621,8 +621,8 @@ service is an origin — never a guessed edge.
 
 ## Deployment automation
 
-The control plane deploys on the owner's behalf with the actor `automation`: a hosted worker
-(`DeploymentAutomationWorker`) runs one pass every `Deployment:AutomationSeconds` (120; 0 turns it off). Work outside a
+The control plane deploys on the owner's behalf with the actor `automation`: an SDK periodic job
+(`deployment-automation`) runs one pass every `Deployment:AutomationSeconds` (120; 0 turns it off). Work outside a
 request acts as `automation`, so every automatic submission goes through the ordinary audited deploy command
 (`deployment.start`, detail `…, automatic: a new release`) with the same runner gates.
 
@@ -697,8 +697,8 @@ request acts as `automation`, so every automatic submission goes through the ord
   one runs at a time, a partial unique index). It answers 202 with the fleet after submitting the first product. Each
   product then goes through the ordinary deploy command — freezes, the runner's gates, the reason and
   `deployment.start` audits apply, with the detail `, fleet <id>` and the runner keeping `fleetId` on the job — as the
-  owner who started it, also from the background pass (`FleetRolloutWorker`, every `Deployment:FleetSeconds`, 10; 0
-  off). The fleet waits for each rollout's finished outcome (a terminal status with its completion), stops at the first
+  owner who started it, also from the background pass (the `fleet-rollout` periodic job, every `Deployment:FleetSeconds`,
+  10; 0 off). The fleet waits for each rollout's finished outcome (a terminal status with its completion), stops at the first
   failure or refusal — the rest become `not_started` — and fails a product with no finished outcome after 30 minutes
   or missing from the runner's records after two. `POST /api/deployments/fleets/{id}/cancel` (audited
   `deployment.fleet.cancel`) stops it between products: the product it is on finishes. Its end is audited

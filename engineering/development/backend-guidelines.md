@@ -21,4 +21,11 @@
   with `OnCommittedAsync`. One transaction per request scope.
 - **Outbound work** — the runner process, the vault admin API, GitHub — lives in `Infrastructure` behind Application
   ports, never in controllers or the Domain.
+- **Runner process:** the gateways run `transport.py` and `infra.py` through the SDK process client keyed `runner`
+  (`RunnerProcess`): 110 seconds, the JSON failure line, and an environment allowlist. A variable the runner starts
+  reading is set by the gateway per call or added to `RunnerProcess.InheritedVariables`; nothing else passes.
+- **Background passes** are SDK periodic jobs, registered in `PeriodicJobsServiceCollectionExtensions` with their
+  interval key (0 turns one off); no hand-written `BackgroundService` loops.
+- **Files the runner reads** (`inventory.json`, `github/tokens.json`) are written with the SDK `AtomicFileExtensions`,
+  owner-only; a cache row that can lose an insert race saves with the SDK `UpsertAsync`.
 - **Ports:** HTTPS 8210 / HTTP 8211.

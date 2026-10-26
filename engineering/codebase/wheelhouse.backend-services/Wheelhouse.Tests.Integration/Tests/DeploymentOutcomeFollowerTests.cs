@@ -6,13 +6,16 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Infrastructure.Deployments;
-using Wheelhouse.Infrastructure.Deployments.Parsers;
+using Wheelhouse.Infrastructure.Jobs;
 using Wheelhouse.Infrastructure.Settings;
+using WoW.Two.Sdk.Beta.Be.Integrations.Processes;
+using WoW.Two.Sdk.Beta.Be.Jobs.Core.BackgroundServices;
 
 namespace Wheelhouse.Tests.Integration.Tests;
 
-/// <summary>Exercises the hosted observation loop through its real process gateway. The stand-in transport records
-/// requested actions and can block or fail; Python's follower tests cover durable journals and SSH observations.</summary>
+/// <summary>Exercises the observation job — the SDK periodic job as the host registers it — through its real process gateway
+/// and the runner's SDK process client. The stand-in transport records requested actions and can block or fail; Python's
+/// follower tests cover durable journals and SSH observations.</summary>
 public sealed class DeploymentOutcomeFollowerTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("wheelhouse-following-").FullName;
@@ -79,8 +82,7 @@ public sealed class DeploymentOutcomeFollowerTests : IDisposable
             File.Delete(Path.Combine(_root, "fail"));
             await UntilAsync(() => Calls().Length >= 2, () => _time.Advance(TimeSpan.FromSeconds(10)));
             Calls().Should().OnlyContain(action => action == "follow");
-            host.Services.GetRequiredService<IEnumerable<IHostedService>>()
-                .OfType<DeploymentOutcomeFollower>().Single().ExecuteTask!.IsFaulted.Should().BeFalse();
+            Follower(host).ExecuteTask!.IsFaulted.Should().BeFalse();
         }
         finally
         {
@@ -115,7 +117,8 @@ public sealed class DeploymentOutcomeFollowerTests : IDisposable
     [Fact]
     public async Task Read_ShouldLaunchNoProcess_WhenAlreadyCancelled()
     {
-        var gateway = new DeploymentGateway(Settings(), new RunnerFailureParser());
+        using var host = CreateHost();
+        var gateway = new DeploymentGateway(host.Services.GetRequiredKeyedService<IProcessClient>(RunnerProcess.ClientName), Settings());
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
@@ -132,9 +135,7 @@ public sealed class DeploymentOutcomeFollowerTests : IDisposable
         await host.StartAsync();
         try
         {
-            var follower = host.Services.GetRequiredService<IEnumerable<IHostedService>>()
-                .OfType<DeploymentOutcomeFollower>().Single();
-            await follower.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5));
+            await Follower(host).ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5));
             Calls().Should().BeEmpty();
         }
         finally
@@ -151,16 +152,20 @@ public sealed class DeploymentOutcomeFollowerTests : IDisposable
 
     private IHost CreateHost(int interval = 10) => new HostBuilder()
         .ConfigureAppConfiguration(configuration => configuration.AddInMemoryCollection(
-            new Dictionary<string, string?> { [DeploymentOutcomeFollower.IntervalKey] = interval.ToString() }))
+            new Dictionary<string, string?> { [PeriodicJobsServiceCollectionExtensions.FollowSecondsKey] = interval.ToString() }))
         .ConfigureServices(services =>
         {
             services.AddSingleton(Settings());
             services.AddSingleton<TimeProvider>(_time);
-            services.AddSingleton<RunnerFailureParser>();
+            services.AddProcessClient(RunnerProcess.ClientName, (options, _) => RunnerProcess.Configure(options));
             services.AddScoped<IDeploymentGateway, DeploymentGateway>();
-            services.AddHostedService<DeploymentOutcomeFollower>();
+            services.AddDeploymentFollowingJob();
         })
         .Build();
+
+    private static PeriodicJobBackgroundService Follower(IHost host) =>
+        host.Services.GetRequiredService<IEnumerable<IHostedService>>().OfType<PeriodicJobBackgroundService>()
+            .Single(job => job.Name == PeriodicJobsServiceCollectionExtensions.FollowJob);
 
     private string[] Calls()
     {

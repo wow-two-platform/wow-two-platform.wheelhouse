@@ -1,27 +1,30 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Servers.Models;
-using Wheelhouse.Infrastructure.Deployments.Parsers;
+using Wheelhouse.Infrastructure.Deployments;
 using Wheelhouse.Infrastructure.Settings;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
+using WoW.Two.Sdk.Beta.Be.Integrations.Processes;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Infrastructure.Infra;
 
-/// <summary>Runs the runner's <c>infra.py</c> beside <c>transport.py</c>: an argument list, never a shell, and no
-/// secret in any argument. The OAuth client file and the SSH keys stay on disk under the runner root. A long job is
+/// <summary>Runs the runner's <c>infra.py</c> beside <c>transport.py</c> through the runner's process client
+/// (<see cref="RunnerProcess"/>): an argument list, never a shell, no secret in any argument, and the environment allowlist. The OAuth client file and the SSH keys stay on disk under the runner root. A long job is
 /// recorded first, then run as this process's own child (<c>enroll-run</c>, <c>place-run</c>, <c>upkeep-run</c>), which
 /// nothing waits for:
 /// every call here returns within its timeout, and the console reaps the job when it ends.</summary>
 /// <remarks>Only configuration exposes the local rig, and only the rig may point the runner at another Tailscale API
 /// (<c>Infra:TailscaleApi</c>, its fake); <c>Infra:KitPath</c> names the products kit when it is not at <c>/app/kit</c>.
 /// </remarks>
-public sealed class InfraGateway(DeploymentSettings settings, IConfiguration configuration, RunnerFailureParser failures)
-    : IInfraGateway
+public sealed class InfraGateway(
+    [FromKeyedServices(RunnerProcess.ClientName)] IProcessClient runner,
+    DeploymentSettings settings,
+    IConfiguration configuration) : IInfraGateway
 {
     /// <summary>The runner script, beside the transport.</summary>
     public const string Script = "infra.py";
@@ -115,41 +118,15 @@ public sealed class InfraGateway(DeploymentSettings settings, IConfiguration con
         var recorded = await RunAsync(arguments, ct);
         if (recorded is not AppResult<JsonElement>.Success { Data: var job } || run(job) is not { } follow)
             return recorded;
-        var process = Create(follow);
-        process.EnableRaisingEvents = true;
-        process.OutputDataReceived += static (_, _) => { };
-        process.ErrorDataReceived += static (_, _) => { };
-        process.Exited += static (sender, _) => ((Process)sender!).Dispose();
-        try
-        {
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            process.Dispose();
-            return AppResult<JsonElement>.Fail(AppErrorFactory.ExternalUnavailable("The infrastructure runner is unavailable."));
-        }
-
-        return recorded;
+        return runner.Start(Spec(follow)).Match(
+            _ => recorded,
+            _ => AppResult<JsonElement>.Fail(AppErrorFactory.ExternalUnavailable(RunnerFailureWording.Infra.Unavailable)));
     }
 
-    private Process Create(string[] arguments)
+    /// <summary>Describes one call: only configuration exposes the local rig, the fake Tailscale API and another kit.</summary>
+    private ProcessSpec Spec(string[] arguments)
     {
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo(settings.Python)
-            {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-            },
-        };
-        var environment = process.StartInfo.Environment;
-        foreach (var name in new[] { "WHEELHOUSE_REHEARSAL", "REHEARSAL_STATE", "WHEELHOUSE_TAILSCALE_API", "WHEELHOUSE_KIT" })
-            environment.Remove(name);
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
         if (settings.IsLocalRig)
         {
             environment["WHEELHOUSE_REHEARSAL"] = settings.Rehearsal == DeploymentSettings.RigNetwork ? "network" : "1";
@@ -160,12 +137,7 @@ public sealed class InfraGateway(DeploymentSettings settings, IConfiguration con
             environment["REHEARSAL_STATE"] = settings.RehearsalState;
         if (configuration["Infra:KitPath"] is { Length: > 0 } kit)
             environment["WHEELHOUSE_KIT"] = kit;
-        process.StartInfo.ArgumentList.Add(ScriptPath);
-        foreach (var argument in arguments)
-            process.StartInfo.ArgumentList.Add(argument);
-        process.StartInfo.ArgumentList.Add("--root");
-        process.StartInfo.ArgumentList.Add(settings.Root);
-        return process;
+        return RunnerProcess.Spec(settings, ScriptPath, arguments, environment);
     }
 
     private async Task<AppResult<JsonElement>> RunAsync(string[] arguments, CancellationToken ct)
@@ -174,50 +146,9 @@ public sealed class InfraGateway(DeploymentSettings settings, IConfiguration con
         if (!File.Exists(ScriptPath))
             return AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("The infrastructure runner is not installed."));
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(110));
-        using var process = Create(arguments);
-        try
-        {
-            process.Start();
-            var output = process.StandardOutput.ReadToEndAsync(timeout.Token);
-            var error = process.StandardError.ReadToEndAsync(timeout.Token);
-            await process.WaitForExitAsync(timeout.Token);
-            var standardError = await error;
-            if (process.ExitCode != 0)
-                return AppResult<JsonElement>.Fail(Refusal(standardError)
-                    ?? AppErrorFactory.Unexpected("The infrastructure action failed. Inspect the control host privately."));
-            using var document = JsonDocument.Parse(await output);
-            return AppResult<JsonElement>.Ok(document.RootElement.Clone());
-        }
-        catch (OperationCanceledException)
-        {
-            try
-            {
-                if (!process.HasExited) process.Kill(entireProcessTree: true);
-            }
-            catch (InvalidOperationException)
-            {
-                // The process may exit between the state check and cancellation.
-            }
-            ct.ThrowIfCancellationRequested();
-            return AppResult<JsonElement>.Fail(AppErrorFactory.OperationTimeout("The infrastructure action timed out."));
-        }
-        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or JsonException or IOException)
-        {
-            return AppResult<JsonElement>.Fail(AppErrorFactory.ExternalUnavailable("The infrastructure runner is unavailable."));
-        }
+        var result = await runner.RunJsonAsync(Spec(arguments), ct);
+        return result.Match(
+            data => AppResult<JsonElement>.Ok(data),
+            error => AppResult<JsonElement>.Fail(RunnerFailureWording.Infra.Describe(error)));
     }
-
-    /// <summary>The runner's own display-safe reason, without the deployment wording the shared parser adds.</summary>
-    private AppError? Refusal(string standardError) =>
-        failures.Parse(standardError) switch
-        {
-            null => null,
-            var parsed when parsed.Message.StartsWith("Deployment rejected: ", StringComparison.Ordinal) =>
-                AppErrorFactory.Conflict(parsed.Message["Deployment rejected: ".Length..]),
-            var parsed when parsed.Message.StartsWith("Deployment step failed: ", StringComparison.Ordinal) =>
-                AppErrorFactory.ExternalUnavailable(parsed.Message["Deployment step failed: ".Length..]),
-            var parsed => parsed,
-        };
 }

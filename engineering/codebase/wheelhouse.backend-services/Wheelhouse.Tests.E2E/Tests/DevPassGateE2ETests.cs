@@ -8,9 +8,9 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Audit;
 using Wheelhouse.Domain.Audit.Enums;
 using Wheelhouse.Infrastructure.Deployments;
-using Wheelhouse.Infrastructure.Deployments.Parsers;
 using Wheelhouse.Infrastructure.Settings;
 using Wheelhouse.Tests.E2E.Harness;
+using WoW.Two.Sdk.Beta.Be.Integrations.Processes;
 
 namespace Wheelhouse.Tests.E2E.Tests;
 
@@ -132,7 +132,9 @@ public sealed class DevPassGateE2ETests(WheelhouseAppFixture fixture) : Wheelhou
         ImportRelease("foreverpin-v0-9-0", "v0.9.0");
 
         var settings = new DeploymentSettings { TransportPath = TransportPath(), Root = _root, Rehearsal = DeploymentSettings.RigHost };
-        Fixture.Deployments.Runner = new DeploymentGateway(settings, new RunnerFailureParser());
+        // The host's own runner process client: its time limit, environment allowlist and failure parser.
+        var runner = Fixture.Host.Services.GetRequiredKeyedService<IProcessClient>(RunnerProcess.ClientName);
+        Fixture.Deployments.Runner = new DeploymentGateway(runner, settings);
     }
 
     private void ImportRelease(string bundle, string release)

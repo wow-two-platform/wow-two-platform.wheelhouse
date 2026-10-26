@@ -189,7 +189,7 @@ public sealed class McpE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBas
     }
 
     [Fact]
-    public async Task ForeignOrigin_IsRefusedBeforeAuthentication()
+    public async Task ForeignOrigin_IsRefused_AndAnAnonymousCallerIsRefusedFirst()
     {
         var key = await CreateKeyAsync("catalog:read");
         using var client = KeyClient(key.Secret);
@@ -197,7 +197,8 @@ public sealed class McpE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBas
         (await SendAsync(client, "tools/list", origin: "https://rebound.example")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await SendAsync(client, "tools/list", origin: "http://localhost:8443")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await SendAsync(client, "tools/list", origin: "null")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await SendAsync(AnonymousClient, "tools/list", origin: "https://rebound.example")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        // The SDK guard screens after authorization, so a caller without a key is refused as unauthenticated.
+        (await SendAsync(AnonymousClient, "tools/list", origin: "https://rebound.example")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Fact]

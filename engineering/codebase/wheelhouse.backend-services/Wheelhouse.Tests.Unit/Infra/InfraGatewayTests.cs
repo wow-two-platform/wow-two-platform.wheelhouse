@@ -3,9 +3,9 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Servers.Models;
-using Wheelhouse.Infrastructure.Deployments.Parsers;
 using Wheelhouse.Infrastructure.Infra;
 using Wheelhouse.Infrastructure.Settings;
+using Wheelhouse.Tests.Unit.Fakes;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
@@ -38,8 +38,9 @@ public sealed class InfraGatewayTests : IDisposable
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
     private InfraGateway Gateway(DeploymentSettings? settings = null, Dictionary<string, string?>? configuration = null) =>
-        new((settings ?? new DeploymentSettings()) with { TransportPath = Path.Combine(_root, "transport.py"), Root = _root },
-            new ConfigurationBuilder().AddInMemoryCollection(configuration ?? []).Build(), new RunnerFailureParser());
+        new(RunnerProcessClients.Create(),
+            (settings ?? new DeploymentSettings()) with { TransportPath = Path.Combine(_root, "transport.py"), Root = _root },
+            new ConfigurationBuilder().AddInMemoryCollection(configuration ?? []).Build());
 
     private async Task<List<JsonElement>> Calls(int expected)
     {

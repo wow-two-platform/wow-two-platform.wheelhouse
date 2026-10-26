@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <BackendSdkVersion>10.0.78-beta</BackendSdkVersion>
+    <BackendSdkVersion>10.0.80-beta</BackendSdkVersion>
   </PropertyGroup>
 
   <!-- be sdk: one family, bumped together. -->

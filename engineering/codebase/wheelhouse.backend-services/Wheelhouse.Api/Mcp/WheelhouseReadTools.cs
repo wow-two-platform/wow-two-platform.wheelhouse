@@ -112,7 +112,7 @@ public sealed partial class WheelhouseReadTools(ISender sender, WheelhouseDbCont
         LocalRig = deployment.IsLocalRig
     };
 
-    // A failure leaves as its own error; McpToolErrorFilter turns it into the tool error the agent reads.
+    // A failure leaves as its own error; the SDK's McpToolErrorFilter turns it into the tool error the agent reads.
     private static T Read<T>(AppResult<T> result) where T : notnull => result.Match(
         ok => ok.Data,
         fail => throw fail.Error.ToException());

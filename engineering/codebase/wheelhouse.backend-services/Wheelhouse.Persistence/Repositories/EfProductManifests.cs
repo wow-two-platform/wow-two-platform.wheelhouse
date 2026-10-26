@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Domain.Products.Entities;
+using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore.Uniqueness.Extensions;
 
 namespace Wheelhouse.Persistence.Repositories;
 
@@ -8,6 +9,9 @@ namespace Wheelhouse.Persistence.Repositories;
 /// write to the same product in the same scope starts clean.</summary>
 internal sealed class EfProductManifests(WheelhouseDbContext db) : IProductManifestsRepository
 {
+    /// <summary>Holds the key every product's one row is upserted on: the table's primary key, <c>product_id</c>.</summary>
+    private const string ProductKeyConstraint = "product_manifests_pkey";
+
     /// <inheritdoc />
     public async Task<IReadOnlyDictionary<Guid, ProductManifestEntity>> GetByProductsAsync(
         IReadOnlyCollection<Guid> productIds, CancellationToken ct = default) =>
@@ -18,32 +22,34 @@ internal sealed class EfProductManifests(WheelhouseDbContext db) : IProductManif
     /// <inheritdoc />
     public async Task SaveAsync(ProductManifestEntity manifest, CancellationToken ct = default)
     {
-        var existing = await db.ProductManifests.FirstOrDefaultAsync(row => row.ProductId == manifest.ProductId, ct);
-        var row = existing ?? manifest;
-        if (existing is null)
-            db.ProductManifests.Add(manifest);
-        else
-        {
-            existing.Repository = manifest.Repository;
-            existing.Branch = manifest.Branch;
-            existing.Commit = manifest.Commit;
-            existing.Name = manifest.Name;
-            existing.Description = manifest.Description;
-            existing.Homepage = manifest.Homepage;
-            existing.Services = manifest.Services;
-        }
-
+        var row = manifest;
         try
         {
-            await db.SaveChangesAsync(ct);
+            // The SDK upsert inserts the row, or updates it, also when another request inserted it first.
+            var saved = await db.UpsertAsync(
+                stored => stored.ProductId == manifest.ProductId,
+                manifest,
+                stored =>
+                {
+                    stored.Repository = manifest.Repository;
+                    stored.Branch = manifest.Branch;
+                    stored.Commit = manifest.Commit;
+                    stored.Name = manifest.Name;
+                    stored.Description = manifest.Description;
+                    stored.Homepage = manifest.Homepage;
+                    stored.Services = manifest.Services;
+                },
+                ProductKeyConstraint,
+                ct);
+            row = saved.Entity;
         }
         catch (DbUpdateException)
         {
-            // Another request wrote this product's row first (or the product is gone); the row is a cache, so the
-            // read that lost the race shows what it already has and the next read settles it.
+            // The product is gone; the row is a cache, so the read shows what it already has and the next read settles it.
         }
         finally
         {
+            db.Entry(manifest).State = EntityState.Detached;
             db.Entry(row).State = EntityState.Detached;
         }
     }

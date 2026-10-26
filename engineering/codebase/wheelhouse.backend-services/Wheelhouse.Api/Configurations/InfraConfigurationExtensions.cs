@@ -1,5 +1,6 @@
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.InfraJobs;
+using Wheelhouse.Infrastructure.Jobs;
 
 namespace Wheelhouse.Api.Configurations;
 
@@ -15,7 +16,7 @@ public static class InfraConfigurationExtensions
         services.AddScoped<IInfraGateway, Wheelhouse.Infrastructure.Infra.InfraGateway>();
         services.AddSingleton<IInfraAccess, Wheelhouse.Infrastructure.Infra.ConsoleInfraAccess>();
         services.AddScoped<InfraJobRecorder>();
-        services.AddHostedService<Wheelhouse.Infrastructure.Infra.InfraJobFollower>();
+        services.AddInfraFollowingJob();
         return services;
     }
 }
