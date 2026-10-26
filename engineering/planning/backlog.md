@@ -101,7 +101,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Ability to rotate the vault's root key with a transactional rewrap | feature | 2026-10-19 merge analysis: unwrap every product key under the old root key, wrap under the new one, prove the canary, one transaction; the owner swaps the file after |
 | Ability to recover a lost root key with the owner's passkey | feature | User 2026-10-20 (decision 67): the database keeps the root key sealed by a passkey-derived key (WebAuthn PRF); after a lost key file, sign in, touch the passkey and Wheelhouse writes the file back. Waits on Wheelhouse database backups |
 | Ability to export audit checkpoints off the control host | feature | 2026-10-19 merge analysis: the hash chain is unkeyed, so a database administrator could rewrite it consistently; a periodic head off-host makes that visible |
-| Drop the vault inventory rows, password files and the `Vault:Mode` fallback | cleanup | v0.6, once every prod store is imported and verified; a contract migration under decision 65 |
+| Drop the vault inventory rows, password files and the `Vault:Mode` fallback | cleanup | Once every prod store is imported and verified; a contract migration under decision 65 |
 | Ability for a product to fetch secrets at startup with its own token | feature | Parked (decision 60): the deploy-time render is the model; revisit for rotation-heavy secrets or hosts Wheelhouse does not deploy |
 | Ability to run a product locally with its dev settings and secrets | feature | User 2026-10-19: settings and secrets live only in Wheelhouse dev and prod, yet a local run needs them too; e.g. pull the dev values into the gitignored `appsettings.Machine.json` and user secrets, never into the repository |
 | Ability to share one setting or secret value across products | feature | User 2026-10-17: products declare their own keys; Wheelhouse links keys that hold the same value and must change together to one row; otherwise rows stay separate |
@@ -225,31 +225,44 @@ User 2026-10-15: layout, motion and notifications must work flawlessly and look 
 | Analyze full-page versus modal dialogs | product | Then record the dialog convention in wow2 |
 | Ability to tour a page on a first visit | feature | User 2026-10-19: a guided tour ("storybook") that spotlights one section at a time under a blurred overlay; separate from info buttons, which always show context on click; may use different text. Name to settle (tour vs walkthrough) |
 | Analyze Home widgets: add, remove and move them | product | User 2026-10-19: pinned products leave Home (the sidebar has them); phones have no sidebar, so decide what replaces pins there |
+| Stack the rows field's columns on phones | fix | Image, host-settings and smoke-check rows keep every column side by side at phone width |
 
 ## SDK adoption
 
-Leftovers of the v0.4 sweep. Items marked *decision* wait on the owner.
+Leftovers of the v0.4 sweep and the [extraction inventory](../research/sdk-extraction-v0.6.md). `decision` rows wait on
+the owner, top to bottom; rows marked *decision* wait on one of them.
 
 | Item | Type | Notes |
 |---|---|---|
+| Decide the SDK's audit actor | decision | A string actor (`key:{name}`, `automation`, `cli`) or a widened `ICurrentUserService` |
+| Decide whether the API-key store moves to the SDK | decision | `integration_keys` as a contract migration (decision 65), merging TranscriptForge's limits |
+| Decide whether the versioned secret store stays Wheelhouse-only | decision | Proposed: keep; otherwise a neutral SDK module now |
+| Decide whether GitHub App credentials extract with one consumer | decision | The extraction rule says yes, at size L; settle borrowed-token semantics |
+| Decide the setting-type contract | decision | SDK C# checks plus golden cases in pipelines; Cronos or the hand parser for cron parity |
+| Decide the platform theme | decision | Wheelhouse's stronger glass values; `AccountMenu` as a bottom sheet on phones |
+| Decide how the log viewer follows the tail | decision | Always jump to the newest line, or follow only at the bottom with pause |
+| Decide which other apps adopt the extracted blocks | decision | e.g. TranscriptForge for the process runner, decoder and MCP guard; each adopts in its own backlog |
+| Extract the host-floor leftovers → be sdk | engineering | `/.well-known` reserved prefix, readiness apart from liveness, public `IsDeployed`, per-environment cookie name; then remove them from `HostConfiguration`, `LocalRun`, `SystemController`, `SessionCookies` |
+| Extract the commit-keyed GitHub reader cache → be sdk | engineering | `GitHubRepositoryReader.cs`; then remove the `IRepositoryFileSource` and `IProductManifestSource` ports, which remap the SDK's `FileRead` |
+| Extract opaque cursor paging → be sdk | engineering | SDK `PageTokenMapper` is internal; replaces `DeploymentCursor` and the audit list's `before`, a wire change with the Activity page |
+| Extract slug, `owner/repo`, image, hostname, SSH and IPv4 rules → SDK validation vocabulary | engineering | `InventoryPatternConstants.cs`, `InventoryRuleExtensions.cs`, `InfraPatterns.cs`, `VaultRules.cs`; the backend half of the shared vocabulary; the slug regex differs from `Guards.NotSlug` |
+| Extract the YAML reader with line-numbered refusals → be sdk | engineering | `YamlReader.cs` |
+| Extract the status pill and tone variants → fe sdk badge | engineering | `StatusPill.vue`, `StatusStyles.ts`; the SDK badge lacks icon, detail and dashed tones; `StatusVocabulary.ts` maps stay |
+| Extract the root-key broker, canary and HMAC fingerprints → be sdk | engineering | `FileVaultKeySource.cs`, `SecretsVaultCrypto.cs`, `SecretsVaultKeyCache.cs`; beside `ISealService`, whose broker reads only the environment |
+| Extract the scripted GitHub handler and migration test helpers → be sdk testing | engineering | `FakeGitHubApi.cs`, `ExpandOnlyTests.cs`: method-keyed handler, fixture schema list, enumerated migrations for the expand-only lint |
+| Replace `SecretValues` and `DeploymentRecordsMemo` with SDK `IIdGenerator` and `Caching/Hybrid` | engineering | `IIdGenerator` needs Hex and Base64Url alphabets first |
+| Extract list-detail route state, persisted preferences and a stretched-link card → fe sdk | engineering | `useListDetailRoute.ts`, `application/preferences`, `ProductTile.vue`; SDK typed params take strings only |
+| Extract typed setting values and the secret-name heuristic → be sdk | engineering | *decision*: `SettingTypes.cs`; the runner and pipelines repeat the same rules |
+| Adopt the fe sdk glass, `AccountMenu` and menu link rows | engineering | *decision*: removes `--wh-glass-*`, `ProfileMenu.vue` and `ProfileSheet.vue` |
 | Extract the audited-command trail → SDK | engineering | *decision*: marker, interceptor, EF chain store with lock, paging and verify; the SDK has the primitives only |
-| Extract a periodic scoped job → SDK | engineering | `VitalsSampler`, `DeploymentOutcomeFollower`: interval, 0 = off, log and continue; SDK `Jobs/Core` is empty |
-| Extract a bounded process runner → SDK | engineering | `DeploymentGateway.cs`: timeout, kill tree, scrubbed environment, JSON stdout |
 | Extract OAuth sign-in, me and sign-out endpoints → SDK | engineering | `IdentityController.cs`; registration only when configured |
 | Extract an actor context → SDK | engineering | *decision*: session login or `key:{name}`; SDK `ICurrentUserService` is Guid-only |
-| Extract GitHub, image and hostname rules → SDK validation vocabulary | engineering | `InventoryPatternConstants.cs`, `InventoryRuleExtensions.cs`; the backend half of the shared vocabulary |
-| Adopt SDK token paging for the audit list | engineering | Wire change with the Activity page |
-| Extract atomic file write and an EF upsert → SDK | engineering | `InventorySnapshotExporter.cs`, `EfProductManifests.cs` |
-| Extract GitHub App credentials → SDK | engineering | `Infrastructure/GitHub/`: App token, per-owner installation tokens, the per-call credential handler; the SDK client takes one token for every owner |
+| Extract GitHub App credentials → SDK | engineering | *decision*: `Infrastructure/GitHub/`: App token, per-owner installation tokens, the per-call credential handler; the SDK client takes one token for every owner |
 | Replace the local `Stub*` clients with SDK testing fakes | engineering | Waits on the vault and repository-reader extracts shipping fakes; the SDK fakes today cover clients Wheelhouse doesn't call |
-| Extract a selectable list → UI SDK | engineering | `ProductsPanel`, `WorkspacePage`, `NamespaceList`: leading, title, meta, trailing, skeleton rows |
-| Extract the rows field → UI SDK | engineering | `RowsField.vue` over `useFieldArray`; stacks on phones |
-| Extract a log viewer that follows the tail → UI SDK | engineering | `ServiceLogsModal.vue` |
-| Extract a schema decoder and problem reason → UI SDK HTTP client | engineering | `integration/common/client.ts` |
-| Extract a status strip and tone classes → UI SDK | engineering | `WorkspacePage.vue` |
-| Make the Sparkline time-based with thresholds → UI SDK | engineering | `TrendLine.vue` |
-| Extract the MCP request guard → be sdk | engineering | `McpRequestGuard.cs`: Origin 403 and a 64 KiB body cap that `MapAuthenticatedMcp` lacks |
-| Adopt be sdk reserved SPA prefixes for `/.well-known` | engineering | Replaces the extra 404 fallback in `HostConfiguration.cs` once the SDK ships it |
+| Extract a selectable list → fe sdk | engineering | `NamespaceList.vue`, the one consumer left: leading, title, meta, trailing, skeleton rows |
+| Extract the rows field → fe sdk | engineering | `RowsField.vue` over `useFieldArray`; ForeverPin's `RuleEditor` is the second consumer |
+| Extract a log viewer that follows the tail → fe sdk | engineering | *decision*: `ServiceLogsModal.vue` |
+| Make the Sparkline time-based with thresholds → fe sdk | engineering | `TrendLine.vue` |
 
 ---
 
