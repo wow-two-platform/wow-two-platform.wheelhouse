@@ -1,6 +1,8 @@
 export type {
   BuiltInVaultIssues,
   BuiltInVaultStatus,
+  RootKeyFileCheck,
+  RootKeyOfflineCopy,
   SecretHistory,
   SecretVersion,
   SettingChange,
@@ -11,6 +13,7 @@ export type {
   VaultVerification,
 } from "./models";
 export { SettingTypes } from "./SettingTypes";
+export { RootKeyRules } from "./RootKeyRules";
 export { EnvironmentSettingsRules, type EnvironmentKey } from "./EnvironmentSettingsRules";
 export type {
   DeploySettingsVault,

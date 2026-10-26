@@ -32,6 +32,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "027-environment-settings",
         "030-built-in-vault",
         "031-product-components",
+        "032-root-key-checks",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -772,7 +773,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
         await using var connection = await migrator.OpenConnectionAsync();
         (await Scalar(connection, "SELECT string_agg(table_name, ',' ORDER BY table_name) FROM information_schema.tables WHERE table_schema = 'vault'"))
-            .Should().Be("vault_canary,vault_product_keys,vault_secret_versions,vault_secrets");
+            .Should().Be("vault_canary,vault_product_keys,vault_root_key_verifications,vault_secret_versions,vault_secrets");
         foreach (var table in new[] { "product_setting_keys", "deployment_renders", "settings_applies" })
             (await migrator.HasTableAsync(table)).Should().BeTrue($"030-built-in-vault creates {table}");
 
@@ -823,6 +824,30 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: ordinal, CancellationToken.None));
         (await ReadColumnsAsync(connection, "products")).Select(column => column.Name).Should().NotContain("components");
         (await Scalar(connection, "SELECT repository FROM products WHERE slug = 'pilot'")).Should().Be("owner/pilot");
+    }
+
+    [Fact]
+    public async Task RootKeyChecks_ShouldKeepOfflineCopyChecksInTheVaultSchema_AndRollBackToNone_WhenApplied()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        await using (var cleanup = await migrator.OpenConnectionAsync())
+            await Execute(cleanup, "DROP SCHEMA IF EXISTS vault CASCADE"); // the fixture's reset drops public only
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        await Execute(connection, "INSERT INTO vault.vault_root_key_verifications VALUES " +
+                                  "(gen_random_uuid(), 'aeb1 80f7 9014 1a39 9680', 'owner', 'printed copy', now())");
+        var unnamed = async () => await Execute(connection,
+            "INSERT INTO vault.vault_root_key_verifications (id, fingerprint, verified_by, verified_at_utc) VALUES (gen_random_uuid(), 'f', 'owner', now())");
+        await unnamed.Should().ThrowAsync<Npgsql.PostgresException>("a check says how the owner made it");
+
+        var ordinal = Ordinals[Array.IndexOf(Migrations, "032-root-key-checks") - 1];
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: ordinal, CancellationToken.None));
+        (await Scalar(connection, "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'vault' " +
+                                  "AND table_name = 'vault_root_key_verifications'")).Should().Be(0L);
+        (await Scalar(connection, "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'vault'")).Should().Be(4L,
+            "the vault's own tables stay");
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("032-root-key-checks"));
     }
 
     /// <summary>The SQL that stores one vitals reading of a target slug, or of its server's host for <c>NULL</c>.</summary>

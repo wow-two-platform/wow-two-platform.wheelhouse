@@ -3,6 +3,8 @@
     <EnvironmentVariables>
       <ASPNETCORE_ENVIRONMENT>Development</ASPNETCORE_ENVIRONMENT>
       <DOTNET_ENVIRONMENT>Development</DOTNET_ENVIRONMENT>
+      <!-- E2E runs the root key file check itself (RootKeyChecksE2ETests); the scheduled one stays off. -->
+      <Vault__KeyCheckMinutes>0</Vault__KeyCheckMinutes>
     </EnvironmentVariables>
   </RunConfiguration>
 </RunSettings>

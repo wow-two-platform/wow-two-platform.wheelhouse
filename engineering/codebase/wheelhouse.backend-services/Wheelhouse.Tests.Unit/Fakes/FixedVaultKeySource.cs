@@ -10,6 +10,11 @@ public sealed class FixedVaultKeySource(byte[]? key) : IVaultKeySource
     public int Version { get; set; }
     public string Location => "/fixed/root.key";
 
+    /// <summary>What the file check finds while a key is present: null passes.</summary>
+    public string? FileProblem { get; set; }
+
+    public string? CheckFile() => Key is null ? VaultKeyRead.Missing : FileProblem;
+
     public VaultKeyRead Read() => Key is null
         ? new VaultKeyRead(null, Problem ?? VaultKeyRead.Missing, "")
         : new VaultKeyRead((byte[])Key.Clone(), null, "v" + Version);

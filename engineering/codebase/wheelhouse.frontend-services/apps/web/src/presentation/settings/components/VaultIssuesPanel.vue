@@ -1,23 +1,29 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
-import { KeyRound, LockKeyhole } from "lucide-vue-next";
+import { FileKey, KeyRound, LockKeyhole } from "lucide-vue-next";
 import { Badge } from "@wow-two-beta/fe/presentation/display";
 import { useBuiltInVaultIssues } from "@/application/settings";
 import { ConsolePaths } from "@/application/navigation";
-import { EnvironmentSettingsRules } from "@/domain/settings";
+import { EnvironmentSettingsRules, RootKeyRules } from "@/domain/settings";
 import { Panel } from "@/presentation/common/components";
 
 /**
  * What the built-in vault needs the owner for, beside the deployment issues: a sealed vault that holds secrets (deploys
- * that need them wait), and each secret lapsing within 30 or 7 days or lapsed. Shown only while there is something.
+ * that need them wait), the offline root key copy due a check, a failed check of the root key file, and each secret
+ * lapsing within 30 or 7 days or lapsed. Shown only while there is something.
  */
 defineOptions({ name: "VaultIssuesPanel" });
 defineSlots<{}>();
 const issues = useBuiltInVaultIssues();
 const sealed = computed(() => issues.data.value?.state === "sealed" && issues.data.value.reason !== null);
 const expiries = computed(() => issues.data.value?.expiries ?? []);
-const total = computed(() => expiries.value.length + (sealed.value ? 1 : 0));
+const offlineCopy = computed(() => issues.data.value?.offlineCopy ?? null);
+const keyFile = computed(() => issues.data.value?.keyFile ?? null);
+const total = computed(
+  () => expiries.value.length + (sealed.value ? 1 : 0) + (offlineCopy.value ? 1 : 0) + (keyFile.value?.problem ? 1 : 0),
+);
+const date = (iso: string) => new Date(iso).toLocaleDateString();
 const reasonText: Record<string, string> = {
   missing: "its root key file is missing",
   invalid: "its root key file holds no base64 256-bit key",
@@ -34,6 +40,20 @@ const reasonText: Record<string, string> = {
           <span class="font-medium">The vault is sealed:</span>
           {{ reasonText[issues.data.value?.reason ?? "missing"] ?? "its root key cannot be read" }}. Deploys that need
           secrets wait until it is back.
+        </p>
+      </li>
+      <li v-if="keyFile?.problem" class="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
+        <FileKey :size="18" class="mt-0.5 text-destructive" aria-hidden="true" />
+        <p class="min-w-0 text-sm">
+          <span class="font-medium">The root key file check failed</span> {{ new Date(keyFile.at).toLocaleString() }}:
+          {{ RootKeyRules.problemText(keyFile.problem) }}.
+        </p>
+      </li>
+      <li v-if="offlineCopy" class="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
+        <KeyRound :size="18" class="mt-0.5 text-warning" aria-hidden="true" />
+        <p class="min-w-0 text-sm">
+          <RouterLink :to="ConsolePaths.secrets" class="font-medium hover:text-primary">Check your offline root key copy</RouterLink>:
+          {{ RootKeyRules.offlineCopyText(offlineCopy, date) }}
         </p>
       </li>
       <li v-for="item in expiries" :key="`${item.product}/${item.environment}/${item.key}`" class="flex items-start gap-3 py-3 first:pt-0 last:pb-0">

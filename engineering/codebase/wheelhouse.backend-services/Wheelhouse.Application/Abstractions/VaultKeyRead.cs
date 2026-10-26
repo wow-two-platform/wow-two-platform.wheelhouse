@@ -13,6 +13,12 @@ public sealed record VaultKeyRead(byte[]? Key, string? Problem, string Stamp)
     /// <summary>The problem code of a key file that holds no base64 256-bit key.</summary>
     public const string Invalid = "invalid";
 
+    /// <summary>The problem code of a key file the console's user may not read.</summary>
+    public const string Unreadable = "unreadable";
+
+    /// <summary>The problem code of a key file whose mode lets its group or others in.</summary>
+    public const string Exposed = "exposed";
+
     /// <summary>Returns the read without its key, so logs cannot print one.</summary>
     public override string ToString() => nameof(VaultKeyRead) + " { " + (Problem ?? "present") + " }";
 }

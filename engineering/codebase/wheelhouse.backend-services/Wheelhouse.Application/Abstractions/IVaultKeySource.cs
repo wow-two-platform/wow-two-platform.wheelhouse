@@ -10,4 +10,9 @@ public interface IVaultKeySource
     /// <summary>Reads the root key now. A missing or malformed file leaves the vault sealed, with the reason.</summary>
     /// <returns>The key, or why there is none.</returns>
     VaultKeyRead Read();
+
+    /// <summary>Checks the file without reading the key: present, readable by the console, and closed to everyone but its
+    /// owner — which, since the console reads it, is the console's own user.</summary>
+    /// <returns><c>missing</c>, <c>unreadable</c> or <c>exposed</c>; null when the file passes.</returns>
+    string? CheckFile();
 }

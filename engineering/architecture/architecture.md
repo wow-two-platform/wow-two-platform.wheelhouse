@@ -792,6 +792,12 @@ secrets only from the deploy-time render; an edit applies by rendering again and
   own, made on the vault's first write), seals the vault: metadata reads; values neither save nor render; deploys
   that need them wait; the console and Issues say why. The file is read at each use, so placing it unseals without a
   restart, and removing it seals.
+- **Root key checks** (decision 67). A periodic job (`Vault:KeyCheckMinutes`, 60) finds the key file present, readable
+  by the console's user alone and opening the canary; a failure is an issue until a check passes. The status shows the
+  key in use's fingerprint — SHA-256 over `wheelhouse.vault.root-key.v1`, a zero byte and the key, first 20 hex digits —
+  which the owner compares with their offline copy's ([deployment](../deployment/deployment.md#checking-the-root-key))
+  and marks verified with a reason, audited. A mark counts `Vault:OfflineCopyDays` (90) and only while the key keeps
+  that fingerprint; once something is encrypted under the key, Issues remind when none counts.
 - **Versions.** Every change to a secret is a new version: who, when, an optional note, its origin (a restore, an
   import) and a keyed fingerprint (an HMAC under a key derived from the product's data key: equal values show equal
   fingerprints, a guess cannot be tested). A restore writes an earlier value as a new version. Removing a secret stops
@@ -800,8 +806,9 @@ secrets only from the deploy-time render; an edit applies by rendering again and
   ones. A new value keeps the expiry unless the save names one.
 - **Write-only.** No endpoint returns a value: the console sees key names, versions, fingerprints and expiry. Values
   leave the module only for a render, to the runner's stdin. Nothing logs a value, a key or a fingerprint.
-- **Surface.** `GET /api/vault` (state, key file path, counts), `GET /api/vault/issues`, `POST /api/vault/verify`
-  (decrypts everything: the restore proof), `POST /api/vault/import { vault }`, and per target
+- **Surface.** `GET /api/vault` (state, key file path, counts, root key checks), `GET /api/vault/issues`,
+  `POST /api/vault/verify` (decrypts everything: the restore proof), `POST /api/vault/offline-copy { fingerprint,
+  reason }`, `POST /api/vault/import { vault }`, and per target
   `GET …/secrets/{key}/versions`, `POST …/secrets/{key}/restore`, `PUT …/secrets/{key}/expiry`. Owner session only:
   integration keys get 403, and MCP never reaches the module.
 - **Command line.** In the console's container: `dotnet Wheelhouse.Api.dll vault status | verify | import --from-vault

@@ -126,6 +126,7 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddScoped<IVitalsHistory, EfVitalsHistory>();
         // The built-in Secrets Vault's tables (schema vault), the keys owners add, renders and scheduled applies.
         builder.Services.AddScoped<ISecretsVaultStore, SecretsVaultStore>();
+        builder.Services.AddScoped<IVaultRootKeyVerifications, VaultRootKeyVerificationsRepository>();
         builder.Services.AddScoped<IProductSettingKeysRepository, ProductSettingKeysRepository>();
         builder.Services.AddScoped<IDeploymentRenders, DeploymentRendersRepository>();
         builder.Services.AddScoped<ISettingsApplies, SettingsAppliesRepository>();
@@ -197,6 +198,8 @@ public static partial class HostConfigurationExtensions
                 : Path.Combine(deployment.Root, "vault", "root.key"));
         });
         builder.Services.AddSettingsApplyJob();
+        // The root key file's scheduled check (Vault:KeyCheckMinutes), its last result kept for the status and Issues.
+        builder.Services.AddVaultKeyCheckJob();
 
         // GitHub access, per call: the GitHub App's installation token for the owner the call addresses, else the
         // Deployment:GitHubTokenFile token (by default <root>/github-token/token), else the signed-in admin's OAuth token
@@ -265,6 +268,8 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddSingleton<Wheelhouse.Application.SecretsVault.Services.SecretsVaultCrypto>();
         builder.Services.AddScoped<Wheelhouse.Application.SecretsVault.Services.SecretsVaultService>();
         builder.Services.AddScoped<Wheelhouse.Application.SecretsVault.Services.SecretsVaultImporter>();
+        builder.Services.AddSingleton<Wheelhouse.Application.SecretsVault.Services.RootKeyFileMonitor>();
+        builder.Services.AddScoped<Wheelhouse.Application.SecretsVault.Services.RootKeyChecks>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Settings.Services.BuiltInEnvironmentSecrets>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Settings.Services.ExternalEnvironmentSecrets>();
         // Deploys take secrets from the built-in vault; Vault:Mode external falls back to the standalone vaults for the
@@ -327,16 +332,19 @@ public static partial class HostConfigurationExtensions
     }
 
     /// <summary>Binds the built-in Secrets Vault's settings from <c>Vault</c> when first resolved: <c>Mode</c>
-    /// <c>builtin</c> or <c>external</c>, and the root key file, resolved against the content root.</summary>
+    /// <c>builtin</c> or <c>external</c>, the root key file, resolved against the content root, and how many days a check
+    /// of the owner's offline copy counts.</summary>
     private static WebApplicationBuilder AddSecretsVaultSettings(this WebApplicationBuilder builder)
     {
         var configuration = builder.Configuration;
         builder.Services.AddValidatedOptions<Wheelhouse.Application.SecretsVault.SecretsVaultSettings>(
             settings => configuration.GetSection("Vault").Bind(settings),
-            options => options.Validate(
-                settings => settings.Mode is Wheelhouse.Application.SecretsVault.Constants.SecretsVaultModes.BuiltIn
-                    or Wheelhouse.Application.SecretsVault.Constants.SecretsVaultModes.External,
-                "Vault:Mode must be 'builtin' or 'external'."));
+            options => options
+                .Validate(
+                    settings => settings.Mode is Wheelhouse.Application.SecretsVault.Constants.SecretsVaultModes.BuiltIn
+                        or Wheelhouse.Application.SecretsVault.Constants.SecretsVaultModes.External,
+                    "Vault:Mode must be 'builtin' or 'external'.")
+                .Validate(settings => settings.OfflineCopyDays is >= 1 and <= 3650, "Vault:OfflineCopyDays must be 1–3650."));
         builder.Services.AddOptions<Wheelhouse.Application.SecretsVault.SecretsVaultSettings>().PostConfigure<IHostEnvironment>(
             (settings, environment) =>
             {

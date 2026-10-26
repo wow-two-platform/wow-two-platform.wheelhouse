@@ -103,8 +103,14 @@ export function useBuiltInVaultIssues() {
   });
 }
 
-/** The full decryption check and the import from a standalone vault. */
+/** The full decryption check, marking the offline root key copy verified, and the import from a standalone vault. */
 export function useVaultOperations() {
+  const offlineCopy = useAppMutation({
+    mutationFn: ({ fingerprint, reason }: { fingerprint: string; reason: string }, { signal }) =>
+      vaultApi.verifyOfflineCopy(fingerprint, reason, signal),
+    invalidates: () => [SettingsKeys.vault],
+    meta: { suppressGlobalError: true },
+  });
   const verify = useAppMutation({
     mutationFn: (_: void, { signal }) => vaultApi.verify(signal),
     invalidates: () => [SettingsKeys.vault],
@@ -115,5 +121,5 @@ export function useVaultOperations() {
     invalidates: () => [SettingsKeys.vault, ["deployments", "settings"]],
     meta: { suppressGlobalError: true },
   });
-  return { verify, importFrom };
+  return { verify, importFrom, offlineCopy };
 }

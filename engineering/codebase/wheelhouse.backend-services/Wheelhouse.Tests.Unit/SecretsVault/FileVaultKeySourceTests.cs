@@ -5,7 +5,8 @@ using Wheelhouse.Infrastructure.SecretsVault;
 namespace Wheelhouse.Tests.Unit.SecretsVault;
 
 /// <summary>Tests for <see cref="FileVaultKeySource"/>: a base64 256-bit key file reads as the key (a fresh copy each
-/// time); a missing, empty or malformed file reads as why the vault is sealed; a changed file changes the stamp.</summary>
+/// time); a missing, empty or malformed file reads as why the vault is sealed; a changed file changes the stamp; the file
+/// check passes a file closed to all but its owner and names a missing, unreadable or exposed one.</summary>
 public sealed class FileVaultKeySourceTests : IDisposable
 {
     private readonly string _folder = Directory.CreateTempSubdirectory("wheelhouse-key-").FullName;
@@ -37,6 +38,31 @@ public sealed class FileVaultKeySourceTests : IDisposable
             System.IO.File.WriteAllText(File, content);
             source.Read().Problem.Should().Be(VaultKeyRead.Invalid, content);
         }
+    }
+
+    [Fact]
+    public void TheFileCheck_ShouldPassAnOwnerOnlyFile_AndNameAMissingUnreadableOrExposedOne()
+    {
+        var source = new FileVaultKeySource(File);
+        source.CheckFile().Should().Be(VaultKeyRead.Missing);
+        System.IO.File.WriteAllText(File, Convert.ToBase64String(new byte[32]));
+        if (OperatingSystem.IsWindows())
+            return;
+        foreach (var mode in new[] { UnixFileMode.UserRead, UnixFileMode.UserRead | UnixFileMode.UserWrite })
+        {
+            System.IO.File.SetUnixFileMode(File, mode);
+            source.CheckFile().Should().BeNull(mode.ToString());
+        }
+        foreach (var mode in new[] { UnixFileMode.UserRead | UnixFileMode.GroupRead, UnixFileMode.UserRead | UnixFileMode.OtherRead,
+                     UnixFileMode.UserRead | UnixFileMode.OtherWrite })
+        {
+            System.IO.File.SetUnixFileMode(File, mode);
+            source.CheckFile().Should().Be(VaultKeyRead.Exposed, mode.ToString());
+        }
+        System.IO.File.SetUnixFileMode(File, UnixFileMode.None);
+        if (Environment.UserName != "root")
+            source.CheckFile().Should().Be(VaultKeyRead.Unreadable, "the console's user may not open it");
+        System.IO.File.SetUnixFileMode(File, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 
     [Fact]

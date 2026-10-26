@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Wheelhouse.Api.Auth;
 using Wheelhouse.Api.Requests;
+using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.SecretsVault.Commands;
 using Wheelhouse.Application.SecretsVault.Models;
 using Wheelhouse.Application.SecretsVault.Queries;
@@ -13,14 +14,14 @@ using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
 
 namespace Wheelhouse.Api.Controllers;
 
-/// <summary>Exposes the built-in Secrets Vault: its state, its issues, the full decryption check and the import from a
-/// standalone vault. Signed-in owner only — an integration key gets 403 and MCP never reaches it. No response carries a
-/// value or a key.</summary>
+/// <summary>Exposes the built-in Secrets Vault: its state, its issues, the full decryption check, the owner's offline root
+/// key copy check and the import from a standalone vault. Signed-in owner only — an integration key gets 403 and MCP
+/// never reaches it. No response carries a value or a key.</summary>
 [ApiController]
 [Route("api/vault")]
 [Authorize(Policy = AuthConfigurationExtensions.OwnerSessionPolicy)]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class SecretsVaultController(ISender sender) : ControllerBase
+public sealed class SecretsVaultController(ISender sender, IActorContext actor) : ControllerBase
 {
     /// <summary>Gets the vault's state: sealed or not and why, the root key file's path, and what it holds.</summary>
     [HttpGet]
@@ -40,6 +41,16 @@ public sealed class SecretsVaultController(ISender sender) : ControllerBase
     [ProducesResponseType<ApiResponse<VaultVerificationDto>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Verify(CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new VaultVerifyCommand(), ct));
+
+    /// <summary>Marks the owner's offline copy of the root key verified: they printed its fingerprint on their own machine
+    /// and it matched the one the status shows. Refused while sealed, and when the key in use changed since; audited
+    /// with the reason.</summary>
+    [HttpPost("offline-copy")]
+    [RequireActionHeader("vault")]
+    [ProducesResponseType<ApiResponse<RootKeyOfflineCopyDto>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> VerifyOfflineCopy(RootKeyOfflineCopyRequest request, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(
+            new RootKeyOfflineCopyVerifyCommand(request.Fingerprint ?? "", request.Reason ?? "", actor.Actor), ct));
 
     /// <summary>Imports an inventory vault's current values over its management API: each namespace named after a product
     /// environment, re-encrypted under the product's key and verified; counts only.</summary>

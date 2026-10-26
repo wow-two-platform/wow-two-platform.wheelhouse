@@ -619,8 +619,9 @@ every settings file and the target's lock state; each failure names the rule or 
 | `GET /api/deployments/targets/{target}/secrets/{key}/versions` | A secret's versions: who, when, fingerprint, note; never a value |
 | `POST …/secrets/{key}/restore` · `PUT …/secrets/{key}/expiry` | Restores a version as the newest; sets or clears the expiry |
 | `PUT`/`DELETE /api/products/{product}/setting-keys/{key}` | Adds or removes a typed key the owner declares for every environment |
-| `GET /api/vault` · `GET /api/vault/issues` | The built-in vault's state, key file path and counts; sealed and expiring secrets |
+| `GET /api/vault` · `GET /api/vault/issues` | The built-in vault's state, key file path and counts, the root key's fingerprint and checks; sealed and expiring secrets, a due offline copy check, a failed key file check |
 | `POST /api/vault/verify` · `POST /api/vault/import` | Decrypts everything (counts only); imports a listed standalone vault over its API |
+| `POST /api/vault/offline-copy` | Marks the owner's offline root key copy verified against the key in use's fingerprint, with a reason; owner only |
 
 - A lost SSH response is an unknown outcome; inspect target state before retrying.
 - Cookie-authenticated cross-origin writes cannot supply the custom header without an allowed CORS preflight.
@@ -760,6 +761,26 @@ chown 1654:1654 "$volume/vault/root.key" && chmod 0400 "$volume/vault/root.key"
   `mismatch` and stays sealed.
 - Check it: Secrets → Built-in vault → *Check every secret decrypts*, or
   `docker exec <console> dotnet Wheelhouse.Api.dll vault status`.
+
+### Checking the root key
+
+The console checks the key file at start and every `Vault:KeyCheckMinutes` (60): present, readable by the console's user
+only (mode `0400` or `0600`, its owner the console's user), and opening the canary. A failure shows under Secrets and in
+Deployments › Issues until a check passes.
+
+The offline copy is checked by the owner, every `Vault:OfflineCopyDays` (90) and after any change of key. Issues remind
+once something is encrypted under the key. The key never goes into a page, a command argument or a message:
+
+1. Secrets → Built-in vault shows the key in use's fingerprint (20 hex digits in groups of four).
+2. On the machine that holds the copy, print the copy's fingerprint. The key comes from stdin; without the redirect, a
+   hidden prompt reads it:
+
+```sh
+python3 -c 'import sys,base64,hashlib,getpass;t=getpass.getpass("Root key: ") if sys.stdin.isatty() else sys.stdin.read();k=base64.b64decode(t.strip(),validate=True);assert len(k)==32,"not a 256-bit key";h=hashlib.sha256(b"wheelhouse.vault.root-key.v1\0"+k).hexdigest()[:20];print(" ".join(h[i:i+4] for i in range(0,20,4)))' < root.key
+```
+
+3. Equal: *Offline copy verified*, saying how you checked it (audited). Different: the copy is not this vault's key —
+   make the offline copy again from the control host's file before anything else.
 
 ### Importing the standalone vault
 

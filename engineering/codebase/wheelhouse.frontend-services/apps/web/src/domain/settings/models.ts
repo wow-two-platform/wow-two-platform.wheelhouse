@@ -40,6 +40,33 @@ export interface BuiltInVaultStatus {
   secrets: number;
   expiring: number;
   expired: number;
+  /** The root key in use's fingerprint and the owner's last check of their offline copy. */
+  offlineCopy: RootKeyOfflineCopy | null;
+  /** The last scheduled check of the root key file; null before the first. */
+  keyFileCheck: RootKeyFileCheck | null;
+}
+
+/** The owner's offline copy of the root key, as far as Wheelhouse knows it; never the key. */
+export interface RootKeyOfflineCopy {
+  /** The key in use's fingerprint, to compare with the copy's; null while sealed. */
+  fingerprint: string | null;
+  /** When the copy was last marked verified against this key; null when never. */
+  verifiedAt: string | null;
+  verifiedBy: string | null;
+  reason: string | null;
+  /** Whether the last verification was of another key. */
+  changed: boolean;
+  dueAt: string | null;
+  /** Whether a verification is due now. */
+  due: boolean;
+  intervalDays: number;
+}
+
+/** A scheduled check of the root key file. */
+export interface RootKeyFileCheck {
+  at: string;
+  /** `missing`, `unreadable`, `exposed`, `invalid` or `mismatch`; null when it passed. */
+  problem: string | null;
 }
 
 /** A secret lapsing soon or lapsed. */
@@ -57,6 +84,10 @@ export interface BuiltInVaultIssues {
   state: "unsealed" | "sealed";
   reason: string | null;
   expiries: VaultExpiry[];
+  /** The offline copy, while a verification of it is due. */
+  offlineCopy: RootKeyOfflineCopy | null;
+  /** The last file check, while it failed in a way the sealed state does not already say. */
+  keyFile: RootKeyFileCheck | null;
 }
 
 /** A full decryption check, in counts. */

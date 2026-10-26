@@ -10,8 +10,40 @@ namespace Wheelhouse.Infrastructure.SecretsVault;
 /// <param name="path">The file's absolute path.</param>
 public sealed class FileVaultKeySource(string path) : IVaultKeySource
 {
+    /// <summary>The mode bits that let anyone but the file's owner in.</summary>
+    private const UnixFileMode GroupOrOthers = UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
+        | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
+
     /// <inheritdoc />
     public string Location => path;
+
+    /// <inheritdoc />
+    /// <remarks>Opens the file without reading it and reads the mode off the open handle. Nothing in .NET reads a file's
+    /// owner, so the owner follows from the rest: the console opened a file only its owner may open.</remarks>
+    public string? CheckFile()
+    {
+        try
+        {
+            if (!File.Exists(path))
+                return VaultKeyRead.Missing;
+            using var handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (OperatingSystem.IsWindows())
+                return null;
+            return (File.GetUnixFileMode(handle) & GroupOrOthers) != 0 ? VaultKeyRead.Exposed : null;
+        }
+        catch (FileNotFoundException)
+        {
+            return VaultKeyRead.Missing;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return VaultKeyRead.Missing;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return VaultKeyRead.Unreadable;
+        }
+    }
 
     /// <inheritdoc />
     public VaultKeyRead Read()
