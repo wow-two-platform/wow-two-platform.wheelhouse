@@ -325,6 +325,14 @@ The snapshot carries `components`; one environment set, one placement (databases
 sites, refusing a service or site two repositories declare; placement and the environment form read it. While the repository carries a valid manifest,
 its name, description and homepage replace the row's ([product identity](#product-identity)).
 
+Nobody types a release source. The product form shows, read-only, what `GET /api/products/release-source?slug=&repository=&branch=`
+(owner session; `refresh=true` reads the branch head now) derives for a repository — what the catalog import derives:
+asset `{slug}-release.tar.gz`, workflow `publish-docker-image.yml`, one image per `deploy.yml` service at the branch head,
+or, while the descriptor cannot be read, a note and the images the product keeps. A save's `release` (and each sent
+component's) only asks for one: `{}` stores the derived values, a value sent that differs is refused (400, naming what to
+leave out), and while a descriptor cannot be read the images sent, else the ones the repository had, stay
+(`ProductReleaseDerivation`). The images then follow the descriptor ([artifacts](#artifacts-and-registry)).
+
 The deploy mode (`products.deploy`, migration `025-product-deploy-mode`) is the catalog entry's `deploy`: `wheelhouse`
 (Wheelhouse deploys it), `ci` (its own CI deploys it, as Wheelhouse itself) or `none` (nothing does). The catalog import
 sets it, the product form edits it (`deploy` on `POST`/`PUT /api/products`; omitted, a new product takes `wheelhouse`

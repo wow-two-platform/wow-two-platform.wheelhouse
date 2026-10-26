@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Wheelhouse.Application.Products.Commands;
+using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Products.Validators;
 using Wheelhouse.Application.Servers.Commands;
 using Wheelhouse.Application.Servers.Validators;
@@ -21,7 +22,7 @@ public sealed class InventoryValidatorTests
     private static readonly ProductCreateCommand Product = new()
     {
         Slug = "pilot", Name = "Pilot", Description = "A pilot product.", Repository = "owner/pilot", DefaultBranch = "main",
-        Release = new ProductReleaseValueObject
+        Release = new ProductReleaseRequest
         {
             Asset = "pilot-release.tar.gz", Workflow = "publish.yml",
             Images = [new ReleaseImageValueObject { Service = "api", Image = "ghcr.io/owner/pilot/api" }],
@@ -80,9 +81,10 @@ public sealed class InventoryValidatorTests
     }
 
     [Fact]
-    public void ProductValidate_ShouldPass_WhenThereIsNoReleaseSource()
+    public void ProductValidate_ShouldPass_WhenThereIsNoReleaseSource_OrItAsksForTheDerivedOne()
     {
         new ProductCreateCommandValidator().Validate(Product with { Release = null }).IsValid.Should().BeTrue();
+        new ProductCreateCommandValidator().Validate(Product with { Release = new ProductReleaseRequest() }).IsValid.Should().BeTrue();
     }
 
     [Theory]

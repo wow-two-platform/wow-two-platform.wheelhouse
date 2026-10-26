@@ -21,7 +21,7 @@ public sealed class InventoryE2ETests(WheelhouseAppFixture fixture) : Wheelhouse
         slug = "pilot", name = "Pilot", description = "A pilot product.", repository = "owner/pilot", defaultBranch = "main",
         release = new
         {
-            asset = "pilot-release.tar.gz", workflow = "publish.yml",
+            asset = "pilot-release.tar.gz", workflow = "publish-docker-image.yml",
             images = new[] { new { service = "api", image = "ghcr.io/owner/pilot/api" } },
         },
     };

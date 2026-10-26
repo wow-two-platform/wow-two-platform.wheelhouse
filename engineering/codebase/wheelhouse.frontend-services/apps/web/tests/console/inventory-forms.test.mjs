@@ -44,7 +44,7 @@ const product = {
   environments: [],
 };
 
-test("a product round-trips through its form, and a product without releases sends no release source", () => {
+test("a product round-trips through its form and asks the host for its release source, typing none of it", () => {
   const values = forms.productFormOf(product);
   assert.deepEqual(forms.productRequestOf(values, false), {
     name: "ForeverPin",
@@ -52,12 +52,24 @@ test("a product round-trips through its form, and a product without releases sen
     repository: "owner/forever-pin",
     defaultBranch: "main",
     deploy: "wheelhouse",
-    release: { asset: "foreverpin-release.tar.gz", workflow: null, images: [{ service: "api", image: "ghcr.io/owner/api" }] },
+    release: {},
   });
+  assert.equal("asset" in values, false, "the asset, workflow and images are read from the repository");
   assert.equal(forms.productRequestOf({ ...values, publishes: false }, true).release, null);
   assert.equal(forms.productRequestOf(values, true).slug, "foreverpin");
-  values.images[0].service = "edited";
-  assert.equal(product.release.images[0].service, "api", "the form edits a detached copy");
+  assert.equal(forms.productFormOf({ ...product, release: null }).publishes, false);
+  assert.equal(forms.productFormOf(null).publishes, true, "a new product starts deployed by Wheelhouse, so it publishes");
+});
+
+test("the release source is read only once the slug, repository and branch are well formed and the product publishes", () => {
+  const values = forms.productFormOf(product);
+  assert.deepEqual(forms.releaseSourceQueryOf(values), { slug: "foreverpin", repository: "owner/forever-pin", branch: "main" });
+  assert.deepEqual(forms.releaseSourceQueryOf({ ...values, repository: " owner/forever-pin ", defaultBranch: " dev " }),
+    { slug: "foreverpin", repository: "owner/forever-pin", branch: "dev" });
+  assert.equal(forms.releaseSourceQueryOf({ ...values, repository: "owner/" }), null);
+  assert.equal(forms.releaseSourceQueryOf({ ...values, slug: "" }), null);
+  assert.equal(forms.releaseSourceQueryOf({ ...values, defaultBranch: " " }), null);
+  assert.equal(forms.releaseSourceQueryOf({ ...values, publishes: false }), null);
 });
 
 test("what deploys a product round-trips through its form, a new one starts with Wheelhouse and an unknown mode is refused", () => {
@@ -92,13 +104,12 @@ test("a workspace form sends its slug only when new, and an emptied description 
   assert.equal(forms.workspaceFormSchema.safeParse({ slug: "labs", name: " ", description: "" }).success, false);
 });
 
-test("the product schema trims, refuses a bad slug and asks for an asset only while publishing", () => {
+test("the product schema trims and refuses a bad slug or repository", () => {
   const parsed = forms.productFormSchema.safeParse({ ...forms.productFormOf(product), name: "  ForeverPin  " });
   assert.equal(parsed.success, true);
   assert.equal(parsed.data.name, "ForeverPin");
-  const refused = forms.productFormSchema.safeParse({ ...forms.productFormOf(product), slug: "Forever Pin", asset: "" });
-  assert.deepEqual(refused.error.issues.map((issue) => issue.path.join(".")).sort(), ["asset", "slug"]);
-  assert.equal(forms.productFormSchema.safeParse({ ...forms.productFormOf(product), publishes: false, asset: "" }).success, true);
+  const refused = forms.productFormSchema.safeParse({ ...forms.productFormOf(product), slug: "Forever Pin", repository: "pin" });
+  assert.deepEqual(refused.error.issues.map((issue) => issue.path.join(".")).sort(), ["repository", "slug"]);
 });
 
 test("host error paths land on the flat product and server fields", () => {

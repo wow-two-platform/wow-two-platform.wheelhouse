@@ -77,6 +77,27 @@ export interface ProductRelease {
   images: ReleaseImage[];
 }
 
+/**
+ * Asks the host for a repository's release source: the host derives the asset, the build workflow and the images from
+ * the repository, so the console sends none (`{}`); a value sent must be the derived one.
+ */
+export type ReleaseSourceRequest = Partial<ProductRelease>;
+
+/**
+ * The release source the host derives from a repository, as a save stores it: the shared publish workflow's asset and
+ * build workflow, and one image per service of the repository's `deploy.yml` at the branch head.
+ */
+export interface ProductReleaseSource extends ProductRelease {
+  /** `owner/name`. */
+  repository: string;
+  /** The branch whose head was read. */
+  branch: string;
+  /** False while `deploy.yml` cannot be read or used; a save then keeps the images the product has. */
+  fromDescriptor: boolean;
+  /** Why the images are missing or what else needs a look; null when nothing does. */
+  note: string | null;
+}
+
 /** Where a product's name, description and homepage come from. */
 export const ProductIdentitySource = {
   /** The cached copy of `product/product.json` in the product's repository; edited there. */
@@ -141,7 +162,8 @@ export interface SaveProductRequest {
   description: string;
   repository: string;
   defaultBranch: string;
-  release: ProductRelease | null;
+  /** Whether the repository publishes releases; the host derives the release source, so the console sends `{}`. */
+  release: ReleaseSourceRequest | null;
   /** What deploys the product; the host starts a new one with Wheelhouse and keeps an existing one's when absent. */
   deploy?: ProductDeploy;
 }

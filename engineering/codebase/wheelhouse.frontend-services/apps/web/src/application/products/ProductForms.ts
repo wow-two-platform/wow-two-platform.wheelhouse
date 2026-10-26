@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { defaultMapFieldPath } from "@wow-two-beta/fe/forms-engine";
 import { InventoryRules } from "@/domain/common";
-import { ProductDeploy, ProductStatus, type Product, type ReleaseImage, type SaveProductRequest } from "@/domain/products";
+import { ProductDeploy, ProductStatus, type Product, type SaveProductRequest } from "@/domain/products";
+import type { ReleaseSourceQuery } from "@/integration/products";
 
 /**
- * Represents a product's editable fields, flat; the release source applies only while the product publishes. The
- * workspace and the status save through their own requests once the product itself is saved.
+ * Represents a product's editable fields, flat. Whether it publishes releases is the only release choice: the host
+ * derives the asset, the build workflow and the images from the repository. The workspace and the status save through
+ * their own requests once the product itself is saved.
  */
 export interface ProductFormModel {
   slug: string;
@@ -19,9 +21,6 @@ export interface ProductFormModel {
   repository: string;
   defaultBranch: string;
   publishes: boolean;
-  asset: string;
-  workflow: string;
-  images: ReleaseImage[];
 }
 
 /** Validates what the form can judge alone; the host checks the rest and names the field it refuses. */
@@ -36,16 +35,10 @@ export const productFormSchema = z
     repository: z.string().trim().regex(InventoryRules.repository, "Use owner/name."),
     defaultBranch: z.string().trim().min(1, "Enter the default branch."),
     publishes: z.boolean(),
-    asset: z.string().trim(),
-    workflow: z.string().trim(),
-    images: z.array(z.object({ service: z.string().trim(), image: z.string().trim() })),
-  })
-  .superRefine((values, context) => {
-    if (values.publishes && !values.asset)
-      context.addIssue({ code: "custom", path: ["asset"], message: "Enter the release asset." });
   });
 
-/** Creates detached editing state from a product, or blank for a new one in the given workspace. */
+/** Creates detached editing state from a product, or blank for a new one in the given workspace; a new product starts
+ * deployed by Wheelhouse, so it publishes releases. */
 export function productFormOf(product: Product | null, workspaceId: string | null = null): ProductFormModel {
   return {
     slug: product?.slug ?? "",
@@ -56,11 +49,22 @@ export function productFormOf(product: Product | null, workspaceId: string | nul
     description: product?.description ?? "",
     repository: product?.repository.name ?? "",
     defaultBranch: product?.repository.defaultBranch ?? "main",
-    publishes: product?.release != null,
-    asset: product?.release?.asset ?? "",
-    workflow: product?.release?.workflow ?? "",
-    images: product?.release?.images.map((image) => ({ ...image })) ?? [],
+    publishes: product ? product.release != null : true,
   };
+}
+
+/**
+ * What the host derives the release source from while the form publishes: the slug the asset is named after, the
+ * repository and its branch. Null until all three are well formed, so nothing is read for a half-typed repository.
+ */
+export function releaseSourceQueryOf(
+  values: Pick<ProductFormModel, "slug" | "repository" | "defaultBranch" | "publishes">,
+): ReleaseSourceQuery | null {
+  const slug = values.slug.trim();
+  const repository = values.repository.trim();
+  const branch = values.defaultBranch.trim();
+  if (!values.publishes || !InventoryRules.slug.test(slug) || !InventoryRules.repository.test(repository) || !branch) return null;
+  return { slug, repository, branch };
 }
 
 /** The request a submitted form sends; the slug and the workspace go only with a new product. */
@@ -73,9 +77,8 @@ export function productRequestOf(values: ProductFormModel, isNew: boolean): Save
     repository: values.repository,
     defaultBranch: values.defaultBranch,
     deploy: values.deploy,
-    release: values.publishes
-      ? { asset: values.asset, workflow: values.workflow || null, images: values.images }
-      : null,
+    // Nothing typed: the host derives the release source from the repository and stores it.
+    release: values.publishes ? {} : null,
   };
 }
 

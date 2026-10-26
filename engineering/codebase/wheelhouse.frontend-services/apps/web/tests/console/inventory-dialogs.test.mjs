@@ -129,7 +129,7 @@ test("New product opens empty right after editing a product", async () => {
   assert.equal(created.slug, "");
   assert.equal(created.name, "");
   assert.equal(created.repository, "");
-  assert.equal(created.asset, "");
+  assert.equal(created.publishes, true, "a new product starts publishing; its release source is read, not typed");
 });
 
 test("Add environment opens as a new dev environment right after editing one", async () => {

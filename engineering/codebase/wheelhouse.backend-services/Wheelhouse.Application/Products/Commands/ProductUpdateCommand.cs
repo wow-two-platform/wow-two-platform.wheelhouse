@@ -26,8 +26,9 @@ public sealed record ProductUpdateCommand : ICommand<AppResult<ProductDto>>, IAu
     /// <summary>Gets the branch releases come from.</summary>
     public required string DefaultBranch { get; init; }
 
-    /// <summary>Gets where published releases and commit builds come from, or <c>null</c> for none.</summary>
-    public ProductReleaseValueObject? Release { get; init; }
+    /// <summary>Gets whether the primary repository publishes releases, or <c>null</c> for none: Wheelhouse derives its
+    /// release source from the repository, and a value sent must be the derived one.</summary>
+    public ProductReleaseRequest? Release { get; init; }
 
     /// <summary>Gets the product's further repositories after its primary one, each with its own release source
     /// (decision 70); <c>null</c> to keep them as they are.</summary>

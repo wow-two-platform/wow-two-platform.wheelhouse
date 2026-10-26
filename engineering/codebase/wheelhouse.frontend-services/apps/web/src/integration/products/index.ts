@@ -5,6 +5,7 @@ import {
   ProductStatus,
   type Product,
   type ProductDescriptor,
+  type ProductReleaseSource,
   type SaveProductRequest,
 } from "@/domain/products";
 import { requestAccepted, requestData, requestEmpty } from "@/integration/common";
@@ -85,6 +86,23 @@ export const ProductDescriptorSchema = z.object({
     .default([]),
 });
 
+/** The release source the host derives from a repository for the product form. */
+export const ProductReleaseSourceSchema = ReleaseSourceSchema.extend({
+  repository: z.string(),
+  branch: z.string(),
+  fromDescriptor: z.boolean(),
+  note: z.string().nullable(),
+});
+
+/** What the product form asks the host to derive a release source for. */
+export interface ReleaseSourceQuery {
+  slug: string;
+  repository: string;
+  branch: string;
+  /** Asks GitHub for the branch head now rather than take one read a few minutes ago. */
+  refresh?: boolean;
+}
+
 /** A product's address segment: the routes take its identifier or its slug. @internal */
 const productPath = (product: string) => `/api/products/${encodeURIComponent(product)}`;
 
@@ -113,6 +131,18 @@ export const productsApi = {
   /** What the product's deploy.yml declares at its branch head: services, their needs and sites. */
   getDescriptor: (product: string, signal?: AbortSignal) =>
     requestData<ProductDescriptor>(`${productPath(product)}/descriptor`, ProductDescriptorSchema, { signal }),
+  /** The release source the repository gives, as a save would store it; nothing in it is typed. */
+  getReleaseSource: (query: ReleaseSourceQuery, signal?: AbortSignal) =>
+    requestData<ProductReleaseSource>(
+      `/api/products/release-source?${new URLSearchParams({
+        slug: query.slug,
+        repository: query.repository,
+        branch: query.branch,
+        ...(query.refresh ? { refresh: "true" } : {}),
+      })}`,
+      ProductReleaseSourceSchema,
+      { signal },
+    ),
   /** Marks a product active or inactive. */
   updateStatus: (product: string, status: ProductStatus, signal?: AbortSignal) =>
     requestAccepted(`${productPath(product)}/status`, {

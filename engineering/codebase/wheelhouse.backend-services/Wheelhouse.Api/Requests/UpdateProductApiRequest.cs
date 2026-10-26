@@ -1,3 +1,4 @@
+using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Domain.Products.Enums;
 using Wheelhouse.Domain.Products.Models;
 
@@ -18,8 +19,9 @@ public sealed record UpdateProductApiRequest
     /// <summary>Gets the branch releases come from.</summary>
     public string DefaultBranch { get; init; } = "main";
 
-    /// <summary>Gets where published releases and commit builds come from, or <c>null</c> for none.</summary>
-    public ProductReleaseValueObject? Release { get; init; }
+    /// <summary>Gets whether the repository publishes releases — <c>{}</c> derives the asset, the build workflow and the
+    /// images from the repository; each value sent must be the derived one — or <c>null</c> for none.</summary>
+    public ProductReleaseRequest? Release { get; init; }
 
     /// <summary>Gets the product's further repositories after its primary one, each with its own release source
     /// (decision 70); <c>null</c> to keep them.</summary>

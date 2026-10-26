@@ -48,14 +48,17 @@ import {
   productFormOf,
   productFormSchema,
   productRequestOf,
+  releaseSourceQueryOf,
 } from "@/application/products/ProductForms";
 import { identityNoteOf, isIdentityReadOnly, ProductDeploy, ProductDeployLabels } from "@/domain/products";
 import { failureReason } from "@/integration/common";
-import { DeleteConfirm, RowsField } from "@/presentation/common/components";
+import { DeleteConfirm } from "@/presentation/common/components";
 import ProductDeployControls from "@/presentation/deployments/components/automation/ProductDeployControls.vue";
+import ReleaseSourceFields from "./ReleaseSourceFields.vue";
 
 /**
- * Edits a product's identity, workspace, status and release source, and removes a product nothing runs any more. The
+ * Edits a product's identity, workspace, status and whether it publishes releases — the release source itself is read
+ * from the repository, never typed — and removes a product nothing runs any more. The
  * workspace and the status save through their own requests once the product is saved; a refusal there shows as a
  * toast and the saved product stays.
  */
@@ -94,6 +97,15 @@ useFormDialogSession(form, {
   initialValues: () => productFormOf(props.product, props.defaultWorkspaceId),
   onOpen: () => (removeError.value = ""),
 });
+
+/** What the host reads the release source from: the slug, repository and branch the form holds now. */
+const releaseSourceQuery = computed(() => releaseSourceQueryOf(form.state.values));
+
+/** Wheelhouse deploys only what a repository publishes, so choosing it turns publishing on. */
+function chooseDeploy(setValue: (value: ProductDeploy) => void, mode: ProductDeploy): void {
+  setValue(mode);
+  if (mode === ProductDeploy.Wheelhouse) form.setValue("publishes", true);
+}
 
 /** Removes the product once the host accepts it; a product an environment still runs stays. */
 async function remove(): Promise<void> {
@@ -173,7 +185,7 @@ async function remove(): Promise<void> {
             <Field label="Deployed by">
               <SelectPicker
                 :model-value="field.value"
-                @update:model-value="(value: unknown) => field.setValue(value as ProductDeploy)"
+                @update:model-value="(value: unknown) => chooseDeploy(field.setValue, value as ProductDeploy)"
                 ><SelectPickerTrigger aria-label="Deployed by"><SelectPickerValue /></SelectPickerTrigger
                 ><SelectPickerContent
                   ><SelectPickerItem
@@ -190,31 +202,8 @@ async function remove(): Promise<void> {
           <form.Field name="publishes" v-slot="field">
             <SwitchField v-model="field.value" label="Publishes releases" />
           </form.Field>
-          <template v-if="form.state.values.publishes">
-            <div class="grid gap-4 sm:grid-cols-2">
-              <form.Field name="asset" is-required v-slot="field">
-                <Field label="Release asset">
-                  <TextInput v-model="field.value" autocomplete="off" placeholder="product-release.tar.gz" @blur="field.onBlur" />
-                </Field>
-              </form.Field>
-              <form.Field name="workflow" v-slot="field">
-                <Field label="Build workflow">
-                  <TextInput v-model="field.value" autocomplete="off" placeholder="publish-docker-image.yml" @blur="field.onBlur" />
-                </Field>
-              </form.Field>
-            </div>
-            <RowsField
-              :form="form"
-              name="images"
-              label="Images"
-              add-label="Add service"
-              :blank="{ service: '', image: '' }"
-              :columns="[
-                { key: 'service', label: 'Service', placeholder: 'api' },
-                { key: 'image', label: 'Image', placeholder: 'ghcr.io/owner/product/api' },
-              ]"
-            />
-          </template>
+          <!-- The host derives the asset, the build workflow and the images from the repository, so nothing is typed. -->
+          <ReleaseSourceFields v-if="form.state.values.publishes" :query="releaseSourceQuery" />
           <!-- Saved on their own as they are switched, apart from the form. -->
           <ProductDeployControls v-if="product" :product="product.slug" />
           <Alert

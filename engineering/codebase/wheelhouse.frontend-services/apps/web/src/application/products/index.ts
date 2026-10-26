@@ -7,6 +7,7 @@ import { AutomationKeys } from "@/application/deployments/hooks/useDeploymentAut
 
 export { useProductIcon, type ProductIconSource } from "./useProductIcon";
 export { IconAvailability } from "./IconAvailability";
+export { ReleaseSourceKeys, useProductReleaseSource } from "./useProductReleaseSource";
 
 /** Query keys for products; inventory writes invalidate through these, and the list's key prefixes every other. */
 export const ProductKeys = {

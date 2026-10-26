@@ -46,6 +46,20 @@ public sealed class ProductsController(ISender sender) : ControllerBase
     public async Task<IActionResult> GetDescriptor([RegularExpression(Slug)] string slug, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new ProductDescriptorQuery(slug), ct));
 
+    /// <summary>Derives the release source a save of a product with this repository stores: the shared publish workflow's
+    /// asset and build workflow, and one image per service of the repository's <c>deploy.yml</c> at the branch head, so
+    /// the product form shows them and nobody types them. A repository GitHub cannot serve answers with its note. The
+    /// owner's session only.</summary>
+    [HttpGet("release-source")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    [ProducesResponseType<ApiResponse<ProductReleaseSourceDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetReleaseSource([FromQuery] ProductReleaseSourceApiRequest request, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new ProductReleaseSourceQuery
+        {
+            Slug = request.Slug, Repository = request.Repository, Branch = request.Branch, Refresh = request.Refresh,
+        }, ct));
+
     /// <summary>Gets the icon a product's repository carries for a theme, form and color, falling back along the icon
     /// convention; not found when no file resolves, so the caller shows its monogram.</summary>
     [HttpGet("{slug}/icon")]
