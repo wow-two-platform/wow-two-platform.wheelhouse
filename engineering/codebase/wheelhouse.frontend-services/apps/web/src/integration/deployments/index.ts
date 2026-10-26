@@ -11,7 +11,7 @@ import type {
   TargetCheck,
   TargetState,
 } from "@/domain/deployments";
-import type { ControlOperation } from "@/domain/deployments/controls";
+import type { ControlOperation, QueuedControl } from "@/domain/deployments/controls";
 import { requestData } from "@/integration/common";
 import {
   BuildRequestSchema,
@@ -151,7 +151,7 @@ export const deploymentsApi = {
     },
     signal?: AbortSignal,
   ) =>
-    requestData(`/api/deployments/targets/${encodeURIComponent(target)}/controls`, ControlSubmittedSchema, {
+    requestData<QueuedControl>(`/api/deployments/targets/${encodeURIComponent(target)}/controls`, ControlSubmittedSchema, {
       signal,
       method: "POST",
       action: "control",

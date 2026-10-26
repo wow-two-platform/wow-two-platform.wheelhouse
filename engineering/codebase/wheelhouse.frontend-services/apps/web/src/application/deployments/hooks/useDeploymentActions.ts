@@ -1,6 +1,7 @@
-import { useAppMutation } from "@/bootstrap/query";
+import { useAppMutation, useInvalidate } from "@/bootstrap/query";
 import { TopologyKeys } from "@/application/topology";
 import { ServerKeys } from "@/application/servers/ServerKeys";
+import { DeploymentExtensions, type DeploymentJob } from "@/domain/deployments";
 import type { ControlOperation } from "@/domain/deployments/controls";
 import { deploymentsApi } from "@/integration/deployments";
 
@@ -59,7 +60,8 @@ export function useStartDeployment() {
 /** Stops, starts or restarts the release a target runs — `service`, or the whole environment without one; the job is
  * followed like a deploy. Prod needs `confirm` (its target ID, typed) and a `reason`. */
 export function useTargetControl() {
-  return useAppMutation({
+  const invalidate = useInvalidate();
+  const mutation = useAppMutation({
     mutationFn: (
       {
         target,
@@ -76,14 +78,36 @@ export function useTargetControl() {
       },
       { signal },
     ) => deploymentsApi.control(target, { operation, service, reason, confirm }, signal),
-    invalidates: ({ target }) => [
-      DeploymentKeys.state(target),
-      DeploymentKeys.history,
-      ServerKeys.vitals,
-      TopologyKeys.target(target),
-    ],
+    invalidates: ({ target }) => refreshed(target),
     meta: { suppressGlobalError: true },
   });
+
+  /** Follows a queued control on its target until it ends, then refreshes what it changed: the job as it ended, or
+   * null when it still runs past the wait. A failure the target recorded — a refused rule, an unhealthy start — comes
+   * back with its reason, for the dialog that queued it to show. */
+  async function follow(id: string, target: string): Promise<DeploymentJob | null> {
+    const until = Date.now() + ControlFollowMs;
+    while (Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, ControlPollMs));
+      const read = await deploymentsApi.getOutcome(id);
+      if (read.ok && !DeploymentExtensions.isPending(read.value.status)) {
+        for (const key of refreshed(target)) void invalidate(key);
+        return read.value;
+      }
+    }
+    return null;
+  }
+
+  return { ...mutation, follow };
+}
+
+/** How often a queued control is read back, and for how long: past the longest health wait a start may take. */
+const ControlPollMs = 2000;
+const ControlFollowMs = 6 * 60 * 1000;
+
+/** What a control changes: the target's state, the history, the vitals and the service map. @internal */
+function refreshed(target: string) {
+  return [DeploymentKeys.state(target), DeploymentKeys.history, ServerKeys.vitals, TopologyKeys.target(target)];
 }
 
 /** Records the owner's reconciliation of a locked target. */

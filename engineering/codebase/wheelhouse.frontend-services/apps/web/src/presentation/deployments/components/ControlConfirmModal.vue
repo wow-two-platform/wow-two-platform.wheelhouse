@@ -27,6 +27,7 @@ import {
 } from "@wow-two-beta/fe/presentation/overlays";
 
 import { useTargetControl } from "@/application/deployments";
+import { JobStatus } from "@/domain/deployments";
 import { ControlOperation, ServiceControls } from "@/domain/deployments/controls";
 import { failureReason } from "@/integration/common";
 
@@ -42,6 +43,10 @@ defineSlots<{}>();
 const control = useTargetControl();
 const reason = ref("");
 const missingReason = ref(false);
+/** While the queued control runs on its target: what it is doing. */
+const progress = ref<string | null>(null);
+/** Why the target failed or refused the control, once it ended so. */
+const outcome = ref<string | null>(null);
 const label = computed(() =>
   props.request ? ServiceControls.label(props.request.operation, props.request.service) : "",
 );
@@ -54,7 +59,9 @@ const tone = computed(() =>
       ? "warning"
       : "primary",
 );
-const error = computed(() => (missingReason.value ? "Give a reason." : failureReason(control.error.value)));
+const error = computed(() =>
+  missingReason.value ? "Give a reason." : (outcome.value ?? failureReason(control.error.value)),
+);
 
 /** Clears the reason and the last refusal whenever the dialog opens on another control. @internal */
 watch(
@@ -62,11 +69,14 @@ watch(
   () => {
     reason.value = "";
     missingReason.value = false;
+    progress.value = null;
+    outcome.value = null;
     control.reset();
   },
 );
 
-/** Queues the control; prod sends the typed ID and the reason. @internal */
+/** Queues the control — prod sends the typed ID and the reason — and stays until the target ends it: a success closes
+ * the dialog, a failure or refusal stays in it with the target's reason. @internal */
 async function submit(typed?: string) {
   const request = props.request;
   if (!request) return;
@@ -75,13 +85,23 @@ async function submit(typed?: string) {
     throw new Error("Give a reason.");
   }
   missingReason.value = false;
+  outcome.value = null;
   const result = await control.mutateAsync({
     target: request.target.id,
     operation: request.operation,
     service: request.service,
     ...(guarded.value ? { reason: reason.value, confirm: typed } : {}),
   });
-  if (!guarded.value && result.ok) emit("update:open", false);
+  if (!result.ok) return result;
+  progress.value = `${label.value}…`;
+  const ended = await control.follow(result.value.id, request.target.id);
+  progress.value = null;
+  if (ended && ended.status !== JobStatus.Succeeded) {
+    outcome.value = ended.reason || `The target could not ${request.operation} it (${ended.status}).`;
+    if (guarded.value) throw new Error(outcome.value);
+    return;
+  }
+  if (!guarded.value) emit("update:open", false);
   return result;
 }
 </script>
@@ -102,6 +122,7 @@ async function submit(typed?: string) {
     <Field label="Reason" is-required>
       <TextInput v-model="reason" autocomplete="off" maxlength="300" />
     </Field>
+    <p v-if="progress" role="status" class="text-sm text-muted-foreground">{{ progress }}</p>
   </TypedConfirmModal>
   <Modal v-else :open="props.open && Boolean(props.request)" @update:open="emit('update:open', $event)">
     <ModalContent class="w-full max-w-md">
@@ -109,10 +130,11 @@ async function submit(typed?: string) {
         <ModalTitle>{{ title }}</ModalTitle>
         <ModalDescription>{{ props.request ? ServiceControls.consequence(props.request) : "" }}</ModalDescription>
       </ModalHeader>
+      <p v-if="progress" role="status" class="px-6 text-sm text-muted-foreground">{{ progress }}</p>
       <p v-if="error" role="alert" class="px-6 text-sm text-destructive">{{ error }}</p>
       <ModalFooter>
         <Button type="button" variant="outline" tone="neutral" @click="emit('update:open', false)">Cancel</Button>
-        <Button type="button" :tone="tone" :is-loading="control.loading.value" @click="submit()">
+        <Button type="button" :tone="tone" :is-loading="control.loading.value || progress !== null" @click="submit()">
           <template #leading
             ><Pause v-if="props.request?.operation === ControlOperation.Stop" :size="16" aria-hidden="true" /><RotateCw
               v-else-if="props.request?.operation === ControlOperation.Restart"

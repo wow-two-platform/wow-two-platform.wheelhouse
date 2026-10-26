@@ -8,13 +8,14 @@ import { container, target } from "./LoadModule.mjs";
 const {
   ControlOperation, ServiceControls, EnvironmentPillRules, PillState, EnvironmentHealth, EnvironmentHealthRules,
   AttentionRules, describeServiceObservation, TargetStateSchema, DeploymentItemSchema, PortfolioSummarySchema,
+  ControlSubmittedSchema,
 } = await bundleModule(`
   export { ControlOperation, ServiceControls } from './src/domain/deployments/controls';
   export { EnvironmentPillRules, PillState } from './src/domain/portfolio/EnvironmentPill';
   export { EnvironmentHealth, EnvironmentHealthRules } from './src/domain/overview/EnvironmentHealth';
   export { AttentionRules } from './src/domain/overview/AttentionRules';
   export { describeServiceObservation } from './src/presentation/product/serviceMap/ServiceObservation';
-  export { TargetStateSchema } from './src/integration/deployments/schemas';
+  export { ControlSubmittedSchema, TargetStateSchema } from './src/integration/deployments/schemas';
   export { DeploymentItemSchema } from './src/integration/deployments/historySchemas';
   export { PortfolioSummarySchema } from './src/integration/portfolio/schemas';
 `);
@@ -85,4 +86,10 @@ test("the wire carries what is stopped and which items are controls", () => {
     workspace: null, succeeded: 0, failed: 0, environments: [{ environment: "dev", lastDeploy: null, running: null, weekly: [],
       lastAttempt: null, stopped: { environment: true, services: [] } }] }] });
   assert.equal(summary.products[0].environments[0].stopped.environment, true);
+});
+
+test("a queued control reads back as the job its dialog follows to the end", () => {
+  const queued = ControlSubmittedSchema.parse({ id: "c1", targetId: "wheelhousecanary-dev", status: "queued",
+    operation: { kind: "restart", services: ["canary"] }, release: "v1.0.0" });
+  assert.deepEqual([queued.id, queued.status, queued.operation.services], ["c1", "queued", ["canary"]]);
 });

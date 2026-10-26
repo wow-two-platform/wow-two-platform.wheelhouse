@@ -205,6 +205,29 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
     }
 
     [Fact]
+    public async Task FailedControl_ShouldReadWithTheReasonItsTargetGave()
+    {
+        // ForeverPin's dev names a host settings file for management, as the canary does on wheelhouse-dev.
+        const string id = "00000000-0000-4000-8000-000000000c04";
+        const string reason = "No settings file for management is left on this target; deploy the release again";
+        var now = Fixture.Host.Clock.GetUtcNow();
+        Fixture.Deployments.History.Add(new
+        {
+            id, targetId = "foreverpin-dev", release = "v1.0.0", actor = "test-admin", status = "failed", failure = "Rejected",
+            reason, operation = new { kind = "restart", services = new[] { "management" } },
+            submittedAt = Instant(now.AddMinutes(-2)), completedAt = Instant(now.AddMinutes(-2).AddSeconds(3)),
+        });
+
+        var item = (await DataAsync("/api/deployments/history")).GetProperty("items").EnumerateArray()
+            .Single(entry => entry.GetProperty("id").GetString() == id);
+        (item.GetProperty("state").GetString(), item.GetProperty("attention").GetString()).Should().Be(("failed", "act"));
+        item.GetProperty("cause").GetProperty("message").GetString().Should().Be(reason);
+        item.GetProperty("operation").GetProperty("kind").GetString().Should().Be("restart");
+        (await DataAsync("/api/deployments/" + id + "/detail")).GetProperty("deployment").GetProperty("reason").GetString()
+            .Should().Be(reason);
+    }
+
+    [Fact]
     public async Task Portfolio_ShouldReadAStoppedEnvironmentAsStopped()
     {
         var now = Fixture.Host.Clock.GetUtcNow();

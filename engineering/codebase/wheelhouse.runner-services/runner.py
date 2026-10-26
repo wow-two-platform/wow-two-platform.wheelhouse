@@ -118,6 +118,9 @@ OPERATIONS = ("stop", "start", "restart")
 STOPPED = "stopped.json"
 # How long a stopping container gets to exit before Docker kills it.
 STOP_GRACE_SECONDS = 30
+# The settings file each service of a release mounted, as its rollout's Compose interpolated it; kept beside the
+# release (never part of its bundle or hash) so a control starts the containers on the very same files.
+SETTINGS_PATHS = "settings-paths.json"
 
 
 class Rejected(ValueError):
@@ -1154,6 +1157,11 @@ def validate_settings(target, service, required):
     return path
 
 
+def settings_variable(service):
+    """The Compose variable a service's settings file is interpolated through: `<SERVICE>_SETTINGS`."""
+    return service.upper().replace("-", "_") + "_SETTINGS"
+
+
 def environment_for(target, manifest):
     environment = base_environment(target)
     required = manifest["requiredConfiguration"]
@@ -1163,7 +1171,33 @@ def environment_for(target, manifest):
     else:
         require(target.get("settings", {}).keys() == required.keys(), "Provide settings for every service that takes them")
     for service, keys in required.items():
-        environment[service.upper().replace("-", "_") + "_SETTINGS"] = str(validate_settings(target, service, keys))
+        environment[settings_variable(service)] = str(validate_settings(target, service, keys))
+    return environment
+
+
+def mounted_file(path):
+    """Whether a settings path can be a bind source: absolute, a regular file, not a link."""
+    return path.is_absolute() and path.is_file() and not path.is_symlink()
+
+
+def control_environment(target, manifest, bundle):
+    """What Compose interpolates for a control of the release a target runs: each service's settings file as that
+    release's rollout mounted it (`settings-paths.json` beside the release), else the rendered file, else the host file
+    the target names — a release applied before its target rendered mounted that one. Neither renders nor checks a
+    file's contents: a control changes no settings, it only needs the running containers' own files."""
+    environment = base_environment(target)
+    try:
+        recorded = read_json(Path(bundle) / SETTINGS_PATHS)
+    except (OSError, ValueError):
+        recorded = {}
+    recorded = recorded if isinstance(recorded, dict) else {}
+    for service in sorted(manifest.get("requiredConfiguration") or {}):
+        host = target.get("settings", {}).get(service)
+        candidates = [recorded.get(service), rendered_path(target, service) if renders(target) else None, host]
+        path = next((Path(item) for item in candidates if isinstance(item, (str, Path)) and mounted_file(Path(item))),
+                    None)
+        require(path is not None, "No settings file for " + service + " is left on this target; deploy the release again")
+        environment[settings_variable(service)] = str(path)
     return environment
 
 
@@ -1779,6 +1813,8 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
         # Revalidate the immutable snapshot, not only the source directory.
         manifest = validate_bundle(destination)
         environment_override(destination, target["environment"])
+        write_json(destination / SETTINGS_PATHS,
+                   {service: environment[settings_variable(service)] for service in manifest["requiredConfiguration"]})
         previous_path = root / "current.json"
         previous = read_json(previous_path) if previous_path.exists() else None
         record = {"id": job_id, "project": project, "release": manifest["release"],
@@ -2209,7 +2245,8 @@ def control_launch(target_path, operation, services, actor):
     base = root / project
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
     control_ready(base)
-    current, _, _, _ = control_plan(base, operation, services)
+    current, bundle, manifest, _ = control_plan(base, operation, services)
+    control_environment(target, manifest, bundle)
     job_id = str(uuid.uuid4())
     jobs = base / "jobs"
     jobs.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -2253,7 +2290,7 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker):
         docker = None
         names = services or sorted(manifest["images"])
         try:
-            docker = docker_factory(target, environment_for(target, manifest))
+            docker = docker_factory(target, control_environment(target, manifest, bundle))
             environment_override(bundle, target["environment"])
             if operation == "stop":
                 # Marked first: a stop cut short still keeps deploys from starting what it reached.

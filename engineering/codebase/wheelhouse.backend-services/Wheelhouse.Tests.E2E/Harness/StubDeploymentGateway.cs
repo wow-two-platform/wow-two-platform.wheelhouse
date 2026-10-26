@@ -219,6 +219,8 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
         CancellationToken ct)
     {
         Controls.Add((target, operation, service, actor, reason));
+        if (Runner is not null)
+            return Runner.ControlAsync(target, operation, service, actor, reason, ct);
         if (ControlRefusal is not null)
             return Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(ControlRefusal)));
         return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new

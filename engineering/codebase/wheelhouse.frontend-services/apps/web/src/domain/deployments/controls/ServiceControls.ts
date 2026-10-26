@@ -18,6 +18,15 @@ export interface DeploymentOperation {
   services: string[];
 }
 
+/** A control the target queued: its submission, which the history and outcome reads follow. */
+export interface QueuedControl {
+  id: string;
+  targetId: string;
+  operation: DeploymentOperation;
+  release?: string | null | undefined;
+  status: string;
+}
+
 /** What the owner keeps stopped on an environment: the whole of it, or the services named. */
 export interface TargetStop {
   environment: boolean;

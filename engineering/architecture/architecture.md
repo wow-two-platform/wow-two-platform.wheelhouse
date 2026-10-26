@@ -167,6 +167,10 @@ promotion replace them), as is a target a running fleet has yet to promote (409)
   with durable intent (`active.json`), so a control cut short reconciles like a rollout (the verified release stays).
   It refuses while a rollout or another control runs. Stop is `compose stop` (containers, volumes and routes stay);
   start is `compose up --no-recreate --pull never --wait` of the same release; restart is one service's stop and start.
+  Compose interpolates the settings files the release was applied with — `settings-paths.json` beside it, else the
+  rendered file, else the host file the target names (a release applied before its target rendered) — and a control
+  never renders or re-checks them; with none left, the launch refuses before a job exists. The console's dialog follows
+  the queued job and shows the target's reason when it fails.
 - **Stopped stays stopped.** A stop writes `<root>/<product>-<environment>/stopped.json` before stopping; a start
   removes its part once healthy. While it names anything, every deploy — the owner's, automatic, a fleet's or a settings
   apply — is refused (`<target> is stopped; start it before deploying`): by the transport from local records before

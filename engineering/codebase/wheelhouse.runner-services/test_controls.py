@@ -13,9 +13,11 @@ class ControlDocker:
     events = []
     fail = None
     health = {}
+    # The environment each Docker the runner made was given: what Compose would interpolate.
+    environments = []
 
     def __init__(self, target, environment):
-        pass
+        self.environments.append(environment)
 
     # What a rollout needs, so a release can be applied before it is controlled.
     def preflight(self, manifest):
@@ -76,7 +78,8 @@ class RunnerControlTests(unittest.TestCase):
         (self.bundle / "compose.json").write_bytes(compose)
         manifest["composeSha256"] = hashlib.sha256(compose).hexdigest()
         (self.bundle / "release.json").write_text(json.dumps(manifest))
-        ControlDocker.events, ControlDocker.fail, ControlDocker.health = [], None, {}
+        ControlDocker.events, ControlDocker.fail, ControlDocker.health, ControlDocker.environments = [], None, {}, []
+        self.settings = settings
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -242,6 +245,55 @@ class RunnerControlTests(unittest.TestCase):
 
         self.assertEqual(["worker"], runner.vitals(self.target, Reading)["stopped"]["services"])
         self.assertEqual(["worker"], runner.watch(self.target, Reading, prober=lambda *a, **k: [])["stopped"]["services"])
+
+    def test_a_release_applied_from_its_host_file_restarts_on_that_file(self):
+        # The canary on wheelhouse-dev: Wheelhouse renders the target's settings now, but the release it runs was applied
+        # from the host file the target names, before it rendered, so no rendered file exists.
+        self.deployed_from_host_file()
+        (self.base / "releases" / runner.read_json(self.base / "current.json")["id"] / runner.SETTINGS_PATHS).unlink()
+        rendering = {**self.target, "render": True, "settingsRoot": str(self.root / "rendered")}
+        self.assertFalse(runner.rendered_path(rendering, "api").exists())
+        record = runner.control(rendering, "restart", ["api"], "max", "11111111-1111-4111-8111-111111111150",
+                                docker_factory=ControlDocker)
+        self.assertEqual(("succeeded", None), (record["status"], record.get("reason")))
+        self.assertEqual(str(self.settings), ControlDocker.environments[-1]["API_SETTINGS"])
+
+    def test_a_control_mounts_the_files_its_release_was_applied_with(self):
+        self.deployed_from_host_file()
+        current = runner.read_json(self.base / "current.json")["id"]
+        self.assertEqual({"api": str(self.settings)},
+                         runner.read_json(self.base / "releases" / current / runner.SETTINGS_PATHS))
+        # A later render (a deploy that failed before it changed anything) leaves a rendered file the containers never
+        # mounted; the control keeps to the recorded one.
+        rendering = {**self.target, "render": True, "settingsRoot": str(self.root / "rendered")}
+        rendered = runner.rendered_path(rendering, "api")
+        rendered.parent.mkdir(parents=True, mode=0o700)
+        rendered.write_text("{}")
+        self.assertEqual("succeeded", runner.control(rendering, "stop", ["api"], "max",
+                                                     "11111111-1111-4111-8111-111111111151",
+                                                     docker_factory=ControlDocker)["status"])
+        self.assertEqual(str(self.settings), ControlDocker.environments[-1]["API_SETTINGS"])
+
+    def test_a_control_whose_settings_files_are_gone_is_refused_before_a_job(self):
+        self.deployed_from_host_file()
+        current = runner.read_json(self.base / "current.json")["id"]
+        (self.base / "releases" / current / runner.SETTINGS_PATHS).unlink()
+        self.settings.unlink()
+        target_path = self.root / "target.json"
+        runner.write_json(target_path, {**self.target, "render": True, "settingsRoot": str(self.root / "rendered")})
+        jobs = sorted((self.base / "jobs").glob("*.json"))
+        with patch.object(runner.subprocess, "Popen") as popen, \
+                self.assertRaisesRegex(ValueError, "No settings file for api is left on this target; deploy the release again"):
+            runner.control_launch(target_path, "restart", ["api"], "max")
+        popen.assert_not_called()
+        self.assertEqual(jobs, sorted((self.base / "jobs").glob("*.json")))
+
+    def deployed_from_host_file(self):
+        """Applies the release as a target that mounts its host settings file, as every target did before Wheelhouse
+        rendered them."""
+        record = runner.apply(self.bundle, {**self.target, "render": False}, "max", docker_factory=ControlDocker)
+        self.assertEqual("succeeded", record["status"])
+        ControlDocker.events, ControlDocker.environments = [], []
 
     def test_an_unreadable_mark_counts_as_a_stopped_environment(self):
         self.base.mkdir(parents=True)
