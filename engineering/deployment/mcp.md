@@ -56,7 +56,7 @@ an authenticated external client connection remains manual acceptance.
 The implementation uses the SDK `Ai/Mcp` host helpers. The be sdk MCP host has no Origin check or endpoint body
 limit, and its SPA fallback reserves only `/api`, so the guard and the `/.well-known/*` 404 are product-local until
 the SDK provides them. Every be sdk family reference now uses
-the publicly verified `10.0.71-beta` release. No production deployment is established here.
+the publicly verified `10.0.78-beta` release. No production deployment is established here.
 
 ## Adoption verification — 2026-10-06
 
