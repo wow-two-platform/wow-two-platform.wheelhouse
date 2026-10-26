@@ -53,6 +53,43 @@ public sealed class InventoryE2ETests(WheelhouseAppFixture fixture) : Wheelhouse
     }
 
     [Fact]
+    public async Task AFailedExport_ShouldKeepTheChangeAndBeAnIssue_UntilAnExportSucceeds()
+    {
+        (await AnonymousClient.GetAsync("api/deployments/issues/inventory")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await InventoryIssuesAsync()).GetArrayLength().Should().Be(0);
+        // A folder where the snapshot belongs: the atomic write's rename onto it fails.
+        var snapshot = Path.Combine(Fixture.InventoryRoot, "inventory.json");
+        File.Delete(snapshot);
+        Directory.CreateDirectory(Path.Combine(snapshot, "blocker"));
+        try
+        {
+            (await ActionClient("product").PostJsonAsync("api/products", PilotProduct)).StatusCode.Should().Be(HttpStatusCode.Created);
+
+            (await AdminClient.GetAsync("api/products/pilot")).StatusCode.Should().Be(HttpStatusCode.OK, "the change stays saved");
+            var issue = (await InventoryIssuesAsync()).EnumerateArray().Single();
+            issue.GetProperty("cause").GetString().Should().Be("The snapshot file could not be written");
+            issue.GetProperty("at").GetDateTimeOffset().Should().BeCloseTo(Fixture.Host.Clock.GetUtcNow(), TimeSpan.FromMinutes(1));
+            Directory.EnumerateFiles(Fixture.InventoryRoot, "*.partial", SearchOption.AllDirectories).Should().BeEmpty();
+        }
+        finally
+        {
+            Directory.Delete(snapshot, recursive: true);
+        }
+
+        var update = await ActionClient("product").PutJsonAsync("api/products/pilot", new { name = "Pilot renamed", repository = "owner/pilot" });
+        update.StatusCode.Should().Be(HttpStatusCode.OK, await update.Content.ReadAsStringAsync());
+        (await InventoryIssuesAsync()).GetArrayLength().Should().Be(0);
+        Snapshot().GetProperty("products").EnumerateArray().Should().Contain(item => item.GetProperty("slug").GetString() == "pilot");
+    }
+
+    private async Task<JsonElement> InventoryIssuesAsync()
+    {
+        var response = await AdminClient.GetAsync("api/deployments/issues/inventory");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data");
+    }
+
+    [Fact]
     public async Task CreateProduct_ShouldReturn409_WhenTheSlugIsTaken()
     {
         var response = await ActionClient("product").PostJsonAsync("api/products",

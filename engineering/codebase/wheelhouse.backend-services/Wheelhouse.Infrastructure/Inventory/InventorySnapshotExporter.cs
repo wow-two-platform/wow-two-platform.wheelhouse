@@ -14,13 +14,15 @@ namespace Wheelhouse.Infrastructure.Inventory;
 /// to <c>{root}/inventory.json</c>, replaced whole so the runner never reads half of one.</summary>
 /// <remarks>One export runs at a time and reads the database inside its turn, so an older read never overwrites a
 /// newer snapshot. The SDK atomic write replaces the file in one rename, owner-only (0600). A failed write is logged and
-/// left for the next change or start to repair.</remarks>
+/// left for the next change or start to repair; <see cref="InventoryExportMonitor"/> lists it in the Issues panel until
+/// then.</remarks>
 public sealed partial class InventorySnapshotExporter(
     IProductsRepository products,
     IServersRepository servers,
     ITargetsRepository targets,
     IVaultsRepository vaults,
     DeploymentSettings settings,
+    InventoryExportMonitor monitor,
     ILogger<InventorySnapshotExporter> logger) : IInventorySnapshot
 {
     /// <summary>Holds the snapshot's file name under the runner root; the runner's <c>inventory.py</c> reads the same.</summary>
@@ -37,16 +39,33 @@ public sealed partial class InventorySnapshotExporter(
     {
         if (settings.Root.Length == 0)
             return;
-        await Turn.WaitAsync(ct);
+        try
+        {
+            await Turn.WaitAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            monitor.Failed(InventoryExportMonitor.TimedOut);
+            throw;
+        }
+
         try
         {
             var snapshot = await ReadAsync(ct);
             await AtomicFileExtensions.WriteJsonAsync(
                 Path.Combine(settings.Root, FileName), snapshot, StoredJsonConstants.Default, WriteOptions, ct);
+            monitor.Succeeded();
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            monitor.Failed(InventoryExportMonitor.Unwritten);
             LogUnwritten(logger, settings.Root, exception.GetType().Name);
+        }
+        catch (Exception exception)
+        {
+            // The after-commit hook or the startup export logs it; the Issues panel names it until an export succeeds.
+            monitor.Failed(exception is OperationCanceledException ? InventoryExportMonitor.TimedOut : InventoryExportMonitor.Unread);
+            throw;
         }
         finally
         {

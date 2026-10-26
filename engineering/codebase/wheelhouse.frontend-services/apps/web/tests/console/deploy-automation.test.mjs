@@ -6,7 +6,8 @@ import { bundleModule } from "./BundleModule.mjs";
 // The real rules of automatic deploys and freezes, and their wire decoding.
 const automation = await bundleModule(`
   export { DefaultAutomation, DeployFreezes, rollbackRisks, DeploymentIssues, automationLockOf, DevCheckRules } from './src/domain/deployments';
-  export { BuildFailureSchema, DeploymentAutomationSchema, DeployFreezeSchema, GitHubAccessIssueSchema, ReleaseChangelogSchema } from './src/integration/deployments/automationSchemas';
+  export { BuildFailureSchema, DeploymentAutomationSchema, DeployFreezeSchema, GitHubAccessIssueSchema, InventoryExportIssueSchema, ReleaseChangelogSchema } from './src/integration/deployments/automationSchemas';
+  export { deploymentAutomationApi } from './src/integration/deployments/automationApi';
   export { DeploymentPromotionSchema, DeploymentItemSchema } from './src/integration/deployments/historySchemas';
 `);
 after(() => stop());
@@ -142,6 +143,32 @@ test("a GitHub access problem names its owner, or the App itself when it has non
   const app = automation.GitHubAccessIssueSchema.parse({ cause: "The key is missing.", at: "2026-10-19T09:00:00Z" });
   assert.deepEqual([app.owner, app.status], [null, null]);
   assert.throws(() => automation.GitHubAccessIssueSchema.parse({ owner: "ocharo-hq", at: "2026-10-19T09:00:00Z" }));
+});
+
+test("a failed inventory export names its cause and time, and the list is empty once an export succeeds", async () => {
+  const issue = automation.InventoryExportIssueSchema.parse({ cause: "The snapshot file could not be written.", at: "2026-10-26T09:00:00Z" });
+  assert.deepEqual(issue, { cause: "The snapshot file could not be written.", at: "2026-10-26T09:00:00Z" });
+  assert.throws(() => automation.InventoryExportIssueSchema.parse({ at: "2026-10-26T09:00:00Z" }));
+
+  const requested = [];
+  const answers = [[{ cause: "The snapshot file could not be written.", at: "2026-10-26T09:00:00Z" }], []];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    requested.push(url);
+    return new Response(JSON.stringify({ data: answers[requested.length - 1] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  try {
+    const failed = await automation.deploymentAutomationApi.listInventoryExportIssues();
+    const recovered = await automation.deploymentAutomationApi.listInventoryExportIssues();
+    assert.deepEqual(requested, ["/api/deployments/issues/inventory", "/api/deployments/issues/inventory"]);
+    assert.deepEqual([failed.ok, failed.value.length, failed.value[0].cause], [true, 1, "The snapshot file could not be written."]);
+    assert.deepEqual([recovered.ok, recovered.value.length], [true, 0]);
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test("a failed build links only to GitHub", () => {

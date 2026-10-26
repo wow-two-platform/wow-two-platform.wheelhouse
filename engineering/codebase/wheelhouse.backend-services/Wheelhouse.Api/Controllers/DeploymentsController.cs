@@ -82,6 +82,12 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
     public async Task<IActionResult> GitHubAccess(CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentGitHubAccessQuery(), ct));
 
+    /// <summary>Lists a failed export of the runner's inventory snapshot: the change it followed stayed saved, and deploys
+    /// read the last exported snapshot until an export succeeds again.</summary>
+    [HttpGet("issues/inventory")]
+    public async Task<IActionResult> InventoryExport(CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentInventoryExportQuery(), ct));
+
     /// <summary>Lists, per product, the newest release that succeeded on dev and is not what prod runs.</summary>
     [HttpGet("promotions")]
     public async Task<IActionResult> Promotions([FromQuery] DeploymentFilterApiRequest filter, CancellationToken ct) =>

@@ -80,6 +80,11 @@ export const GitHubAccessIssueSchema = z.object({
   at: z.string(),
 });
 
+export const InventoryExportIssueSchema = z.object({
+  cause: z.string(),
+  at: z.string(),
+});
+
 export const BuildUsageSchema = z.object({
   product: z.string(),
   since: z.string(),

@@ -50,6 +50,7 @@ export {
   useFleetRollouts,
   useFreezeDeploys,
   useGitHubAccessIssues,
+  useInventoryExportIssues,
   useProductAutomation,
   useReleaseChangelog,
   useReleaseFacts,

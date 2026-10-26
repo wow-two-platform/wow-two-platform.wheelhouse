@@ -6,6 +6,7 @@ import type {
   FleetRollout,
   FleetSelection,
   GitHubAccessIssue,
+  InventoryExportIssue,
   ProductAutomation,
   ReleaseChangelog,
   ReleaseFacts,
@@ -18,6 +19,7 @@ import {
   DeploymentAutomationSchema,
   FleetRolloutSchema,
   GitHubAccessIssueSchema,
+  InventoryExportIssueSchema,
   ProductAutomationSchema,
   ReleaseChangelogSchema,
   ReleaseFactsSchema,
@@ -63,6 +65,10 @@ export const deploymentAutomationApi = {
   /** What keeps the control plane from reaching GitHub, per owner; never filtered. */
   listGitHubAccess: (signal?: AbortSignal) =>
     requestData<GitHubAccessIssue[]>('/api/deployments/issues/github', GitHubAccessIssueSchema.array(), { signal }),
+
+  /** The failed inventory export, when the newest one failed: none or one; empty once an export succeeds again. */
+  listInventoryExportIssues: (signal?: AbortSignal) =>
+    requestData<InventoryExportIssue[]>('/api/deployments/issues/inventory', InventoryExportIssueSchema.array(), { signal }),
 
   /** What a product's builds cost over the last 30 days; read from GitHub at most once an hour. */
   getUsage: (product: string, signal?: AbortSignal) =>

@@ -12,6 +12,7 @@ import {
   useCancelFleet,
   useFleetRollouts,
   useGitHubAccessIssues,
+  useInventoryExportIssues,
   useDeploymentIssues,
   useDeploymentPromotions,
   useRunningDeployments,
@@ -83,6 +84,8 @@ const offers = computed(() => promotions.data.value?.filter((item) => !hiddenPro
 const builds = useBuildFailures();
 const githubAccess = useGitHubAccessIssues();
 const shownAccess = computed(() => githubAccess.data.value ?? []);
+const inventoryExport = useInventoryExportIssues();
+const shownExports = computed(() => inventoryExport.data.value ?? []);
 const shownBuilds = computed(() => (builds.data.value ?? []).filter((item) => !hiddenProducts.value.has(item.product)));
 const shownIssues = computed(() =>
   issues.data.value?.filter((item) => !item.deployment.product || !hiddenProducts.value.has(item.deployment.product)),
@@ -154,10 +157,11 @@ function fleetStarted(): void {
       </Button>
     </PageHeaderActions>
     <IssuesPanel
-      v-if="shownIssues?.length || shownBuilds.length || shownAccess.length"
+      v-if="shownIssues?.length || shownBuilds.length || shownAccess.length || shownExports.length"
       :items="shownIssues ?? []"
       :builds="shownBuilds"
       :access="shownAccess"
+      :inventory-exports="shownExports"
       :product-names="productNames"
       :checking-target="checkingTarget"
       @redeploy="redeploy"

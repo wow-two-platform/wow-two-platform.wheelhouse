@@ -18,6 +18,7 @@ export { rollbackRisks, type ReleaseFacts } from './ReleaseFacts';
 export type { ChangelogCommit, ChangelogRelease, ReleaseChangelog } from './ReleaseChangelog';
 export type { BuildFailure } from './BuildFailure';
 export type { GitHubAccessIssue } from './GitHubAccessIssue';
+export type { InventoryExportIssue } from './InventoryExportIssue';
 export type { BuildUsage } from './BuildUsage';
 export {
   FleetItemStatus,

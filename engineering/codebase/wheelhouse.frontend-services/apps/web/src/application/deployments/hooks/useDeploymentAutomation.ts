@@ -14,6 +14,7 @@ export const AutomationKeys = {
   changelog: (product: string, from: string, to: string) => ['deployments', 'changelog', product, from, to] as const,
   builds: ['deployments', 'builds'] as const,
   githubAccess: ['deployments', 'github-access'] as const,
+  inventoryExport: ['deployments', 'inventory-export'] as const,
   usage: (product: string) => ['deployments', 'usage', product] as const,
   fleets: ['deployments', 'fleets'] as const,
 };
@@ -122,6 +123,16 @@ export function useGitHubAccessIssues() {
   return useAppQuery({
     key: () => AutomationKeys.githubAccess,
     queryFn: ({ signal }) => deploymentAutomationApi.listGitHubAccess(signal),
+    refetchInterval: 60_000,
+    meta: { suppressGlobalError: true },
+  });
+}
+
+/** Whether the newest inventory export failed, read every minute while the page is visible. */
+export function useInventoryExportIssues() {
+  return useAppQuery({
+    key: () => AutomationKeys.inventoryExport,
+    queryFn: ({ signal }) => deploymentAutomationApi.listInventoryExportIssues(signal),
     refetchInterval: 60_000,
     meta: { suppressGlobalError: true },
   });

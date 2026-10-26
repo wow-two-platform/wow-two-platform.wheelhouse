@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { BuildFailure, DeploymentIssue, GitHubAccessIssue } from "@/domain/deployments";
+import type { BuildFailure, DeploymentIssue, GitHubAccessIssue, InventoryExportIssue } from "@/domain/deployments";
 
 /** Defines the targets that need attention. */
 export interface IssuesPanelProps {
@@ -13,6 +13,8 @@ export interface IssuesPanelProps {
   readonly builds?: readonly BuildFailure[];
   /** What keeps the control plane from reaching GitHub, per owner. */
   readonly access?: readonly GitHubAccessIssue[];
+  /** The failed inventory export: none, or one while deploys read the last exported snapshot. */
+  readonly inventoryExports?: readonly InventoryExportIssue[];
 }
 </script>
 
@@ -20,7 +22,7 @@ export interface IssuesPanelProps {
 import { ReleaseSets } from "@/domain/deployments";
 import { computed } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import { ArrowUpRight, Hammer, KeyRound, RotateCcw, TriangleAlert, Wrench } from "lucide-vue-next";
+import { ArrowUpRight, DatabaseZap, Hammer, KeyRound, RotateCcw, TriangleAlert, Wrench } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge, RelativeTime } from "@wow-two-beta/fe/presentation/display";
@@ -40,8 +42,13 @@ import FrozenBadge from "../automation/FrozenBadge.vue";
  * likely locked come first.
  */
 defineOptions({ name: "IssuesPanel" });
-const props = withDefaults(defineProps<IssuesPanelProps>(), { checkingTarget: null, builds: () => [], access: () => [] });
-const total = computed(() => props.items.length + props.builds.length + props.access.length);
+const props = withDefaults(defineProps<IssuesPanelProps>(), {
+  checkingTarget: null,
+  builds: () => [],
+  access: () => [],
+  inventoryExports: () => [],
+});
+const total = computed(() => props.items.length + props.builds.length + props.access.length + props.inventoryExports.length);
 const emit = defineEmits<{ redeploy: [issue: DeploymentIssue]; reconcile: [issue: DeploymentIssue] }>();
 const router = useRouter();
 
@@ -205,6 +212,20 @@ function describe(issue: DeploymentIssue): string {
             <Badge variant="neutral">{{ problem.owner ?? "GitHub App" }}</Badge>
           </p>
           <p class="mt-1 text-sm text-warning">{{ problem.cause }}</p>
+          <p class="mt-0.5 text-xs text-muted-foreground"><RelativeTime :value="problem.at" /></p>
+        </div>
+      </li>
+      <li
+        v-for="problem in props.inventoryExports"
+        :key="`inventory-${problem.cause}`"
+        class="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-3 py-3 first:pt-0 last:pb-0"
+      >
+        <DatabaseZap :size="18" class="mt-0.5 text-warning" aria-hidden="true" />
+        <div class="min-w-0">
+          <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span class="font-medium">Inventory export</span>
+          </p>
+          <p class="mt-1 text-sm text-warning">Inventory export failed; deploys read the last exported snapshot</p>
           <p class="mt-0.5 text-xs text-muted-foreground"><RelativeTime :value="problem.at" /></p>
         </div>
       </li>

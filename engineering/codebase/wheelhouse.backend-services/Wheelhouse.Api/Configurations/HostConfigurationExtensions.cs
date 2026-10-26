@@ -157,6 +157,10 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddScoped<IInventorySnapshot, Wheelhouse.Infrastructure.Inventory.InventorySnapshotExporter>();
         builder.Services.AddScoped<Wheelhouse.Infrastructure.Inventory.LocalRigSeedService>();
         builder.Services.AddHostedService<Wheelhouse.Infrastructure.Inventory.InventoryStartupService>();
+        // A failed export keeps the change saved; the Issues panel names it until an export succeeds.
+        builder.Services.AddSingleton<Wheelhouse.Infrastructure.Inventory.InventoryExportMonitor>();
+        builder.Services.AddSingleton<IInventoryExportIssues>(services =>
+            services.GetRequiredService<Wheelhouse.Infrastructure.Inventory.InventoryExportMonitor>());
         // The SDK periodic jobs: deployment observations every Deployment:FollowSeconds; automatic deploys (the release
         // watcher and the per-target queue) every Deployment:AutomationSeconds; the running fleet every Deployment:FleetSeconds.
         builder.Services.AddDeploymentFollowingJob();
