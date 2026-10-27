@@ -68,6 +68,9 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Keep an index of unfinished jobs and archive finished job records | engineering | 2026-10-27 idle-load investigation: every `follow`, `history` and `infra.py finished` pass still reads each `jobs/`, `observed/` and infra journal file, so a pass grows with the history; an index of unfinished submissions and an archive of finished records keep it flat |
+| Run one long-lived runner process instead of one per call | engineering | 2026-10-27: each runner call starts Python and imports the runner (the v0.7 bytecode cut the compile, not the start); a resident runner answering the API over a local socket removes the start cost from every read |
+| Publish the API ReadyToRun | engineering | 2026-10-27: faster warm-up after a restart or a self-promotion; weigh the larger image |
 | Ability to show a server's logs and feedback through its governance service | feature | Owner 2026-10-26: Wheelhouse keeps widgets, sign-in and forwarding over the tailnet; collection, search and alerts run in each server's governance service (wow2 `docs/server-governance.md`) |
 | Ability to get notified of deploy outcomes | feature | |
 | Ability to schedule host reboots and Docker and Tailscale upgrades | feature | |
