@@ -6,7 +6,7 @@ import {
   type MaybeRefOrGetter,
 } from "vue";
 
-import { ServerKeys } from "@/application/servers";
+import { requestLiveVitals, ServerKeys } from "@/application/servers";
 import { TopologyKeys } from "@/application/topology";
 import { useAppQuery, useInvalidate } from "@/bootstrap/query";
 import { DeploymentExtensions, type JobStatus } from "@/domain/deployments";
@@ -73,6 +73,7 @@ export function useDeploymentOutcome(
         return;
       void invalidate(DeploymentKeys.history);
       void invalidate(DeploymentKeys.statsAll);
+      requestLiveVitals();
       void invalidate(ServerKeys.vitals);
       if (target) {
         void invalidate(DeploymentKeys.state(target));

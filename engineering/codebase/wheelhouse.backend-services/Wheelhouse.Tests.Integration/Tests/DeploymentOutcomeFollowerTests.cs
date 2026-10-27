@@ -1,10 +1,12 @@
 using System.Diagnostics;
+using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Deployments.Following.Services;
 using Wheelhouse.Infrastructure.Deployments;
 using Wheelhouse.Infrastructure.Jobs;
 using Wheelhouse.Infrastructure.Settings;
@@ -14,8 +16,8 @@ using WoW.Two.Sdk.Beta.Be.Jobs.Core.BackgroundServices;
 namespace Wheelhouse.Tests.Integration.Tests;
 
 /// <summary>Exercises the observation job — the SDK periodic job as the host registers it — through its real process gateway
-/// and the runner's SDK process client. The stand-in transport records requested actions and can block or fail; Python's
-/// follower tests cover durable journals and SSH observations.</summary>
+/// and the runner's SDK process client. The stand-in transport records requested actions, answers what a test wrote to
+/// its <c>answer</c> file, and can block or fail; Python's follower tests cover durable journals and SSH observations.</summary>
 public sealed class DeploymentOutcomeFollowerTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("wheelhouse-following-").FullName;
@@ -34,7 +36,8 @@ public sealed class DeploymentOutcomeFollowerTests : IDisposable
             if (root / 'fail').exists():
                 (root / 'failed').write_text('1')
                 sys.exit(1)
-            print(json.dumps({'checked': 1, 'unavailable': 0, 'busy': 0}))
+            answer = root / 'answer'
+            print(answer.read_text() if answer.exists() else json.dumps({'checked': 1, 'unavailable': 0, 'busy': 0}))
             """);
     }
 
@@ -115,6 +118,63 @@ public sealed class DeploymentOutcomeFollowerTests : IDisposable
     }
 
     [Fact]
+    public async Task Following_ShouldStartNoRunner_WhileNothingIsUnfinished_UntilTheSafetyPass()
+    {
+        Answer(open: 0, nextIn: null);
+        using var host = CreateHost();
+        await host.StartAsync();
+        try
+        {
+            await UntilAsync(() => Calls().Length == 1);
+            var read = _time.GetUtcNow();
+
+            await TickUntilAsync(() => Calls().Length == 2);
+
+            (_time.GetUtcNow() - read).Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(290),
+                "an idle follower reads once per Deployment:FollowIdleSeconds, not every pass");
+        }
+        finally
+        {
+            await host.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
+    public async Task Following_ShouldReadOnTheNextPass_WhenWorkIsSubmitted_AndWhileTheRunnerHoldsItUnfinished()
+    {
+        Answer(open: 0, nextIn: null);
+        using var host = CreateHost();
+        await host.StartAsync();
+        try
+        {
+            await UntilAsync(() => Calls().Length == 1);
+
+            Answer(open: 1, nextIn: 10);
+            host.Services.GetRequiredService<DeploymentFollowSchedule>().Wake();
+            var woken = _time.GetUtcNow();
+            await TickUntilAsync(() => Calls().Length == 2);
+            (_time.GetUtcNow() - woken).Should().BeLessThan(TimeSpan.FromMinutes(1));
+
+            // Unfinished: every look the runner names is read.
+            var running = _time.GetUtcNow();
+            await TickUntilAsync(() => Calls().Length == 4);
+            (_time.GetUtcNow() - running).Should().BeLessThan(TimeSpan.FromMinutes(1));
+
+            // Finished: back to the safety pass.
+            Answer(open: 0, nextIn: null);
+            await TickUntilAsync(() => Calls().Length == 5);
+            var finished = _time.GetUtcNow();
+            await TickUntilAsync(() => Calls().Length == 6);
+            (_time.GetUtcNow() - finished).Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(290));
+            Calls().Should().OnlyContain(action => action == "follow");
+        }
+        finally
+        {
+            await host.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
     public async Task Read_ShouldLaunchNoProcess_WhenAlreadyCancelled()
     {
         using var host = CreateHost();
@@ -143,6 +203,11 @@ public sealed class DeploymentOutcomeFollowerTests : IDisposable
             await host.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
         }
     }
+
+    /// <summary>Has the stand-in transport answer a pass with these unfinished submissions and next look.</summary>
+    private void Answer(int open, double? nextIn) =>
+        File.WriteAllText(Path.Combine(_root, "answer"),
+            JsonSerializer.Serialize(new { @checked = 0, unavailable = 0, busy = 0, open, nextIn }));
 
     private DeploymentSettings Settings() => new()
     {
@@ -186,14 +251,19 @@ public sealed class DeploymentOutcomeFollowerTests : IDisposable
         }
     }
 
-    private static async Task UntilAsync(Func<bool> condition, Action? advance = null)
+    private static async Task UntilAsync(Func<bool> condition, Action? advance = null, int seconds = 5, int pauseMs = 10)
     {
         var deadline = Stopwatch.StartNew();
         while (!condition())
         {
-            deadline.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5), "the bounded observation should complete");
+            deadline.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(seconds), "the bounded observation should complete");
             advance?.Invoke();
-            await Task.Delay(10);
+            await Task.Delay(pauseMs);
         }
     }
+
+    /// <summary>Advances one pass interval at a time, leaving each pass, and any runner process it starts, time to end
+    /// before the next, so fake time measures passes.</summary>
+    private Task TickUntilAsync(Func<bool> condition) =>
+        UntilAsync(condition, () => _time.Advance(TimeSpan.FromSeconds(10)), seconds: 60, pauseMs: 150);
 }

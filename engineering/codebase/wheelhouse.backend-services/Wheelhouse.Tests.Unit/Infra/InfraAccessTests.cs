@@ -2,6 +2,7 @@ using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.Extensions.Configuration;
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.InfraJobs;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Servers.CommandHandlers;
 using Wheelhouse.Application.Servers.Commands;
@@ -44,7 +45,8 @@ public sealed class InfraAccessTests
     [Fact]
     public async Task HostUpkeep_ShouldBeRefusedOnDevWithoutAskingTheRunner()
     {
-        var result = await new ServerUpkeepCommandHandler(null!, new UnreachableGateway(), Access("dev"))
+        var result = await new ServerUpkeepCommandHandler(null!, new UnreachableGateway(), Access("dev"),
+                new InfraFollowSchedule(TimeProvider.System))
             .HandleAsync(new ServerUpkeepCommand { Slug = "ocharo-vps", Actor = "sulton-max" }, CancellationToken.None);
 
         result.Should().BeOfType<AppResult<JsonElement>.Failure>().Subject.Error.Message

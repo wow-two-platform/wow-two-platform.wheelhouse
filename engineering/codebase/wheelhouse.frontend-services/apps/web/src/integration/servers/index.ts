@@ -14,8 +14,9 @@ export const serversApi = {
     }),
   deleteServer: (slug: string, signal?: AbortSignal) =>
     requestEmpty(`/api/servers/${encodeURIComponent(slug)}`, { method: "DELETE", signal, action: "server" }),
-  getVitals: (signal?: AbortSignal) =>
-    requestData<ServerVitals>("/api/deployments/vitals", ServerVitalsSchema, {
+  /** The console's shared snapshot, which it holds for a minute for every tab; `fresh` reads the hosts now. */
+  getVitals: (signal?: AbortSignal, fresh = false) =>
+    requestData<ServerVitals>(fresh ? "/api/deployments/vitals?fresh=true" : "/api/deployments/vitals", ServerVitalsSchema, {
       signal,
     }),
   /** Every target's stored readings of the last `hours` (1-720), oldest first. */

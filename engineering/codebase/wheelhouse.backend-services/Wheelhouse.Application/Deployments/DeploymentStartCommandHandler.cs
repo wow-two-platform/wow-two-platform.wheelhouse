@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Deployments.Following.Services;
 using Wheelhouse.Application.Deployments.Freezes.Services;
 using Wheelhouse.Application.Deployments.Settings.Constants;
 using Wheelhouse.Application.Deployments.Settings.Services;
@@ -20,11 +21,11 @@ namespace Wheelhouse.Application.Deployments;
 /// and the environment's stored settings and vault secrets go to the runner for the target to render. A submitted deploy
 /// records what it rendered, by fingerprint, and which keys changed, so a failure can point at them. The target's
 /// product's approved services catch up with its repositories' <c>deploy.yml</c> before the runner checks the release
-/// against them.</summary>
+/// against them. A submission wakes the deployment follower, which then follows it until it finishes.</summary>
 public sealed class DeploymentStartCommandHandler(
     IDeploymentGateway gateway, ITargetsRepository targets, IProductsRepository products, DeployFreezeService freezes,
     IDeploymentAutomationStore intents, TimeProvider time, DeploymentSettingsService settings,
-    Products.Services.ProductReleaseSourcesService releaseSources)
+    Products.Services.ProductReleaseSourcesService releaseSources, DeploymentFollowSchedule following)
     : ICommandHandler<DeploymentStartCommand, AppResult<JsonElement>>
 {
     /// <inheritdoc />
@@ -57,6 +58,8 @@ public sealed class DeploymentStartCommandHandler(
         var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
         var result = await gateway.StartAsync(request.Target, request.Release, request.Actor, request.Confirm, request.SkipDevPass,
             reason, request.Fleet, values?.Values, cancellationToken);
+        if (result is not AppResult<JsonElement>.Failure { Error.Type: AppErrorType.Conflict })
+            following.Wake();
         if (target is not null && values is not null && result is AppResult<JsonElement>.Success { Data: var submitted }
             && submitted.ValueKind == JsonValueKind.Object && submitted.TryGetProperty("id", out var jobId)
             && Guid.TryParse(jobId.GetString(), out var job))

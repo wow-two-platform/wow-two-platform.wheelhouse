@@ -1,6 +1,7 @@
 import { useAppMutation, useInvalidate } from "@/bootstrap/query";
 import { TopologyKeys } from "@/application/topology";
 import { ServerKeys } from "@/application/servers/ServerKeys";
+import { requestLiveVitals } from "@/application/servers/useServerVitals";
 import { DeploymentExtensions, type DeploymentJob } from "@/domain/deployments";
 import type { ControlOperation } from "@/domain/deployments/controls";
 import { deploymentsApi } from "@/integration/deployments";
@@ -91,6 +92,8 @@ export function useTargetControl() {
       await new Promise((resolve) => setTimeout(resolve, ControlPollMs));
       const read = await deploymentsApi.getOutcome(id);
       if (read.ok && !DeploymentExtensions.isPending(read.value.status)) {
+        // The control changed the containers: the next snapshot reads the hosts now.
+        requestLiveVitals();
         for (const key of refreshed(target)) void invalidate(key);
         return read.value;
       }

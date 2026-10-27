@@ -151,6 +151,9 @@ public static partial class HostConfigurationExtensions
         // The history projection: one runner read serves a page's concurrent reads for Deployment:HistorySeconds.
         builder.Services.AddSingleton<Wheelhouse.Infrastructure.Deployments.DeploymentRecordsMemo>();
         builder.Services.AddScoped<IDeploymentRecords, Wheelhouse.Infrastructure.Deployments.RunnerDeploymentRecords>();
+        // The vitals snapshot: one runner read and one SSH read per host serve every tab for Deployment:VitalsSeconds.
+        builder.Services.AddSingleton<Wheelhouse.Infrastructure.Deployments.ServerVitalsMemo>();
+        builder.Services.AddScoped<IServerVitals, Wheelhouse.Infrastructure.Deployments.RunnerServerVitals>();
         builder.Services.AddScoped<Wheelhouse.Application.Operations.VitalsSampling>();
         builder.Services.AddVitalsSamplingJob();
 

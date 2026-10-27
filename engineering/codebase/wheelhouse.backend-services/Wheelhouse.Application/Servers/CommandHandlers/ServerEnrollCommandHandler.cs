@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.InfraJobs;
 using Wheelhouse.Application.Servers.Commands;
 using Wheelhouse.Application.Servers.Models;
 using Wheelhouse.Application.Servers.Services;
@@ -11,8 +12,10 @@ namespace Wheelhouse.Application.Servers.CommandHandlers;
 
 /// <summary>Handles <see cref="ServerEnrollCommand"/>: the runner records the job and runs it detached; the console
 /// follows its steps. Once it succeeds, <see cref="InfraJobs.InfraJobRecordCommand"/> points the server at its tailnet
-/// address. The control host is never enrolled (<see cref="ControlHost"/>).</summary>
-public sealed class ServerEnrollCommandHandler(IServersRepository servers, IInfraGateway gateway, IInfraAccess access)
+/// address. The control host is never enrolled (<see cref="ControlHost"/>). A started job wakes the infrastructure
+/// follower.</summary>
+public sealed class ServerEnrollCommandHandler(
+    IServersRepository servers, IInfraGateway gateway, IInfraAccess access, InfraFollowSchedule following)
     : ICommandHandler<ServerEnrollCommand, AppResult<JsonElement>>
 {
     /// <inheritdoc />
@@ -26,10 +29,13 @@ public sealed class ServerEnrollCommandHandler(IServersRepository servers, IInfr
         if (ControlHost.Is(server))
             return AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(
                 $"Server '{request.Slug}' is the control host, which the consoles run on; enrollment sets up a fresh public server."));
-        return await gateway.EnrollAsync(new ServerEnrollmentRequest(
+        var result = await gateway.EnrollAsync(new ServerEnrollmentRequest(
             request.Slug, request.PublicAddress, request.SshPort, request.LoginUser, request.Admin,
             string.IsNullOrWhiteSpace(request.AdminKey) ? null : request.AdminKey.Trim(), request.TailnetHostname,
             string.IsNullOrWhiteSpace(request.ExpectedHostKey) ? null : request.ExpectedHostKey.Trim()),
             request.Actor, cancellationToken);
+        if (result is AppResult<JsonElement>.Success)
+            following.Wake();
+        return result;
     }
 }

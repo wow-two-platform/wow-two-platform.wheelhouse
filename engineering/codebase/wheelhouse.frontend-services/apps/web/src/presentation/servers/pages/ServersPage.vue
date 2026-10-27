@@ -26,6 +26,7 @@ import {
 import { PageHeaderActions } from '@wow-two-beta/fe/presentation/layout';
 import {
   hostedProductsOf,
+  requestLiveVitals,
   useServerChanges,
   useServers,
   useServerVitals,
@@ -90,7 +91,11 @@ const productLinks = computed(() => {
     links.set(target.id, productLocation(target.product, { env: target.environment, inspect: 'target' }));
   return links;
 });
-const refresh = useRefresh(() => Promise.all([servers.refetch(), vitals.refetch(), targets.refetch()]));
+// The explicit Refresh reads the hosts now; the minute's polling reads the snapshot the console shares between tabs.
+const refresh = useRefresh(() => {
+  requestLiveVitals();
+  return Promise.all([servers.refetch(), vitals.refetch(), targets.refetch()]);
+});
 /** The products a server hosts, from the targets that place a product environment on it. */
 const hostedOf = (server: Server | undefined): HostedProduct[] =>
   server ? hostedProductsOf(server.slug, targets.data.value ?? [], products.products.value) : [];

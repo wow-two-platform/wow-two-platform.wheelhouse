@@ -21,7 +21,7 @@ const bundle = await build({
       export { ServerExtensions } from './src/domain/servers/ServerExtensions';
       export { AttentionRules } from './src/domain/overview/AttentionRules';
       export { sessionBridge } from './src/integration/common';
-      export { useServerVitals } from './src/application/servers/useServerVitals';
+      export { requestLiveVitals, useServerVitals } from './src/application/servers/useServerVitals';
       export { queryClient, queryPlugin } from './src/bootstrap/query';
       export { createRenderer, h, nextTick, reactive } from 'vue';
     `,
@@ -50,6 +50,7 @@ const {
   AttentionRules,
   sessionBridge,
   useServerVitals,
+  requestLiveVitals,
   queryClient,
   queryPlugin,
   createRenderer,
@@ -586,6 +587,52 @@ test("cancels pending private data across logout even when the transport resolve
   assert.equal(result.ok, false);
   assert.equal(result.failure.code, "cancelled");
   settle(json({ data: [product] }));
+});
+
+test("polling reads the console's shared vitals snapshot, and only a requested live read reads the hosts now", async () => {
+  const snapshot = { collectedAt: "2026-10-27T00:00:00Z", targets: [] };
+  const requested = [];
+  let app;
+  const renderer = createRenderer({
+    createElement: () => ({}),
+    createText: () => ({}),
+    createComment: () => ({}),
+    insert() {},
+    remove() {},
+    patchProp() {},
+    setText() {},
+    setElementText() {},
+    parentNode: () => null,
+    nextSibling: () => null,
+  });
+  try {
+    globalThis.fetch = async (url) => {
+      requested.push(url);
+      return json({ data: snapshot });
+    };
+    queryClient.setQueryData(["servers", "vitals"], snapshot);
+    let vitals;
+    app = renderer.createApp({
+      setup() {
+        vitals = useServerVitals();
+        return () => null;
+      },
+    });
+    app.use(queryPlugin(queryClient));
+    app.mount({});
+    await vitals.refetch();
+    requestLiveVitals();
+    await vitals.refetch();
+    await vitals.refetch();
+    assert.deepEqual(requested, [
+      "/api/deployments/vitals",
+      "/api/deployments/vitals?fresh=true",
+      "/api/deployments/vitals",
+    ]);
+  } finally {
+    app?.unmount();
+    queryClient.clear();
+  }
 });
 
 test("server vitals panels share one subscription that polls every minute, never restarts an in-flight snapshot and stops after the last panel unmounts", async () => {

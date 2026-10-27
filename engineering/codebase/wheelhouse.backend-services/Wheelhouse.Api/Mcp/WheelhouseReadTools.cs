@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using ModelContextProtocol.Server;
 using Wheelhouse.Application.Deployments;
 using Wheelhouse.Application.Inventory.Constants;
+using Wheelhouse.Application.Operations;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Products.Queries;
 using Wheelhouse.Application.Servers.Models;
@@ -96,7 +97,7 @@ public sealed partial class WheelhouseReadTools(ISender sender, WheelhouseDbCont
     [Description("Read current fleet host and container vitals. Results are observations, not retained monitoring guarantees.")]
     [Authorize(Policy = WheelhouseMcpConfiguration.DeploymentsPolicy)]
     public async Task<JsonElement> GetVitals(CancellationToken ct) =>
-        Read(await sender.SendAsync(new DeploymentReadQuery("vitals"), ct));
+        Read(await sender.SendAsync(new ServerVitalsQuery(), ct));
 
     /// <summary>Reads control-plane database readiness and build identity.</summary>
     /// <param name="ct">The cancellation token.</param>

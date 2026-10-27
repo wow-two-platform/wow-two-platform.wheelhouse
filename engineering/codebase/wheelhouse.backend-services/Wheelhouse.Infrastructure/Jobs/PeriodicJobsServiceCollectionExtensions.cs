@@ -1,15 +1,15 @@
-using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments.Automation.Services;
+using Wheelhouse.Application.Deployments.Following.Services;
 using Wheelhouse.Application.Deployments.Fleets.Services;
 using Wheelhouse.Application.Deployments.Settings.Services;
 using Wheelhouse.Application.InfraJobs;
 using Wheelhouse.Application.Operations;
 using WoW.Two.Sdk.Beta.Be.Jobs.Core;
-using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Infrastructure.Jobs;
 
@@ -40,8 +40,13 @@ public static partial class PeriodicJobsServiceCollectionExtensions
     /// <summary>Holds the sampling interval in minutes (default 5, no bounds).</summary>
     public const string VitalsMinutesKey = "Operations:VitalsSampleMinutes";
 
-    /// <summary>Holds the delay between observation passes in seconds (default 10, bounded 1–300).</summary>
+    /// <summary>Holds the delay between observation passes in seconds (default 10, bounded 1–300): how often a pass asks
+    /// whether the runner is due, which it is while a submission is unfinished.</summary>
     public const string FollowSecondsKey = "Deployment:FollowSeconds";
+
+    /// <summary>Holds how many seconds the deployment follower waits between reads while no submission is unfinished
+    /// (default 300, bounded 30–3600): the safety pass that catches a rollout started outside the console.</summary>
+    public const string FollowIdleSecondsKey = "Deployment:FollowIdleSeconds";
 
     /// <summary>Holds the delay between automation passes in seconds (default 120, bounded 10–3600).</summary>
     public const string AutomationSecondsKey = "Deployment:AutomationSeconds";
@@ -55,8 +60,13 @@ public static partial class PeriodicJobsServiceCollectionExtensions
     /// <summary>Holds the delay between settings apply passes in seconds (default 60, bounded 10–600).</summary>
     public const string ApplySecondsKey = "Deployment:ApplySeconds";
 
-    /// <summary>Holds the delay between infrastructure job passes in seconds (default 10, bounded 2–300).</summary>
+    /// <summary>Holds the delay between infrastructure job passes in seconds (default 10, bounded 2–300): how often a pass
+    /// asks whether the runner is due, which it is while a job is unfinished.</summary>
     public const string InfraFollowSecondsKey = "Infra:FollowSeconds";
+
+    /// <summary>Holds how many seconds the infrastructure follower waits between reads while no job is unfinished
+    /// (default 300, bounded 30–3600).</summary>
+    public const string InfraFollowIdleSecondsKey = "Infra:FollowIdleSeconds";
 
     /// <summary>Samples every server's and target's vitals each <see cref="VitalsMinutesKey"/> minutes on a fixed rate, so the
     /// dashboard can show trends.</summary>
@@ -78,21 +88,23 @@ public static partial class PeriodicJobsServiceCollectionExtensions
                 options.LogExceptionDetails = false;
             });
 
-    /// <summary>Observes durable submissions independently of the browser every <see cref="FollowSecondsKey"/> seconds. The
-    /// runner reads target journals and keeps its observation schedule; this pass never starts, retries or reconciles a
+    /// <summary>Observes durable submissions independently of the browser (<see cref="DeploymentFollowing"/>): a pass every
+    /// <see cref="FollowSecondsKey"/> seconds reads the runner while a submission is unfinished, else every
+    /// <see cref="FollowIdleSecondsKey"/> seconds; a deploy, control or reconcile the console submits wakes it. The runner
+    /// reads target journals and keeps its observation schedule; this pass never starts, retries or reconciles a
     /// deployment, and shutdown cancels the observation only.</summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The same collection.</returns>
-    public static IServiceCollection AddDeploymentFollowingJob(this IServiceCollection services) =>
-        services.AddPeriodicJob(
+    public static IServiceCollection AddDeploymentFollowingJob(this IServiceCollection services)
+    {
+        services.TryAddSingleton<DeploymentFollowSchedule>();
+        services.TryAddScoped<DeploymentFollowing>();
+        return services.AddPeriodicJob(
             FollowJob,
-            async (scope, ct) =>
-            {
-                if (await scope.GetRequiredService<IDeploymentGateway>().ReadAsync("follow", null, ct)
-                    is AppResult<JsonElement>.Failure)
-                    LogObservationsStale(Logger(scope));
-            },
+            (scope, ct) => scope.GetRequiredService<DeploymentFollowing>()
+                .PassAsync(Idle(scope, FollowIdleSecondsKey), ct),
             (options, root) => options.Delay(Read(root, FollowSecondsKey, 10), 1, 300));
+    }
 
     /// <summary>Runs the automation passes every <see cref="AutomationSecondsKey"/> seconds: the watch windows (each
     /// <see cref="WatchMinutesKey"/> long), the release watcher, auto-promote, the automatic deploy queue and the daily
@@ -127,16 +139,24 @@ public static partial class PeriodicJobsServiceCollectionExtensions
             (applies, ct) => applies.RunDueAsync(ct),
             (options, root) => options.Delay(Read(root, ApplySecondsKey, 60), 10, 600));
 
-    /// <summary>Records finished enrollments, placements and upkeeps every <see cref="InfraFollowSecondsKey"/> seconds: each
-    /// lands in the audit trail as its owner, and an enrolled server moves to its tailnet address. The jobs themselves run
-    /// detached and never depend on this pass.</summary>
+    /// <summary>Records finished enrollments, placements and upkeeps (<see cref="InfraJobRecorder.FollowAsync"/>): each
+    /// lands in the audit trail as its owner, and an enrolled server moves to its tailnet address. A pass every
+    /// <see cref="InfraFollowSecondsKey"/> seconds reads the runner while a job is unfinished, else every
+    /// <see cref="InfraFollowIdleSecondsKey"/> seconds; a job the console starts wakes it. A console that may not drive
+    /// infrastructure (deployed dev) runs no pass: no job can exist there. The jobs themselves run detached and never
+    /// depend on this pass.</summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The same collection.</returns>
-    public static IServiceCollection AddInfraFollowingJob(this IServiceCollection services) =>
-        services.AddPeriodicJob<InfraJobRecorder>(
+    public static IServiceCollection AddInfraFollowingJob(this IServiceCollection services)
+    {
+        services.TryAddSingleton<InfraFollowSchedule>();
+        return services.AddPeriodicJob(
             InfraFollowJob,
-            (recorder, ct) => recorder.PassAsync(ct),
-            (options, root) => options.Delay(Read(root, InfraFollowSecondsKey, 10), 2, 300));
+            (scope, ct) => scope.GetRequiredService<InfraJobRecorder>()
+                .FollowAsync(Idle(scope, InfraFollowIdleSecondsKey), ct),
+            (options, root) => options.Delay(
+                root.GetService<IInfraAccess>()?.Refusal is null ? Read(root, InfraFollowSecondsKey, 10) : 0, 2, 300));
+    }
 
     /// <summary>Sets a fixed delay of <paramref name="seconds"/> within its bounds, or turns the job off at zero or less, and
     /// logs a failed pass by its type only.</summary>
@@ -150,12 +170,14 @@ public static partial class PeriodicJobsServiceCollectionExtensions
     private static int Read(IServiceProvider services, string key, int fallback) =>
         services.GetRequiredService<IConfiguration>().GetValue(key, fallback);
 
+    /// <summary>A follower's idle interval: the configured seconds (default 300) within 30–3600.</summary>
+    private static TimeSpan Idle(IServiceProvider services, string key) =>
+        TimeSpan.FromSeconds(Math.Clamp(Read(services, key, 300), 30, 3600));
+
     private static ILogger Logger(IServiceProvider scope) =>
         scope.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(PeriodicJobsServiceCollectionExtensions));
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Vitals sampling skipped: the runner could not read the fleet")]
     private static partial void LogVitalsSkipped(ILogger logger);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Deployment observations could not be refreshed; the next pass will retry")]
-    private static partial void LogObservationsStale(ILogger logger);
 }

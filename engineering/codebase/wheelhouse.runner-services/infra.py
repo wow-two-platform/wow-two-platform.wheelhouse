@@ -99,7 +99,7 @@ def main():
         elif args.action == "upkeep-run":
             result = upkeep.run(root, args.job)
         elif args.action == "finished":
-            result = infra_jobs.finished(root)
+            result = {"jobs": infra_jobs.finished(root), "open": infra_jobs.unfinished(root)}
         else:
             result = infra_jobs.acknowledge(root, args.job)
         print(json.dumps(result))

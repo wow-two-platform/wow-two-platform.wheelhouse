@@ -2,6 +2,7 @@ import { onScopeDispose, shallowRef, toValue, watch, type MaybeRefOrGetter } fro
 import { useAppMutation, useAppQuery, useInvalidate } from "@/bootstrap/query";
 import { DeploymentKeys } from "@/application/deployments/DeploymentKeys";
 import { ServerKeys } from "@/application/servers/ServerKeys";
+import { requestLiveVitals } from "@/application/servers/useServerVitals";
 import { InfraJobRules, type InfraJobStatus, type StartEnrollmentRequest } from "@/domain/infrastructure";
 import { enrollmentApi } from "@/integration/infrastructure";
 import { InfrastructureKeys } from "./InfrastructureKeys";
@@ -37,6 +38,7 @@ export function useEnrollment(server: MaybeRefOrGetter<string | null>) {
       if (!InfraJobRules.hasFinished(before, next)) return;
       refreshServers();
       void invalidate(InfrastructureKeys.tailnet);
+      requestLiveVitals();
       void invalidate(ServerKeys.vitals);
       clearTimeout(timer);
       timer = setTimeout(refreshServers, HOST_SWITCH_MS);

@@ -44,7 +44,8 @@ public interface IInfraGateway
     /// (80 and 443 public) and the platform, then a check of the public entry points.</summary>
     Task<AppResult<JsonElement>> UpkeepAsync(string server, string actor, CancellationToken ct);
 
-    /// <summary>Reads finished infrastructure jobs the console has not recorded yet.</summary>
+    /// <summary>Reads finished infrastructure jobs the console has not recorded yet (<c>jobs</c>) and how many are still
+    /// queued or running (<c>open</c>).</summary>
     Task<AppResult<JsonElement>> FinishedAsync(CancellationToken ct);
 
     /// <summary>Marks a finished job recorded, so it is recorded once.</summary>

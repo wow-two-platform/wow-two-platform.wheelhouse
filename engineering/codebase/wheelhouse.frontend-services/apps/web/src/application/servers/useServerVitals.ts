@@ -5,11 +5,27 @@ import { ServerKeys } from "./ServerKeys";
 
 const REFRESH_MS = 60_000;
 
+/** Whether the next snapshot read asks the console to read the hosts now. @internal */
+let liveNext = false;
+
+/**
+ * Has the next read of the server snapshot read the hosts now instead of the snapshot the console holds for a minute
+ * for every tab: an explicit Refresh, or a change the owner just made (a finished rollout or control, an enrolled
+ * server). Polling reads the held snapshot, so open tabs cost the hosts one read a minute between them.
+ */
+export function requestLiveVitals() {
+  liveNext = true;
+}
+
 /** Reads the server snapshot and polls it every minute while the page is visible. @internal */
 function readVitals() {
   return useAppQuery({
     key: ServerKeys.vitals,
-    queryFn: ({ signal }) => serversApi.getVitals(signal),
+    queryFn: ({ signal }) => {
+      const fresh = liveNext;
+      liveNext = false;
+      return serversApi.getVitals(signal, fresh);
+    },
     refetchInterval: REFRESH_MS,
     meta: { suppressGlobalError: true },
   });

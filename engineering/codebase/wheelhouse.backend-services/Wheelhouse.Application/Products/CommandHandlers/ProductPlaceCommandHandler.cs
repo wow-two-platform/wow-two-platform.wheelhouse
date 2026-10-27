@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.InfraJobs;
 using Wheelhouse.Application.Products.Commands;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Products.Services;
@@ -11,13 +12,15 @@ namespace Wheelhouse.Application.Products.CommandHandlers;
 
 /// <summary>Handles <see cref="ProductPlaceCommand"/>: the request must ask only for what the product's
 /// <c>deploy.yml</c> calls for — databases when a service needs PostgreSQL, nodes for its private sites — then the
-/// runner checks it against the same descriptor, records the job and runs it detached.</summary>
+/// runner checks it against the same descriptor, records the job and runs it detached. A started job wakes the
+/// infrastructure follower.</summary>
 public sealed class ProductPlaceCommandHandler(
     IProductsRepository products,
     IServersRepository servers,
     IInfraGateway gateway,
     IInfraAccess access,
-    ProductDescriptorService descriptors)
+    ProductDescriptorService descriptors,
+    InfraFollowSchedule following)
     : ICommandHandler<ProductPlaceCommand, AppResult<JsonElement>>
 {
     /// <inheritdoc />
@@ -36,9 +39,12 @@ public sealed class ProductPlaceCommandHandler(
         if (Mismatch(request, descriptor) is { } mismatch)
             return AppResult<JsonElement>.Fail(AppErrorFactory.Validation(mismatch));
 
-        return await gateway.PlaceAsync(
+        var result = await gateway.PlaceAsync(
             new ProductPlacementRequest(request.Product, request.Server, request.Database, request.Sites, descriptor),
             request.Actor, cancellationToken);
+        if (result is AppResult<JsonElement>.Success)
+            following.Wake();
+        return result;
     }
 
     /// <summary>Why the request asks for something the descriptor does not call for, or <c>null</c>.</summary>

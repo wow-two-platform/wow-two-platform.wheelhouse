@@ -19,6 +19,15 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
     public (string Product, string Branch)? LastCommits { get; private set; }
 
     public (string Resource, string? Id)? LastRead { get; private set; }
+
+    /// <summary>Every read, in order: resource and id.</summary>
+    public List<(string Resource, string? Id)> Reads { get; } = [];
+
+    /// <summary>How many submissions the <c>follow</c> read answers are still unfinished.</summary>
+    public int FollowOpen { get; set; }
+
+    /// <summary>In how many seconds the <c>follow</c> read answers the next look is due; null names none.</summary>
+    public double? FollowNextIn { get; set; }
     public (string Target, string Service, int Tail)? LastLogs { get; private set; }
 
     /// <summary>When set, the next starts fail with this runner refusal, as a gate would refuse them.</summary>
@@ -51,6 +60,7 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
     public Task<AppResult<JsonElement>> ReadAsync(string resource, string? id, CancellationToken ct)
     {
         LastRead = (resource, id);
+        Reads.Add((resource, id));
         if (Runner is not null)
             return Runner.ReadAsync(resource, id, ct);
         if (ReadException is not null)
@@ -75,6 +85,7 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
                 dependencies = Array.Empty<object>(), warnings = Array.Empty<string>() },
             "stats" => new { windowDays = int.Parse(id!), deploys = 1, succeeded = 0, failed = 1, refused = 0, pending = 0 },
             "vitals" => new { collectedAt = "2026-09-26T12:00:00+00:00", targets = new[] { new { targetId = "pilot", serverId = "pilot-host", ok = true } } },
+            "follow" => new { @checked = 0, unavailable = 0, busy = 0, open = FollowOpen, nextIn = FollowNextIn },
             "branches" => new[] { "main", "feature/pins" },
             "sites" => new Dictionary<string, object[]>
             {

@@ -361,7 +361,9 @@ The runtime runs as `app` and uses PostgreSQL, not SQLite.
 
 ## Runner installation and inventory
 
-The image includes `/app/runner/{runner,transport,inventory,catalog,fleet,artifacts}.py`.
+The image includes `/app/runner/{runner,transport,inventory,catalog,fleet,artifacts}.py` and the runner's other
+modules, compiled at build (`compileall`, checked-hash): `app` cannot write the folder, so every runner start would
+otherwise compile each module it imports.
 The runner reads products, servers, targets and vaults from `inventory.json`, which the API rewrites from its database
 at startup and after every change; Servers and Products in the console edit them. A row reaches nothing until the
 operator places its credential files below.
@@ -527,12 +529,15 @@ start and finish. Dev never does any of it: its Servers page reads "prod only".
   control-path test per products host, diffs it against the live policy and runs Tailscale's validation. Apply sends
   the reviewed ETag and digest; the policy it replaces is kept for revert. A policy whose tests no longer accept
   `tag:control` to `tag:products:22` is refused, whatever Tailscale would save.
-- **Recording:** every `Infra:FollowSeconds` (10) the API records finished jobs in the audit trail as the owner who
+- **Recording:** while a job is queued or running, or a finished one is left unrecorded, every `Infra:FollowSeconds`
+  (10) the API records finished jobs in the audit trail as the owner who
   started them (`server.enrollment.finish`, `product.placement.finish`, `server.upkeep.finish`), and moves an enrolled
   server's host to its tailnet address and `wheelhouse-deploy`. A job that brought the host to the kit records the
   kit's ingress on the server (`websecure` with `letsencrypt`, `private`, probes on the host; the owner's host pattern
   kept) and its public address: the one already recorded, else the enrollment's, else the host's own public source
-  address. A server edit never changes the public address.
+  address. A server edit never changes the public address. A job the console starts wakes this follower; with none in
+  flight it reads `infra.py finished` once per `Infra:FollowIdleSeconds` (300), which catches a job started by hand,
+  and deployed dev, where no job can exist, never runs it.
 
 Owner steps, once (Tailscale admin console):
 
@@ -620,7 +625,7 @@ every settings file and the target's lock state; each failure names the rule or 
 | `GET /api/deployments/targets/{id}/services/{service}/logs?tail=200` | One service's last container lines (1-1000), never cached |
 | `GET /api/audit?limit=50&before=` | Operator actions, newest first; `before` pages back from a sequence number |
 | `GET /api/audit/verification` | Whether every stored audit entry and link still verifies |
-| `GET /api/deployments/vitals` | Every server's own host load, memory, disks and uptime, and every target's containers, read in parallel |
+| `GET /api/deployments/vitals[?fresh=true]` | Every server's own host load, memory, disks and uptime, and every target's containers, read in parallel; one read serves every tab and the MCP tool for `Deployment:VitalsSeconds` (60), and `fresh=true` (the console's explicit Refresh) reads the hosts now |
 | `GET /api/deployments/stats?days=30` | Outcomes, success rate, median rollout and recovery, deploys per UTC day (1–90 days) |
 | `GET /api/deployments/vitals/history?hours=24&target=` | Stored readings of the last 1–720 hours, oldest first: one target's, or every server's and target's |
 | `GET /api/vaults/{vault}/hygiene` | A standalone vault's secrets and product tokens due for rotation; metadata only |
@@ -642,7 +647,10 @@ every settings file and the target's lock state; each failure names the rule or 
 The API reads its runner settings from the `Deployment` section: `TransportPath`, `Root`, `Python`, `GitHubTokenFile`,
 `GitHubAppId` and `GitHubAppKeyFile`.
 A background follower observes durable deployment submissions every `Deployment:FollowSeconds` (default 10;
-0 disables it). Each pass reads at most two due target journals, with a 30-second SSH limit per read. Transport
+0 disables it) while one is unfinished, at the time the runner names for its next look (`follow` answers `open` and
+`nextIn`); a deploy, control or reconcile the console submits wakes it, and with nothing in flight it reads the runner
+once per `Deployment:FollowIdleSeconds` (default 300), which catches a rollout `self-deploy.py` or CI started. Each
+pass reads at most two due target journals, with a 30-second SSH limit per read. Transport
 failures retain the last outcome; failed or unknown reads back off up to five minutes. Retry timing survives a control-plane
 restart in `<runner root>/following/`; it never submits, retries or reconciles a deployment. A terminal status is
 final only when `completedAt` is present, after rollback or cleanup. Explicit status reads can still observe a later

@@ -1,7 +1,7 @@
 import { computed, toValue, type ComputedRef, type InjectionKey, type MaybeRefOrGetter } from "vue";
 import { useDeploymentTargets } from "@/application/deployments";
 import { ProductKeys } from "@/application/products";
-import { useServerVitals } from "@/application/servers";
+import { requestLiveVitals, useServerVitals } from "@/application/servers";
 import { useApiConnection } from "@/application/system";
 import { EnvironmentHealthRules } from "@/domain/overview";
 import type { DeploymentRange } from "@/domain/deployments";
@@ -120,6 +120,10 @@ export function useProductFacts(range: MaybeRefOrGetter<DeploymentRange | null> 
       );
       return { products: Math.max(MinimumScale, productTop) };
     }),
-    refresh: () => Promise.all([targets.refetch(), vitals.refetch(), summary.refetch(), ...(trend === summary ? [] : [trend.refetch()])]),
+    /** The page's explicit Refresh: the hosts are read now, not the snapshot the console shares between tabs. */
+    refresh: () => {
+      requestLiveVitals();
+      return Promise.all([targets.refetch(), vitals.refetch(), summary.refetch(), ...(trend === summary ? [] : [trend.refetch()])]);
+    },
   };
 }

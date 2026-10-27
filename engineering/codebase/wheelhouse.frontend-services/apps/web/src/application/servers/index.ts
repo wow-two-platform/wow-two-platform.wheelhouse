@@ -7,7 +7,7 @@ import { ServerKeys } from "./ServerKeys";
 
 export { ServerKeys } from "./ServerKeys";
 export { hostedProductsOf, type HostedProduct } from "./ServerHosting";
-export { useServerVitals } from "./useServerVitals";
+export { requestLiveVitals, useServerVitals } from "./useServerVitals";
 
 /** The inventory's servers. */
 export function useServers() {

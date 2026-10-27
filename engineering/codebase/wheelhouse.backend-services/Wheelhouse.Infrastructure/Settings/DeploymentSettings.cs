@@ -37,6 +37,10 @@ public sealed record DeploymentSettings
     /// zero reads it every time.</summary>
     public int HistorySeconds { get; set; } = 3;
 
+    /// <summary>Gets or sets how many seconds one read of every host's and target's vitals serves the console's reads,
+    /// every tab and integration alike (0–600); zero reads it every time. An explicit refresh reads it now.</summary>
+    public int VitalsSeconds { get; set; } = 60;
+
     /// <summary>The token file's place under the runner root when <see cref="GitHubTokenFile"/> names none.</summary>
     public static readonly string DefaultTokenFile = Path.Combine("github-token", "token");
 

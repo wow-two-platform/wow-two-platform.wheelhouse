@@ -17,6 +17,9 @@ public sealed class StubInfraGateway : IInfraGateway
     /// <summary>The finished jobs the next <see cref="FinishedAsync"/> answers; tests add them.</summary>
     public List<object> Finished { get; } = [];
 
+    /// <summary>How many jobs <see cref="FinishedAsync"/> answers are still queued or running.</summary>
+    public int Open { get; set; }
+
     /// <summary>The job IDs acknowledged as recorded.</summary>
     public List<string> Acknowledged { get; } = [];
 
@@ -28,6 +31,7 @@ public sealed class StubInfraGateway : IInfraGateway
     {
         Calls.Clear();
         Finished.Clear();
+        Open = 0;
         Acknowledged.Clear();
         Refusal = null;
     }
@@ -72,7 +76,7 @@ public sealed class StubInfraGateway : IInfraGateway
         Write("upkeep", server, actor, new { id = Guid.NewGuid().ToString("D"), kind = "upkeep", serverId = server, status = "queued" });
 
     public Task<AppResult<JsonElement>> FinishedAsync(CancellationToken ct) =>
-        Answer("finished", null, null, Finished.ToArray());
+        Answer("finished", null, null, new { jobs = Finished.ToArray(), open = Open });
 
     public Task<AppResult<JsonElement>> AcknowledgeAsync(string job, CancellationToken ct)
     {

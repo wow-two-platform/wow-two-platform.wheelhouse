@@ -556,12 +556,15 @@ def status(root, job_id):
 
 
 def follow(root, clock=time.time):
-    """A bounded, restartable observation pass over all local submissions; never execute a deployment."""
+    """A bounded, restartable observation pass over all local submissions; never execute a deployment. Beside its
+    counts it says how many submissions are still unfinished (`open`) and in how many seconds the earliest of them is
+    due for its next look (`nextIn`, null when none is), so the console reads the runner only while work is in flight.
+    A pass another one holds names neither."""
     result = {"checked": 0, "unavailable": 0, "busy": 0}
     with observation_lock(root / "following" / "pass.lock") as acquired:
         if not acquired:
             return {**result, "busy": 1}
-        due = []
+        due, pending = [], {}
         for job in jobs(root, limit=None, controls=True):
             if finalized(job):
                 continue
@@ -580,6 +583,7 @@ def follow(root, clock=time.time):
                     next_attempt, failures = 0, 0
             except (ValueError, KeyError, TypeError, OverflowError, OSError):
                 next_attempt, failures = 0, 0
+            pending[job["id"]] = next_attempt
             if next_attempt <= clock():
                 due.append((next_attempt, job["submittedAt"], job["id"], failures, has_receipt))
         for _, _, job_id, failures, has_receipt in sorted(due)[:FOLLOW_BATCH_SIZE]:
@@ -602,7 +606,14 @@ def follow(root, clock=time.time):
                 result["unavailable"] += 1
                 failures += 1
                 delay = min(FOLLOW_MAX_BACKOFF, FOLLOW_SECONDS * 2 ** min(failures - 1, 5))
+                outcome = None
             write_json(path, {"nextAttemptAt": clock() + delay, "failures": failures, "hasReceipt": has_receipt})
+            if outcome is not None and finalized(outcome):
+                pending.pop(job_id, None)
+            else:
+                pending[job_id] = clock() + delay
+        result["open"] = len(pending)
+        result["nextIn"] = round(max(0.0, min(pending.values()) - clock()), 1) if pending else None
     return result
 
 

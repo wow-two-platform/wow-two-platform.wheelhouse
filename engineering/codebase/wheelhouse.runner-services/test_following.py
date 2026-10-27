@@ -199,6 +199,32 @@ with patch.object(transport, 'Ssh') as ssh, patch.object(transport, 'submit') as
             self.assertEqual(2, self.follow()["checked"])
             self.assertEqual(set(identifiers), {job["id"] for job in transport.jobs(self.root) if job["status"] == "succeeded"})
 
+    def test_pass_names_the_unfinished_submissions_and_when_the_next_look_is_due(self):
+        self.assertEqual((0, None), self.open_and_next())
+        self.observed(self.job(1), "succeeded")
+        self.assertEqual((0, None), self.open_and_next())
+        running, unknown = self.job(2), self.job(3, receipt=False)
+        with patch.object(transport, "Ssh") as ssh:
+            ssh.return_value.run.side_effect = lambda command: json.dumps(
+                {"id": shlex.split(command)[-1], "status": "running"})
+            self.assertEqual((2, 10), self.open_and_next())
+            self.clock += 4
+            self.assertEqual((2, 6), self.open_and_next())  # nothing due: each keeps its look
+            self.clock += 6
+            self.assertEqual((2, 10), self.open_and_next())
+            ssh.return_value.run.side_effect = self.succeeded
+            self.clock += 10
+            # The running one finished; the one without a receipt stays open, its looks backing off.
+            self.assertEqual((1, 10), self.open_and_next())
+            self.clock += 10
+            self.assertEqual((1, 40), self.open_and_next())
+            self.assertEqual(3, transport.read_json(self.root / "following" / (unknown + ".json"))["failures"])
+        self.assertEqual("succeeded", next(row for row in transport.jobs(self.root) if row["id"] == running)["status"])
+
+    def open_and_next(self):
+        result = self.follow()
+        return result["open"], result["nextIn"]
+
     def test_another_pass_does_not_wait_on_a_running_pass(self):
         self.job()
         with transport.observation_lock(self.root / "following" / "pass.lock"):
@@ -245,7 +271,7 @@ with patch.object(transport, 'Ssh') as ssh, patch.object(transport, 'submit') as
                              {"id": valid, "status": "interrupted", "completedAt": ["invalid"]})
         with patch.object(transport, "Ssh") as ssh:
             ssh.return_value.run.side_effect = self.succeeded
-            self.assertEqual({"checked": 1, "unavailable": 1, "busy": 0}, self.follow())
+            self.assertEqual({"checked": 1, "unavailable": 1, "busy": 0, "open": 1, "nextIn": 10}, self.follow())
             self.assertEqual(1, ssh.return_value.run.call_count)
         self.assertEqual("succeeded", next(row for row in transport.jobs(self.root) if row["id"] == valid)["status"])
 

@@ -172,6 +172,28 @@ def finished(root):
     return sorted(result, key=lambda item: item.get("completedAt") or "")
 
 
+def unfinished(root):
+    """How many jobs are still queued or running: a live process holds their server's lock, or a queued one is within
+    its grace. The console's follower reads finished jobs often only while one is."""
+    count = 0
+    for _, name in KINDS:
+        directory = Path(root) / INFRA / name
+        for path in directory.glob("*.json") if directory.is_dir() else ():
+            try:
+                record = read_json(path)
+            except (ValueError, OSError):
+                continue
+            if not isinstance(record, dict) or record.get("status") not in ("queued", "running"):
+                continue
+            try:
+                running = busy(root, record.get("serverId"))
+            except Rejected:
+                continue
+            if shown(record, running).get("status") in ("queued", "running"):
+                count += 1
+    return count
+
+
 def acknowledge(root, identifier):
     """Marks a finished job recorded by the console, so its follower records it once."""
     valid_id(identifier)

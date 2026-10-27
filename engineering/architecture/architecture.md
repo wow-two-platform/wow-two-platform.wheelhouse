@@ -564,7 +564,11 @@ release that passed dev, and bypassing that gate requires its typed target ID. T
 The target journal owns a rollout's state. The control plane keeps durable submissions in `jobs/` and their latest
 observations in `observed/`; history and statistics read that projection. A cancellable hosted follower asks the
 existing process gateway for bounded observation passes. It scans all submissions, persists retry timing in
-`following/`, and resumes after restart without launching work. Browser status reads share a nonblocking per-job
+`following/`, and resumes after restart without launching work. A pass answers how many submissions are unfinished
+(`open`) and when the earliest is next due (`nextIn`); the console reads the runner only then, at once after it submits a
+deploy, control or reconcile, and otherwise once per `Deployment:FollowIdleSeconds` (300), so an idle console starts
+no runner process between those safety passes. The infrastructure follower does the same with `infra.py finished`
+(`jobs`, `open`) and never runs on deployed dev. Browser status reads share a nonblocking per-job
 lock; competing reads get the last complete observation. Unique atomic temporary files prevent concurrent writers
 from sharing a temporary pathname. Explicit reconciliation receipts take precedence over earlier observations.
 

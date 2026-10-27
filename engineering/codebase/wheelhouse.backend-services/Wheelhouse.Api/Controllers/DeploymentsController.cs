@@ -205,10 +205,12 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
     public async Task<IActionResult> Stats([FromQuery, Range(1, 90)] int days = 30, CancellationToken ct = default) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentReadQuery("stats", days.ToString(CultureInfo.InvariantCulture)), ct));
 
-    /// <summary>Reads every server's host vitals and every target's container vitals without changing them.</summary>
+    /// <summary>Reads every server's host vitals and every target's container vitals without changing them: the shared
+    /// snapshot while it is fresh (<c>Deployment:VitalsSeconds</c>), or the hosts now with <paramref name="fresh"/> — the
+    /// owner's explicit Refresh.</summary>
     [HttpGet("vitals")]
-    public async Task<IActionResult> Vitals(CancellationToken ct) =>
-        this.ToActionResult(await sender.SendAsync(new DeploymentReadQuery("vitals"), ct));
+    public async Task<IActionResult> Vitals([FromQuery] bool fresh = false, CancellationToken ct = default) =>
+        this.ToActionResult(await sender.SendAsync(new ServerVitalsQuery(fresh), ct));
 
     /// <summary>Reads stored vitals samples of the last hours (1-720): one target's, or every server's and target's.</summary>
     [HttpGet("vitals/history")]

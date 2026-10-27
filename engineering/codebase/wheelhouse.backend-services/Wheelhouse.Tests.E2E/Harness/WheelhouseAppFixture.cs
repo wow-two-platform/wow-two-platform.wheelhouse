@@ -175,6 +175,8 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
         }
         await File.WriteAllTextAsync(VaultKeyFile, VaultKey + "\n");
         ResetStubs();
+        // The vitals snapshot is held for every reader; each test starts without one.
+        Host.Services.GetRequiredService<Wheelhouse.Infrastructure.Deployments.ServerVitalsMemo>().Last = null;
     }
 
     /// <summary>Restores the shared stubs to their happy-path defaults so each test starts from a known state.</summary>
@@ -186,6 +188,9 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
         Deployments.ReadFailure = null;
         Deployments.ReadException = null;
         Deployments.History.Clear();
+        Deployments.Reads.Clear();
+        Deployments.FollowOpen = 0;
+        Deployments.FollowNextIn = null;
         Deployments.Latest.Clear();
         Deployments.Builds.Clear();
         Deployments.Starts.Clear();

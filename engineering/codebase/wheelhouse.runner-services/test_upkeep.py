@@ -178,6 +178,21 @@ class UpkeepTests(unittest.TestCase):
         self.assertEqual("Published beyond loopback: ocharo-platform-prod-desk-1 0.0.0.0:8080, "
                          "wheelhouse-products-ingress-1 0.0.0.0:8081", result["reason"])
 
+    def test_an_upkeep_counts_as_unfinished_only_while_queued_or_held(self):
+        self.enrolled()
+        self.assertEqual(0, infra_jobs.unfinished(self.root))
+        job = upkeep.start(self.root, {"serverId": "ocharo-vps"}, "sulton-max", launch=False)
+        self.assertEqual(1, infra_jobs.unfinished(self.root))  # queued, within its grace
+        path = self.root / "infra" / "upkeeps" / (job["id"] + ".json")
+        record = json.loads(path.read_text())
+        path.write_text(json.dumps({**record, "status": "running"}))
+        self.assertEqual(0, infra_jobs.unfinished(self.root))  # no process holds it: interrupted
+        with infra_jobs.server_lock(self.root, "ocharo-vps"):
+            self.assertEqual(1, infra_jobs.unfinished(self.root))
+        path.write_text(json.dumps(record))
+        upkeep.run(self.root, job["id"])
+        self.assertEqual(0, infra_jobs.unfinished(self.root))
+
     def test_a_finished_upkeep_reaches_the_follower_once(self):
         self.enrolled()
         result = self.upkeep()

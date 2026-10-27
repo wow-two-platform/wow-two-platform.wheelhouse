@@ -35,7 +35,7 @@ import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
 import { ConsolePaths, ProductTab } from "@/application/navigation";
 import { useLastEnvironment, useShowInactive } from "@/application/preferences";
 import { useProducts } from "@/application/products";
-import { useServerVitals } from "@/application/servers";
+import { requestLiveVitals, useServerVitals } from "@/application/servers";
 import {
   useDeploymentTargets,
   useDeploymentHistory,
@@ -281,11 +281,13 @@ const drift = computed(() =>
     : null,
 );
 /** Reads the services again: the map's declaration and the containers' vitals. */
-const servicesRefresh = useRefresh(() =>
-  Promise.all([vitals.refetch(), ...(target.value ? [topology.refetch()] : [])]),
-);
-const refresh = useRefresh(() =>
-  Promise.all([
+const servicesRefresh = useRefresh(() => {
+  requestLiveVitals();
+  return Promise.all([vitals.refetch(), ...(target.value ? [topology.refetch()] : [])]);
+});
+const refresh = useRefresh(() => {
+  requestLiveVitals();
+  return Promise.all([
     products.reload(),
     targets.refetch(),
     vitals.refetch(),
@@ -295,8 +297,8 @@ const refresh = useRefresh(() =>
     ...(target.value ? [state.refetch()] : []),
     ...(target.value ? [topology.refetch()] : []),
     ...(inspected.value?.kind === "deployment" ? [outcome.refetch()] : []),
-  ]),
-);
+  ]);
+});
 
 /** Whether the product has a target in the environment, so its segment can be chosen. */
 function hasEnvironment(environment: DeploymentEnvironment): boolean {
