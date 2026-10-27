@@ -104,7 +104,9 @@ services:
       - /tmp:size=16m,mode=1777
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    mem_limit: 128m
+    # 128m left no room for the healthcheck's second traefik process beside the cached binary: the page cache
+    # thrashed (~130 MB/s of disk reads) and held the host's load near 1 (2026-10-27).
+    mem_limit: 256m
     restart: unless-stopped
     logging:
       driver: json-file
