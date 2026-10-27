@@ -26,4 +26,8 @@ public sealed record UpdateServerApiRequest
 
     /// <summary>Gets how the server's ingress publishes sites.</summary>
     public ServerIngressValueObject Ingress { get; init; } = new();
+
+    /// <summary>Gets the https address of the provider console the server's card opens; absent leaves the provider's
+    /// default sign-in page.</summary>
+    public string? ConsoleUrl { get; init; }
 }

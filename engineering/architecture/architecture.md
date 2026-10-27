@@ -330,7 +330,9 @@ Enrollment and Refresh kit record it with the kit's ingress; a server edit keeps
 Credentials never enter the database. A server's SSH identity and pinned host key (`ssh/<server>/identity`,
 `known_hosts`) and a vault's administrator password (`vaults/<vault>/password`) are files the owner places on
 the control host: a new row reaches nothing until its files exist, and a changed host address fails its pinned key.
-Provider and environment values stay enums; a new provider needs an enum member and its integration. A product or
+Provider and environment values stay enums; a new provider needs an enum member, its integration and, when it has
+one, its console's sign-in page (`VpsProviderConsoles`), which each server's card opens; a server's own console address
+(`servers.console_url`, https only) replaces it for an account's own manager. A product or
 server that a target or vault still uses cannot be deleted. Product images never change with the host.
 
 On the local rig the runner holds the local server's fixtures. The API seeds them at startup: fixture products only

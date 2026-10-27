@@ -43,6 +43,21 @@ public static class InventoryRuleExtensions
             .Must(ids => ids is not null && ids.Count <= 500 && !ids.Contains(Guid.Empty) && ids.Distinct().Count() == ids.Count)
             .WithMessage("'{PropertyName}' must list each identifier once (500 at most).");
 
+    /// <summary>Requires nothing, or an absolute https address of 2048 characters at most with a host and no user
+    /// information, so a link Wheelhouse renders never carries a credential or opens another scheme.</summary>
+    /// <param name="rule">The rule builder.</param>
+    /// <typeparam name="T">The validated type.</typeparam>
+    /// <returns>The rule builder for chaining.</returns>
+    public static IRuleBuilderOptions<T, string?> MustBeHttpsAddress<T>(this IRuleBuilder<T, string?> rule) =>
+        rule
+            .Must(value => string.IsNullOrWhiteSpace(value)
+                || (value.Trim().Length <= 2048
+                    && Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)
+                    && uri.Scheme == Uri.UriSchemeHttps
+                    && uri.Host.Length > 0
+                    && uri.UserInfo.Length == 0))
+            .WithMessage("'{PropertyName}' must be an https address, such as https://www.ovh.com/manager/.");
+
     /// <summary>Requires text that matches one of the inventory patterns.</summary>
     /// <param name="rule">The rule builder.</param>
     /// <param name="pattern">One of the <see cref="InventoryPatternConstants"/>.</param>

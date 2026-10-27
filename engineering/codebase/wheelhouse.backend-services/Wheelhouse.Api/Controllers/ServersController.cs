@@ -42,6 +42,7 @@ public sealed class ServersController(ISender sender) : ControllerBase
             SshUser = request.SshUser,
             SshPort = request.SshPort,
             Ingress = request.Ingress,
+            ConsoleUrl = request.ConsoleUrl,
         }, ct), envelope => StatusCode(StatusCodes.Status201Created, envelope));
 
     /// <summary>Changes a server's definition; its slug stays.</summary>
@@ -61,6 +62,7 @@ public sealed class ServersController(ISender sender) : ControllerBase
             SshUser = request.SshUser,
             SshPort = request.SshPort,
             Ingress = request.Ingress,
+            ConsoleUrl = request.ConsoleUrl,
         }, ct));
 
     /// <summary>Removes a server no target or vault runs on any more.</summary>

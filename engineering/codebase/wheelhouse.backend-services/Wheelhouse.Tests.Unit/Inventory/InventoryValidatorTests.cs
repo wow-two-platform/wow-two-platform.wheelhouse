@@ -88,6 +88,25 @@ public sealed class InventoryValidatorTests
     }
 
     [Theory]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("https://www.ovh.com/manager/", true)]
+    [InlineData(" https://ca.ovh.com/manager/#/hub ", true)]
+    [InlineData("http://www.ovh.com/manager/", false)]
+    [InlineData("javascript:alert(1)", false)]
+    [InlineData("/manager/", false)]
+    [InlineData("https://owner:secret@www.ovh.com/", false)]
+    public void ServerValidate_ShouldTakeOnlyAnHttpsConsoleAddress_WhenOneIsGiven(string? consoleUrl, bool valid)
+    {
+        new ServerCreateCommandValidator().Validate(Server with { ConsoleUrl = consoleUrl }).IsValid.Should().Be(valid);
+        new ServerUpdateCommandValidator().Validate(new ServerUpdateCommand
+        {
+            Slug = Server.Slug, Name = Server.Name, Provider = Server.Provider, Host = Server.Host, Region = Server.Region,
+            SshUser = Server.SshUser, SshPort = Server.SshPort, Ingress = Server.Ingress, ConsoleUrl = consoleUrl,
+        }).IsValid.Should().Be(valid);
+    }
+
+    [Theory]
     [InlineData("bad host", 22, "{site}.example", "http://ingress:80")]
     [InlineData("vps.example.net", 0, "{site}.example", "http://ingress:80")]
     [InlineData("vps.example.net", 22, "app.example", "http://ingress:80")]

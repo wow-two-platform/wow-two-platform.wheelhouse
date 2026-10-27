@@ -19,5 +19,6 @@ public sealed class ServerCreateCommandValidator : AbstractValidator<ServerCreat
         RuleFor(x => x.SshUser).MustMatch(InventoryPatternConstants.SshUser, "a lowercase user name");
         RuleFor(x => x.SshPort).InclusiveBetween(1, 65535);
         RuleFor(x => x.Ingress).NotNull().SetValidator(new ServerIngressValueObjectValidator());
+        RuleFor(x => x.ConsoleUrl).MustBeHttpsAddress();
     }
 }

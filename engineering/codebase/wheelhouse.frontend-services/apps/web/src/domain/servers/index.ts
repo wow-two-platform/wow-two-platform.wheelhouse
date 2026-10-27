@@ -1,3 +1,5 @@
+import { InventoryRules } from '@/domain/common';
+
 /** Who hosts a server. */
 export const VpsProvider = {
   Hetzner: 'hetzner',
@@ -15,6 +17,17 @@ export const VpsProviderLabels: Readonly<Record<VpsProvider, string>> = {
   [VpsProvider.Local]: 'Local',
   [VpsProvider.Ovhcloud]: 'OVHcloud',
   [VpsProvider.Contabo]: 'Contabo',
+};
+
+/**
+ * Each provider's console sign-in page, which a server's card opens unless the server names its own address (an
+ * account's regional manager, say, which stays on the row and never in the code); null for a provider without one.
+ */
+export const VpsProviderConsoles: Readonly<Record<VpsProvider, string | null>> = {
+  [VpsProvider.Hetzner]: 'https://console.hetzner.cloud/',
+  [VpsProvider.Local]: null,
+  [VpsProvider.Ovhcloud]: 'https://www.ovh.com/manager/',
+  [VpsProvider.Contabo]: 'https://my.contabo.com/',
 };
 
 /** How a server's ingress publishes sites. */
@@ -45,11 +58,29 @@ export interface Server {
   sshUser: string;
   sshPort: number;
   ingress: ServerIngress;
+  /** The https address of the provider console the server's card opens in place of its provider's sign-in page; a
+   * host before the field, or a server without one, sends none. */
+  consoleUrl?: string | null | undefined;
   /**
    * Whether the host reads the server as the control host, the one the consoles run on and reach at a private address:
    * Wheelhouse's own environments run only there, and it is never enrolled. Never sent on a save.
    */
   controlHost?: boolean | undefined;
+}
+
+/** The provider console a server's card opens, and the link's words. */
+export interface ServerConsole {
+  href: string;
+  label: string;
+}
+
+/** The console a server's card opens: its own address, else its provider's sign-in page; null for neither, or for an
+ * address that is not https. */
+export function serverConsoleOf(server: Pick<Server, 'provider' | 'consoleUrl'>): ServerConsole | null {
+  const href = server.consoleUrl || VpsProviderConsoles[server.provider];
+  return href && InventoryRules.isHttpsAddress(href)
+    ? { href, label: `Open ${VpsProviderLabels[server.provider]}` }
+    : null;
 }
 
 /** A server's editable definition; the slug is fixed once the server exists. */

@@ -27,6 +27,7 @@ public sealed class ServerUpdateCommandHandler(IServersRepository servers)
         server.SshUser = request.SshUser;
         server.SshPort = request.SshPort;
         server.Ingress = request.Ingress with { PublicAddress = server.Ingress.PublicAddress };
+        server.ConsoleUrl = string.IsNullOrWhiteSpace(request.ConsoleUrl) ? null : request.ConsoleUrl.Trim();
         await servers.UpdateAsync(server, cancellationToken);
         return AppResult<ServerDto>.Ok(ServerMapper.Map(server));
     }

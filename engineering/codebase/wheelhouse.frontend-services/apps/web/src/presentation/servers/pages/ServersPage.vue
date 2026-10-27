@@ -43,6 +43,7 @@ import {
   VpsProvider,
   VpsProviderLabels,
   hostTrend,
+  serverConsoleOf,
   type Server,
   type TrendRange,
 } from '@/domain/servers';
@@ -98,6 +99,8 @@ const impactOf = (server: Server | undefined): AttentionItem[] =>
   server && vitals.data.value ? AttentionRules.ofServer(vitals.data.value, server.slug) : [];
 /** The impact's tone: danger when anything is unreadable or full, warning for load alone. */
 const impactTone = (items: readonly AttentionItem[]) => (items.some((item) => item.tone === 'danger') ? 'danger' : 'warning');
+/** The provider console a server's card opens: its own address, else its provider's sign-in page. */
+const consoleOf = (server: Server | undefined) => (server ? serverConsoleOf(server) : null);
 const provider = ref<string | null>(null);
 /** The servers the provider filter keeps, degraded ones first — unreadable or full before overloaded — else in order. */
 const visible = computed(() => {
@@ -192,7 +195,25 @@ const trendWindow = computed(() => {
           "
         >
           <template #actions>
-            <Badge>{{ server ? VpsProviderLabels[server.provider] : 'Provider' }}</Badge>
+            <!-- The console link names the provider, so it stands in for the provider badge. -->
+            <Button
+              v-if="server && consoleOf(server)"
+              as-child
+              size="sm"
+              variant="ghost"
+              tone="neutral"
+              class="max-md:min-h-11"
+            >
+              <a
+                :href="consoleOf(server)!.href"
+                target="_blank"
+                rel="noopener noreferrer"
+                :aria-label="`${consoleOf(server)!.label} for ${server.name}`"
+                :title="consoleOf(server)!.href"
+                ><ExternalLink :size="14" aria-hidden="true" />{{ consoleOf(server)!.label }}</a
+              >
+            </Button>
+            <Badge v-else>{{ server ? VpsProviderLabels[server.provider] : 'Provider' }}</Badge>
             <Button
               size="sm"
               shape="square"

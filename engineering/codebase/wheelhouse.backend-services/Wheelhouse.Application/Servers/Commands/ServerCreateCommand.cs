@@ -35,6 +35,10 @@ public sealed record ServerCreateCommand : ICommand<AppResult<ServerDto>>, IAudi
     /// <summary>Gets how the server's ingress publishes sites.</summary>
     public required ServerIngressValueObject Ingress { get; init; }
 
+    /// <summary>Gets the https address of the provider console the server's card opens; empty or <c>null</c> leaves the
+    /// provider's default sign-in page.</summary>
+    public string? ConsoleUrl { get; init; }
+
     /// <inheritdoc />
     public string AuditAction => "server.create";
 

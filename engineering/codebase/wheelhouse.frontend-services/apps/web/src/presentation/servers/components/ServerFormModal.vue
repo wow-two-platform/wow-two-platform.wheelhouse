@@ -12,7 +12,7 @@ export interface ServerFormModalProps {
 </script>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 import {
@@ -43,7 +43,7 @@ import {
   serverFormSchema,
   serverRequestOf,
 } from "@/application/servers/ServerForms";
-import { VpsProvider, VpsProviderLabels } from "@/domain/servers";
+import { VpsProvider, VpsProviderConsoles, VpsProviderLabels } from "@/domain/servers";
 import { failureReason } from "@/integration/common";
 import { DeleteConfirm } from "@/presentation/common/components";
 
@@ -76,6 +76,14 @@ useFormDialogSession(form, {
   initialValues: () => serverFormOf(props.server),
   onOpen: () => (removeError.value = ""),
 });
+
+/** The chosen provider's sign-in page, which an empty console address leaves the card opening. */
+const providerConsole = computed(() => VpsProviderConsoles[form.state.values.provider]);
+const consoleHelper = computed(() =>
+  providerConsole.value
+    ? `Empty opens ${VpsProviderLabels[form.state.values.provider]}'s sign-in page`
+    : "Empty shows no console link",
+);
 
 /** Removes the server once nothing runs on it. */
 async function remove(): Promise<void> {
@@ -138,6 +146,17 @@ async function remove(): Promise<void> {
               <Field label="SSH port"><NumberInput v-model="field.value" @blur="field.onBlur" /></Field>
             </form.Field>
           </div>
+          <form.Field name="consoleUrl" v-slot="field">
+            <Field label="Console address" :helper="consoleHelper">
+              <TextInput
+                v-model="field.value"
+                autocomplete="off"
+                inputmode="url"
+                :placeholder="providerConsole ?? 'https://'"
+                @blur="field.onBlur"
+              />
+            </Field>
+          </form.Field>
           <fieldset class="flex flex-col gap-4">
             <legend class="mb-1 text-sm font-medium">Ingress</legend>
             <div class="grid gap-4 sm:grid-cols-3">

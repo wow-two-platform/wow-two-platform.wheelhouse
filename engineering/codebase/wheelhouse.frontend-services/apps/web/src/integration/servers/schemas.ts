@@ -23,6 +23,8 @@ export const ServerSchema = z.object({
     // A host before the public ingress sends none.
     publicAddress: z.string().nullable().optional(),
   }),
+  // A host before the console field, or a server without its own address, sends none.
+  consoleUrl: z.string().nullable().optional(),
   // A host before the control-host rule sends none.
   controlHost: z.boolean().optional(),
 });

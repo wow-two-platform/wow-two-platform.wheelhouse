@@ -21,6 +21,7 @@ internal static class ServerMapper
         SshUser = server.SshUser,
         SshPort = server.SshPort,
         Ingress = Map(server.Ingress),
+        ConsoleUrl = server.ConsoleUrl,
         ControlHost = ControlHost.Is(server),
     };
 

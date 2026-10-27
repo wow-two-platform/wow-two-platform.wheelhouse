@@ -8,6 +8,7 @@ namespace Wheelhouse.Tests.E2E.Support;
 /// <param name="Region">The provider's region.</param>
 /// <param name="SshUser">The user SSH signs in as.</param>
 /// <param name="SshPort">The port SSH connects to.</param>
+/// <param name="ConsoleUrl">The provider console its card opens in place of the provider's default, if any.</param>
 public sealed record ServerResponse(
     string Slug,
     string Name,
@@ -15,7 +16,8 @@ public sealed record ServerResponse(
     string Host,
     string Region,
     string SshUser,
-    int SshPort);
+    int SshPort,
+    string? ConsoleUrl = null);
 
 /// <summary>Response shape for a target (mirrors the host's <c>TargetDto</c> — enum read as its string name).</summary>
 /// <param name="Slug">The target's slug.</param>

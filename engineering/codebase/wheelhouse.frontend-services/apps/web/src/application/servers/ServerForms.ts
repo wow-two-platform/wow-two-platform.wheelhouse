@@ -20,6 +20,8 @@ export interface ServerFormModel {
   pattern: string;
   probe: string;
   privateProbe: string;
+  /** The server's own console address; empty opens its provider's sign-in page. */
+  consoleUrl: string;
 }
 
 /** Validates what the form can judge alone; the host checks addresses and names and names the field it refuses. */
@@ -39,6 +41,10 @@ export const serverFormSchema = z.object({
   pattern: z.string().trim(),
   probe: z.string().trim(),
   privateProbe: z.string().trim(),
+  consoleUrl: z
+    .string()
+    .trim()
+    .refine((value) => !value || InventoryRules.isHttpsAddress(value), "Enter an https address, such as https://www.ovh.com/manager/."),
 });
 
 /** Creates detached editing state from a server, or a Hetzner default. */
@@ -60,6 +66,7 @@ export function serverFormOf(server: Server | null): ServerFormModel {
     pattern: ingress?.pattern ?? "",
     probe: ingress?.probe ?? "",
     privateProbe: ingress?.privateProbe ?? "",
+    consoleUrl: server?.consoleUrl ?? "",
   };
 }
 
@@ -83,6 +90,7 @@ export function serverRequestOf(values: ServerFormModel, isNew: boolean): SaveSe
       probe: values.probe || null,
       privateProbe: values.privateProbe || null,
     },
+    consoleUrl: values.consoleUrl.trim() || null,
   };
 }
 

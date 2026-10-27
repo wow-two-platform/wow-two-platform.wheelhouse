@@ -29,6 +29,10 @@ public sealed record ServerDto
     /// <summary>Gets how the server's ingress publishes sites.</summary>
     public required ServerIngressDto Ingress { get; init; }
 
+    /// <summary>Gets the https address of the provider console the server's card opens in place of the provider's
+    /// default sign-in page, or <c>null</c>.</summary>
+    public string? ConsoleUrl { get; init; }
+
     /// <summary>Gets whether the server reads as the control host, the one the consoles run on
     /// (<see cref="Services.ControlHost"/>): Wheelhouse's own environments run only there, and it is never enrolled.</summary>
     public bool ControlHost { get; init; }

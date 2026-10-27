@@ -12,7 +12,7 @@ const bundle = await build({
       export * from './src/application/servers/ServerForms';
       export { vaultDefinitionFormOf, vaultDefinitionFormSchema, vaultDefinitionRequestOf } from './src/application/secrets/VaultDefinitionForms';
       export * from './src/application/workspaces/WorkspaceForms';
-      export { VpsProvider, VpsProviderLabels } from './src/domain/servers';
+      export { VpsProvider, VpsProviderConsoles, VpsProviderLabels, serverConsoleOf } from './src/domain/servers';
       export { BaselineHost } from './src/domain/targets';
     `,
     resolveDir: process.cwd(),
@@ -315,6 +315,32 @@ test("a new environment is the first one on the promotion path the product lacks
   assert.equal(values.slug, "ocharo-prod");
   assert.equal(forms.targetFormOf({ slug: "ocharo-dev", product: "ocharo", server: "hel1", environment: "dev", network: "platform",
     root: "/srv/wheelhouse", settings: [], smokeChecks: [], sites: [] }, "ocharo", "x", "prod").environment, "dev");
+});
+
+test("a server card opens its own console address, else its provider's sign-in page, and never a non-https one", () => {
+  assert.deepEqual(forms.serverConsoleOf({ provider: "ovhcloud" }), { href: "https://www.ovh.com/manager/", label: "Open OVHcloud" });
+  assert.deepEqual(forms.serverConsoleOf({ provider: "contabo", consoleUrl: null }), { href: "https://my.contabo.com/", label: "Open Contabo" });
+  assert.deepEqual(forms.serverConsoleOf({ provider: "hetzner" }), { href: "https://console.hetzner.cloud/", label: "Open Hetzner" });
+  assert.equal(forms.serverConsoleOf({ provider: "local" }), null);
+  assert.deepEqual(forms.serverConsoleOf({ provider: "ovhcloud", consoleUrl: "https://ca.ovh.com/manager/" }),
+    { href: "https://ca.ovh.com/manager/", label: "Open OVHcloud" });
+  assert.equal(forms.serverConsoleOf({ provider: "local", consoleUrl: "javascript:alert(1)" }), null);
+  assert.deepEqual(Object.keys(forms.VpsProviderConsoles).sort(), Object.values(forms.VpsProvider).sort());
+});
+
+test("a server's console address round-trips through its form, empty is sent as absent, and only https passes", () => {
+  const server = { slug: "bhs1", name: "Beauharnois", provider: "ovhcloud", host: "bhs1.example.net", region: "bhs",
+    sshUser: "deploy", sshPort: 22, consoleUrl: "https://ca.ovh.com/manager/", ingress: { scheme: "https", port: null,
+      entryPoints: ["websecure"], privateEntryPoints: [], certResolver: "letsencrypt", pattern: null, probe: null, privateProbe: null } };
+  const values = forms.serverFormOf(server);
+  assert.equal(values.consoleUrl, "https://ca.ovh.com/manager/");
+  assert.equal(forms.serverRequestOf(values, false).consoleUrl, "https://ca.ovh.com/manager/");
+  assert.equal(forms.serverRequestOf({ ...values, consoleUrl: "  " }, false).consoleUrl, null);
+  assert.equal(forms.serverFormOf(null).consoleUrl, "");
+  assert.equal(forms.serverFormSchema.safeParse(values).success, true);
+  assert.equal(forms.serverFormSchema.safeParse({ ...values, consoleUrl: "" }).success, true);
+  for (const refused of ["http://www.ovh.com/manager/", "www.ovh.com/manager/", "javascript:alert(1)", "https://owner:secret@www.ovh.com/"])
+    assert.equal(forms.serverFormSchema.safeParse({ ...values, consoleUrl: refused }).success, false, refused);
 });
 
 test("a server edit never sends the public address enrollment recorded", () => {

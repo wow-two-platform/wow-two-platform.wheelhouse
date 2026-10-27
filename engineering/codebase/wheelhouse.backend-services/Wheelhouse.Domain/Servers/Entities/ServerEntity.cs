@@ -39,6 +39,10 @@ public sealed record ServerEntity : IKeyedEntity<Guid>, IHasTableName, IAuditabl
     /// <summary>Gets or sets how the server's ingress publishes sites.</summary>
     public required ServerIngressValueObject Ingress { get; set; }
 
+    /// <summary>Gets or sets the https address of the provider console the server's card opens, such as an account's
+    /// own regional manager; <c>null</c> leaves the provider's default sign-in page.</summary>
+    public string? ConsoleUrl { get; set; }
+
     /// <summary>Gets or sets when the row was created; stamped by the SDK audit interceptor.</summary>
     public DateTimeOffset CreatedAt { get; set; }
 

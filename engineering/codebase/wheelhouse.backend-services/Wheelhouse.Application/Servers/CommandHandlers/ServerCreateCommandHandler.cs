@@ -31,6 +31,7 @@ public sealed class ServerCreateCommandHandler(IServersRepository servers)
             SshUser = request.SshUser,
             SshPort = request.SshPort,
             Ingress = request.Ingress with { PublicAddress = null },
+            ConsoleUrl = string.IsNullOrWhiteSpace(request.ConsoleUrl) ? null : request.ConsoleUrl.Trim(),
         }, cancellationToken);
         return AppResult<ServerDto>.Ok(ServerMapper.Map(server));
     }

@@ -34,6 +34,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "031-product-components",
         "032-root-key-checks",
         "033-product-manifest-source",
+        "034-server-console-url",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -880,6 +881,48 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         (await ReadColumnsAsync(connection, "product_manifests")).Select(column => column.Name).Should().NotContain("source_file");
         (await Scalar(connection, "SELECT count(*) FROM product_manifests")).Should().Be(2L);
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("033-product-manifest-source"));
+    }
+
+    [Fact]
+    public async Task ServerConsoleUrl_ShouldAddANullableColumn_ReRunCleanly_AndRollBackToTheColumnsBefore()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        await using (var cleanup = await migrator.OpenConnectionAsync())
+            await Execute(cleanup, "DROP SCHEMA IF EXISTS vault CASCADE"); // the fixture's reset drops public only
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        var before = Ordinals[Array.IndexOf(Migrations, "034-server-console-url") - 1];
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: before, CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        const string insert =
+            "INSERT INTO servers (id, slug, name, provider, host, region, ssh_user, ssh_port, ingress, created_at_utc, updated_at_utc) " +
+            "VALUES (gen_random_uuid(), '{0}', '{0}', 'ovhcloud', '{0}.example.net', 'bhs', 'deploy', 22, '{{}}', now(), now())";
+        await Execute(connection, string.Format(insert, "earlier"));
+
+        // A server stored before the column keeps its provider's default console, and so does one an older release adds.
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("034-server-console-url"));
+        await Execute(connection, string.Format(insert, "later"));
+        (await ReadColumnsAsync(connection, "servers")).Should().Contain(("console_url", "text", true));
+        (await Scalar(connection, "SELECT count(*) FROM servers WHERE console_url IS NULL")).Should().Be(2L);
+        await Execute(connection, "UPDATE servers SET console_url = 'https://ca.ovh.com/manager/' WHERE slug = 'earlier'");
+
+        // Both scripts re-run cleanly over the state they leave.
+        await Execute(connection, MigrationSql("034-server-console-url", "Apply.sql"));
+        (await Scalar(connection, "SELECT console_url FROM servers WHERE slug = 'earlier'")).Should().Be("https://ca.ovh.com/manager/");
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: before, CancellationToken.None));
+        await Execute(connection, MigrationSql("034-server-console-url", "Rollback.sql"));
+        (await ReadColumnsAsync(connection, "servers")).Select(column => column.Name).Should().NotContain("console_url");
+        (await Scalar(connection, "SELECT count(*) FROM servers")).Should().Be(2L, "rollback drops only the column");
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("034-server-console-url"));
+    }
+
+    /// <summary>The text of one embedded migration script.</summary>
+    private static string MigrationSql(string migration, string script)
+    {
+        using var stream = typeof(WheelhouseDbContext).Assembly.GetManifestResourceStream($"Migrations/{migration}/{script}")
+            ?? throw new Xunit.Sdk.XunitException($"Migrations/{migration}/{script} is not embedded.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
     }
 
     /// <summary>The SQL that stores one vitals reading of a target slug, or of its server's host for <c>NULL</c>.</summary>

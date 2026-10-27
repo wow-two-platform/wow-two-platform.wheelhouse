@@ -175,6 +175,11 @@ test("round trips supported server providers and rejects an unknown provider", a
     region: "control", sshUser: "wheelhouse-deploy", sshPort: 22, controlHost: true, ingress: { scheme: "https", port: null,
       entryPoints: ["private"], privateEntryPoints: [], certResolver: null, pattern: null, probe: null, privateProbe: null } }] });
   assert.equal((await serversApi.listServers()).value[0].controlHost, true);
+  // A server's own console address reads back; a host that omits it leaves the provider's default.
+  globalThis.fetch = async () => json({ data: [{ slug: "bhs1", name: "Beauharnois", provider: "ovhcloud", host: "bhs1.example.net",
+    region: "bhs", sshUser: "deploy", sshPort: 22, consoleUrl: "https://ca.ovh.com/manager/", ingress: { scheme: "https", port: null,
+      entryPoints: ["websecure"], privateEntryPoints: [], certResolver: null, pattern: null, probe: null, privateProbe: null } }] });
+  assert.equal((await serversApi.listServers()).value[0].consoleUrl, "https://ca.ovh.com/manager/");
 });
 
 test("creates and revokes integration keys with explicit actions and reads the secret once", async () => {
