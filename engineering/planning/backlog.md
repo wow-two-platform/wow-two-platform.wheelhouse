@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-10-26*
+*Last updated: 2026-10-27*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -135,7 +135,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Show the maintenance page in Uzbek, Russian and English at least | feature | Parked 2026-10-19: per-product copy in the manifest, chosen by `Accept-Language` |
 | Turn on `dotnetEnvironment` for ForeverPin, Haven, Ocharo Studio, Ocharo Desk and Secrets Vault | check | User 2026-10-19: later, when each product's chat works on it. Each keys behaviour on `Development` or holds localhost values; move those to `appsettings.Local.json` first |
 | Products adopt the Target/Local settings names when they bump pipelines v0.7.0 and the be sdk | engineering | User 2026-10-19. A v0.7.0 bundle mounts `/app/appsettings.Target.json`; the be sdk's `AddApiDefaults` reads it, and a legacy `appsettings.Local.json` on a deployed host for one release window. Each drops its own `AddJsonFile("appsettings.Local.json")`, sets `LOCAL_SETTINGS=true` in its launch profile and ignores `appsettings.Target.json` in `.gitignore` and `.dockerignore`. ForeverPin (`ForeverPin.Api`, `ForeverPin.Redirect.Api`, README, `google-auth.md`); Haven (`Haven.Platform.Web` `EnvironmentAliasExtensions`, `compose.verification.yml` mount, development and verification docs); Secrets Vault (`SecretsVault.Api` `HostConfiguration`); home-atlas (ignore files only); Ocharo Studio and Desk (outside this workspace, unchecked); the product template (pre-rename kit `10.0.21-beta`, no settings loading) |
-| Run each app's migrations as a rollout step and show their state | feature | User decision 2026-10-14: apps own their SQL; the runner migrates with the new image between pull and start; prod waits for test. The app database's own migration journal stays the authority; Wheelhouse reads it at deploy and keeps what it saw in the job history, never a second table. Rollback scripts run only on a confirmed operator action |
 | Haven adopts `deploy.yml`, per-service versions and an edge health route | feature | Its Caddy edge has no health route; the runner requires one |
 | Show each service's version inside every product | feature | Haven shows its build version beside the logo; adopt across products |
 | Deploy a branch to its own temporary dev environment | feature | Topology point 17; from a code-owned template; later PR previews |
