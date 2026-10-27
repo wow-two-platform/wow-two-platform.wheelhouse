@@ -1,6 +1,6 @@
 # Deployment operations
 
-*Last updated: 2026-10-26*
+*Last updated: 2026-10-27*
 
 ## Ownership and current boundary
 
@@ -105,10 +105,11 @@ them, they hold no data and no placement ran. In the prod console:
 
 ## Wheelhouse's own releases
 
-Wheelhouse ships like the products it deploys. `engineering/deployment/deploy.yml` declares one service, `console`,
-with its settings keys, `keys` and `deployments` volumes, a private `console` site and `needs: [postgres]`, and
-`dotnetEnvironment: true`: `wheelhouse-dev` runs as `Development`, `wheelhouse-prod` as `Production`. Its workflows pin
-pipelines `v0.9.0` (`v0.5.0` was the first generator that writes that key).
+Wheelhouse ships like the products it deploys. `engineering/deployment/deploy.yml` declares its identity (name,
+description, homepage), one service, `console`, with its settings keys, `keys` and `deployments` volumes, a private
+`console` site and `needs: [postgres]`, and `dotnetEnvironment: true`: `wheelhouse-dev` runs as `Development`,
+`wheelhouse-prod` as `Production`. Its workflows pin pipelines `v0.11.0`, the first generator that accepts the identity
+keys (`v0.5.0` was the first that writes `dotnetEnvironment`).
 
 | Workflow | Runs on | Does |
 |---|---|---|
@@ -242,7 +243,7 @@ Use the reviewed [VPS bootstrap](vps/vps.md) for Ubuntu 26.04 and private HTTPS.
 one main push (one or many commits)
   -> check that SHA is still main; skip it if only docs changed since the last delivered commit
   -> verify its final SHA: the checks whose paths changed (backend, runner and VPS kit, frontend)
-  -> shared publish (pipelines v0.9.0) builds changed services once and publishes the immutable bundle
+  -> shared publish (pipelines v0.11.0) builds changed services once and publishes the immutable bundle
   -> resolve that tested bundle, check main again
   -> pinned SSH -> existing durable runner -> container/digest + trusted HTTPS checks
 ```

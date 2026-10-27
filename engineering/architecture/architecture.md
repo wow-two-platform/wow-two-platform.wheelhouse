@@ -1,6 +1,6 @@
 # Wheelhouse architecture
 
-*Last updated: 2026-10-26*
+*Last updated: 2026-10-27*
 
 ## Runtime
 
@@ -476,22 +476,30 @@ field of the first problem.
 
 ### Product identity
 
-A product's name, description, homepage and per-service name and description are text in `product/product.json` in its
-repository (the [product manifest convention](../../../../../conventions/design/identity/product-manifest.md); service
-keys are the `services:` keys of `deploy.yml`). The database holds only a projection: one `product_manifests` row per
-product with the manifest values, the repository and branch, and the commit they were read from. A save never writes
-the manifest; the repository is where identity is edited.
+A product's name, description, homepage and per-service name and description are text in its repository's
+`engineering/deployment/deploy.yml` (`name`, `description`, `homepage` beside `product`, and `name`, `description`
+under each service; [deploy descriptor § Identity](../../../../../conventions/deployment/descriptor/deploy-descriptor.md#identity),
+decision 7, format A, built in v0.7). The database holds only a projection: one `product_manifests` row per product
+with the identity, the repository and branch, the commit and the file it was read from. A save never writes the
+identity; the repository is where it is edited.
+
+- While a descriptor declares no identity, the retired `product/product.json`
+  ([retired manifest](../../../../../conventions/design/identity/product-manifest.md)) still applies: the product shows
+  its values with a notice to move them into `deploy.yml` (the product header's warning, the Products tile and row's
+  warning mark, the API's `identity.notice`). Once the descriptor declares one, `product/product.json` is not read.
+- An invalid identity in `deploy.yml` never falls back to `product/product.json`: its reason (`identity.problem`, naming
+  the file and the line) shows, and the last valid copy stays.
 
 - A row is replaced only by a copy read at a newer commit. Nothing expires it on a timer.
-- On a read, `ProductIdentityService` compares the branch head with the row's commit; a different head reads the file
-  at that commit. The head comes from `GitHubRepositoryReader`, which keeps it 5 minutes, so GitHub is asked at most
+- On a read, `ProductIdentityService` compares the branch head with the row's commit; a different head reads
+  `deploy.yml`, then `product/product.json` only when the descriptor declares no identity, at that commit. The head comes from `GitHubRepositoryReader`, which keeps it 5 minutes, so GitHub is asked at most
   that often per branch; a commit's file verdict is kept per commit.
 - `POST /api/products/{slug}/identity/refresh` (action header `refresh`, audited as `product.refresh`) reads the head
   again now, brings the product's approved services up to its repositories' `deploy.yml`
   ([artifacts](#artifacts-and-registry)) and answers with the product; it answers 503 when GitHub cannot serve the branch, and the row stays.
-- A newer commit with no manifest drops the row; the product reads as its own row again. A row also goes when the
+- A newer commit that declares no identity in either file drops the row; the product reads as its own row again. A row also goes when the
   product's repository or branch changes, and with the product.
-- A product of several repositories always reads as its own row (its catalog entry): each repository's manifest
+- A product of several repositories always reads as its own row (its catalog entry): each repository's identity
   describes that repository, not the product.
 - An invalid, oversized or unparsable manifest is ignored whole: the previous row stays and `identity.problem` carries
   one display-safe reason, never file content beyond a shortened key name. An unreadable repository changes nothing.

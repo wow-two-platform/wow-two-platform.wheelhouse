@@ -170,9 +170,9 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Item | Type | Notes |
 |---|---|---|
 | Ability to declare `dependsOn` on another repository's service | feature | The runner orders and checks it across a release set; the shared generator in `wow-two-platform.pipelines` refuses it until a pipelines tag |
-| Add `product/product.json` to ForeverPin, every other product repository and the product template | feature | Decided 2026-10-15: identity text is a manifest in the repository ([convention](../../../../../conventions/design/identity/product-manifest.md)); Wheelhouse and the canary carry one; until a repo does, its row supplies the name and description |
-| Edit a product's identity from the console by committing its manifest | feature | Needs Contents write on the GitHub App (it reads only); the console shows manifest-sourced name, description and homepage read-only meanwhile |
-| Refresh a product's manifest on push | feature | A GitHub App push webhook feeds the same commit-keyed row; the 5-minute head check and the Refresh action stay as fallbacks |
+| Move ForeverPin's and every other product repository's identity into its `deploy.yml` | feature | Decided 2026-10-27 (decision 7, format A): `name`, `description`, `homepage` in `deploy.yml` ([convention](../../../../../conventions/deployment/descriptor/deploy-descriptor.md#identity)), pipelines `v0.11.0`; Wheelhouse, the canary and the product template moved in v0.7; a repo with a `product/product.json` reads it with a notice, one with neither shows its row |
+| Edit a product's identity from the console by committing its `deploy.yml` | feature | Needs Contents write on the GitHub App (it reads only); the console shows repository-sourced name, description and homepage read-only meanwhile |
+| Refresh a product's identity on push | feature | A GitHub App push webhook feeds the same commit-keyed row; the 5-minute head check and the Refresh action stay as fallbacks |
 | Add the icon set to ForeverPin and every other product repository | feature | Each product repo carries `product/brand/icons/` per the convention; until then Wheelhouse shows its web app favicon or a monogram |
 | Ship Wheelhouse's monochrome icon variants | check | The approved artwork keeps a gray fold in every variant; a one-ink export needs a brand decision |
 | Ownership and kill-gate metrics on the catalog | feature | Products are database rows since v0.3; metrics need cost and usage feeds |

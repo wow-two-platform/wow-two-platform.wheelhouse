@@ -1,6 +1,6 @@
 # Platform ideation — v0.5
 
-*Last updated: 2026-10-21*
+*Last updated: 2026-10-27*
 
 Settled decisions from the v0.5 platform brainstorm: what the platform is, how products are modelled and who owns each
 fact. Iteration happens in the conversation; this file records only what the owner settled. The v0.5 version doc is
@@ -94,6 +94,7 @@ written from it when the version opens.
 
 ## Open topics
 
-- Manifest fields and format.
+- Manifest fields and format: decided 2026-10-27, format A — the identity (`name`, `description`, `homepage`)
+  joins `engineering/deployment/deploy.yml` and `product/product.json` is retired; built in v0.7.
 - The Deployments page and everything connected to deploying.
 - The deployment contract (`con-t-012` in the wow2 tasks).

@@ -1,6 +1,6 @@
 # Wheelhouse — Context
 
-*Last updated: 2026-10-19*
+*Last updated: 2026-10-27*
 
 ## Current state
 
@@ -60,10 +60,13 @@ redirect and editor, real provider callbacks, persisted codes and cookie keys, a
 - Products work on `main` only and fix forward, with no long-lived branches: every `main` release deploys to dev, then
   is promoted to prod. The `test` environment and the `test` branch are dropped everywhere. Decided 2026-10-17.
 - A push that publishes no new release verifies the running dev release instead of restarting it.
-- A product's name, description, homepage and per-service text are a manifest in its own repository
-  (`product/product.json`); the database keeps a cache keyed by the commit it was read from, replaced only by a newer
-  commit, refreshed on read (head re-checked at most every 5 minutes) and by an explicit Refresh. The console shows
-  manifest values read-only; editing them from the console waits for the GitHub App. Decided 2026-10-15.
+- A product's name, description, homepage and per-service text are a manifest in its own repository; the database
+  keeps a cache keyed by the commit it was read from, replaced only by a newer commit, refreshed on read (head
+  re-checked at most every 5 minutes) and by an explicit Refresh. The console shows those values read-only; editing
+  them from the console waits for the GitHub App. Decided 2026-10-15.
+- The identity lives in `engineering/deployment/deploy.yml` (`name`, `description`, `homepage`), and
+  `product/product.json` is retired: Wheelhouse still reads one while a descriptor declares no identity, and shows a
+  notice to move it. Decided 2026-10-27 (decision 7, format A).
 
 Contracts and boundaries: [architecture](../engineering/architecture/architecture.md). Unbuilt work and open
 decisions: [backlog](../engineering/planning/backlog.md).
