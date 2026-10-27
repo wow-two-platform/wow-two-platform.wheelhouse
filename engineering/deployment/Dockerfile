@@ -34,6 +34,9 @@ COPY wheelhouse.runner-services/runner.py wheelhouse.runner-services/transport.p
      wheelhouse.runner-services/enroll.py wheelhouse.runner-services/placement.py wheelhouse.runner-services/kit.py \
      wheelhouse.runner-services/upkeep.py wheelhouse.runner-services/self_check.py \
      /app/runner/
+# The app user cannot write /app/runner, so Python would compile every module the runner imports on each of its starts:
+# ship the bytecode. checked-hash keeps it valid whatever timestamps the layers carry.
+RUN python3 -m compileall -q --invalidation-mode checked-hash /app/runner
 # The products-host kit an enrollment uploads, from the `kit` build context (deploy.yml): it ships with the release, so
 # an enrollment never fetches it, and its digest is recorded on each job.
 COPY --from=kit enroll-products.sh bootstrap-products.sh create-admin.sh repair-networks.sh authorize-runner.sh prepare.py \
