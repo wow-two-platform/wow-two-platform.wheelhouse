@@ -1,6 +1,6 @@
 # Wheelhouse dev VPS
 
-*Last updated: 2026-10-24*
+*Last updated: 2026-10-27*
 
 This bootstrap prepares the private control-plane host on Ubuntu 26.04 amd64: `wheelhouse-prod` and
 `wheelhouse-dev` side by side, each with its own database and sign-in. GitHub builds the image; the existing
@@ -625,6 +625,22 @@ sudo -u wheelhouse-deploy python3 /srv/wheelhouse/bootstrap/self-deploy.py deplo
   Wheelhouse's own: a new console its ingress cannot reach, or one that fails health, rolls back to the previous release.
 - It refuses root: files written as root would lock the deployment account out of later rollouts.
 - `rehearse.py self-deploy` proves it on the local server.
+
+### Rolling back across a migration
+
+A release's migrator (be sdk `10.0.80`) refuses to boot when the database's history holds migrations its own image
+lacks: `History holds applied migrations absent from the source: 033.` Migrations only expand, so the older release
+reads the newer schema; only its history check stops it (reproduced 2026-10-27, v0.7.2 on v0.7.3's database). Until
+the migrations design ships a tolerant boot ([analysis](https://github.com/wow-two/wow-two-ws/blob/main/ideas/migrations-analysis-2026-10/migrations-analysis-2026-10.md)), a rollback or a failed-probe restore across a migration needs:
+
+1. Read the refusing console's log for the ordinals the error names.
+2. Delete exactly those rows from the console database's `migration_history`, in the platform PostgreSQL
+   (`/srv/wheelhouse/platform`, service `postgres`), e.g. `DELETE FROM migration_history WHERE ordinal = 33;`. The
+   columns they added stay; the older release ignores them.
+3. Roll back (or let the restore retry). The next promotion re-applies the deleted migrations; check
+   first that each re-runs cleanly (`IF NOT EXISTS`), as `033` does.
+
+- First crossing: v0.7.3 adds `033-product-manifest-source`; rolling prod back to v0.7.2 takes this step.
 
 ### Install
 

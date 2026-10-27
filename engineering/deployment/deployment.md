@@ -146,7 +146,7 @@ no console answers -> self-deploy.py on the host: status, deploy, rollback (vps.
 |---|---|---|
 | Wheelhouse in prod's inventory | Products › Wheelhouse, deploy mode `wheelhouse`; targets `wheelhouse-dev`, `wheelhouse-prod` | Both consoles on the control host, as products are on theirs ([§ Inventory rows](#inventory-rows)) |
 | Console ingress | runner `fleet.py` `CONSOLE_INGRESS` | A Wheelhouse target takes its environment's entry point, port and probe from the kit (`prepare.py`), whatever the server row says, so one row serves both |
-| Rollback | runner `probeGate`, `rollbackCompatible` on Wheelhouse targets | A new console its ingress cannot reach rolls back; any release rolls back, since migrations only expand (decision 65, `ExpandOnlyTests`) |
+| Rollback | runner `probeGate`, `rollbackCompatible` on Wheelhouse targets | A new console its ingress cannot reach rolls back. Across a migration the previous release refuses to boot (be sdk `10.0.80` orphan check, run 2026-10-27), although migrations only expand (decision 65, `ExpandOnlyTests`): [vps.md § Rolling back across a migration](vps/vps.md#rolling-back-across-a-migration) |
 | Dev check | `deploy.yml` `verify` -> `self_check.py` in the image | After each dev rollout: readiness, status and an anonymous MCP initialization the console must refuse (CI's checks) |
 | Promotion guard | `SelfDeploymentInterceptor`, runner `transport.submit` | Prod only by the owner: typed ID and a reason; never automation, never a fleet, never while a fleet runs |
 | Read-back | `SelfDeploymentBootReader`, `GET /api/self-deployment`, the shell's notice | The new console reads its own newest rollout from the host's journal at boot and shows how it ended |
@@ -182,7 +182,10 @@ In Wheelhouse prod, once it runs v0.5:
   keeps asking for the outcome while it does. The API answers 202 before anything changes; the runner's detached host
   job then snapshots prod's database, pulls, replaces the container and waits for health and the site probe.
 - A failed health or site probe restores the previous release by itself; the database stays as the new release left
-  it, which the previous release can read (decision 65). The snapshot under `snapshots/<job>/` is the manual restore.
+  it. Its schema suits the previous release (decision 65), but that release's migrator refuses history rows it does
+  not know, so a restore across a migration fails to boot until those rows go
+  ([vps.md § Rolling back across a migration](vps/vps.md#rolling-back-across-a-migration)). The snapshot under
+  `snapshots/<job>/` is the manual restore that loses later writes.
 - The new console (or the old one, after a roll back) reads its own newest rollout from the host's journal at boot,
   logs it and shows it above every page until dismissed or a day old.
 - The audit trail keeps `deployment.start` with the actor, release and reason. Auto-promote, fleets and automatic
