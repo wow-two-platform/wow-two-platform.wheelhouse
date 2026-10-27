@@ -26,7 +26,10 @@ const ProductSchema = z
     identity: z.object({
       source: z.enum(ProductIdentitySource),
       commit: z.string().nullable(),
+      // A host before the identity moved into deploy.yml sends neither.
+      file: z.string().nullable().default(null),
       problem: z.string().nullable(),
+      notice: z.string().nullable().default(null),
       services: z.array(
         z.object({ service: z.string(), name: z.string().nullable(), description: z.string().nullable() }),
       ),

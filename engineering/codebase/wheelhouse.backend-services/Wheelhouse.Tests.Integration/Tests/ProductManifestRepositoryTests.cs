@@ -11,7 +11,8 @@ namespace Wheelhouse.Tests.Integration.Tests;
 
 /// <summary>
 /// The cached product manifests over a real relational database: one row per product, replaced in place by a newer
-/// commit, the per-service text as JSON, no row left tracked after a write, and the row removed with its product. Runs on
+/// commit, the file it was read from, the per-service text as JSON, no row left tracked after a write, and the row
+/// removed with its product. Runs on
 /// the SDK <see cref="WheelhouseTestDb"/> (Postgres container or in-memory SQLite).
 /// </summary>
 [Collection(WheelhouseTestDbCollection.Name)]
@@ -36,6 +37,7 @@ public sealed class ProductManifestRepositoryTests(WheelhouseTestDb db) : IAsync
         Repository = product.Repository,
         Branch = product.DefaultBranch,
         Commit = commit,
+        SourceFile = "engineering/deployment/deploy.yml",
         Name = name,
         Description = "From the repository.",
         Homepage = "https://pilot.example",
@@ -63,8 +65,9 @@ public sealed class ProductManifestRepositoryTests(WheelhouseTestDb db) : IAsync
 
         await using var read = db.NewContext();
         var stored = (await new EfProductManifests(read).GetByProductsAsync([product.Id]))[product.Id];
-        (stored.Repository, stored.Branch, stored.Commit, stored.Name, stored.Description, stored.Homepage).Should().Be(
-            ("owner/pilot", "main", First, "Pilot", "From the repository.", "https://pilot.example"));
+        (stored.Repository, stored.Branch, stored.Commit, stored.SourceFile, stored.Name, stored.Description, stored.Homepage)
+            .Should().Be(("owner/pilot", "main", First, "engineering/deployment/deploy.yml", "Pilot", "From the repository.",
+                "https://pilot.example"));
         stored.Services.Should().BeEquivalentTo(Manifest(product, First).Services, options => options.WithStrictOrdering());
         var raw = await read.Database.GetDbConnection()
             .ExecuteScalarAsync<string>("select cast(services as text) from product_manifests");
@@ -81,6 +84,7 @@ public sealed class ProductManifestRepositoryTests(WheelhouseTestDb db) : IAsync
         await using (var ctx = db.NewContext())
         {
             var newer = Manifest(product, Second, "Renamed");
+            newer.SourceFile = "product/product.json";
             newer.Homepage = null;
             newer.Services = [];
             await new EfProductManifests(ctx).SaveAsync(newer);
@@ -89,7 +93,8 @@ public sealed class ProductManifestRepositoryTests(WheelhouseTestDb db) : IAsync
         await using var read = db.NewContext();
         var rows = await new EfProductManifests(read).GetByProductsAsync([product.Id]);
         var stored = rows.Should().ContainSingle().Which.Value;
-        (stored.Commit, stored.Name, stored.Homepage, stored.Services).Should().Be((Second, "Renamed", null, stored.Services));
+        (stored.Commit, stored.SourceFile, stored.Name, stored.Homepage).Should().Be(
+            (Second, "product/product.json", "Renamed", null));
         stored.Services.Should().BeEmpty();
         (await read.ProductManifests.CountAsync()).Should().Be(1);
     }

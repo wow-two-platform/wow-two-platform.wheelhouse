@@ -3,6 +3,10 @@
 # Format: wow-two-ws/conventions/deployment/descriptor/deploy-descriptor.md
 descriptor: 1
 product: wheelhouse
+# What the console and every other reader call it (pipelines v0.11.0); it replaced product/product.json.
+name: Wheelhouse
+description: The portfolio's deploy and operations control plane.
+homepage: https://github.com/wow-two-platform/wow-two-platform.wheelhouse
 platform: linux/amd64
 # Dev runs as .NET Development, prod as Production; appsettings.Development.json holds no machine-local value.
 dotnetEnvironment: true

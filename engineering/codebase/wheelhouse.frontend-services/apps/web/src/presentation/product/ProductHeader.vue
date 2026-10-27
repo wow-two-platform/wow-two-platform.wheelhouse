@@ -17,7 +17,7 @@ import { Badge, Text } from "@wow-two-beta/fe/presentation/display";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 import { ConsolePaths } from "@/application/navigation";
 import { PinKind } from "@/domain/pins";
-import { ProductStatusRules, identityProblemOf } from "@/domain/products";
+import { ProductStatusRules, identityNoticeOf } from "@/domain/products";
 import { useIsPhone } from "@/presentation/deployments/hooks/useIsPhone";
 import { PinToggle } from "@/presentation/pins";
 import { ProductIcon } from "@/presentation/products";
@@ -39,7 +39,7 @@ const isPhone = useIsPhone();
 const manage = useTemplateRef<{ addEnvironment(): void }>("manage");
 const refreshError = ref<string | null>(null);
 const record = computed(() => props.product?.product ?? null);
-const problem = computed(() => identityProblemOf(record.value));
+const notice = computed(() => identityNoticeOf(record.value));
 
 defineExpose({ addEnvironment: () => manage.value?.addEnvironment() });
 </script>
@@ -87,8 +87,8 @@ defineExpose({ addEnvironment: () => manage.value?.addEnvironment() });
         </div>
       </div>
     </div>
-    <div v-if="problem || refreshError" class="mt-4 space-y-2">
-      <Alert v-if="problem" severity="warning" :description="problem" />
+    <div v-if="notice || refreshError" class="mt-4 space-y-2">
+      <Alert v-if="notice" severity="warning" :description="notice" />
       <p v-if="refreshError" role="alert" class="text-xs text-destructive">{{ refreshError }}</p>
     </div>
   </header>

@@ -545,7 +545,7 @@ class GitHubAccessTests(unittest.TestCase):
         with self.assertRaises(artifacts.CommandFailed):
             artifacts.fetch('https://api.github.com/repos/ocharo-hq/site/releases')
         with self.assertRaises(artifacts.CommandFailed):
-            artifacts.fetch('https://api.github.com/repos/sulton-max/app/contents/product/product.json?ref=main')
+            artifacts.fetch('https://api.github.com/repos/sulton-max/app/contents/engineering/deployment/deploy.yml?ref=main')
         self.assertEqual({'ocharo-hq'}, set(json.loads(self.access.read_text())['owners']),
                          'a missing file, or a repository its own installation cannot find, needs no App')
 

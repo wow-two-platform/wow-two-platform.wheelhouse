@@ -4,8 +4,9 @@ using Wheelhouse.Application.Products;
 
 namespace Wheelhouse.Tests.Unit.Products;
 
-/// <summary>Tests for <see cref="ProductManifestParser"/>: a valid manifest reads whole, and anything the product
-/// manifest schema refuses is ignored with one reason that never quotes the file beyond a shortened key name.</summary>
+/// <summary>Tests for <see cref="ProductManifestParser"/>, the retired <c>product/product.json</c>: a valid manifest reads
+/// whole, and anything the product manifest schema refuses is ignored with one reason that never quotes the file beyond
+/// a shortened key name.</summary>
 public sealed class ProductManifestParserTests
 {
     private const string Minimal = """{ "manifest": 1, "name": "Pilot", "description": "A pilot product." }""";
@@ -44,21 +45,6 @@ public sealed class ProductManifestParserTests
 
         (manifest.Name, manifest.Description, manifest.Homepage).Should().Be(("Pilot", "A pilot product.", null));
         manifest.Services.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Parse_ShouldAcceptThisRepositorysOwnManifest_WhenItIsRead()
-    {
-        // Wheelhouse is a product like any other; its own manifest must read by the rules it applies to the rest.
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "product", "product.json")))
-            directory = directory.Parent;
-        directory.Should().NotBeNull("the tests run inside the Wheelhouse repository");
-
-        var result = ProductManifestParser.Parse(File.ReadAllBytes(Path.Combine(directory!.FullName, "product", "product.json")));
-
-        result.Problem.Should().BeNull();
-        result.Manifest!.Name.Should().Be("Wheelhouse");
     }
 
     [Fact]

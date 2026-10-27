@@ -3,9 +3,10 @@ using WoW.Two.Sdk.Beta.Be.Data.Abstractions;
 
 namespace Wheelhouse.Domain.Products.Entities;
 
-/// <summary>Represents the cached copy of a product's manifest — the identity text in the product's repository — and
-/// the commit it was read from. A projection, never an edit target: it is replaced only by a copy read at a newer
-/// commit and dropped when the repository stops carrying a manifest. One row per product.</summary>
+/// <summary>Represents the cached copy of a product's manifest — the identity text its repository declares in
+/// <c>deploy.yml</c>, or in a retired <c>product/product.json</c> — and the commit and file it was read from. A
+/// projection, never an edit target: it is replaced only by a copy read at a newer commit and dropped when the
+/// repository stops declaring an identity. One row per product.</summary>
 public sealed class ProductManifestEntity : IHasTableName, IAuditable
 {
     /// <summary>Gets the storage table name, shared by the EF mapping and the SQL migrations.</summary>
@@ -23,6 +24,10 @@ public sealed class ProductManifestEntity : IHasTableName, IAuditable
 
     /// <summary>Gets or sets the full SHA of the commit the manifest was read from.</summary>
     public required string Commit { get; set; }
+
+    /// <summary>Gets or sets the repository file the manifest was read from: <c>engineering/deployment/deploy.yml</c>,
+    /// or the retired <c>product/product.json</c> while the descriptor declares no identity.</summary>
+    public required string SourceFile { get; set; }
 
     /// <summary>Gets or sets the product's display name.</summary>
     public required string Name { get; set; }

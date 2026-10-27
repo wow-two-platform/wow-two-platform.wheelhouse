@@ -27,10 +27,11 @@ export {
   type ProductIconOptions,
 } from './ProductIcon';
 export {
-  ProductManifestPath,
+  ProductDescriptorPath,
+  RetiredManifestPath,
   homepageLinkOf,
   identityNoteOf,
-  identityProblemOf,
+  identityNoticeOf,
   isIdentityReadOnly,
   serviceIdentitiesOf,
   shortCommitOf,

@@ -100,14 +100,15 @@ export interface ProductReleaseSource extends ProductRelease {
 
 /** Where a product's name, description and homepage come from. */
 export const ProductIdentitySource = {
-  /** The cached copy of `product/product.json` in the product's repository; edited there. */
+  /** The cached copy of the identity the product's repository declares in `deploy.yml` (or a retired
+   * `product/product.json`); edited there. */
   Manifest: 'manifest',
   /** The product's own row, edited in the console. */
   Record: 'record',
 } as const;
 export type ProductIdentitySource = (typeof ProductIdentitySource)[keyof typeof ProductIdentitySource];
 
-/** The name and description a product's manifest gives one of its services. */
+/** The name and description a product's repository gives one of its services. */
 export interface ProductServiceIdentity {
   /** The service's key in the product's `deploy.yml`. */
   service: string;
@@ -118,10 +119,16 @@ export interface ProductServiceIdentity {
 /** Where a product's identity text comes from and what its repository says about its services. */
 export interface ProductIdentity {
   source: ProductIdentitySource;
-  /** The full SHA of the commit the manifest was read from; null when the product's own row is the source. */
+  /** The full SHA of the commit the identity was read from; null when the product's own row is the source. */
   commit: string | null;
-  /** Why the repository's newest manifest is ignored; the last valid copy, if any, still applies. */
+  /** The repository file the identity was read from (`deploy.yml`, or a retired `product/product.json`); null when the
+   * product's own row is the source. */
+  file: string | null;
+  /** Why the repository's newest identity is ignored, as a sentence naming the file; the last valid copy, if any,
+   * still applies. */
   problem: string | null;
+  /** What the owner should change in the repository, such as moving a retired product/product.json into deploy.yml. */
+  notice: string | null;
   services: ProductServiceIdentity[];
 }
 

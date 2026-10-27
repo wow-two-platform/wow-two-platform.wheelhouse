@@ -34,7 +34,9 @@ internal static class ProductMapper
         {
             Source = identity.Source,
             Commit = identity.Commit,
+            File = identity.File,
             Problem = identity.Problem,
+            Notice = identity.Notice,
             Services =
             [
                 .. identity.Services.Select(service => new ProductServiceDto

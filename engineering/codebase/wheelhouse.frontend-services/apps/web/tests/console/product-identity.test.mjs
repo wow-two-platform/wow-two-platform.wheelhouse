@@ -48,7 +48,7 @@ const record = {
   name: "ForeverPin",
   description: "Styled QR codes.",
   homepage: null,
-  identity: { source: "record", commit: null, problem: null, services: [] },
+  identity: { source: "record", commit: null, file: null, problem: null, notice: null, services: [] },
   id: "p-test",
   workspaceId: "w-ventures",
   status: "active",
@@ -67,7 +67,9 @@ const fromManifest = {
   identity: {
     source: "manifest",
     commit,
+    file: "engineering/deployment/deploy.yml",
     problem: null,
+    notice: null,
     services: [
       { service: "redirect", name: null, description: "Answers a scan." },
       { service: "management", name: "Editor", description: null },
@@ -87,23 +89,51 @@ test("identity fields are read-only exactly while the product's manifest is thei
   );
 });
 
-test("the note beside read-only fields names the manifest path, and editable fields carry none", () => {
-  assert.equal(identity.ProductManifestPath, "product/product.json");
-  assert.equal(identity.identityNoteOf(fromManifest), "Edited in product/product.json in the repository.");
+const retiredNotice =
+  "The name and description come from product/product.json, which is retired: move them into " +
+  "engineering/deployment/deploy.yml (name, description, homepage) and delete the file.";
+
+const fromRetired = {
+  ...fromManifest,
+  identity: { ...fromManifest.identity, file: "product/product.json", notice: retiredNotice },
+};
+
+test("the note beside read-only fields names the file the identity comes from, and editable fields carry none", () => {
+  assert.equal(identity.ProductDescriptorPath, "engineering/deployment/deploy.yml");
+  assert.equal(identity.RetiredManifestPath, "product/product.json");
+  assert.equal(identity.identityNoteOf(fromManifest), "Edited in engineering/deployment/deploy.yml in the repository.");
+  assert.equal(identity.identityNoteOf(fromRetired), "Edited in product/product.json in the repository.");
+  assert.equal(
+    identity.identityNoteOf({ ...fromManifest, identity: { ...fromManifest.identity, file: undefined } }),
+    "Edited in engineering/deployment/deploy.yml in the repository.",
+    "a host that names no file means the descriptor",
+  );
   assert.equal(identity.identityNoteOf(record), null);
   assert.equal(identity.identityNoteOf(null), null);
 });
 
-test("an ignored manifest is explained, and says the last valid copy stays only while one applies", () => {
-  const kept = { ...fromManifest, identity: { ...fromManifest.identity, problem: "'name' must hold 1–80 characters." } };
+test("an ignored identity is explained as the host words it, and says the last valid copy stays only while one applies", () => {
+  const reason = "The identity in engineering/deployment/deploy.yml is ignored: line 3: name must hold 1–80 characters.";
+  const kept = { ...fromManifest, identity: { ...fromManifest.identity, problem: reason } };
+  assert.equal(identity.identityNoticeOf(kept), `${reason} The last valid copy stays.`);
+  const first = {
+    ...record,
+    identity: { ...record.identity, problem: "product/product.json is ignored: The file is not valid JSON (line 3)." },
+  };
+  assert.equal(identity.identityNoticeOf(first), "product/product.json is ignored: The file is not valid JSON (line 3).");
+  assert.equal(identity.identityNoticeOf(fromManifest), null);
+  assert.equal(identity.identityNoticeOf(record), null);
+  assert.equal(identity.identityNoticeOf(null), null);
+});
+
+test("a retired product.json shows the move notice, and a problem takes its place while there is one", () => {
+  assert.equal(identity.identityNoticeOf(fromRetired), retiredNotice);
+  assert.equal(identity.isIdentityReadOnly(fromRetired), true, "the retired file is still edited in the repository");
+  const broken = { ...fromRetired, identity: { ...fromRetired.identity, problem: "The identity in engineering/deployment/deploy.yml is ignored: line 1: description is required beside name." } };
   assert.equal(
-    identity.identityProblemOf(kept),
-    "product/product.json is ignored: 'name' must hold 1–80 characters. The last valid copy stays.",
+    identity.identityNoticeOf(broken),
+    "The identity in engineering/deployment/deploy.yml is ignored: line 1: description is required beside name. The last valid copy stays.",
   );
-  const first = { ...record, identity: { ...record.identity, problem: "The file is not valid JSON (line 3)." } };
-  assert.equal(identity.identityProblemOf(first), "product/product.json is ignored: The file is not valid JSON (line 3).");
-  assert.equal(identity.identityProblemOf(fromManifest), null);
-  assert.equal(identity.identityProblemOf(record), null);
 });
 
 test("a homepage links out only over http or https, and shows its host", () => {
@@ -157,6 +187,16 @@ test("the API client decodes a manifest-sourced product with its commit and serv
   assert.deepEqual(result.value[0].identity, fromManifest.identity);
   assert.equal(result.value[0].homepage, "https://foreverpin.example/start?ref=console");
   assert.equal(result.value[1].identity.source, "record");
+});
+
+test("a host from before the move sends no file or notice, and both read as null", async () => {
+  const { file: _file, notice: _notice, ...older } = fromManifest.identity;
+  globalThis.fetch = async () => json({ data: [{ ...fromManifest, identity: older }] });
+  const result = await identity.productsApi.listProducts();
+  assert.equal(result.ok, true);
+  assert.equal(result.value[0].identity.file, null);
+  assert.equal(result.value[0].identity.notice, null);
+  assert.equal(identity.identityNoticeOf(result.value[0]), null);
 });
 
 test("a product without the identity block is refused as a protocol error", async () => {

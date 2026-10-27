@@ -8,21 +8,47 @@ using Wheelhouse.Tests.Unit.Fakes;
 namespace Wheelhouse.Tests.Unit.Products;
 
 /// <summary>Tests for <see cref="ProductIdentityService"/>: the refresh decisions. The head is compared with the cached
-/// commit; a different head reads the manifest at it; a valid file replaces the row, an invalid one leaves the previous
-/// row with a reason, a missing one drops the row, and an unreadable repository changes nothing.</summary>
+/// commit; a different head reads the identity <c>deploy.yml</c> declares at it, or, while it declares none, the retired
+/// <c>product/product.json</c> with a notice to move it. A valid identity replaces the row, an invalid one leaves the
+/// previous row with a reason, none in either file drops the row, and an unreadable repository changes nothing.</summary>
 public sealed class ProductIdentityServiceTests
 {
     private const string Repository = "owner/pilot";
+    private const string Descriptor = ProductIdentityService.DescriptorFile;
+    private const string Retired = ProductIdentityService.RetiredFile;
     private static readonly string First = new('a', 40);
     private static readonly string Second = new('b', 40);
     private static readonly string Third = new('c', 40);
 
+    private const string Services = """
+        services:
+          api:
+            name: API
+            build: { dockerfile: deployment/Dockerfile }
+            paths: [codebase/**]
+            health: /health
+          worker:
+            build: { dockerfile: deployment/Dockerfile }
+            paths: [codebase/**]
+            health: /health
+
+        """;
+
     private readonly InMemoryProductManifests _store = new();
-    private readonly ScriptedManifestSource _source = new();
+    private readonly ScriptedRepositoryFiles _files = new();
     private readonly ProductIdentityService _service;
 
-    public ProductIdentityServiceTests() => _service = new ProductIdentityService(_store, _source);
+    public ProductIdentityServiceTests() => _service = new ProductIdentityService(_store, _files);
 
+    /// <summary>A descriptor that declares an identity.</summary>
+    private static string Identity(string name, string description = "From the repository.") =>
+        $"descriptor: 2\nproduct: pilot\nname: {name}\ndescription: {description}\n" +
+        $"homepage: https://{name.ToLowerInvariant()}.example\n" + Services;
+
+    /// <summary>A descriptor that declares no identity.</summary>
+    private static string Bare => "descriptor: 2\nproduct: pilot\n" + Services.Replace("    name: API\n", "");
+
+    /// <summary>A retired product/product.json.</summary>
     private static string Manifest(string name, string description = "From the repository.") =>
         $$"""{ "manifest": 1, "name": "{{name}}", "description": "{{description}}", "homepage": "https://{{name.ToLowerInvariant()}}.example" }""";
 
@@ -35,76 +61,178 @@ public sealed class ProductIdentityServiceTests
     private static ProductManifestEntity Row(ProductEntity product, string commit, string name = "Cached name") => new()
     {
         ProductId = product.Id, Repository = product.Repository, Branch = product.DefaultBranch, Commit = commit,
-        Name = name, Description = "Cached description.", Homepage = "https://cached.example",
+        SourceFile = Descriptor, Name = name, Description = "Cached description.", Homepage = "https://cached.example",
     };
 
     private async Task<Wheelhouse.Application.Products.Models.ProductIdentity> ResolveAsync(ProductEntity product) =>
         (await _service.ResolveAsync([product], CancellationToken.None))[product.Id];
 
     [Fact]
-    public async Task ResolveAsync_ShouldReturnTheRecordedValues_WhenTheRepositoryCarriesNoManifest()
+    public async Task ResolveAsync_ShouldReturnTheRecordedValues_WhenNeitherFileDeclaresAnIdentity()
     {
         var product = Product();
-        _source.Push(Repository, First, ProductManifestFileStatus.Missing);
+        _files.Push(Repository, First, Descriptor, Bare);
 
         var identity = await ResolveAsync(product);
 
         (identity.Name, identity.Description, identity.Homepage).Should().Be(("Recorded name", "Recorded description.", null));
-        (identity.Source, identity.Commit, identity.Problem).Should().Be((ProductIdentitySource.Record, null, null));
+        (identity.Source, identity.Commit, identity.Problem, identity.File, identity.Notice).Should().Be(
+            (ProductIdentitySource.Record, null, null, null, null));
+        _files.Reads.Should().Equal($"{Repository}@{First}:{Descriptor}", $"{Repository}@{First}:{Retired}");
         _store.Rows.Should().BeEmpty();
         _store.Saves.Should().Be(0);
     }
 
     [Fact]
-    public async Task ResolveAsync_ShouldStoreAndReturnTheManifest_WhenTheHeadHoldsAValidOne()
+    public async Task ResolveAsync_ShouldReturnTheRecordedValues_WhenTheRepositoryCarriesNeitherFile()
     {
         var product = Product();
-        _source.Push(Repository, First, Manifest("Pilot"));
+        _files.Push(Repository, First, Descriptor, RepositoryFileStatus.Missing);
+
+        var identity = await ResolveAsync(product);
+
+        (identity.Name, identity.Source, identity.Problem, identity.Notice).Should().Be(
+            ("Recorded name", ProductIdentitySource.Record, null, null));
+        _store.Rows.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldStoreAndReturnTheDescriptorIdentity_WhenTheHeadDeclaresAValidOne()
+    {
+        var product = Product();
+        _files.Push(Repository, First, Descriptor, Identity("Pilot"));
 
         var identity = await ResolveAsync(product);
 
         (identity.Name, identity.Description, identity.Homepage).Should().Be(("Pilot", "From the repository.", "https://pilot.example"));
-        (identity.Source, identity.Commit, identity.Problem).Should().Be((ProductIdentitySource.Manifest, First, null));
+        (identity.Source, identity.Commit, identity.Problem, identity.File, identity.Notice).Should().Be(
+            (ProductIdentitySource.Manifest, First, null, Descriptor, null));
+        identity.Services.Select(service => (service.Service, service.Name, service.Description)).Should().Equal(("api", "API", null));
         var row = _store.Rows.Should().ContainSingle().Which.Value;
-        (row.ProductId, row.Repository, row.Branch, row.Commit, row.Name).Should().Be((product.Id, Repository, "main", First, "Pilot"));
+        (row.ProductId, row.Repository, row.Branch, row.Commit, row.SourceFile, row.Name).Should().Be(
+            (product.Id, Repository, "main", First, Descriptor, "Pilot"));
+        _files.Reads.Should().Equal($"{Repository}@{First}:{Descriptor}");
     }
 
     [Fact]
-    public async Task ResolveAsync_ShouldNotReadTheFile_WhenTheHeadIsTheCachedCommit()
+    public async Task ResolveAsync_ShouldReadTheRetiredFileWithANotice_WhenTheDescriptorDeclaresNoIdentity()
     {
         var product = Product();
-        _store.Rows[product.Id] = Row(product, First);
-        _source.Push(Repository, First, Manifest("Changed"));
+        _files.Push(Repository, First, Descriptor, Bare);
+        _files.Push(Repository, First, Retired, Manifest("Legacy"));
 
         var identity = await ResolveAsync(product);
 
-        identity.Name.Should().Be("Cached name");
-        _source.Reads.Should().BeEmpty();
+        (identity.Name, identity.Source, identity.Commit, identity.File).Should().Be(
+            ("Legacy", ProductIdentitySource.Manifest, First, Retired));
+        identity.Notice.Should().Be(ProductIdentityService.RetiredNotice);
+        identity.Problem.Should().BeNull();
+        _store.Rows[product.Id].SourceFile.Should().Be(Retired);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldReadTheRetiredFile_WhenTheRepositoryHasNoDescriptor()
+    {
+        var product = Product();
+        _files.Push(Repository, First, Retired, Manifest("Legacy"));
+
+        var identity = await ResolveAsync(product);
+
+        (identity.Name, identity.File, identity.Notice).Should().Be(("Legacy", Retired, ProductIdentityService.RetiredNotice));
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldKeepTheNotice_WhenTheHeadIsTheCachedCommitOfARetiredFile()
+    {
+        var product = Product();
+        _store.Rows[product.Id] = Row(product, First);
+        _store.Rows[product.Id].SourceFile = Retired;
+        _files.Push(Repository, First, Retired, Manifest("Changed"));
+
+        var identity = await ResolveAsync(product);
+
+        (identity.Name, identity.File, identity.Notice).Should().Be(("Cached name", Retired, ProductIdentityService.RetiredNotice));
+        _files.Reads.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldIgnoreTheRetiredFile_WhenTheDescriptorDeclaresAnIdentity()
+    {
+        var product = Product();
+        _files.Push(Repository, First, Descriptor, Identity("Described"));
+        _files.Push(Repository, First, Retired, Manifest("Legacy"));
+
+        var identity = await ResolveAsync(product);
+
+        (identity.Name, identity.File, identity.Notice).Should().Be(("Described", Descriptor, null));
+        _files.Reads.Should().NotContain(read => read.EndsWith(Retired, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldNotFallBackToTheRetiredFile_WhenTheDescriptorIdentityIsInvalid()
+    {
+        var product = Product();
+        _files.Push(Repository, First, Descriptor, "descriptor: 2\nproduct: pilot\nname: Pilot\n" + Services);
+        _files.Push(Repository, First, Retired, Manifest("Legacy"));
+
+        var identity = await ResolveAsync(product);
+
+        (identity.Name, identity.Source).Should().Be(("Recorded name", ProductIdentitySource.Record));
+        identity.Problem.Should().Be(
+            "The identity in engineering/deployment/deploy.yml is ignored: line 1: description is required beside name.");
+        _files.Reads.Should().NotContain(read => read.EndsWith(Retired, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldMoveTheRowToTheDescriptorAndDropTheNotice_WhenALaterCommitMovesTheIdentity()
+    {
+        var product = Product();
+        _files.Push(Repository, First, Retired, Manifest("Legacy"));
+        (await ResolveAsync(product)).Notice.Should().NotBeNull();
+        _files.Push(Repository, Second, Descriptor, Identity("Moved"));
+
+        var identity = await ResolveAsync(product);
+
+        (identity.Name, identity.Commit, identity.File, identity.Notice).Should().Be(("Moved", Second, Descriptor, null));
+        _store.Rows[product.Id].SourceFile.Should().Be(Descriptor);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldNotReadAFile_WhenTheHeadIsTheCachedCommit()
+    {
+        var product = Product();
+        _store.Rows[product.Id] = Row(product, First);
+        _files.Push(Repository, First, Descriptor, Identity("Changed"));
+
+        var identity = await ResolveAsync(product);
+
+        (identity.Name, identity.File, identity.Notice).Should().Be(("Cached name", Descriptor, null));
+        _files.Reads.Should().BeEmpty();
         _store.Saves.Should().Be(0);
     }
 
     [Fact]
-    public async Task ResolveAsync_ShouldReplaceTheRowWithTheNewerCommit_WhenTheHeadMovedAndTheManifestIsValid()
+    public async Task ResolveAsync_ShouldReplaceTheRowWithTheNewerCommit_WhenTheHeadMovedAndTheIdentityIsValid()
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _source.Push(Repository, Second, Manifest("Renamed"));
+        _files.Push(Repository, Second, Descriptor, Identity("Renamed"));
 
         var identity = await ResolveAsync(product);
 
         (identity.Name, identity.Commit).Should().Be(("Renamed", Second));
         var row = _store.Rows.Should().ContainSingle().Which.Value;
         (row.Commit, row.Name, row.Homepage).Should().Be((Second, "Renamed", "https://renamed.example"));
-        _source.Reads.Should().Equal($"{Repository}@{Second}");
+        _files.Reads.Should().Equal($"{Repository}@{Second}:{Descriptor}");
     }
 
     [Fact]
-    public async Task ResolveAsync_ShouldAdvanceTheCommit_WhenTheHeadMovedAndTheManifestIsUnchanged()
+    public async Task ResolveAsync_ShouldAdvanceTheCommit_WhenTheHeadMovedAndTheIdentityIsUnchanged()
     {
         var product = Product();
-        _source.Push(Repository, First, Manifest("Pilot"));
+        _files.Push(Repository, First, Descriptor, Identity("Pilot"));
         await ResolveAsync(product);
-        _source.Push(Repository, Second, Manifest("Pilot"));
+        _files.Push(Repository, Second, Descriptor, Identity("Pilot"));
 
         var identity = await ResolveAsync(product);
 
@@ -113,30 +241,45 @@ public sealed class ProductIdentityServiceTests
     }
 
     [Fact]
-    public async Task ResolveAsync_ShouldKeepThePreviousRowAndReportWhy_WhenTheNewManifestIsInvalid()
+    public async Task ResolveAsync_ShouldKeepThePreviousRowAndReportWhy_WhenTheNewIdentityIsInvalid()
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _source.Push(Repository, Second, """{ "manifest": 1, "name": "", "description": "x" }""");
+        _files.Push(Repository, Second, Descriptor, "descriptor: 2\nproduct: pilot\nname: \"\"\ndescription: x\n" + Services);
 
         var identity = await ResolveAsync(product);
 
         (identity.Name, identity.Source, identity.Commit).Should().Be(("Cached name", ProductIdentitySource.Manifest, First));
-        identity.Problem.Should().Be("'name' must hold 1–80 characters.");
+        identity.Problem.Should().Be(
+            "The identity in engineering/deployment/deploy.yml is ignored: line 3: name must hold 1–80 characters.");
         _store.Rows[product.Id].Commit.Should().Be(First);
         _store.Saves.Should().Be(0);
     }
 
     [Fact]
-    public async Task ResolveAsync_ShouldReturnTheRecordAndReportWhy_WhenTheFirstManifestIsInvalid()
+    public async Task ResolveAsync_ShouldReturnTheRecordAndReportWhy_WhenTheFirstDescriptorCannotBeParsed()
     {
         var product = Product();
-        _source.Push(Repository, First, "{ nope");
+        _files.Push(Repository, First, Descriptor, "descriptor: [2\n");
 
         var identity = await ResolveAsync(product);
 
         (identity.Name, identity.Source).Should().Be(("Recorded name", ProductIdentitySource.Record));
-        identity.Problem.Should().StartWith("The file is not valid JSON");
+        identity.Problem.Should().StartWith("The identity in engineering/deployment/deploy.yml is ignored: line ")
+            .And.EndWith("deploy.yml is not valid YAML.");
+        _store.Rows.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldReturnTheRecordAndReportWhy_WhenTheFirstRetiredFileIsInvalid()
+    {
+        var product = Product();
+        _files.Push(Repository, First, Retired, "{ nope");
+
+        var identity = await ResolveAsync(product);
+
+        (identity.Name, identity.Source, identity.Notice).Should().Be(("Recorded name", ProductIdentitySource.Record, null));
+        identity.Problem.Should().Be("product/product.json is ignored: The file is not valid JSON (line 1).");
         _store.Rows.Should().BeEmpty();
     }
 
@@ -144,11 +287,11 @@ public sealed class ProductIdentityServiceTests
     public async Task ResolveAsync_ShouldClearTheReason_WhenALaterCommitIsValidAgain()
     {
         var product = Product();
-        _source.Push(Repository, First, Manifest("Pilot"));
+        _files.Push(Repository, First, Descriptor, Identity("Pilot"));
         await ResolveAsync(product);
-        _source.Push(Repository, Second, "{ nope");
+        _files.Push(Repository, Second, Descriptor, "descriptor: 2\nproduct: pilot\nhomepage: ftp://pilot.example\n" + Services);
         (await ResolveAsync(product)).Problem.Should().NotBeNull();
-        _source.Push(Repository, Third, Manifest("Repiloted"));
+        _files.Push(Repository, Third, Descriptor, Identity("Repiloted"));
 
         var identity = await ResolveAsync(product);
 
@@ -156,23 +299,36 @@ public sealed class ProductIdentityServiceTests
     }
 
     [Fact]
-    public async Task ResolveAsync_ShouldReportTheSizeLimit_WhenTheFileIsTooLarge()
+    public async Task ResolveAsync_ShouldReportTheSizeLimit_WhenTheDescriptorIsTooLarge()
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _source.Push(Repository, Second, ProductManifestFileStatus.TooLarge);
+        _files.Push(Repository, Second, Descriptor, RepositoryFileStatus.TooLarge);
 
         var identity = await ResolveAsync(product);
 
-        (identity.Name, identity.Problem).Should().Be(("Cached name", "The file is larger than 16 KiB."));
+        (identity.Name, identity.Problem).Should().Be(
+            ("Cached name", "The identity in engineering/deployment/deploy.yml is ignored: The file is larger than 256 KiB."));
     }
 
     [Fact]
-    public async Task ResolveAsync_ShouldDropTheRow_WhenTheNewerCommitHasNoManifest()
+    public async Task ResolveAsync_ShouldReportTheSizeLimit_WhenTheRetiredFileIsTooLarge()
+    {
+        var product = Product();
+        _files.Push(Repository, First, Retired, RepositoryFileStatus.TooLarge);
+
+        var identity = await ResolveAsync(product);
+
+        (identity.Source, identity.Problem).Should().Be(
+            (ProductIdentitySource.Record, "product/product.json is ignored: The file is larger than 16 KiB."));
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldDropTheRow_WhenTheNewerCommitDeclaresNoIdentity()
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _source.Push(Repository, Second, ProductManifestFileStatus.Missing);
+        _files.Push(Repository, Second, Descriptor, Bare);
 
         var identity = await ResolveAsync(product);
 
@@ -190,15 +346,19 @@ public sealed class ProductIdentityServiceTests
 
         (identity.Name, identity.Source, identity.Problem).Should().Be(("Cached name", ProductIdentitySource.Manifest, null));
         _store.Rows.Should().ContainKey(product.Id);
-        _source.Reads.Should().BeEmpty();
+        _files.Reads.Should().BeEmpty();
     }
 
-    [Fact]
-    public async Task ResolveAsync_ShouldKeepTheRowWithoutAReason_WhenTheFileCannotBeRead()
+    [Theory]
+    [InlineData(Descriptor)]
+    [InlineData(Retired)]
+    public async Task ResolveAsync_ShouldKeepTheRowWithoutAReason_WhenAFileCannotBeRead(string path)
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _source.Push(Repository, Second, ProductManifestFileStatus.Unreadable);
+        if (path == Retired)
+            _files.Push(Repository, Second, Descriptor, Bare);
+        _files.Push(Repository, Second, path, RepositoryFileStatus.Unreadable);
 
         var identity = await ResolveAsync(product);
 
@@ -211,7 +371,7 @@ public sealed class ProductIdentityServiceTests
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _source.Failure = new InvalidOperationException("unexpected");
+        _files.Failure = new InvalidOperationException("unexpected");
 
         var identity = await ResolveAsync(product);
 
@@ -222,7 +382,7 @@ public sealed class ProductIdentityServiceTests
     public async Task ResolveAsync_ShouldNotSwallowCancellation_WhenTheCallerCancels()
     {
         var product = Product();
-        _source.Failure = new OperationCanceledException();
+        _files.Failure = new OperationCanceledException();
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
 
@@ -237,7 +397,7 @@ public sealed class ProductIdentityServiceTests
         var product = Product(repository: "owner/moved");
         _store.Rows[product.Id] = new ProductManifestEntity
         {
-            ProductId = product.Id, Repository = "owner/pilot", Branch = "main", Commit = First,
+            ProductId = product.Id, Repository = "owner/pilot", Branch = "main", Commit = First, SourceFile = Descriptor,
             Name = "Old repo name", Description = "x",
         };
 
@@ -253,7 +413,7 @@ public sealed class ProductIdentityServiceTests
         var product = Product(branch: "release");
         _store.Rows[product.Id] = Row(product, First);
         _store.Rows[product.Id].Branch = "main";
-        _source.Push(Repository, Second, Manifest("Releasebranch"), branch: "release");
+        _files.Push(Repository, Second, Descriptor, Identity("Releasebranch"), branch: "release");
 
         var identity = await ResolveAsync(product);
 
@@ -267,30 +427,34 @@ public sealed class ProductIdentityServiceTests
         var product = Product(repository: "Owner/Pilot");
         _store.Rows[product.Id] = Row(product, First);
         _store.Rows[product.Id].Repository = "owner/pilot";
-        _source.Push("Owner/Pilot", First, Manifest("Changed"));
+        _files.Push("Owner/Pilot", First, Descriptor, Identity("Changed"));
 
         var identity = await ResolveAsync(product);
 
         identity.Name.Should().Be("Cached name");
-        _source.Reads.Should().BeEmpty();
+        _files.Reads.Should().BeEmpty();
     }
 
     [Fact]
     public async Task ResolveAsync_ShouldDecideEachProductOnItsOwn_WhenSeveralAreResolved()
     {
-        var withManifest = Product("alpha", "owner/alpha");
+        var described = Product("alpha", "owner/alpha");
         var without = Product("beta", "owner/beta");
         var broken = Product("gamma", "owner/gamma");
-        _source.Push("owner/alpha", First, Manifest("Alpha"));
-        _source.Push("owner/beta", Second, ProductManifestFileStatus.Missing);
-        _source.Push("owner/gamma", Third, "{ nope");
+        var retired = Product("delta", "owner/delta");
+        _files.Push("owner/alpha", First, Descriptor, Identity("Alpha"));
+        _files.Push("owner/beta", Second, Descriptor, Bare);
+        _files.Push("owner/gamma", Third, Retired, "{ nope");
+        _files.Push("owner/delta", First, Retired, Manifest("Delta"));
 
-        var identities = await _service.ResolveAsync([withManifest, without, broken], CancellationToken.None);
+        var identities = await _service.ResolveAsync([described, without, broken, retired], CancellationToken.None);
 
-        identities[withManifest.Id].Name.Should().Be("Alpha");
+        identities[described.Id].Name.Should().Be("Alpha");
         identities[without.Id].Name.Should().Be("Recorded name");
-        (identities[broken.Id].Source, identities[broken.Id].Problem).Should().Be((ProductIdentitySource.Record, "The file is not valid JSON (line 1)."));
-        _store.Rows.Keys.Should().BeEquivalentTo([withManifest.Id]);
+        (identities[broken.Id].Source, identities[broken.Id].Problem).Should().Be(
+            (ProductIdentitySource.Record, "product/product.json is ignored: The file is not valid JSON (line 1)."));
+        (identities[retired.Id].Name, identities[retired.Id].Notice).Should().Be(("Delta", ProductIdentityService.RetiredNotice));
+        _store.Rows.Keys.Should().BeEquivalentTo([described.Id, retired.Id]);
     }
 
     [Fact]
@@ -298,34 +462,34 @@ public sealed class ProductIdentityServiceTests
     {
         (await _service.ResolveAsync([], CancellationToken.None)).Should().BeEmpty();
 
-        _source.HeadChecks.Should().BeEmpty();
+        _files.HeadChecks.Should().BeEmpty();
     }
 
     [Fact]
     public async Task ResolveAsync_ShouldLeaveTheHeadToTheSource_WhenAProductIsRead()
     {
         var product = Product();
-        _source.Push(Repository, First, Manifest("Pilot"));
+        _files.Push(Repository, First, Descriptor, Identity("Pilot"));
 
         await ResolveAsync(product);
         await ResolveAsync(product);
 
-        _source.HeadChecks.Should().OnlyContain(check => !check.Fresh);
-        _source.HeadChecks.Should().HaveCount(2);
-        _source.Reads.Should().HaveCount(1);
+        _files.HeadChecks.Should().OnlyContain(check => !check.Fresh);
+        _files.HeadChecks.Should().HaveCount(2);
+        _files.Reads.Should().HaveCount(1);
     }
 
     [Fact]
-    public async Task RefreshAsync_ShouldAskForAFreshHeadAndReadTheNewManifest_WhenTheHeadMoved()
+    public async Task RefreshAsync_ShouldAskForAFreshHeadAndReadTheNewIdentity_WhenTheHeadMoved()
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _source.Push(Repository, Second, Manifest("Fresh"));
+        _files.Push(Repository, Second, Descriptor, Identity("Fresh"));
 
         var identity = await _service.RefreshAsync(product, CancellationToken.None);
 
         (identity!.Name, identity.Commit).Should().Be(("Fresh", Second));
-        _source.HeadChecks.Should().Equal((Repository, "main", true));
+        _files.HeadChecks.Should().Equal((Repository, "main", true));
         _store.Rows[product.Id].Commit.Should().Be(Second);
     }
 
@@ -334,12 +498,12 @@ public sealed class ProductIdentityServiceTests
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _source.Push(Repository, First, Manifest("Samecommit"));
+        _files.Push(Repository, First, Descriptor, Identity("Samecommit"));
 
         var identity = await _service.RefreshAsync(product, CancellationToken.None);
 
         identity!.Name.Should().Be("Cached name");
-        _source.Reads.Should().BeEmpty();
+        _files.Reads.Should().BeEmpty();
     }
 
     [Fact]
@@ -355,14 +519,15 @@ public sealed class ProductIdentityServiceTests
     }
 
     [Fact]
-    public async Task RefreshAsync_ShouldReturnTheReason_WhenTheNewestManifestIsInvalid()
+    public async Task RefreshAsync_ShouldReturnTheReason_WhenTheNewestIdentityIsInvalid()
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _source.Push(Repository, Second, """{ "manifest": 1, "name": "Pilot" }""");
+        _files.Push(Repository, Second, Descriptor, "descriptor: 2\nproduct: pilot\nname: Pilot\n" + Services);
 
         var identity = await _service.RefreshAsync(product, CancellationToken.None);
 
-        (identity!.Name, identity.Problem).Should().Be(("Cached name", "'description' is required."));
+        (identity!.Name, identity.Problem).Should().Be(
+            ("Cached name", "The identity in engineering/deployment/deploy.yml is ignored: line 1: description is required beside name."));
     }
 }

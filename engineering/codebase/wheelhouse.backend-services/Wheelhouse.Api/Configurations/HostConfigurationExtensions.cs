@@ -139,7 +139,7 @@ public static partial class HostConfigurationExtensions
 
     /// <summary>Registers the infrastructure layer — the SDK time provider, the runner gateway, the inventory snapshot and
     /// its startup export, the vault client, GitHub access (the App's per-owner tokens, the fallbacks, the access issues),
-    /// the GitHub repository reader the icon, manifest and catalog reads share, and the catalog settings.</summary>
+    /// the GitHub repository reader the icon, identity, deploy.yml and catalog reads share, and the catalog settings.</summary>
     public static WebApplicationBuilder AddInfrastructureLayer(this WebApplicationBuilder builder)
     {
         builder.Services.AddTimeProviders();
@@ -226,7 +226,6 @@ public static partial class HostConfigurationExtensions
             .AddHttpMessageHandler<Wheelhouse.Infrastructure.GitHub.GitHubCredentialHandler>();
         builder.Services.AddScoped<Wheelhouse.Infrastructure.Products.GitHubRepositoryReader>();
         builder.Services.AddScoped<IProductIconSource, Wheelhouse.Infrastructure.Products.GitHubProductIconSource>();
-        builder.Services.AddScoped<IProductManifestSource, Wheelhouse.Infrastructure.Products.GitHubProductManifestSource>();
         builder.Services.AddScoped<IRepositoryFileSource, Wheelhouse.Infrastructure.Catalog.GitHubRepositoryFileSource>();
 
         // The catalog hubs: one YAML file in each hub repository, bound when first resolved; a malformed setting fails it.

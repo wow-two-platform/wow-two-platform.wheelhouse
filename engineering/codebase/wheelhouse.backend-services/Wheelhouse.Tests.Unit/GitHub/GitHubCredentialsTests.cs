@@ -144,7 +144,7 @@ public sealed class GitHubCredentialsTests : IDisposable
             new HttpResponseMessage(hidden ? HttpStatusCode.NotFound : HttpStatusCode.OK);
         using var client = Client();
 
-        await client.SendAsync(Get("repos/sulton-max/pbn-studio/contents/product/product.json?ref=main"));
+        await client.SendAsync(Get("repos/sulton-max/pbn-studio/contents/engineering/deployment/deploy.yml?ref=main"));
         _rig.Monitor.Current().Should().BeEmpty("a missing file says nothing about access");
 
         await client.SendAsync(Get("repos/sulton-max/10x-ventures/commits/main"));

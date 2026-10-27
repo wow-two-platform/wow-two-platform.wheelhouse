@@ -58,11 +58,14 @@ public sealed class McpE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBas
     }
 
     [Fact]
-    public async Task CatalogKey_ListsTheManifestIdentity_WhenARepositoryCarriesOne()
+    public async Task CatalogKey_ListsTheRepositoryIdentity_WhenADescriptorDeclaresOne()
     {
-        Fixture.ProductManifests.Push(
+        Fixture.RepositoryFiles.Push(
             "sulton-max/10x-venture-forever-pin",
-            "{ \"manifest\": 1, \"name\": \"Forever Pin\", \"description\": \"From the repository.\", \"homepage\": \"https://foreverpin.example\" }");
+            "engineering/deployment/deploy.yml",
+            "descriptor: 2\nproduct: foreverpin\nname: Forever Pin\ndescription: From the repository.\n" +
+            "homepage: https://foreverpin.example\nservices:\n  management:\n    build: { dockerfile: deployment/Dockerfile }\n" +
+            "    paths: [codebase/**]\n    health: /health\n");
         var key = await CreateKeyAsync("catalog:read");
         using var client = KeyClient(key.Secret);
 

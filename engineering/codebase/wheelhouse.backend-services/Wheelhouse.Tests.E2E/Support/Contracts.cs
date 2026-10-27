@@ -70,14 +70,18 @@ public sealed record WorkspaceResponse(Guid Id, string Slug, string Name, string
 
 /// <summary>Response shape for where a catalog product's identity text comes from.</summary>
 /// <param name="Source"><c>manifest</c> or <c>record</c> (string-serialized enum).</param>
-/// <param name="Commit">The commit the manifest was read from.</param>
-/// <param name="Problem">Why the repository's newest manifest is ignored.</param>
-/// <param name="Services">The name and description the manifest gives each service.</param>
+/// <param name="Commit">The commit the identity was read from.</param>
+/// <param name="Problem">Why the repository's newest identity is ignored, naming the file.</param>
+/// <param name="Services">The name and description the repository gives each service.</param>
+/// <param name="File">The file the identity was read from: <c>deploy.yml</c> or a retired <c>product/product.json</c>.</param>
+/// <param name="Notice">What the owner should change, such as moving a retired file into <c>deploy.yml</c>.</param>
 public sealed record ProductIdentityResponse(
     string Source,
     string? Commit,
     string? Problem,
-    IReadOnlyList<ProductServiceResponse> Services);
+    IReadOnlyList<ProductServiceResponse> Services,
+    string? File = null,
+    string? Notice = null);
 
 /// <summary>Response shape for the name and description a manifest gives one service.</summary>
 /// <param name="Service">The service's key in <c>deploy.yml</c>.</param>

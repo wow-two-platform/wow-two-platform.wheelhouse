@@ -19,7 +19,7 @@ import { RouterLink } from "vue-router";
 import { Pin, TriangleAlert } from "lucide-vue-next";
 import { Badge, Text } from "@wow-two-beta/fe/presentation/display";
 import { ConsolePaths } from "@/application/navigation";
-import { ProductStatusRules, identityProblemOf } from "@/domain/products";
+import { ProductStatusRules, identityNoticeOf } from "@/domain/products";
 import { EnvironmentOrder } from "@/domain/targets";
 import EnvironmentPill from "./EnvironmentPill.vue";
 import OpenSiteMenu from "./OpenSiteMenu.vue";
@@ -38,7 +38,7 @@ const props = withDefaults(defineProps<ProductTileProps>(), { isPinned: false })
 const emit = defineEmits<{ edit: [] }>();
 defineSlots<{}>();
 const inactive = computed(() => Boolean(props.product && !ProductStatusRules.isActive(props.product)));
-const problem = computed(() => identityProblemOf(props.product));
+const notice = computed(() => identityNoticeOf(props.product));
 </script>
 <template>
   <article
@@ -58,8 +58,8 @@ const problem = computed(() => identityProblemOf(props.product));
           ></Text
         >
         <Pin v-if="props.isPinned" :size="13" class="shrink-0 fill-current text-primary" aria-label="Pinned" />
-        <span v-if="problem" class="relative z-10 inline-flex shrink-0 text-warning" :title="problem"
-          ><TriangleAlert :size="14" aria-hidden="true" /><span class="sr-only">{{ problem }}</span></span
+        <span v-if="notice" class="relative z-10 inline-flex shrink-0 text-warning" :title="notice"
+          ><TriangleAlert :size="14" aria-hidden="true" /><span class="sr-only">{{ notice }}</span></span
         >
         <Badge v-if="inactive" variant="neutral" size="sm" class="shrink-0">Inactive</Badge>
       </div>

@@ -34,6 +34,7 @@ internal sealed class EfProductManifests(WheelhouseDbContext db) : IProductManif
                     stored.Repository = manifest.Repository;
                     stored.Branch = manifest.Branch;
                     stored.Commit = manifest.Commit;
+                    stored.SourceFile = manifest.SourceFile;
                     stored.Name = manifest.Name;
                     stored.Description = manifest.Description;
                     stored.Homepage = manifest.Homepage;

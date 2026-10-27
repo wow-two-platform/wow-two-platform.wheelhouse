@@ -6,6 +6,7 @@ public enum ProductIdentitySource
     /// <summary>The product's own row, edited in the console.</summary>
     Record,
 
-    /// <summary>The cached copy of the product manifest in the product's repository, edited there.</summary>
+    /// <summary>The cached copy of the identity the product's repository declares — its <c>deploy.yml</c>, or a retired
+    /// <c>product/product.json</c> — edited there.</summary>
     Manifest,
 }

@@ -61,11 +61,9 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     /// <summary>The shared icon stub — add files with <see cref="StubProductIconSource.Add"/> to serve a repository's icons.</summary>
     public StubProductIconSource ProductIcons { get; } = new();
 
-    /// <summary>The shared manifest stub — push a commit with <see cref="StubProductManifestSource.Push(string, string, string)"/> to give a repository its manifest.</summary>
-    public StubProductManifestSource ProductManifests { get; } = new();
-
     /// <summary>The shared repository-file stub — push files with <see cref="StubRepositoryFileSource.Push(string, string, string, string)"/>
-    /// to give the catalog repository its catalog and a product repository its <c>deploy.yml</c>.</summary>
+    /// to give the catalog repository its catalog and a product repository its <c>deploy.yml</c> (with its identity) or
+    /// a retired <c>product/product.json</c>.</summary>
     public StubRepositoryFileSource RepositoryFiles { get; } = new();
 
     /// <summary>A fresh anonymous client (no admin header) — protected endpoints return 401.</summary>
@@ -130,11 +128,8 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
                 services.RemoveAll<Wheelhouse.Application.Abstractions.IProductIconSource>();
                 services.AddSingleton<Wheelhouse.Application.Abstractions.IProductIconSource>(ProductIcons);
 
-                // Product manifests come from the stub too; a repository nobody pushed to has none and cannot be read.
-                services.RemoveAll<Wheelhouse.Application.Abstractions.IProductManifestSource>();
-                services.AddSingleton<Wheelhouse.Application.Abstractions.IProductManifestSource>(ProductManifests);
-
-                // The catalog and deploy.yml reads come from the stub as well.
+                // The catalog, deploy.yml and identity reads come from the stub as well; a repository nobody pushed to
+                // cannot be read.
                 services.RemoveAll<Wheelhouse.Application.Abstractions.IRepositoryFileSource>();
                 services.AddSingleton<Wheelhouse.Application.Abstractions.IRepositoryFileSource>(RepositoryFiles);
             },
@@ -201,7 +196,6 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
         Vaults.Reset();
         Infra.Clear();
         ProductIcons.Clear();
-        ProductManifests.Clear();
         RepositoryFiles.Clear();
     }
 }

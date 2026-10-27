@@ -125,8 +125,9 @@ public sealed class ProductsController(ISender sender) : ControllerBase
             Deploy = request.Deploy,
         }, ct));
 
-    /// <summary>Reads the product's manifest again now: checks the repository's branch head without waiting for the
-    /// remembered one, and re-reads <c>product/product.json</c> when the head is a commit the cache has not seen.
+    /// <summary>Reads the product's identity again now: checks the repository's branch head without waiting for the
+    /// remembered one, and re-reads <c>engineering/deployment/deploy.yml</c> (or a retired <c>product/product.json</c>)
+    /// when the head is a commit the cache has not seen.
     /// Answers with the product; 503 when the branch cannot be read from GitHub.</summary>
     [HttpPost("{slug}/identity/refresh")]
     [RequireActionHeader("refresh")]

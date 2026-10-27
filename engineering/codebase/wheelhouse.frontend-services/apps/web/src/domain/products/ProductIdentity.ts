@@ -1,12 +1,15 @@
 import { ProductIdentitySource, type Product } from './Product';
 
-/** Where a product's manifest sits in its repository — the wow-two product manifest convention. */
-export const ProductManifestPath = 'product/product.json';
+/** Where a product declares its identity in its repository — the deploy descriptor convention's § Identity. */
+export const ProductDescriptorPath = 'engineering/deployment/deploy.yml';
+
+/** The retired identity file the host still reads, with a notice, while the descriptor declares no identity. */
+export const RetiredManifestPath = 'product/product.json';
 
 /**
- * Whether the console must show a product's name, description and homepage read-only: they come from the manifest in
- * the repository, and edits go there. A product being created, or one whose repository carries no valid manifest, is
- * edited in the console.
+ * Whether the console must show a product's name, description and homepage read-only: they come from the repository,
+ * and edits go there. A product being created, or one whose repository declares no valid identity, is edited in the
+ * console.
  */
 export function isIdentityReadOnly(product: Product | null | undefined): boolean {
   return product?.identity.source === ProductIdentitySource.Manifest;
@@ -14,18 +17,18 @@ export function isIdentityReadOnly(product: Product | null | undefined): boolean
 
 /** The one line the product form shows beside read-only identity fields; null when they are editable. */
 export function identityNoteOf(product: Product | null | undefined): string | null {
-  return isIdentityReadOnly(product) ? `Edited in ${ProductManifestPath} in the repository.` : null;
+  return isIdentityReadOnly(product) ? `Edited in ${product?.identity.file ?? ProductDescriptorPath} in the repository.` : null;
 }
 
 /**
- * The line that says the repository's newest manifest is ignored, or null when nothing is. While a valid copy
- * applies it keeps applying, and the line says so.
+ * The one warning a product's identity carries, or null when it carries none: first why the repository's newest
+ * identity is ignored (the host names the file; while a valid copy applies it keeps applying, and the line says so),
+ * else what the owner should change, such as moving a retired product/product.json into deploy.yml.
  */
-export function identityProblemOf(product: Product | null | undefined): string | null {
+export function identityNoticeOf(product: Product | null | undefined): string | null {
   const problem = product?.identity.problem;
-  if (!problem) return null;
-  const kept = isIdentityReadOnly(product) ? ' The last valid copy stays.' : '';
-  return `${ProductManifestPath} is ignored: ${problem}${kept}`;
+  if (problem) return `${problem}${isIdentityReadOnly(product) ? ' The last valid copy stays.' : ''}`;
+  return product?.identity.notice ?? null;
 }
 
 /** The first seven characters of a commit, as developers write it; null for no commit. */
@@ -52,12 +55,12 @@ export function homepageLinkOf(product: Product | null | undefined): { href: str
 export interface ServiceIdentityView {
   /** The service's key in `deploy.yml`. */
   service: string;
-  /** The manifest's name for the service, or its key when the manifest gives none. */
+  /** The repository's name for the service, or its key when it gives none. */
   label: string;
   description: string | null;
 }
 
-/** The services the manifest names, in key order, each with the name to show. */
+/** The services the repository names, in key order, each with the name to show. */
 export function serviceIdentitiesOf(product: Product | null | undefined): ServiceIdentityView[] {
   return [...(product?.identity.services ?? [])]
     .sort((a, b) => (a.service < b.service ? -1 : a.service > b.service ? 1 : 0))

@@ -1,7 +1,0 @@
-{
-  "$schema": "../../../../conventions/design/identity/product.schema.json",
-  "manifest": 1,
-  "name": "Wheelhouse",
-  "description": "The portfolio's deploy and operations control plane.",
-  "homepage": "https://github.com/wow-two-platform/wow-two-platform.wheelhouse"
-}

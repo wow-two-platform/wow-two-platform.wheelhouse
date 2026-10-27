@@ -15,6 +15,14 @@ public sealed class StubRepositoryFileSource : IRepositoryFileSource
     /// <summary>Every file read the host made, as <c>repository@commit:path</c>.</summary>
     public List<string> Reads { get; } = [];
 
+    /// <summary>The repository, branch and freshness of every head check the host made.</summary>
+    public List<(string Repository, string Branch, bool Fresh)> HeadChecks { get; } = [];
+
+    /// <summary>Makes a repository's branch unreadable, as when GitHub is down or refuses the token.</summary>
+    /// <param name="repository">The <c>{owner}/{repo}</c> reference.</param>
+    /// <param name="branch">The branch.</param>
+    public void Unreachable(string repository, string branch = "main") => _heads.Remove($"{repository}@{branch}");
+
     /// <summary>Pushes a commit that adds or replaces one file, keeping the branch's others, and makes it the head.</summary>
     /// <param name="repository">The <c>{owner}/{repo}</c> reference.</param>
     /// <param name="path">The file's path.</param>
@@ -51,11 +59,15 @@ public sealed class StubRepositoryFileSource : IRepositoryFileSource
         _heads.Clear();
         _commits.Clear();
         Reads.Clear();
+        HeadChecks.Clear();
     }
 
     /// <inheritdoc />
-    public Task<string?> HeadAsync(string repository, string branch, bool fresh, CancellationToken ct) =>
-        Task.FromResult(_heads.GetValueOrDefault($"{repository}@{branch}"));
+    public Task<string?> HeadAsync(string repository, string branch, bool fresh, CancellationToken ct)
+    {
+        HeadChecks.Add((repository, branch, fresh));
+        return Task.FromResult(_heads.GetValueOrDefault($"{repository}@{branch}"));
+    }
 
     /// <inheritdoc />
     public Task<RepositoryFileRead> ReadAsync(string repository, string commit, string path, int maxBytes, CancellationToken ct)

@@ -1,20 +1,21 @@
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Domain.Products.Models;
 
 namespace Wheelhouse.Application.Products;
 
-/// <summary>Reads and validates a product manifest — the wow-two product manifest convention,
-/// <c>conventions/design/identity/product-manifest.md</c>, and its schema <c>product.schema.json</c>.</summary>
+/// <summary>Reads and validates the retired product manifest, <c>product/product.json</c> — the wow-two convention
+/// <c>conventions/design/identity/product-manifest.md</c>, and its schema <c>product.schema.json</c>. The identity now
+/// lives in the deploy descriptor (<see cref="DescriptorIdentityParser"/>); this file is read only while a repository's
+/// descriptor declares none.</summary>
 /// <remarks>
 /// The file lives at <see cref="Path"/> in the product's repository. It holds the identity text the console shows: name,
 /// description, homepage and each service's name and description. A file that breaks the schema is ignored whole with
 /// one display-safe reason; the reason never quotes the file beyond a key name, which is shortened and stripped of
-/// control characters. The rules here and in the schema must stay the same.
+/// control characters. The rules here and in the schema must stay the same (<see cref="ProductIdentityRules"/>).
 /// </remarks>
-public static partial class ProductManifestParser
+public static class ProductManifestParser
 {
     /// <summary>The manifest's path, relative to the repository root.</summary>
     public const string Path = "product/product.json";
@@ -25,9 +26,6 @@ public static partial class ProductManifestParser
     /// <summary>The manifest format this parser reads.</summary>
     public const int Format = 1;
 
-    private const int MaxNameLength = 80;
-    private const int MaxDescriptionLength = 200;
-    private const int MaxHomepageLength = 300;
     private const int MaxServices = 32;
     private const int MaxShownKeyLength = 40;
     private static readonly string[] ServiceKeys = ["name", "description"];
@@ -81,11 +79,11 @@ public static partial class ProductManifestParser
 
         if (!fields.TryGetValue("name", out var nameValue))
             return ProductManifestParse.Invalid("'name' is required.");
-        if (Text(nameValue, "name", MaxNameLength, out var name) is { } nameProblem)
+        if (Text(nameValue, "name", ProductIdentityRules.MaxNameLength, out var name) is { } nameProblem)
             return ProductManifestParse.Invalid(nameProblem);
         if (!fields.TryGetValue("description", out var descriptionValue))
             return ProductManifestParse.Invalid("'description' is required.");
-        if (Text(descriptionValue, "description", MaxDescriptionLength, out var description) is { } descriptionProblem)
+        if (Text(descriptionValue, "description", ProductIdentityRules.MaxDescriptionLength, out var description) is { } descriptionProblem)
             return ProductManifestParse.Invalid(descriptionProblem);
 
         string? homepage = null;
@@ -113,11 +111,8 @@ public static partial class ProductManifestParser
             return $"'{label}' must be text.";
 
         var candidate = value.GetString()!;
-        var length = candidate.EnumerateRunes().Count();
-        if (length < 1 || length > maxLength)
-            return $"'{label}' must hold 1–{maxLength} characters.";
-        if (!OneLine().IsMatch(candidate))
-            return $"'{label}' must be one line without leading or trailing space.";
+        if (ProductIdentityRules.Text(candidate, maxLength) is { } rule)
+            return $"'{label}' {rule}.";
 
         text = candidate;
         return null;
@@ -130,8 +125,8 @@ public static partial class ProductManifestParser
             return "'homepage' must be text.";
 
         var candidate = value.GetString()!;
-        if (candidate.EnumerateRunes().Count() > MaxHomepageLength || !Address().IsMatch(candidate))
-            return "'homepage' must be an http or https address without credentials, at most 300 characters.";
+        if (ProductIdentityRules.Homepage(candidate) is { } rule)
+            return $"'homepage' {rule}.";
 
         homepage = candidate;
         return null;
@@ -146,7 +141,7 @@ public static partial class ProductManifestParser
         var found = new SortedDictionary<string, ProductServiceIdentityValueObject>(StringComparer.Ordinal);
         foreach (var service in value.EnumerateObject())
         {
-            if (!ServiceKey().IsMatch(service.Name))
+            if (!ProductIdentityRules.IsServiceKey(service.Name))
                 return $"'services' key '{Shown(service.Name)}' is not a service key.";
             if (found.ContainsKey(service.Name))
                 return $"'services.{service.Name}' is given twice.";
@@ -179,8 +174,8 @@ public static partial class ProductManifestParser
                 return $"'{label}.{property.Name}' is given twice.";
 
             var problem = property.Name == "name"
-                ? Text(property.Value, $"{label}.name", MaxNameLength, out name)
-                : Text(property.Value, $"{label}.description", MaxDescriptionLength, out description);
+                ? Text(property.Value, $"{label}.name", ProductIdentityRules.MaxNameLength, out name)
+                : Text(property.Value, $"{label}.description", ProductIdentityRules.MaxDescriptionLength, out description);
             if (problem is not null)
                 return problem;
         }
@@ -205,14 +200,4 @@ public static partial class ProductManifestParser
 
         return shown.ToString();
     }
-
-    // The patterns of `product.schema.json`; `\z` stands for its `$`, since .NET's `$` also matches before a final newline.
-    [GeneratedRegex(@"^\S(?:[^\u0000-\u001f\u007f]*\S)?\z")]
-    private static partial Regex OneLine();
-
-    [GeneratedRegex(@"^https?://[^\s@/?#]+(?:[/?#]\S*)?\z")]
-    private static partial Regex Address();
-
-    [GeneratedRegex(@"^[a-z][a-z0-9-]{0,47}\z")]
-    private static partial Regex ServiceKey();
 }

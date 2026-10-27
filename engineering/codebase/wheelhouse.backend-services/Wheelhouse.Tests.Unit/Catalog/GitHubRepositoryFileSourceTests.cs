@@ -2,16 +2,18 @@ using System.Net;
 using System.Text;
 using AwesomeAssertions;
 using Wheelhouse.Application.Abstractions;
-using Wheelhouse.Application.Products;
+using Wheelhouse.Application.Catalog;
+using Wheelhouse.Infrastructure.Catalog;
 using Wheelhouse.Infrastructure.Products;
 using Wheelhouse.Tests.Unit.Fakes;
 using WoW.Two.Sdk.Beta.Be.Testing.Http;
 
-namespace Wheelhouse.Tests.Unit.Products;
+namespace Wheelhouse.Tests.Unit.Catalog;
 
-/// <summary>Tests for <see cref="GitHubProductManifestSource"/> over a scripted GitHub: the fixed manifest path read at a
-/// commit, a commit's verdict kept for good, no verdict retried, and the branch head kept only a few minutes.</summary>
-public sealed class GitHubProductManifestSourceTests : IDisposable
+/// <summary>Tests for <see cref="GitHubRepositoryFileSource"/> over a scripted GitHub: a file read at a commit, a
+/// commit's verdict kept for good, no verdict retried, and the branch head kept only a few minutes. The descriptor,
+/// which carries a product's identity, is the file read here.</summary>
+public sealed class GitHubRepositoryFileSourceTests : IDisposable
 {
     private const string Repository = "owner/pilot";
     private const string Head = "repos/owner/pilot/commits/main";
@@ -19,38 +21,42 @@ public sealed class GitHubProductManifestSourceTests : IDisposable
     private static readonly string Second = new('b', 40);
 
     private readonly ScriptedGitHubReader _reads = new();
-    private readonly GitHubProductManifestSource _source;
+    private const int Limit = CatalogConstants.MaxDescriptorBytes;
+    private readonly GitHubRepositoryFileSource _source;
 
-    public GitHubProductManifestSourceTests()
+    public GitHubRepositoryFileSourceTests()
     {
         GitHub.Raw[Head] = Encoding.ASCII.GetBytes(First);
-        _source = new GitHubProductManifestSource(_reads.Reader);
+        _source = new GitHubRepositoryFileSource(_reads.Reader);
     }
 
     private ScriptedHttpMessageHandler GitHub => _reads.GitHub;
 
     public void Dispose() => _reads.Dispose();
 
-    private static string Manifest(string commit) => $"repos/owner/pilot/contents/product/product.json?ref={commit}";
+    private static string File(string commit) => $"repos/owner/pilot/contents/engineering/deployment/deploy.yml?ref={commit}";
+
+    private Task<RepositoryFileRead> ReadAsync(string commit) =>
+        _source.ReadAsync(Repository, commit, CatalogConstants.DescriptorPath, Limit, CancellationToken.None);
 
     [Fact]
     public async Task ReadAsync_ShouldReturnTheFileAtTheCommit_WhenTheCommitCarriesIt()
     {
-        GitHub.Raw[Manifest(First)] = "{ }"u8.ToArray();
+        GitHub.Raw[File(First)] = "{ }"u8.ToArray();
 
-        var file = await _source.ReadAsync(Repository, First, CancellationToken.None);
+        var file = await ReadAsync(First);
 
-        file.Status.Should().Be(ProductManifestFileStatus.Found);
+        file.Status.Should().Be(RepositoryFileStatus.Found);
         file.Content.Should().Equal("{ }"u8.ToArray());
-        _reads.Requests.Should().Equal(Manifest(First));
+        _reads.Requests.Should().Equal(File(First));
     }
 
     [Fact]
     public async Task ReadAsync_ShouldSendTheOwnersToken_WhenItReadsTheFile()
     {
-        GitHub.Raw[Manifest(First)] = "{ }"u8.ToArray();
+        GitHub.Raw[File(First)] = "{ }"u8.ToArray();
 
-        await _source.ReadAsync(Repository, First, CancellationToken.None);
+        await ReadAsync(First);
         await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
 
         GitHub.Requests.Should().OnlyContain(request => request.Authorization == "Bearer token");
@@ -72,43 +78,43 @@ public sealed class GitHubProductManifestSourceTests : IDisposable
     {
         using var anonymous = new ScriptedGitHubReader(token: null);
         anonymous.GitHub.Raw[Head] = Encoding.ASCII.GetBytes(First);
-        var source = new GitHubProductManifestSource(anonymous.Reader);
+        var source = new GitHubRepositoryFileSource(anonymous.Reader);
 
         (await source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None)).Should().Be(First);
         anonymous.GitHub.Requests.Should().ContainSingle().Which.Authorization.Should().BeNull();
     }
 
     [Fact]
-    public async Task ReadAsync_ShouldAskOnceAndRememberMissing_WhenTheCommitHasNoManifest()
+    public async Task ReadAsync_ShouldAskOnceAndRememberMissing_WhenTheCommitHasNoFile()
     {
-        var first = await _source.ReadAsync(Repository, First, CancellationToken.None);
-        var again = await _source.ReadAsync(Repository, First, CancellationToken.None);
+        var first = await ReadAsync(First);
+        var again = await ReadAsync(First);
 
-        (first.Status, again.Status).Should().Be((ProductManifestFileStatus.Missing, ProductManifestFileStatus.Missing));
+        (first.Status, again.Status).Should().Be((RepositoryFileStatus.Missing, RepositoryFileStatus.Missing));
         _reads.Requests.Should().ContainSingle();
     }
 
     [Fact]
     public async Task ReadAsync_ShouldReadAgainForANewCommit_WhenTheBranchMovedOn()
     {
-        GitHub.Raw[Manifest(Second)] = "{ }"u8.ToArray();
-        await _source.ReadAsync(Repository, First, CancellationToken.None);
+        GitHub.Raw[File(Second)] = "{ }"u8.ToArray();
+        await ReadAsync(First);
 
-        var file = await _source.ReadAsync(Repository, Second, CancellationToken.None);
+        var file = await ReadAsync(Second);
 
-        file.Status.Should().Be(ProductManifestFileStatus.Found);
-        _reads.Requests.Should().Equal(Manifest(First), Manifest(Second));
+        file.Status.Should().Be(RepositoryFileStatus.Found);
+        _reads.Requests.Should().Equal(File(First), File(Second));
     }
 
     [Fact]
     public async Task ReadAsync_ShouldReturnTooLargeAndRememberIt_WhenTheFileExceedsTheLimit()
     {
-        GitHub.Raw[Manifest(First)] = new byte[ProductManifestParser.MaxBytes + 1];
+        GitHub.Raw[File(First)] = new byte[Limit + 1];
 
-        var first = await _source.ReadAsync(Repository, First, CancellationToken.None);
-        await _source.ReadAsync(Repository, First, CancellationToken.None);
+        var first = await ReadAsync(First);
+        await ReadAsync(First);
 
-        first.Status.Should().Be(ProductManifestFileStatus.TooLarge);
+        first.Status.Should().Be(RepositoryFileStatus.TooLarge);
         first.Content.Should().BeNull();
         _reads.Requests.Should().ContainSingle();
     }
@@ -116,9 +122,9 @@ public sealed class GitHubProductManifestSourceTests : IDisposable
     [Fact]
     public async Task ReadAsync_ShouldReadAFileAtTheLimit_WhenItIsExactlyTheLimit()
     {
-        GitHub.Raw[Manifest(First)] = new byte[ProductManifestParser.MaxBytes];
+        GitHub.Raw[File(First)] = new byte[Limit];
 
-        (await _source.ReadAsync(Repository, First, CancellationToken.None)).Status.Should().Be(ProductManifestFileStatus.Found);
+        (await ReadAsync(First)).Status.Should().Be(RepositoryFileStatus.Found);
     }
 
     [Theory]
@@ -127,14 +133,14 @@ public sealed class GitHubProductManifestSourceTests : IDisposable
     [InlineData(HttpStatusCode.TooManyRequests)]
     public async Task ReadAsync_ShouldReturnUnreadableAndAskAgain_WhenGitHubGivesNoVerdict(HttpStatusCode status)
     {
-        GitHub.Failures[Manifest(First)] = status;
+        GitHub.Failures[File(First)] = status;
 
-        var first = await _source.ReadAsync(Repository, First, CancellationToken.None);
+        var first = await ReadAsync(First);
         GitHub.Failures.Clear();
-        GitHub.Raw[Manifest(First)] = "{ }"u8.ToArray();
-        var again = await _source.ReadAsync(Repository, First, CancellationToken.None);
+        GitHub.Raw[File(First)] = "{ }"u8.ToArray();
+        var again = await ReadAsync(First);
 
-        (first.Status, again.Status).Should().Be((ProductManifestFileStatus.Unreadable, ProductManifestFileStatus.Found));
+        (first.Status, again.Status).Should().Be((RepositoryFileStatus.Unreadable, RepositoryFileStatus.Found));
     }
 
     [Fact]

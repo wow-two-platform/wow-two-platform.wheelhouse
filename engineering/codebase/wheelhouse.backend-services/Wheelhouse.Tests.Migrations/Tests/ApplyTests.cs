@@ -33,6 +33,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "030-built-in-vault",
         "031-product-components",
         "032-root-key-checks",
+        "033-product-manifest-source",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -184,7 +185,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
             ("product_id", "uuid", false), ("repository", "text", false), ("branch", "text", false),
             ("commit_sha", "text", false), ("name", "text", false), ("description", "text", false),
             ("homepage", "text", true), ("services", "jsonb", false), ("created_at_utc", "timestamp with time zone", false),
-            ("updated_at_utc", "timestamp with time zone", false));
+            ("updated_at_utc", "timestamp with time zone", false), ("source_file", "text", false));
 
         await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000001", "pilot"));
         const string insert =
@@ -229,7 +230,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(After(7));
         (await migrator.HasTableAsync("product_manifests")).Should().BeTrue();
         (await Scalar(connection, "SELECT count(*) FROM product_manifests")).Should().Be(0L);
-        (await ReadColumnsAsync(connection, "product_manifests")).Should().HaveCount(10);
+        (await ReadColumnsAsync(connection, "product_manifests")).Should().HaveCount(11);
 
         // A second reversal in the same database is as clean as the first.
         Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: 7, CancellationToken.None));
@@ -848,6 +849,37 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         (await Scalar(connection, "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'vault'")).Should().Be(4L,
             "the vault's own tables stay");
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("032-root-key-checks"));
+    }
+
+    [Fact]
+    public async Task ProductManifestSource_ShouldNameTheRetiredFileForEarlierRows_AndRollBackToTheColumnsBefore()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        await using (var cleanup = await migrator.OpenConnectionAsync())
+            await Execute(cleanup, "DROP SCHEMA IF EXISTS vault CASCADE"); // the fixture's reset drops public only
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        var before = Ordinals[Array.IndexOf(Migrations, "033-product-manifest-source") - 1];
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: before, CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000001", "pilot"));
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000002", "later"));
+        const string insert =
+            "INSERT INTO product_manifests (product_id, repository, branch, commit_sha, name, description, services, created_at_utc, updated_at_utc) " +
+            "VALUES ('{0}', 'owner/pilot', 'main', '{1}', 'Pilot', 'x', '[]', now(), now())";
+        await Execute(connection, string.Format(insert, "00000000-0000-0000-0000-000000000001", new string('a', 40)));
+
+        // A row cached before the column was read from product/product.json, and so is one an older release writes after.
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("033-product-manifest-source"));
+        await Execute(connection, string.Format(insert, "00000000-0000-0000-0000-000000000002", new string('b', 40)));
+        (await Scalar(connection, "SELECT count(*) FROM product_manifests WHERE source_file = 'product/product.json'")).Should().Be(2L);
+        await Execute(connection, "UPDATE product_manifests SET source_file = 'engineering/deployment/deploy.yml' WHERE name = 'Pilot'");
+
+        // Rollback drops only the column; the cached rows stay for the release before it.
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: before, CancellationToken.None));
+        (await ReadColumnsAsync(connection, "product_manifests")).Select(column => column.Name).Should().NotContain("source_file");
+        (await Scalar(connection, "SELECT count(*) FROM product_manifests")).Should().Be(2L);
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("033-product-manifest-source"));
     }
 
     /// <summary>The SQL that stores one vitals reading of a target slug, or of its server's host for <c>NULL</c>.</summary>
