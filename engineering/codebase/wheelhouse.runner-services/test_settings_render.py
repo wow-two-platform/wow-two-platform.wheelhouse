@@ -452,6 +452,14 @@ class RegistryPullTests(unittest.TestCase):
         self.assertTrue(any(arguments[-2:] == ["--policy", "missing"] for arguments, _ in self.calls))
         self.assertTrue(self.configs and all(not config.exists() for config in self.configs))
 
+    def test_a_sign_in_for_named_repositories_leaves_another_owners_pinned_image_to_compose(self):
+        self.images["identity"] = "ghcr.io/wow-two-sdk-beta/identity/identity@sha256:" + "c" * 64
+        (self.bundle / "release.json").write_text(json.dumps({"images": self.images}))
+        result = self.pull({**self.login, "repositories": ["ghcr.io/owner/pilot/api"]})
+        self.assertEqual({"images": 3, "fetched": 3, "signedIn": "installation"}, result)
+        signed = [arguments[-1] for arguments, _ in self.calls if arguments[1] == "--config" and arguments[3] == "pull"]
+        self.assertEqual([self.images["api"]], signed)
+
     def test_images_on_the_host_need_no_sign_in(self):
         self.present = set(self.images.values())
         self.assertEqual({"images": 2, "fetched": 0, "signedIn": None}, self.pull(self.login))
@@ -623,6 +631,21 @@ class RegistryChoiceTests(unittest.TestCase):
         mixed = self.images + ["ghcr.io/other/api@sha256:" + "c" * 64]
         _, attempt = registry.sign_in_for(mixed, check=lambda *_: (True, 200), login=lambda token: None)
         self.assertEqual("file", attempt["credential"])
+
+    def test_another_owners_public_pinned_image_leaves_the_app_token_to_the_products_own(self):
+        # M77: a per-product Identity pinned from another owner is public; the product's own images take the App's
+        # token, and the sign-in names the repositories it covers.
+        pinned = "ghcr.io/wow-two-sdk-beta/wow-two-sdk-beta.identity/identity@sha256:" + "c" * 64
+
+        def check(image, user, password):
+            public = image[0].startswith("wow-two-sdk-beta/")
+            return (public or password == "ghs_APP", 200 if public or password == "ghs_APP" else 403)
+        login, attempt = registry.sign_in_for(self.images + [pinned], check=check, login=lambda token: "machine")
+        self.assertEqual(("installation", ["ghcr.io/ocharo-hq/ocharo-platform/desk",
+                                           "ghcr.io/ocharo-hq/ocharo-platform/jobs"]),
+                         (login["credential"], login["repositories"]))
+        self.assertEqual({"server": "ghcr.io", "credential": "installation", "refused": []}, attempt)
+        self.assertEqual(login, runner.registry_login({"registry": login}))
 
     def test_the_packages_nothing_reads_are_noted_for_the_issues_panel_and_cleared_once_read(self):
         root = Path(self.temporary.name)

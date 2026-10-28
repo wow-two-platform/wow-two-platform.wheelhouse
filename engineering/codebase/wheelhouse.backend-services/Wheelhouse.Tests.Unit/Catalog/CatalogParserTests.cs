@@ -122,6 +122,27 @@ public sealed class CatalogParserTests
     }
 
     [Fact]
+    public void ParseDescriptor_ShouldReadAPinnedImagesRepository_WithoutItsTag()
+    {
+        var parsed = DeployDescriptorParser.Parse(Bytes(
+            """
+            descriptor: 2
+            product: foreverpin
+            platform: linux/amd64
+            services:
+              identity:
+                image: ghcr.io/wow-two-sdk-beta/wow-two-sdk-beta.identity/identity:0.3.0
+              cache:
+                image: localhost:15000/pilot-cache
+            """));
+
+        parsed.Problem.Should().BeNull();
+        parsed.Value!.Services.Select(service => (service.Service, service.Image))
+            .Should().Equal(("identity", "ghcr.io/wow-two-sdk-beta/wow-two-sdk-beta.identity/identity"),
+                ("cache", "localhost:15000/pilot-cache"));
+    }
+
+    [Fact]
     public void ParseDescriptor_ShouldReadTheDeclaredExtensionsOnceEachInFileOrder()
     {
         var parsed = DeployDescriptorParser.Parse(Bytes(

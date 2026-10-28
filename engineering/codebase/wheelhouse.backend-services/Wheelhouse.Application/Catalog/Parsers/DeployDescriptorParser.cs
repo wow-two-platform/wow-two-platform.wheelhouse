@@ -41,7 +41,7 @@ public static class DeployDescriptorParser
                 var field = "services." + name;
                 var service = value as YamlMappingNode;
                 var image = service is not null && YamlReader.Get(service, "image") is { } imageNode
-                    ? YamlReader.Text(imageNode, field + ".image")
+                    ? Repository(YamlReader.Text(imageNode, field + ".image"))
                     : null;
                 found.Add(new DeployDescriptorService(name, image, Needs(service, field)));
                 if (!second && service is not null && YamlReader.Get(service, "sites") is { } sitesNode)
@@ -127,6 +127,15 @@ public static class DeployDescriptorParser
                 .Select(extension => YamlReader.Matching(extension, "extensions", ExtensionName, "lowercase extension names"))
                 .Distinct(StringComparer.Ordinal),
         ];
+    }
+
+    /// <summary>A service image's repository. Another repository's image pinned by its release tag
+    /// (<c>ghcr.io/owner/repo/identity:0.3.0</c>, M77) keeps its repository: the release generator pins the tag's
+    /// digest, and Wheelhouse approves the repository the bundle's image names before its digest.</summary>
+    private static string Repository(string image)
+    {
+        var colon = image.LastIndexOf(':');
+        return colon > image.LastIndexOf('/') ? image[..colon] : image;
     }
 
     /// <summary>A site's declaration: a mapping, or nothing for <c>app:</c> and <c>app: {}</c>.</summary>

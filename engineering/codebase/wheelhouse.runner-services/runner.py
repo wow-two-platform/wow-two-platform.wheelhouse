@@ -1663,7 +1663,8 @@ class Docker:
 
     def pull(self, bundle, registry=None, unreadable=()):
         """Fetches a release's images that the host lacks; digests make one already present exact. A missing image on
-        `registry`'s server pulls under a sign-in made for this pull only, in a temporary Docker config that is signed
+        `registry`'s server (of its `repositories`, when it names them) pulls under a sign-in made for this pull only, in a
+        temporary Docker config that is signed
         out of and deleted straight after, so no registry credential stays on the host. A missing image of a repository
         the control host found nothing could read (`unreadable`) fails the pull before any sign-in, naming its package
         and what to place. Returns how many images were fetched and the credential a sign-in used, if any."""
@@ -1675,7 +1676,10 @@ class Docker:
             raise CommandFailed("No credential on the control host can read " + ", ".join(blocked) + ": "
                                 + UNREADABLE_HINT)
         signed = None
-        private = [image for image in missing if registry and image.startswith(registry["server"] + "/")]
+        # A sign-in that names its repositories covers only those: another owner's public pinned image (M77) pulls
+        # anonymously with the rest.
+        private = [image for image in missing if registry and image.startswith(registry["server"] + "/")
+                   and (registry.get("repositories") is None or image_repository(image) in registry["repositories"])]
         if private:
             with registry_session(self, registry) as config:
                 for image in private:
@@ -1798,7 +1802,15 @@ def registry_login(provided):
             and REGISTRY_USER.fullmatch(str(login.get("username", ""))) and login.get("credential") in CREDENTIALS
             and isinstance(login.get("password"), str) and 0 < len(login["password"]) <= 4096
             and not any(character.isspace() for character in login["password"]), "Invalid registry sign-in")
-    return {key: login[key] for key in ("server", "username", "password", "credential")}
+    result = {key: login[key] for key in ("server", "username", "password", "credential")}
+    # The repositories the sign-in is for, when a release also runs another owner's public pinned image (M77).
+    repositories = login.get("repositories")
+    if repositories is not None:
+        require(isinstance(repositories, list) and 0 < len(repositories) <= 100
+                and all(isinstance(item, str) and IMAGE_REPOSITORY.fullmatch(item) for item in repositories),
+                "Invalid registry sign-in")
+        result["repositories"] = list(repositories)
+    return result
 
 
 def registry_unreadable(provided):

@@ -169,20 +169,31 @@ def sign_in_for(images, check=None, login=token_login):
     if not wanted:
         return None, None
     check = check or accepts
+    owner, needed, anonymous = _owner(wanted), wanted, None
+    if owner is None:
+        # Two owners: a product's own images beside another repository's pinned image (M77), which is public. What GHCR
+        # serves anonymously needs no credential, so the owner of the rest picks the App's token, and the sign-in
+        # covers only those repositories (`repositories`); Compose pulls the public one anonymously.
+        anonymous = {image: check(image, None, None) for image in wanted}
+        rest = [image for image in wanted if not anonymous[image][0]]
+        if rest and len(rest) < len(wanted):
+            needed, owner = rest, _owner(rest)
     refused, misses = [], []
-    for kind, user, password in candidates(_owner(wanted), login):
+    for kind, user, password in candidates(owner, login):
         missed = {}
-        for image in wanted:
+        for image in needed:
             readable, status = check(image, user, password)
             if not readable:
                 missed[image] = status
         if not missed:
-            return ({"server": SERVER, "username": user, "password": password, "credential": kind},
-                    {"server": SERVER, "credential": kind, "refused": refused})
+            sign_in = {"server": SERVER, "username": user, "password": password, "credential": kind}
+            if needed is not wanted:
+                sign_in["repositories"] = sorted({SERVER + "/" + repository for repository, _ in needed})
+            return sign_in, {"server": SERVER, "credential": kind, "refused": refused}
         refused.append(kind)
         misses.append(((kind, user, password), missed))
     # No credential reads every image. What GHCR serves anonymously needs no sign-in; the rest decides.
-    anonymous = {image: check(image, None, None) for image in wanted}
+    anonymous = anonymous or {image: check(image, None, None) for image in wanted}
     private = [image for image in wanted if not anonymous[image][0]]
     chosen, left = None, private
     for credential, missed in misses:  # the first that reads the most private images, if it reads any
