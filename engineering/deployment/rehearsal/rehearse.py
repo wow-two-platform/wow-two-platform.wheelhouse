@@ -24,9 +24,10 @@ single-repository release with nothing restarting and both baseline hosts still 
 Traefik take dynamic ones from .128/25, and repair-networks.sh gives a network made without the range one.
 
 `self-deploy` proves the kit's break-glass self-deploy.py on the local server: Wheelhouse's own release goes to
-wheelhouse-dev through the transport, as prod deploys it (its declared dev check runs), then self-deploy.py, run as the
-deploy account on the target with the runner it copies out of the release image, reads the console, deploys a second
-release, rolls back with no network, and sees a broken release roll back by itself.
+wheelhouse-dev through the transport, as prod deploys it (its migrate step and declared dev check run), then
+self-deploy.py, run as the deploy account on the target with the runner it copies out of the release image, reads the
+console, deploys a second release, rolls back with no network, and sees a broken release roll back by itself through
+the rollback gate. Each release records its image's migration sets offline, as CI does.
 
 `harden` proves harden-control.sh on a real Ubuntu 26.04 host with real UFW and sshd: --check reports, the first run
 turns the firewall on with public SSH kept and converges, --tailnet-only-ssh refuses without a tailnet session and
@@ -392,6 +393,28 @@ def platform():
         .replace("x86_64", "amd64").replace("aarch64", "arm64")
 
 
+def record_sets(output, archive):
+    """Each migrate item's sets, as CI records them: the item's release image answers `<command> sets --json` with no
+    network and no settings, and the generator writes `migrationSets` into the bundle and its archive."""
+    manifest = json.loads((output / "release.json").read_text())
+    items = manifest.get("migrate") or []
+    if not items:
+        return
+    reports = private_dir(output.parent / (output.name + "-sets"))
+    for item in items:
+        command = item["command"]
+        result = subprocess.run(["docker", "run", "--rm", "--network", "none", "--cap-drop", "ALL",
+                                 "--security-opt", "no-new-privileges", "--entrypoint", command[0],
+                                 manifest["images"][item["service"]], *command[1:], "sets", "--json"],
+                                capture_output=True, text=True)
+        if result.returncode:
+            sys.exit(item["service"] + ": '" + " ".join(command) + " sets --json' exited " + str(result.returncode)
+                     + " offline; the image must answer the migrate verbs with no settings or database")
+        private_file(reports / (item["service"] + ".out"), result.stdout)
+    print(run(yaml_python(), str(RELEASE), "sets", "--output", str(output), "--sets", str(reports),
+              "--archive", str(archive)).strip())
+
+
 def self_bundle():
     """Builds Wheelhouse's image and bundle with its own release generator, as its CI does, and imports it.
     The build takes the checkout as it is, so uncommitted changes ride along under HEAD's commit."""
@@ -405,6 +428,7 @@ def self_bundle():
     print(run(yaml_python(), str(RELEASE), "build", "--repo", str(REPOSITORY), "--commit", commit, "--checkout",
               "--registry", REGISTRY + "/" + SELF, "--platform", platform(),
               "--output", str(output), "--archive", str(archive)).strip())
+    record_sets(output, archive)
     transport("import", "--archive", str(archive), "--bundle", bundle_id)
     print("Imported " + bundle_id)
     return bundle_id
@@ -450,6 +474,7 @@ def self_release(tag, root=INVENTORY):
         print(run(yaml_python(), str(RELEASE), "build", "--repo", str(REPOSITORY), "--commit", commit, "--checkout",
                   "--tag", tag, "--registry", REGISTRY + "/" + SELF, "--platform", platform(),
                   "--output", str(output), "--archive", str(archive)).strip())
+        record_sets(output, archive)
     transport("import", "--archive", str(archive), "--bundle", bundle_id, root=root)
     print("Imported " + bundle_id)
     return bundle_id
@@ -501,6 +526,11 @@ def prove_self_deploy():
     if outcome.get("status") != "succeeded" or verification.get("status") != "passed":
         sys.exit("Wheelhouse's own dev rollout or its declared check did not pass: " + json.dumps(verification))
     print("Declared dev check: " + str(verification.get("summary")))
+    # The console's database moves only in the rollout's migrate step; the console checks it at boot.
+    migrated = [step for step in outcome.get("steps", []) if step.get("name") == "Migrate console"]
+    if [step.get("status") for step in migrated] != ["succeeded"]:
+        sys.exit("Wheelhouse's own migrate step did not run on wheelhouse-dev: " + json.dumps(migrated))
+    print("Migrate step: " + str(migrated[0].get("detail")))
 
     # The kit as the control host holds it: self-deploy.py, the console's target file, and two more releases.
     source = root / "bundles" / first
@@ -542,10 +572,13 @@ def prove_self_deploy():
     broken = cli("deploy", "--env", "dev", "--bundle", "/srv/wheelhouse/rig-bundles/broken", expect=1)
     if '"status": "rolled_back"' not in broken or runs() != ("ready", "v0.0.1-rig.1"):
         sys.exit("A broken release did not roll back by itself: " + str(runs()))
+    # It ran its migrate step, so the restore asked the previous release's own `migrate check` first.
+    if "Migrate console" not in broken or "Rollback gate console" not in broken:
+        sys.exit("The broken release's rollout skipped its migrate step or the restore's rollback gate")
     log = on_target("cat", "/srv/wheelhouse/self-deploy/log.jsonl").stdout.decode().splitlines()
     print("Local log: " + ", ".join(json.loads(line)["action"] + " " + json.loads(line)["release"] for line in log))
-    print("Self-deploy proven on the rig: console path with its dev check, then deploy, rollback and a broken release"
-          " rolled back, by the release image's own runner.")
+    print("Self-deploy proven on the rig: console path with its migrate step and dev check, then deploy, rollback and"
+          " a broken release rolled back through the rollback gate, by the release image's own runner.")
 
 
 HARDEN = STATE / "harden"
