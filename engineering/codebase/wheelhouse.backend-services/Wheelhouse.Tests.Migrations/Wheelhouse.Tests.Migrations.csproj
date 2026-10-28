@@ -6,7 +6,8 @@
 
     <!--
       Migrator-engine suite (the specialized .Migrations tier): the bespoke SQL migrator's apply / idempotency / rollback
-      over the embedded Migrations/NNN/*.sql, asserted against a real Postgres. NO HTTP / no web host, NO EF model.
+      over the embedded Migrations/NNN/*.sql, asserted against a real Postgres, and the SDK's migration lint and
+      idempotency proof over the same files. NO HTTP / no web host, NO EF model.
 
       Rides the SDK Testing.Data harness: MigratorHarness (the apply/rollback/history driver) over the drop-schema
       MigratorPostgresFixture — always Postgres, since it asserts the real PG SQL. typeof(WheelhouseDbContext).Assembly
