@@ -1,13 +1,15 @@
 # Local verification only. Production uses an externally managed PostgreSQL.
 services:
+  # PostgreSQL 18 keeps its data under /var/lib/postgresql/18/docker; the volume names its major, so a stack left on 16
+  # starts 18 on a new, empty volume and keeps the old one.
   database:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: wheelhouse
       POSTGRES_USER: wheelhouse
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
     volumes:
-      - database:/var/lib/postgresql/data
+      - database-pg18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wheelhouse -d wheelhouse"]
       interval: 5s
@@ -52,6 +54,6 @@ services:
         max-size: 10m
         max-file: "3"
 volumes:
-  database:
+  database-pg18:
   keys:
   deployments:

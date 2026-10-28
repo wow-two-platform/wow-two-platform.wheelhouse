@@ -20,7 +20,8 @@ namespace Wheelhouse.Tests.E2E.Harness;
 /// </remarks>
 public sealed class WheelhouseAppFixture : IAsyncLifetime
 {
-    private readonly PostgresFixture _postgres = new(new PostgreSqlBuilder().WithImage("postgres:16-alpine").Build());
+    // The PostgreSQL major every wow2 host and test runs (postgres convention § Version).
+    private readonly PostgresFixture _postgres = new(new PostgreSqlBuilder().WithImage("postgres:18-alpine").Build());
 
     private WebApiTestHost<Program>? _host;
     private bool _respawnerReady;

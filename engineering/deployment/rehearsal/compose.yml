@@ -1,6 +1,9 @@
 # The local server: an SSH target driving the host Docker daemon, an ingress, a registry, a product database,
 # an optional vault, and the Wheelhouse console itself (`rehearse.py console`).
 # Settings live at the same absolute path inside the target and on the host, so bind sources resolve.
+# PostgreSQL 18 keeps its data under /var/lib/postgresql/18/docker and refuses a volume at /var/lib/postgresql/data;
+# each database volume names its major, so a rig left on 16 starts 18 on new, empty volumes and keeps the old ones
+# (`docker volume ls`), never 18 on a 16 data directory.
 name: wheelhouse-rehearsal
 services:
   target:
@@ -39,14 +42,14 @@ services:
       - "127.0.0.1:15000:5000"
     restart: unless-stopped
   database:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: foreverpin
       POSTGRES_USER: foreverpin
       POSTGRES_PASSWORD_FILE: /run/rehearsal/database-password
     volumes:
       - ${REHEARSAL_STATE}/secrets/database-password:/run/rehearsal/database-password:ro
-      - database:/var/lib/postgresql/data
+      - database-pg18:/var/lib/postgresql
     networks:
       default: {}
       platform:
@@ -81,7 +84,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
   vault-db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     profiles: [vault]
     environment:
       POSTGRES_USER: postgres
@@ -89,7 +92,7 @@ services:
     volumes:
       - ${REHEARSAL_STATE}/vault/db_admin_password:/run/secrets/db_admin_password:ro
       - ${REHEARSAL_STATE}/vault/db_init.sql:/docker-entrypoint-initdb.d/10-vault.sql:ro
-      - vault-db:/var/lib/postgresql/data
+      - vault-db-pg18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d secrets_vault"]
       interval: 2s
@@ -133,7 +136,7 @@ services:
     restart: unless-stopped
     mem_limit: 512m
   console-db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     profiles: [console]
     environment:
       POSTGRES_DB: wheelhouse
@@ -141,7 +144,7 @@ services:
       POSTGRES_PASSWORD_FILE: /run/console/database-password
     volumes:
       - ${REHEARSAL_STATE}/console/database-password:/run/console/database-password:ro
-      - console-db:/var/lib/postgresql/data
+      - console-db-pg18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wheelhouse -d wheelhouse"]
       interval: 2s
@@ -172,7 +175,7 @@ services:
     restart: unless-stopped
   # The database for Wheelhouse run from an IDE (appsettings.Local.json); loopback-only dev credentials.
   dev-db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     profiles: [dev]
     environment:
       POSTGRES_DB: wheelhouse
@@ -181,7 +184,7 @@ services:
     ports:
       - "127.0.0.1:15432:5432"
     volumes:
-      - dev-db:/var/lib/postgresql/data
+      - dev-db-pg18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wheelhouse -d wheelhouse"]
       interval: 2s
@@ -248,11 +251,11 @@ networks:
       config: [{ subnet: 100.88.1.0/24 }]
 volumes:
   deployments:
-  database:
-  vault-db:
-  console-db:
+  database-pg18:
+  vault-db-pg18:
+  console-db-pg18:
   console-keys:
-  dev-db:
+  dev-db-pg18:
   products-docker:
   products-root:
   fresh-docker:
