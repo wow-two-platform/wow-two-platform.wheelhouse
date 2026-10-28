@@ -1,6 +1,6 @@
 # Wheelhouse architecture
 
-*Last updated: 2026-10-27*
+*Last updated: 2026-10-28*
 
 ## Runtime
 
@@ -81,6 +81,14 @@ dev `Development`, prod `Production` — in the same override; it is opt-in beca
 A release may declare a dev check (`verify` in `deploy.yml`: a service, a command and a timeout, default 5 minutes,
 10 seconds to 30 minutes), which the generator writes into `release.json` (pipelines `v0.5.0`).
 
+From pipelines `v0.12.0` a release may declare its migrate step (`migrate`: per image that hosts migration sets, a
+service, a command ending in the be sdk's bare `migrate` verb and a timeout, 10 seconds to 60 minutes), with
+`migrationSets` (each image's `migrate sets --json`, levels included), `migrations: true` and the untrusted
+PostgreSQL `extensions` its placement creates; a pinned service runs another repository's image by digest, versioned
+by its tag. The runner runs each item before the first wave on every forward deploy and gates every return to an older
+release with its `migrate check` ([deployment.md § Migrate step](../deployment/deployment.md#migrate-step)); a bundle
+without these keys deploys as before.
+
 ### Release sets
 
 A product built from several repositories (decision 70) releases as a set: one release of each of its repositories that
@@ -111,7 +119,9 @@ and each service's platform name carry it; each repository keeps its own CI, `vX
   would move a site's host or start a volume empty. The product's front door is the primary repository's primary site.
   A dependency may name another repository's service; the composition refuses an unknown one or a cycle. The set is
   rollback-compatible only when every component in it is; `migrations` is true when any says so; `dotnetEnvironment` is a list
-  of the services whose repositories opt in when not all do; the first declared `verify` runs. `release.json` adds
+  of the services whose repositories opt in when not all do; the first declared `verify` runs; `migrate` items run in
+  repository order, each after the items hosting the sets its sets depend on, and `migrationSets` and `extensions` are
+  every repository's. `release.json` adds
   `set` and `components` (each repository's name, repository, release, kind, source commit and services);
   `sourceCommit` is the primary repository's.
 - **Promotion.** Prod takes the very set dev proved (the dev rollout's bundle ID). The changelog compares two sets
@@ -779,6 +789,12 @@ request acts as `automation`, so every automatic submission goes through the ord
   compare commit list (`compareUrl`, `commits`, `totalCommits`; null with a `reason` when GitHub cannot compare) with
   the changed files under a `Migrations/` folder. Ready to promote rows and the prod confirm step show it expandable;
   the console renders bodies as text and opens only `https://github.com/` links.
+- **Migrations:** `GET /api/deployments/targets/{target}/state` carries `migrations` (null until the target ran a migrate
+  step): per set its level, newest label and kind, state, rollback floor, release and when, from the latest migrate
+  step, rollback gate or check. `GET /api/deployments/targets/{target}/migrations` (runner `migrations`, never cached) is
+  the product page's Check now: `migrate check` from the image the target runs, up to about 90 seconds inside the
+  runner client's 110, refused (409) while a rollout runs; it answers each migrate item's `status` and `detail` and the
+  merged `migrations`.
 
 ## Portfolio summary
 

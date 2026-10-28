@@ -1,6 +1,6 @@
 # Deployment operations
 
-*Last updated: 2026-10-27*
+*Last updated: 2026-10-28*
 
 ## Ownership and current boundary
 
@@ -720,7 +720,9 @@ Each rollout records its steps in its job record as they start and end, so the d
 | Render settings | Each settings file the release mounts, from the host file, Wheelhouse's values and what is derived; names keys by source, never a value; a required key no layer sets refuses the deploy here |
 | Check target | Lock, settings files, routes, disk, Docker and the release snapshot |
 | Snapshot data | Prod only: dumps each database and archives each named volume before anything changes, pausing the writers of a volume that holds a file database (SQLite, LiteDB, LMDB, DuckDB…); a failure fails the rollout |
-| Pull images | Every missing image, before any container changes; a private one under a sign-in made for this pull only |
+| Pull images | Every missing image, before any container changes; a private one under a sign-in made for this pull only; another owner's public pinned image anonymously |
+| Migrate `<service>` | Each `migrate` item the release declares, in order, on every forward deploy and before the first wave ([§ Migrate step](#migrate-step)); a failure stops the rollout before any service restarts |
+| Rollback gate `<service>` | A return to an older release — a deploy of one whose sets sit below the database's level, or the automatic restore after a migrated rollout fails — runs that release's `migrate check` instead; anything but exit 0 refuses, naming the pre-deploy snapshot |
 | Start `<services>` | Only when the release changes some services but not all, or its changed services span dependency waves: `compose up --no-deps --force-recreate --wait` of one wave of changed services, after the waves they depend on, so a settings-only change applies and no dependent restarts; a failure leaves later waves unstarted |
 | Start containers | `compose up --wait --remove-orphans` within the target's health timeout: the whole release, with `--no-recreate` after the waves (or when nothing changed), so unchanged services keep running untouched, and `--force-recreate` when every service changed in one wave; its detail names how many services changed and how many kept running |
 | Verify services | Exact image references, health, and the target's smoke checks |
@@ -729,7 +731,7 @@ Each rollout records its steps in its job record as they start and end, so the d
 | Verify end to end | Dev only, when the release declares `verify`: its check in a one-off container from the service's release image; a failure is a warning and holds auto-promote |
 | Remove unused images | Images only releases older than the newest three used; skipped when there are none |
 | Remove old files | Release folders beyond the newest ten whose images are gone, and this project's uploads beyond the newest ten once a day old |
-| Roll back to … | The previous release, only for a failed rollout that declared rollback compatibility |
+| Roll back to … | The previous release, for a failed rollout that declared rollback compatibility, or whose migrate step ran and whose previous release passed its rollback gate |
 
 A step's detail is operator-safe text; a failed step shows the refused rule or failed command, never command output.
 
@@ -953,6 +955,7 @@ drops the console's database, the vault's data and the target's state.
   lock
   active.json
   current.json                  release, service versions and site URLs of the verified rollout
+  migrations.json               each migration set's last reading: level, newest label, state, release, source
   stopped.json                  what the owner stopped (the environment or services); deploys refused while present
   jobs/<job-id>.json
   releases/<job-id>/{release,compose}.json
@@ -963,7 +966,38 @@ drops the console's database, the vault's data and the target's state.
 
 Pulls finish before replacement. Success requires healthy containers with the exact image references and configured smoke responses.
 Failed image pulls preserve the running release. A failed rollout restores prior images only if the incoming bundle explicitly
-declares `rollbackCompatible: true`. The default release generator leaves this false.
+declares `rollbackCompatible: true`. The default release generator leaves this false. A rollout that ran its migrate step
+asks the previous release's own `migrate check` instead: exit 0 restores, anything else leaves the failure for a
+reconcile, naming the snapshot; a previous release without a `migrate` item falls back to `rollbackCompatible`.
+
+### Migrate step
+
+A release whose `deploy.yml` declares `migrate` (pipelines `v0.12.0`) carries `migrate` (`service`, `command`,
+`timeoutSeconds`), `migrations`, `migrationSets` (each item image's `migrate sets --json`) and `extensions`; a bundle
+without them deploys as before. Spec: `wow-two-ws/ideas/migrations-analysis-2026-10/migrations-spec.md` § 3.4.
+
+- Each item runs once per forward deploy, after the pull and before the first wave, whatever changed: a one-off
+  `docker run --rm` named `<project>-migrate-<service>-<job 8>`, label `wheelhouse.migrate=<project>`, the service's
+  release image with `--pull never`, the item's command as the entrypoint, the service's environment, mounts (its
+  settings file; named volumes that exist) and memory, the platform network, every capability dropped, the image's user.
+- The migrate key: `Migrations__ConnectionString` from the target's `database.json`, for a service that needs
+  PostgreSQL, passed by name in the docker client's environment; it never reaches an argument, a record or a log. Without
+  a database the sets connect through the service's own settings.
+- Exits: `0` applied or current; `1` refused, `2` failed, a crash or Docker unable to start it fail the step; `3` (the
+  set's lock stayed held) retries once after 5 s, then fails busy; past the item's timeout the container is stopped and
+  the step fails timed out. Each failure leaves the previous release serving and needs no reconcile.
+- The job keeps per item `status`, `exitCode`, `seconds`, `attempts` and per set what the last `migrate-result` stdout
+  line said (state, levels before and after, applied labels with kind, rollback floor, background, lock wait); stderr
+  and every other line are discarded. A missing or malformed line is tolerated: the exit decides.
+- `migrations.json` beside `current.json` keeps each set's last reading (level, newest label and kind, state, release,
+  job, source, and the pre-deploy snapshot of the rollout that last applied to it); the target state carries it and the
+  product page shows it. Check now (`GET /api/deployments/targets/{target}/migrations`) runs `migrate check` from the
+  running release's images under the deployment lock, 60 s per item.
+- A return to an older release is gated, never migrated: a release whose `migrationSets` level for a set is below the
+  database's runs `check`; a release without `migrate` leaving one with it trusts the running release's
+  `rollbackCompatible`, with a warning, or refuses.
+- Placement creates a product's `extensions` as the platform PostgreSQL's superuser in both databases (`prepare.py
+  --extension`); a rerun adds the ones `deploy.yml` gained.
 
 Before a prod rollout pulls anything, the runner takes a restore point in `snapshots/<job-id>/`: `pg_dump --format
 custom` of each PostgreSQL database a service that `needs: [postgres]` connects to (every Npgsql `ConnectionStrings`
