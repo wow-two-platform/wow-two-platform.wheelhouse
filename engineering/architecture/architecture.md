@@ -778,7 +778,9 @@ request acts as `automation`, so every automatic submission goes through the ord
   promotion while a fleet runs (409, audited). Its targets are derived whole and run only on the control host, the
   server at a private address (`SelfTargets`, `GET /api/targets/self`); a save that differs is 400, and the control
   host is never enrolled (409). The runner gates Wheelhouse targets on the site probe and rolls any of
-  their releases back (expand-only migrations, decision 65); `GET /api/self-deployment` reads the console's own newest
+  their releases back (expand-only migrations, decision 65); its migrate step migrates the console's database before
+  the console restarts (`deploy.yml` `migrate` on `console`), and a deployed console only checks it at boot; a return
+  between releases that declare `migrate` passes the rollback gate; `GET /api/self-deployment` reads the console's own newest
   rollout back from the host's journal, which `SelfDeploymentBootReader` does at boot
   ([deployment operations](../deployment/deployment.md#wheelhouse-deploys-itself)).
 - **Changelog at promote:** every `main` release's GitHub body lists its commits since the previous release above

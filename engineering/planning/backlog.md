@@ -239,7 +239,7 @@ the owner, top to bottom; rows marked *decision* wait on one of them.
 | Extract the YAML reader with line-numbered refusals → be sdk | engineering | `YamlReader.cs` |
 | Extract the status pill and tone variants → fe sdk badge | engineering | `StatusPill.vue`, `StatusStyles.ts`; the SDK badge lacks icon, detail and dashed tones; `StatusVocabulary.ts` maps stay |
 | Extract the root-key broker, canary and HMAC fingerprints → be sdk | engineering | `FileVaultKeySource.cs`, `SecretsVaultCrypto.cs`, `SecretsVaultKeyCache.cs`; beside `ISealService`, whose broker reads only the environment |
-| Extract the scripted GitHub handler and migration test helpers → be sdk testing | engineering | `FakeGitHubApi.cs`, `ExpandOnlyTests.cs`: method-keyed handler, fixture schema list, enumerated migrations for the expand-only lint |
+| Extract the scripted GitHub handler → be sdk testing | engineering | `FakeGitHubApi.cs`: method-keyed handler, fixture schema list; the expand-only lint moved to the SDK's `MigrationLint` in v0.7 |
 | Replace `SecretValues` and `DeploymentRecordsMemo` with SDK `IIdGenerator` and `Caching/Hybrid` | engineering | `IIdGenerator` needs Hex and Base64Url alphabets first |
 | Extract list-detail route state, persisted preferences and a stretched-link card → fe sdk | engineering | `useListDetailRoute.ts`, `application/preferences`, `ProductTile.vue`; SDK typed params take strings only |
 | Extract typed setting values and the secret-name heuristic → be sdk | engineering | *decision*: `SettingTypes.cs`; the runner and pipelines repeat the same rules |

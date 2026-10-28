@@ -288,7 +288,8 @@ def resolve_target(root, identifier):
                        # Wheelhouse renders every settings file at deploy; its target's own files are a layer.
                        "render": True, **local_settings_root(server),
                        # Wheelhouse's own: a console its ingress cannot reach rolls back, since no one could open it,
-                       # and every release may, since its migrations only expand (decision 65).
+                       # and every release may, since its migrations only expand (decision 65). The rollback gate
+                       # decides returns between releases that declare migrate; this covers older ones (v0.7 Iteration 9).
                        **({"probeGate": True, "rollbackCompatible": True} if is_self(target) else {})}}
 
 

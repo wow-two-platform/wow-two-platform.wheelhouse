@@ -107,9 +107,11 @@ them, they hold no data and no placement ran. In the prod console:
 
 Wheelhouse ships like the products it deploys. `engineering/deployment/deploy.yml` declares its identity (name,
 description, homepage), one service, `console`, with its settings keys, `keys` and `deployments` volumes, a private
-`console` site and `needs: [postgres]`, and `dotnetEnvironment: true`: `wheelhouse-dev` runs as `Development`,
-`wheelhouse-prod` as `Production`. Its workflows pin pipelines `v0.11.0`, the first generator that accepts the identity
-keys (`v0.5.0` was the first that writes `dotnetEnvironment`).
+`console` site and `needs: [postgres]`, one `migrate` item on `console`
+([§ Wheelhouse migrates itself](#wheelhouse-migrates-itself)), and `dotnetEnvironment: true`: `wheelhouse-dev` runs as
+`Development`, `wheelhouse-prod` as `Production`. Its workflows pin pipelines `v0.12.0`, the first generator that
+carries `migrate` and records each item image's migration sets (`v0.11.0` accepts the identity keys, `v0.5.0` writes
+`dotnetEnvironment`).
 
 | Workflow | Runs on | Does |
 |---|---|---|
@@ -146,7 +148,7 @@ no console answers -> self-deploy.py on the host: status, deploy, rollback (vps.
 |---|---|---|
 | Wheelhouse in prod's inventory | Products › Wheelhouse, deploy mode `wheelhouse`; targets `wheelhouse-dev`, `wheelhouse-prod` | Both consoles on the control host, as products are on theirs ([§ Inventory rows](#inventory-rows)) |
 | Console ingress | runner `fleet.py` `CONSOLE_INGRESS` | A Wheelhouse target takes its environment's entry point, port and probe from the kit (`prepare.py`), whatever the server row says, so one row serves both |
-| Rollback | runner `probeGate`, `rollbackCompatible` on Wheelhouse targets | A new console its ingress cannot reach rolls back. Across a migration the previous release refuses to boot (be sdk `10.0.80` orphan check, run 2026-10-27), although migrations only expand (decision 65, `ExpandOnlyTests`): [vps.md § Rolling back across a migration](vps/vps.md#rolling-back-across-a-migration) |
+| Rollback | runner `probeGate`, the rollback gate, `rollbackCompatible` on Wheelhouse targets | A new console its ingress cannot reach rolls back. A return between releases that declare `migrate` runs the older image's `migrate check` first; a return to an earlier release trusts the forced `rollbackCompatible`, and across a migration that release's boot refuses newer history (be sdk `10.0.80`): [vps.md § Rolling back across a migration](vps/vps.md#rolling-back-across-a-migration). Migrations only expand (decision 65, the be sdk lint in `MigrationRulesTests`) |
 | Dev check | `deploy.yml` `verify` -> `self_check.py` in the image | After each dev rollout: readiness, status and an anonymous MCP initialization the console must refuse (CI's checks) |
 | Promotion guard | `SelfDeploymentInterceptor`, runner `transport.submit` | Prod only by the owner: typed ID and a reason; never automation, never a fleet, never while a fleet runs |
 | Read-back | `SelfDeploymentBootReader`, `GET /api/self-deployment`, the shell's notice | The new console reads its own newest rollout from the host's journal at boot and shows how it ended |
@@ -182,8 +184,9 @@ In Wheelhouse prod, once it runs v0.5:
   keeps asking for the outcome while it does. The API answers 202 before anything changes; the runner's detached host
   job then snapshots prod's database, pulls, replaces the container and waits for health and the site probe.
 - A failed health or site probe restores the previous release by itself; the database stays as the new release left
-  it. Its schema suits the previous release (decision 65), but that release's migrator refuses history rows it does
-  not know, so a restore across a migration fails to boot until those rows go
+  it. Its schema suits the previous release (decision 65). A previous release that declares `migrate` passes its own
+  `migrate check` first and boots on the newer history; an earlier one's migrator refuses history rows it does not
+  know, so a restore across a migration fails to boot until those rows go
   ([vps.md § Rolling back across a migration](vps/vps.md#rolling-back-across-a-migration)). The snapshot under
   `snapshots/<job>/` is the manual restore that loses later writes.
 - The new console (or the old one, after a roll back) reads its own newest rollout from the host's journal at boot,
@@ -191,6 +194,32 @@ In Wheelhouse prod, once it runs v0.5:
 - The audit trail keeps `deployment.start` with the actor, release and reason. Auto-promote, fleets and automatic
   causes never reach Wheelhouse prod; step-up 2FA replaces the typed ID once it ships (decision 66).
 - Rollback is a promotion of an earlier release: it qualifies when dev's journal holds its success, whoever deployed it.
+
+### Wheelhouse migrates itself
+
+The console's database moves only in the rollout's migrate step (spec § 3.4, M19): `deploy.yml` declares
+`[dotnet, Wheelhouse.Api.dll, migrate]` on `console`, and the runner runs it in a one-off container with the console's
+settings, after the pull and before the console restarts ([§ Migrate step](#migrate-step)). A deployed console only
+checks its level at boot and refuses a database the step did not bring to it; a local run still applies at boot. The
+image answers every `migrate` verb (`check`, `sets --json` with no settings, the guarded operator verbs) before the web
+host starts.
+
+| Path | Runner | Runs the migrate step |
+|---|---|---|
+| Prod's console deploys a release to `wheelhouse-dev` | prod's own, uploaded by `transport.submit` | once prod runs v0.7.7 or later |
+| Prod's console promotes a release to `wheelhouse-prod` | prod's own, the release being replaced | once prod runs v0.7.7 or later |
+| `self-deploy.py deploy` | the release's, copied out of its image | always |
+| `self-deploy.py rollback` | the older release's | never; its rollback gate when that release declares `migrate` |
+| CI's fallback (`ci_deploy.py`) | the tested checkout's | always |
+
+- The step's first release adds no migration; every live console's database stood at `034` already, so it boots on
+  either path, and the step, where it runs, records the history's kinds.
+- The first release that adds a migration ships only once prod runs v0.7.7 or later: deployed by an older runner it
+  refuses to boot on the older database and restores the previous release, nothing applied.
+- Returns: [Rollback](#wheelhouse-deploys-itself) above; the targets keep `rollbackCompatible` forced until neither
+  console keeps a release from before the step (v0.7 track, Iteration 9).
+- The local stacks run the same command first: the rig's `console-migrate` and the acceptance stack's `migrate`
+  one-shots, each awaited (`service_completed_successfully`).
 
 ### The fallback switch and its retirement
 
@@ -246,7 +275,7 @@ Use the reviewed [VPS bootstrap](vps/vps.md) for Ubuntu 26.04 and private HTTPS.
 one main push (one or many commits)
   -> check that SHA is still main; skip it if only docs changed since the last delivered commit
   -> verify its final SHA: the checks whose paths changed (backend, runner and VPS kit, frontend)
-  -> shared publish (pipelines v0.11.0) builds changed services once and publishes the immutable bundle
+  -> shared publish (pipelines v0.12.0) builds changed services once and publishes the immutable bundle
   -> resolve that tested bundle, check main again
   -> pinned SSH -> existing durable runner -> container/digest + trusted HTTPS checks
 ```
@@ -337,7 +366,8 @@ promote-prod (optional release tag, rollback flag, from main)
   `-f release=vX.Y.Z`; a rollback adds `-f rollback=true`.
 - Roll back by promoting an earlier release with `rollback: true`; it qualifies because it once succeeded on dev.
 - Re-promoting the running release verifies it without a restart.
-- Migrations still run forward on start; a schema change that cannot roll back needs a reviewed recovery.
+- Migrations run forward in the rollout's migrate step, before the console restarts; a schema change that cannot roll
+  back needs a reviewed recovery.
 - The `prod` environment allows only `main` and carries the same SSH secrets as `dev`: one host, one deploy account.
 
 ## Local packaging
@@ -350,7 +380,8 @@ export WHEELHOUSE_ADMIN='<your GitHub login>'
 docker compose -p wheelhouse-local -f engineering/deployment/docker-compose.yml up --build --wait
 ```
 
-This Compose file is a local acceptance stack. Its PostgreSQL database and cookie keys use project-scoped volumes.
+This Compose file is a local acceptance stack. Its PostgreSQL 18 database and cookie keys use project-scoped volumes;
+the `migrate` one-shot runs the image's bare `migrate` before the console starts, as a rollout's migrate step does.
 The API binds to loopback. Configure GitHub credentials through a protected `/app/appsettings.Target.json` mount for real sign-in.
 Production refuses an empty `Identity:AllowedGitHubLogins`.
 The local HTTP endpoint is not evidence of real HTTPS/OAuth readiness.
@@ -843,7 +874,9 @@ a product database and, when a `secrets-vault:local` image exists, a standalone 
 IDE run write the rig's own built-in vault key (`state/inventory/vault/root.key`) on start and seed ForeverPin's test
 secrets into it (`catalog.py`'s `LOCAL_SECRETS`). It hosts ForeverPin's `dev` and `prod` at
 once. Dev is the default; prod deploys on demand. `WHEELHOUSE_REHEARSAL=1` exposes the local
-targets, vault and imported bundles; a deployed control plane never sets it.
+targets, vault and imported bundles; a deployed control plane never sets it. The rig's databases run PostgreSQL 18 on
+volumes named for the major (`*-pg18`): a rig last run on 16 starts empty and keeps its 16 volumes, which
+`docker volume rm` drops once nothing there is needed.
 
 ```sh
 cd engineering/deployment/rehearsal
@@ -855,7 +888,7 @@ python3 rehearse.py deploy --env prod --tag v0.0.1-local.1 --confirm foreverpin-
 python3 rehearse.py bundle --tag v0.0.1-broken.1 --broken     # a release that fails after replacement
 python3 rehearse.py state --env dev
 python3 rehearse.py self                                      # Wheelhouse builds and deploys itself to wheelhouse-dev
-python3 rehearse.py self-deploy                               # its release with the dev check, then self-deploy.py
+python3 rehearse.py self-deploy                               # its release, migrate step and dev check, then self-deploy.py
 python3 rehearse.py harden                                    # harden-control.sh on a real Ubuntu host and UFW
 python3 rehearse.py products                                  # the products-host kit on a second local host
 python3 rehearse.py networks                                  # fixed platform addresses survive dynamic containers
@@ -928,7 +961,8 @@ there or added to that list, or the runner never sees it.
 ### Local console — the whole system before a VPS
 
 `python3 rehearse.py console` adds Wheelhouse itself: the production image (`wheelhouse:local`), its own
-PostgreSQL, and the local inventory mounted at `/data/deployments`. It runs as `Production` at
+PostgreSQL, migrated first by the `console-migrate` one-shot, and the local inventory mounted at `/data/deployments`.
+It runs as `Production` at
 `http://localhost:18210` and drives the target over SSH (`target:22`) and the vault (`http://vault:8080`) by service
 name, the way it will drive a VPS; `Deployment:Rehearsal` = `network` selects that view and `Deployment:RehearsalState`
 carries the host path for settings files. A transport run by hand inside the console needs

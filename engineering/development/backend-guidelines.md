@@ -14,8 +14,10 @@
   `this.ToActionResult(result)`. No logic in the host.
 - **Audited commands** implement `IAuditedCommand` and land in the hash-chained `audit_entries` trail; never put a value
   in one.
-- **Database:** PostgreSQL; hand-authored `Wheelhouse.Persistence/Migrations/{NNN-name}/{Apply,Rollback}.sql`, applied
-  on boot. EF Core maps only; no EF migrations or `EnsureCreated`.
+- **Database:** PostgreSQL 18; hand-authored `Wheelhouse.Persistence/Migrations/{NNN-name}/{Apply,Rollback}.sql`,
+  applied by the rollout's migrate step (`dotnet Wheelhouse.Api.dll migrate`) and at boot only on a local run. Every
+  file only expands and reruns cleanly (`MigrationRulesTests`: the be sdk lint and idempotency proof). EF Core maps
+  only; no EF migrations or `EnsureCreated`.
 - **Transactions:** writes that commit together run in a unit of the SDK `IDataSession` (`BeginAsync` →
   `CompleteAsync`, which saves and commits); work that must follow a commit, such as the inventory export, registers
   with `OnCommittedAsync`. One transaction per request scope.

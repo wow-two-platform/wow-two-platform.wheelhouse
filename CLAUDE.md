@@ -53,8 +53,9 @@ user's login, or `key:{name}` for an integration key); never put a value in one.
 cd engineering/codebase/wheelhouse.backend-services && dotnet build Wheelhouse.BackendServices.slnx
 dotnet run --project Wheelhouse.Api --launch-profile https   # 8210 https / 8211 http
 
-# DB migrations: hand-authored SQL (bespoke migrator, applied on boot). No EF tooling.
-# Add one → Wheelhouse.Persistence/Migrations/{NNN-name}/{Apply,Rollback}.sql
+# DB migrations: hand-authored SQL (bespoke migrator). No EF tooling. A local run applies them at boot; a deployed
+# console takes them in the rollout's migrate step (`dotnet Wheelhouse.Api.dll migrate`) and only checks at boot.
+# Add one → Wheelhouse.Persistence/Migrations/{NNN-name}/{Apply,Rollback}.sql — expand-only, rerunnable
 
 # Frontend (pnpm workspace; the app lives in apps/web)
 cd engineering/codebase/wheelhouse.frontend-services && pnpm install && pnpm dev   # HTTPS 5174, proxies /api → HTTPS 8210; Node 24
@@ -78,9 +79,11 @@ Package versions are central in `Directory.Packages.props`; `global.json` pins t
 - **`Wheelhouse.Tests.Integration`** — the EF model below the pipeline: `WheelhouseDbContext` over the SDK
   `RelationalTestDb` (enum round-trip, repository predicates/ordering, unique-index constraints), no HTTP.
   Provider-switchable PG↔SQLite (`WHEELHOUSE_TEST_DB=sqlite`). Docker (PG default).
-- **`Wheelhouse.Tests.E2E`** — full host + Testcontainers PG (on `…Beta.Testing`). The primary tier. Docker.
+- **`Wheelhouse.Tests.E2E`** — full host + Testcontainers PG 18 (on `…Beta.Testing`), and the image's `migrate` verbs
+  on the SDK verb harness. The primary tier. Docker.
 - **`Wheelhouse.Tests.Migrations`** — specialized: the bespoke SQL migrator's apply/idempotency/rollback over a real
-  PG, on the SDK `MigratorHarness` + `MigratorPostgresFixture` (embedded `Migrations/NNN/*.sql`). Docker.
+  PG, on the SDK `MigratorHarness` + `MigratorPostgresFixture` (embedded `Migrations/NNN/*.sql`), plus the SDK
+  `MigrationLint` and idempotency proof (`MigrationRulesTests`). Docker.
 
 Reserve unit for I/O-free logic; everything user-facing is covered e2e. Full rule:
 `wow-two-ws/conventions/development/backend/testing/testing.md`.
@@ -92,7 +95,7 @@ Reserve unit for I/O-free logic; everything user-facing is covered e2e. Full rul
 - **Ports:** HTTPS even (8210) + HTTP odd (8211), per the wow-two launch-profile rule.
 - **DB:** Postgres (Npgsql). Schema owned by the **bespoke SQL migrator**
   (`…Beta.Data.Migrations.Bespoke`) over hand-authored `Migrations/{NNN}/{Apply,Rollback}.sql`;
-  EF Core is a pure mapper. Migrates on boot; Testcontainers-PG under E2E.
+  EF Core is a pure mapper. The rollout's migrate step applies; a deployed boot only checks; Testcontainers-PG under E2E.
 
 ## Beta SDK usage (per workspace direction)
 
@@ -100,7 +103,8 @@ Reserve unit for I/O-free logic; everything user-facing is covered e2e. Full rul
   Badge, Heading, Text, EmptyState, Alert, Spinner, TextInput, …) before hand-rolling. Tailwind v4 wiring: `index.css`
   imports `tailwindcss` + `@wow-two-beta/fe/styles.css` and `@source`s the package's `dist` so its
   utility classes are generated. Shared capability gaps belong in the SDK. Product composition stays local.
-- **Backend → be sdk `WoW2.Sdk.Beta.Be` (adopted, `10.0.80-beta`).** `v0.2` migrated every layer onto
+- **Backend → be sdk `WoW2.Sdk.Beta.Be` (adopted, `10.0.93-beta`; identity from `WoW2.Sdk.Beta.Be.Identity.*`
+  `10.0.8-beta`, split out of the core at `10.0.82`).** `v0.2` migrated every layer onto
   the SDK: host floor (`AddApiDefaults`/`UseApiDefaults`), mediator + results + validation, identity
   (GitHub OAuth + cookie + allowlist/default-deny + scoped API keys), the bespoke SQL
   migrator, and `…Be.Testing` for the test harness. Products hold business logic only; new infra proves

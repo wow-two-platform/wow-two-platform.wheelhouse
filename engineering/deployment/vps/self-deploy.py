@@ -220,7 +220,10 @@ def new_run(root):
 
 def gated(folder, target):
     """The target as a console's inventory resolves Wheelhouse's own: rolled back when its ingress cannot reach the new
-    console, and for any release, since Wheelhouse's migrations only expand (decision 65). Written beside the run."""
+    console, and for any release, since Wheelhouse's migrations only expand (decision 65). Written beside the run.
+    A return between releases that declare `migrate` passes the rollback gate, the older image's `migrate check`,
+    whatever this says; it still decides a return to a release from before the step and the restore after a failed
+    return, so it stays forced until neither console keeps such a release (v0.7 track, Iteration 9)."""
     target = {**target, "probeGate": True, "rollbackCompatible": True}
     path = folder / "target.json"
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
