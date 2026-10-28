@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   delivery:
-    uses: wow-two-platform/wow-two-platform.pipelines/.github/workflows/delivery.yml@v0.11.0
+    uses: wow-two-platform/wow-two-platform.pipelines/.github/workflows/delivery.yml@v0.12.0
     with:
       commit: ${{ inputs.commit }}
       # Backend: unit, integration, E2E and migration tiers (Testcontainers on the runner's Docker); it also builds

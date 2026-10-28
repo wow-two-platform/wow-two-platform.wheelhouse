@@ -95,15 +95,28 @@ services:
       interval: 2s
       retries: 30
     restart: unless-stopped
-  # Wheelhouse itself, built as it ships, driving this rig over SSH the way it will drive a VPS.
-  console:
+  # Wheelhouse's migrate step, as a rollout runs it: the console image's bare `migrate`, once, before the console
+  # starts. Outside a local run the console only checks its database at boot.
+  console-migrate:
     image: wheelhouse:local
-    build:
+    build: &console-build
       context: ../../codebase
       dockerfile: ../deployment/Dockerfile
       # The products-host kit the image carries for enrollments, as deploy.yml names it.
       additional_contexts:
         kit: ../vps
+    profiles: [console]
+    entrypoint: [dotnet, Wheelhouse.Api.dll, migrate]
+    volumes:
+      - ${REHEARSAL_STATE}/console/appsettings.Target.json:/app/appsettings.Target.json:ro
+    depends_on:
+      console-db:
+        condition: service_healthy
+    restart: "no"
+  # Wheelhouse itself, built as it ships, driving this rig over SSH the way it will drive a VPS.
+  console:
+    image: wheelhouse:local
+    build: *console-build
     profiles: [console]
     environment:
       Deployment__Rehearsal: network
@@ -115,8 +128,8 @@ services:
     ports:
       - "127.0.0.1:18210:8080"
     depends_on:
-      console-db:
-        condition: service_healthy
+      console-migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
     mem_limit: 512m
   console-db:

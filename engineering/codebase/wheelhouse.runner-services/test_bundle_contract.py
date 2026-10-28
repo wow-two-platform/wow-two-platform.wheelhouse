@@ -217,6 +217,15 @@ class BundleContractTests(unittest.TestCase):
         # Deployed dev runs the console as Development: its appsettings.Development.json holds defaults only.
         self.assertTrue(descriptor["dotnetEnvironment"])
 
+    @unittest.skipUnless(HAS_YAML and release is not None and hasattr(release, "record_sets"),
+                         "PyYAML or the pinned generator's migrate support is missing")
+    def test_wheelhouse_migrates_itself_through_the_step(self):
+        # The console's database moves only in the rollout's migrate step: a deployed console checks it at boot.
+        path = HERE.parents[1] / "deployment" / "deploy.yml"
+        descriptor = release.validate(release.parse(path.read_text()))
+        self.assertEqual([{"service": "console", "command": ["dotnet", "Wheelhouse.Api.dll", "migrate"],
+                           "timeoutSeconds": runner.MIGRATE_TIMEOUT}], descriptor["migrate"])
+
 
 if __name__ == "__main__":
     unittest.main()

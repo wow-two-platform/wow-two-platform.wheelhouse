@@ -75,19 +75,24 @@ public sealed class LocalRunE2ETests : IDisposable
     {
         var builder = Builder(new() { ["DEPLOY_ENVIRONMENT"] = deployed }, environment);
 
-        var boot = () => builder.AddAuthentication();
+        // Registering needs no allowlist, so a migrate or vault command builds the host without the console's settings.
+        builder.AddAuthentication();
+        var app = builder.Build();
+        var serve = () => app.RequireLoginAllowlist();
 
-        boot.Should().Throw<InvalidOperationException>().WithMessage("A deployed console requires Identity:AllowedGitHubLogins.");
+        serve.Should().Throw<InvalidOperationException>().WithMessage("A deployed console requires Identity:AllowedGitHubLogins.");
     }
 
     [Fact]
     public void Allowlist_MayStayEmpty_OnALocalRun()
     {
         var builder = Builder([]);
+        builder.AddAuthentication();
+        var app = builder.Build();
 
-        var boot = () => builder.AddAuthentication();
+        var serve = () => app.RequireLoginAllowlist();
 
-        boot.Should().NotThrow();
+        serve.Should().NotThrow();
         LocalRun.IsLocal(builder.Environment, builder.Configuration).Should().BeTrue();
     }
 

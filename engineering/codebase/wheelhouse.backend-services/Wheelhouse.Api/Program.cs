@@ -2,17 +2,23 @@ using Wheelhouse.Api.Cli;
 using Wheelhouse.Api.Configurations;
 using WoW.Two.Sdk.Beta.Be.Data;
 
-// `vault …` runs a Secrets Vault command against this host's database and root key, then exits (Cli/VaultCli.cs).
-var command = VaultCli.IsCommand(args);
-var builder = WebApplication.CreateBuilder(command ? [] : args);
+// `migrate …` answers the be sdk's migration verbs (the rollout's migrate step runs the bare `migrate`) and `vault …`
+// runs a Secrets Vault command (Cli/VaultCli.cs), against this host's database, then exits. Neither reads its
+// arguments as configuration.
+var migrate = MigrateCommand.IsCommand(args);
+var vault = VaultCli.IsCommand(args);
+var builder = WebApplication.CreateBuilder(migrate || vault ? [] : args);
 builder.Configure();
 
 var app = builder.Build();
-if (command)
+if (migrate)
+    return await app.RunMigrateCommandAsync(args);
+if (vault)
     return await VaultCli.RunAsync(app, args);
 app.Configure();
 
-// Create the database if missing, then apply all pending bespoke SQL migrations (idempotent — runs on every boot).
+// A local run creates the database and applies pending migrations; a deployed boot only checks that the database
+// suits this build, since the rollout's migrate step applied them before it started.
 await app.Services.MigrateBespokeOnStartupAsync();
 
 app.Run();

@@ -31,6 +31,9 @@ public static class HostConfiguration
     /// <summary>Configures the middleware pipeline and maps endpoints.</summary>
     public static WebApplication Configure(this WebApplication app)
     {
+        // A deployed console serves only an allowlisted owner.
+        app.RequireLoginAllowlist();
+
         // Outermost: every error status, MVC error result and thrown exception leaves as a ProblemDetails document.
         app.UseHttpProblemDetails();
 

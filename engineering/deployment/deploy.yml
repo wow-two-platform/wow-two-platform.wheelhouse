@@ -42,6 +42,13 @@ services:
     needs: [postgres]
     sites:
       console: { exposure: private }
+# The migrate step (pipelines v0.12.0): on every forward deploy, after the pull and before the console restarts, the
+# runner runs the console image's bare `migrate` (apply, then seed) in a one-off container with the console's settings.
+# A deployed console only checks its database at boot; a return to an older release runs that release's
+# `migrate check` first.
+migrate:
+  - service: console
+    command: [dotnet, Wheelhouse.Api.dll, migrate]
 # Dev only, after each wheelhouse-dev rollout: readiness, status and an anonymous MCP initialization the console must
 # refuse, asked of the new console from its own image on its network. CI ran these after its deploys; the runner runs
 # them now that Wheelhouse prod deploys dev (decision 64). A failure warns on the rollout and never changes it.

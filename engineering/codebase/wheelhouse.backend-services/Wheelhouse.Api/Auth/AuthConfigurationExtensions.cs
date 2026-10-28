@@ -46,11 +46,6 @@ public static class AuthConfigurationExtensions
 
         var gitHub = ConfigurationMapper.Load<GitHubOAuthSettings>(builder.Configuration, "Identity:GitHub");
         var authSettings = ConfigurationMapper.Load<AuthSettings>(builder.Configuration, "Identity");
-        // An empty allowlist admits any GitHub user: only a local run may have one. Deployed dev runs as Development, so
-        // the runner's DEPLOY_ENVIRONMENT, not the environment name, tells a deployed console.
-        if ((builder.Environment.IsProduction() || Configurations.LocalRun.IsDeployed(builder.Configuration))
-            && !authSettings.AllowedGitHubLogins.Any(login => !string.IsNullOrWhiteSpace(login)))
-            throw new InvalidOperationException("A deployed console requires Identity:AllowedGitHubLogins.");
 
         // Cookie holds the session; API mode returns 401/403 (not a 302) so the SPA renders its own sign-in.
         builder.Services.AddCookieAuthentication(o =>
@@ -110,6 +105,22 @@ public static class AuthConfigurationExtensions
             .RequireAuthenticatedUser()
             .RequireAssertion(context => context.User.GetApiKeyName() is null)
             .AddRequirements(new AllowlistRequirement());
+
+    /// <summary>Refuses to serve a deployed console without a login allowlist: an empty one admits any GitHub user, so
+    /// only a local run may have one. Deployed dev runs as Development, so the runner's DEPLOY_ENVIRONMENT, not the
+    /// environment name, tells a deployed console. Checked as the pipeline is built, so a <c>migrate</c> or <c>vault</c>
+    /// command, which never serves, runs without the console's settings.</summary>
+    /// <param name="app">The built application.</param>
+    /// <returns>The same application for chaining.</returns>
+    /// <exception cref="InvalidOperationException">A deployed console names no allowed login.</exception>
+    public static WebApplication RequireLoginAllowlist(this WebApplication app)
+    {
+        var authSettings = ConfigurationMapper.Load<AuthSettings>(app.Configuration, "Identity");
+        if ((app.Environment.IsProduction() || Configurations.LocalRun.IsDeployed(app.Configuration))
+            && !authSettings.AllowedGitHubLogins.Any(login => !string.IsNullOrWhiteSpace(login)))
+            throw new InvalidOperationException("A deployed console requires Identity:AllowedGitHubLogins.");
+        return app;
+    }
 
     /// <summary>Adds authentication and authorization middleware; the SDK pipeline places it after routing and before
     /// idempotency.</summary>
