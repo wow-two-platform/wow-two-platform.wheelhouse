@@ -181,6 +181,28 @@ const RolloutSchema = z.object({
   warnings: z.array(z.string()).optional(),
   operation: DeploymentOperationSchema.nullish().catch(null),
 });
+/** A field the runner may leave out or not read: absent, null and an unexpected shape all read as null. */
+const readText = z.string().nullish().catch(null);
+const readLevel = z.number().int().nullish().catch(null);
+/** One migration set as the target last read it (migrations spec M38). */
+const MigrationSetReadingSchema = z.object({
+  name: z.string(),
+  schema: readText,
+  service: z.string(),
+  level: readLevel,
+  newestLabel: readText,
+  newestKind: readText,
+  state: readText,
+  rollbackFloor: readText,
+  release: readText,
+  job: readText,
+  source: z.string(),
+  at: z.string(),
+});
+export const TargetMigrationsSchema = z.object({
+  updatedAt: readText,
+  sets: z.array(MigrationSetReadingSchema),
+});
 export const TargetStateSchema = z.object({
   targetId: z.string(),
   project: z.string(),
@@ -188,6 +210,40 @@ export const TargetStateSchema = z.object({
   current: RolloutSchema.nullable(),
   active: RolloutSchema.nullable(),
   stopped: TargetStopSchema.nullish().catch(null),
+  // A runner that never ran a migrate step, or predates them, has none; a shape this console cannot read drops it.
+  migrations: TargetMigrationsSchema.nullish().catch(null),
+});
+/** What Check now answers: each migrate item of the release the target runs, and the sets with the check merged in. */
+export const MigrationCheckSchema = z.object({
+  targetId: z.string(),
+  project: readText,
+  release: readText,
+  checkedAt: readText,
+  items: z.array(
+    z.object({
+      service: z.string(),
+      verb: readText,
+      release: readText,
+      status: z.string(),
+      exitCode: readLevel,
+      seconds: z.number().nullish().catch(null),
+      detail: readText,
+      sets: z
+        .array(
+          z.object({
+            name: z.string(),
+            schema: readText,
+            state: readText,
+            levelBefore: readLevel,
+            levelAfter: readLevel,
+            applied: z.array(z.object({ label: z.string(), kind: readText })).catch([]),
+            rollbackFloor: readText,
+          }),
+        )
+        .catch([]),
+    }),
+  ),
+  migrations: TargetMigrationsSchema.nullish().catch(null),
 });
 export const TargetCheckSchema = z
   .object({

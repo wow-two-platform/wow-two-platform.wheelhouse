@@ -15,14 +15,15 @@ import { computed } from "vue";
 import { AlertTriangle, Check, CircleMinus, LoaderCircle, Undo2, X } from "lucide-vue-next";
 
 import { Measures } from "@/domain/common";
-import { DeploymentStates, StepKinds, StepStatus } from "@/domain/deployments";
+import { DeploymentStates, StepKind, StepKinds, StepStatus } from "@/domain/deployments";
 import { StepKindIcons } from "./StepKindIcons";
 
 /**
  * Renders each rollout step with its outcome, a quiet mark of its kind, its detail and duration, so the owner sees what
  * the target did. The kind's mark is decorative; the outcome stays an icon with its word for assistive technology. Sectioned,
  * the checks before any change come first — a cancel there stops cleanly — then a boundary, "Changes start here",
- * after which a cancel is refused; a roll back reads as its own nested step; then what follows once the services run.
+ * after which a cancel is refused; a roll back reads as its own nested step, as does a rollback gate that follows a
+ * failure, part of the same automatic restore; then what follows once the services run.
  */
 defineOptions({ name: "DeploymentSteps" });
 const props = withDefaults(defineProps<DeploymentStepsProps>(), { isSectioned: false });
@@ -60,8 +61,11 @@ function seconds(step: DeploymentStep) {
   return Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : null;
 }
 
-/** A roll back reads as a nested step under the failure it answers. @internal */
-const isRollBack = (step: DeploymentStep) => step.name.startsWith("Roll back") || step.name.startsWith("Restore ");
+/** The automatic restore's steps, nested under the failure they answer. @internal */
+const restore = computed(() => StepKinds.restoreSteps(props.steps ?? []));
+/** A restore step that put something back, marked as undone rather than done; a rollback gate only checks. @internal */
+const isRollBack = (step: DeploymentStep) =>
+  restore.value.has(step) && StepKinds.of(step.name) !== StepKind.RollbackGate;
 </script>
 
 <template>
@@ -85,7 +89,7 @@ const isRollBack = (step: DeploymentStep) => step.name.startsWith("Roll back") |
             :key="index + step.name"
             :class="[
               'grid grid-cols-[1rem_0.875rem_minmax(0,1fr)_auto] items-start gap-x-2 text-sm',
-              isRollBack(step) ? 'ms-4 border-s border-border ps-3' : '',
+              restore.has(step) ? 'ms-4 border-s border-border ps-3' : '',
             ]"
           >
             <span :class="['mt-0.5', tone[step.status]]" aria-hidden="true">

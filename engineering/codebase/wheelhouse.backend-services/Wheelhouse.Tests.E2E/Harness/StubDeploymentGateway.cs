@@ -83,6 +83,7 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
                 services = new[] { new { name = "api", image = (string?)null, networks = new[] { "default" }, volumes = Array.Empty<string>(), ports = new[] { "8080/tcp" } } },
                 networks = new[] { new { name = "default", external = false } }, volumes = Array.Empty<object>(),
                 dependencies = Array.Empty<object>(), warnings = Array.Empty<string>() },
+            "migrations" => Migrations(id!),
             "stats" => new { windowDays = int.Parse(id!), deploys = 1, succeeded = 0, failed = 1, refused = 0, pending = 0 },
             "vitals" => new { collectedAt = "2026-09-26T12:00:00+00:00", targets = new[] { new { targetId = "pilot", serverId = "pilot-host", ok = true } } },
             "follow" => new { @checked = 0, unavailable = 0, busy = 0, open = FollowOpen, nextIn = FollowNextIn },
@@ -93,6 +94,39 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
             },
             _ => new object[] { new { id = "pilot", product = "foreverpin", environment = "dev", acceptsCandidates = true, needsConfirmation = false } }
         })));
+    }
+
+    /// <summary>What the <c>migrations</c> read ("Check now") answers: one migrate item whose set is current, and the
+    /// target's migration sets after the check merged in.</summary>
+    private static object Migrations(string target)
+    {
+        var set = new
+        {
+            name = "default", schema = "public", service = "api", level = 3, newestLabel = "003-add-notes", newestKind = "expand",
+            state = "current", rollbackFloor = "v0.4", release = "v0.1.5", job = (string?)null, source = "check",
+            at = "2026-10-28T10:00:00+00:00",
+        };
+        return new
+        {
+            targetId = target, project = "foreverpin-dev", release = "v0.1.5", checkedAt = "2026-10-28T10:00:00+00:00",
+            items = new[]
+            {
+                new
+                {
+                    service = "api", verb = "check", release = "v0.1.5", status = "current", exitCode = (int?)0, seconds = 2,
+                    detail = "default at 3, current",
+                    sets = new[]
+                    {
+                        new
+                        {
+                            name = "default", schema = "public", state = "current", levelBefore = 3, levelAfter = 3,
+                            applied = Array.Empty<object>(), rollbackFloor = "v0.4", background = Array.Empty<object>(), lockWaitMs = 0,
+                        },
+                    },
+                },
+            },
+            migrations = new { updatedAt = "2026-10-28T10:00:00+00:00", sets = new[] { set } },
+        };
     }
 
     /// <summary>What the <c>settings</c> read answers for any target: each service's declared keys; none by default.</summary>

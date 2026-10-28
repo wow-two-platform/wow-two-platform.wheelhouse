@@ -84,6 +84,7 @@ import { ResourceMeter } from "@/presentation/servers";
 import BuildUsagePanel from "../BuildUsagePanel.vue";
 import HostingPanel from "@/presentation/infrastructure/components/HostingPanel.vue";
 import EnvironmentCompare from "../EnvironmentCompare.vue";
+import MigrationsPanel from "../MigrationsPanel.vue";
 import ServiceActions from "../ServiceActions.vue";
 import ServiceMap from "../ServiceMap.vue";
 import ServicesInfo from "../ServicesInfo.vue";
@@ -550,6 +551,13 @@ function openDeploy(job?: DeploymentJob): void {
                 </button>
               </SkeletonStateGroup>
             </DataRegion>
+            <!-- The environment's databases, once a rollout's migrate step, a rollback gate or a check read them. -->
+            <MigrationsPanel
+              v-if="state.data.value?.migrations?.sets.length"
+              :key="target.id"
+              :target="target.id"
+              :migrations="state.data.value.migrations"
+            />
             <EnvironmentCompare
               v-if="product"
               :targets="product.targets"

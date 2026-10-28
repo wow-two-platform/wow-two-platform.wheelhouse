@@ -14,6 +14,7 @@ export { useDeploymentOutcome } from "./hooks/useDeploymentOutcome";
 export { useSelfDeployment } from "./hooks/useSelfDeployment";
 export { useDeploySettings, useSaveDeploySettings } from "./hooks/useDeploySettings";
 export {
+  useMigrationsCheck,
   useReconcileTarget,
   useRequestBuild,
   useStartDeployment,

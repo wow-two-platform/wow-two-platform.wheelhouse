@@ -5,6 +5,7 @@ import type { PublishedSite } from './PublishedSite';
 import type { ReleaseKind } from './ReleaseArtifact';
 import type { ServiceVersion } from './ServiceVersion';
 import type { DeploymentOperation, TargetStop } from '../controls/ServiceControls';
+import type { TargetMigrations } from '../migrations/TargetMigrations';
 
 /** A rollout record held on the target. */
 export interface RolloutRecord {
@@ -38,4 +39,6 @@ export interface TargetState {
   active: RolloutRecord | null;
   /** What the owner keeps stopped there; null while nothing is. */
   stopped?: TargetStop | null;
+  /** What the target last learned about each migration set; null until it ran a migrate step. */
+  migrations?: TargetMigrations | null;
 }

@@ -76,6 +76,37 @@ public sealed class DeploymentsE2ETests(WheelhouseAppFixture fixture) : Wheelhou
         Assert.Equal(("pilot", "api", 200), Fixture.Deployments.LastLogs);
     }
 
+    [Fact]
+    public async Task Migrations_CheckTheTargetsDatabasesAndAreNeverCached()
+    {
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await AnonymousClient.GetAsync("/api/deployments/targets/pilot/migrations")).StatusCode);
+        var response = await AdminClient.GetAsync("/api/deployments/targets/pilot/migrations");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.NoStore, "A migrations check must never be cached.");
+        Assert.Equal(("migrations", "pilot"), Fixture.Deployments.LastRead);
+        var check = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data");
+        Assert.Equal("pilot", check.GetProperty("targetId").GetString());
+        var item = Assert.Single(check.GetProperty("items").EnumerateArray());
+        Assert.Equal(("api", "current"), (item.GetProperty("service").GetString(), item.GetProperty("status").GetString()));
+        var set = Assert.Single(check.GetProperty("migrations").GetProperty("sets").EnumerateArray());
+        Assert.Equal(("default", 3), (set.GetProperty("name").GetString(), set.GetProperty("level").GetInt32()));
+    }
+
+    [Fact]
+    public async Task Migrations_RefusedWhileARolloutRuns_AnswerConflictWithTheRunnersReason()
+    {
+        Fixture.Deployments.ReadFailure = WoW.Two.Sdk.Beta.Be.Foundation.Errors.AppErrorFactory.Conflict(
+            "Deployment rejected: A rollout is running on this target");
+        var response = await AdminClient.GetAsync("/api/deployments/targets/pilot/migrations");
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("A rollout is running on this target", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Migrations_RejectAnInvalidTarget() =>
+        Assert.Equal(HttpStatusCode.BadRequest, (await AdminClient.GetAsync("/api/deployments/targets/PILOT/migrations")).StatusCode);
+
     [Theory]
     [InlineData("/api/deployments/targets/pilot/services/api/logs?tail=0")]
     [InlineData("/api/deployments/targets/pilot/services/api/logs?tail=1001")]

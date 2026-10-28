@@ -19,6 +19,17 @@ export function useTargetCheck() {
   });
 }
 
+/** Check now: reads the target's databases against the release it runs (`migrate check`, write-free, up to about 90
+ * seconds), then the target's state again, which carries the sets the check read. Its failures show in place. */
+export function useMigrationsCheck() {
+  return useAppMutation({
+    mutationFn: ({ target }: { target: string }, { signal }) =>
+      deploymentsApi.checkMigrations(target, signal),
+    invalidates: ({ target }) => [DeploymentKeys.state(target)],
+    meta: { suppressGlobalError: true },
+  });
+}
+
 /** Submits a release to a target; the outcome is followed separately. */
 export function useStartDeployment() {
   return useAppMutation({

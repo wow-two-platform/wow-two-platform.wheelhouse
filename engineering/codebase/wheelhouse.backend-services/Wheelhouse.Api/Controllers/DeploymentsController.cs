@@ -190,6 +190,14 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
         [RegularExpression(Slug)] string target, [FromQuery, RegularExpression(Slug)] string? release, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new DeploymentCheckQuery(target, release), ct));
 
+    /// <summary>Checks the target's databases against the release it runs ("Check now"): <c>migrate check</c> from the
+    /// image the target runs, write-free, up to about 90 seconds; refused while a rollout runs. Answers each migrate
+    /// item's status and detail, and what the target now knows about each migration set.</summary>
+    [HttpGet("targets/{target}/migrations")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> Migrations([RegularExpression(Slug)] string target, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new DeploymentReadQuery("migrations", target), ct));
+
     /// <summary>Acknowledges an interrupted or failed rollout the owner has inspected.</summary>
     [HttpPost("targets/{target}/reconcile")]
     [RequireActionHeader("reconcile")]

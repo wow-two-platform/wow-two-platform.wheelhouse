@@ -7,7 +7,7 @@ namespace Wheelhouse.Application.Abstractions;
 /// <summary>Exposes the runner through the control plane.</summary>
 public interface IDeploymentGateway
 {
-    /// <summary>Reads targets, published sites, the local server's fixtures, releases and builds, deployment history and statistics, one outcome, one target's state, a product's branches, or host and container vitals.</summary>
+    /// <summary>Reads targets, published sites, the local server's fixtures, releases and builds, deployment history and statistics, one outcome, one target's state, a product's branches, or host and container vitals; <c>migrations</c> checks one target's databases against the release it runs.</summary>
     Task<AppResult<JsonElement>> ReadAsync(string resource, string? id, CancellationToken ct);
     /// <summary>Checks a target's readiness without changing it, optionally against one release.</summary>
     Task<AppResult<JsonElement>> CheckAsync(string target, string? release, CancellationToken ct);

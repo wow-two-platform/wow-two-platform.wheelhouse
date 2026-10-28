@@ -72,6 +72,20 @@ public sealed class DeploymentGatewayTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadAsync_ShouldRunTheMigrationsCheck_OnlyForANamedTarget()
+    {
+        File.WriteAllText(_transport, "import json, sys\nprint(json.dumps({'argv': sys.argv[1:]}))\n");
+        var gateway = new DeploymentGateway(RunnerProcessClients.Create(), new DeploymentSettings() with { TransportPath = _transport, Root = _root });
+
+        var result = await gateway.ReadAsync("migrations", "foreverpin-dev", CancellationToken.None);
+
+        Data(result).GetProperty("argv").EnumerateArray().Select(item => item.GetString()).TakeWhile(item => item != "--root")
+            .Should().Equal("migrations", "--target", "foreverpin-dev");
+        (await gateway.ReadAsync("migrations", null, CancellationToken.None))
+            .Should().BeOfType<AppResult<JsonElement>.Failure>().Subject.Error.Type.Should().Be(AppErrorType.NotFound);
+    }
+
+    [Fact]
     public async Task ReadAsync_ShouldFailAsTransientlyUnavailable_WhenTheRunnerCannotStart()
     {
         var settings = new DeploymentSettings { Python = Path.Combine(_root, "missing-python") };

@@ -17,7 +17,7 @@ public static class RunnerProcess
     public const string ClientName = "runner";
 
     /// <summary>Holds how long one runner call may run: within the console's request budget, past the runner's own SSH
-    /// bounds (30 seconds a read, two targets a follow pass).</summary>
+    /// bounds (30 seconds a read, two targets a follow pass, about 90 seconds a migrations check).</summary>
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(110);
 
     /// <summary>Holds the variables the runner inherits from the API's environment; everything else is withheld.</summary>

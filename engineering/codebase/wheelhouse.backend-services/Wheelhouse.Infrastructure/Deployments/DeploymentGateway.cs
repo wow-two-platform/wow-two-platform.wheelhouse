@@ -35,6 +35,8 @@ public sealed class DeploymentGateway(
             "observation" when Guid.TryParse(id, out _) => RunAsync(["observation", "--job", id], ct),
             "state" when id is not null => RunAsync(["state", "--target", id], ct),
             "topology" when id is not null => RunAsync(["topology", "--target", id], ct),
+            // Up to about 90 seconds on the target, inside the runner client's 110-second bound.
+            "migrations" when id is not null => RunAsync(["migrations", "--target", id], ct),
             "branches" when id is not null => RunAsync(["branches", "--product", id], ct),
             "facts" when id is not null => RunAsync(["facts", "--bundle", id], ct),
             "usage" when id is not null => RunAsync(["usage", "--product", id], ct),

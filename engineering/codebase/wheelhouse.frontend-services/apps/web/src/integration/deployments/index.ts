@@ -12,6 +12,7 @@ import type {
   TargetState,
 } from "@/domain/deployments";
 import type { ControlOperation, QueuedControl } from "@/domain/deployments/controls";
+import type { MigrationCheck } from "@/domain/deployments/migrations";
 import { requestData } from "@/integration/common";
 import {
   BuildRequestSchema,
@@ -20,6 +21,7 @@ import {
   DeploymentJobSchema,
   DeploymentStatsSchema,
   DeploymentTargetSchema,
+  MigrationCheckSchema,
   ReleaseArtifactSchema,
   SelfDeploymentSchema,
   ServiceLogsSchema,
@@ -69,6 +71,15 @@ export const deploymentsApi = {
       `/api/deployments/targets/${encodeURIComponent(target)}/check` +
         (release ? `?release=${encodeURIComponent(release)}` : ""),
       TargetCheckSchema,
+      { signal },
+    ),
+
+  /** Check now: `migrate check` from the image the target runs, write-free; up to about 90 seconds, refused while a
+   *  rollout runs. */
+  checkMigrations: (target: string, signal?: AbortSignal) =>
+    requestData<MigrationCheck>(
+      `/api/deployments/targets/${encodeURIComponent(target)}/migrations`,
+      MigrationCheckSchema,
       { signal },
     ),
 
