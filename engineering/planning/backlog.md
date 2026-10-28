@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-10-27*
+*Last updated: 2026-10-28*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -173,6 +173,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Ability to create a product and deploy a platform server into it from a form, before any repository exists | feature | Owner 2026-10-28, complex. In the console: create the product, pick a platform server (Identity first) and its version, then fill its options in a form — authentication methods, providers, values; no repository or `deploy.yml` yet. Local development then connects to the deployed instance directly. Needs: each platform server publishing a settings manifest (keys, types, secrets, allowed values); its secrets in the vault; the product's database placed and the server's migrate step run from its pinned image; a host reachable from a developer machine, with localhost redirect URIs and CORS; and an adoption path — the product's first `deploy.yml` takes the instance over as a pinned-image service (migrations spec M77) without a redeploy |
 | Ability to declare `dependsOn` on another repository's service | feature | The runner orders and checks it across a release set; the shared generator in `wow-two-platform.pipelines` refuses it until a pipelines tag |
 | Move ForeverPin's and every other product repository's identity into its `deploy.yml` | feature | Decided 2026-10-27 (decision 7, format A): `name`, `description`, `homepage` in `deploy.yml` ([convention](../../../../../conventions/deployment/descriptor/deploy-descriptor.md#identity)), pipelines `v0.11.0`; Wheelhouse, the canary and the product template moved in v0.7; a repo with a `product/product.json` reads it with a notice, one with neither shows its row |
 | Edit a product's identity from the console by committing its `deploy.yml` | feature | Needs Contents write on the GitHub App (it reads only); the console shows repository-sourced name, description and homepage read-only meanwhile |
