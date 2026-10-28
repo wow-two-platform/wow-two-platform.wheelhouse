@@ -852,6 +852,17 @@ def target_state(root, target_id):
     return result
 
 
+def target_migrations(root, target_id):
+    """"Check now" (M36): `migrate check --json` from each migrate item of the release a target runs, run on the target
+    under its deployment lock, which refuses while a rollout runs. Returns each item's result and what the target now
+    knows about every migration set; the database's history stays the only history."""
+    config = fleet.resolve_target(root, target_id)
+    validate_target(config["target"])
+    result = run_remote(Ssh(config["ssh"]), "migrate-check", config["target"], timeout=100)
+    result["targetId"] = target_id
+    return result
+
+
 def target_topology(root, target_id):
     config = fleet.resolve_target(root, target_id)
     validate_target(config["target"])
@@ -1092,7 +1103,7 @@ def main():
                                            "status", "jobs", "follow", "state", "check", "reconcile", "vitals", "stats", "topology",
                                            "branches", "commits", "build", "logs", "history", "observation",
                                            "latest", "facts", "changelog", "watch", "builds", "retention", "usage",
-                                           "settings", "registry", "compose", "control", "stops"])
+                                           "settings", "registry", "compose", "control", "stops", "migrations"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
@@ -1186,6 +1197,8 @@ def main():
             result = target_state(root, args.target)
         elif args.action == "topology":
             result = target_topology(root, args.target)
+        elif args.action == "migrations":
+            result = target_migrations(root, args.target)
         elif args.action == "check":
             result = check(root, args.target, args.bundle, provided)
         elif args.action == "reconcile":

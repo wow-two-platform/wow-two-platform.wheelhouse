@@ -121,6 +121,25 @@ STOP_GRACE_SECONDS = 30
 # The settings file each service of a release mounted, as its rollout's Compose interpolated it; kept beside the
 # release (never part of its bundle or hash) so a control starts the containers on the very same files.
 SETTINGS_PATHS = "settings-paths.json"
+# The migrate step (migrations spec M8-M17, M37): each item a release declares runs its command in a one-off container
+# from its service's release image after the pull and before the first wave; the default and allowed timeouts.
+MIGRATE_TIMEOUT = 600
+MIGRATE_TIMEOUT_LIMITS = (10, 3600)
+# What a migrate run prints last on stdout: `migrate-result {json}`; the runner reads at most this much of its stdout.
+MIGRATE_RESULT = "migrate-result "
+MIGRATE_OUTPUT_LIMIT = 256 * 1024
+# An exit 3 (busy: the set's lock stayed held) retries once after this pause, then fails the step.
+MIGRATE_BUSY_PAUSE = 5
+# "Check now" (M36): the check from the image the target runs, bounded to fit the console's request.
+MIGRATE_CHECK_TIMEOUT = 60
+# The migrate key (M8): the variable that fills `Migrations:ConnectionString` in the migrate container only.
+MIGRATE_KEY = "Migrations__ConnectionString"
+# What the target last learned about each migration set, from rollouts, rollback gates and checks; beside current.json.
+MIGRATIONS_FILE = "migrations.json"
+# A migration set's name as `migrate sets --json` gives it, and an untrusted PostgreSQL extension a product declares.
+SET_NAME = re.compile(r"[a-z][a-z0-9_-]{0,63}")
+EXTENSION = re.compile(r"[a-z][a-z0-9_-]{0,62}")
+MIGRATION_KINDS = ("expand", "contract")
 
 
 class Rejected(ValueError):
@@ -243,6 +262,9 @@ def validate_bundle(bundle):
             "dotnetEnvironment must be true, false or a list of the release's services")
     release_components(manifest)
     release_verification(manifest)
+    release_migrate(manifest)
+    release_migration_sets(manifest)
+    release_extensions(manifest)
     return manifest
 
 
@@ -321,6 +343,69 @@ def release_verification(manifest):
     timeout = verify.get("timeoutSeconds", VERIFY_TIMEOUT)
     require(type(timeout) is int and 10 <= timeout <= VERIFY_TIMEOUT_LIMIT, "The verify timeout must be 10-1800 seconds")
     return {"service": verify["service"], "command": command, "timeoutSeconds": timeout}
+
+
+def release_migrate(manifest):
+    """The migrate items a release declares (M9), in the order they run: each names the service whose release image
+    hosts migration sets, the `command` that runs as that container's entrypoint (the program and its arguments, ending
+    in the bare `migrate` verb) and its `timeoutSeconds`. Empty for a release that declares none."""
+    items = manifest.get("migrate")
+    if items is None:
+        return []
+    require(isinstance(items, list) and 0 < len(items) <= 20, "Invalid migrate list")
+    result, seen = [], set()
+    for item in items:
+        require(isinstance(item, dict) and isinstance(item.get("service"), str)
+                and item["service"] in manifest.get("images", {}), "A migrate item names an unknown service")
+        require(item["service"] not in seen, "Two migrate items name " + item["service"])
+        seen.add(item["service"])
+        command = item.get("command")
+        require(isinstance(command, list) and 0 < len(command) <= 32
+                and all(isinstance(part, str) and part and len(part) <= 1000 and "\0" not in part for part in command),
+                "Invalid migrate command")
+        timeout = item.get("timeoutSeconds", MIGRATE_TIMEOUT)
+        require(type(timeout) is int and MIGRATE_TIMEOUT_LIMITS[0] <= timeout <= MIGRATE_TIMEOUT_LIMITS[1],
+                "The migrate timeout must be 10-3600 seconds")
+        result.append({"service": item["service"], "command": list(command), "timeoutSeconds": timeout})
+    return result
+
+
+def release_migration_sets(manifest):
+    """Each migrate item's sets as its image's `migrate sets --json` described them when the release was built (M78), by
+    service: each set's name, schema, level (its highest embedded ordinal) and the rest the image said. Empty when the
+    release does not say."""
+    declared = manifest.get("migrationSets")
+    if declared is None:
+        return {}
+    require(isinstance(declared, dict) and set(declared) <= set(manifest.get("images", {})),
+            "Migration sets name an unknown service")
+    for sets in declared.values():
+        require(isinstance(sets, list) and len(sets) <= 50 and all(
+            isinstance(entry, dict) and isinstance(entry.get("name"), str) and SET_NAME.fullmatch(entry["name"])
+            and (entry.get("level") is None or type(entry["level"]) is int) for entry in sets), "Invalid migration sets")
+    return declared
+
+
+def release_levels(manifest):
+    """The level each migration set has in a release's images, by set name; a set the release does not describe is
+    left out."""
+    levels = {}
+    for sets in release_migration_sets(manifest).values():
+        for entry in sets:
+            if type(entry.get("level")) is int:
+                levels[entry["name"]] = max(entry["level"], levels.get(entry["name"], entry["level"]))
+    return levels
+
+
+def release_extensions(manifest):
+    """The untrusted PostgreSQL extensions a release declares (M41); placement creates them, the runner only checks
+    their names."""
+    declared = manifest.get("extensions")
+    if declared is None:
+        return []
+    require(isinstance(declared, list) and len(declared) <= 50
+            and all(isinstance(name, str) and EXTENSION.fullmatch(name) for name in declared), "Invalid extensions")
+    return list(declared)
 
 
 def service_dependencies(compose):
@@ -1633,6 +1718,23 @@ class Docker:
         lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
         return result.returncode, lines[-1][:VERIFY_SUMMARY_LIMIT] if lines else ""
 
+    def migrate(self, arguments, variables, timeout, container):
+        """Runs a one-off migrate container whose environment also carries `variables` (the migrate key, passed by
+        name, never as an argument). Returns its exit code and the last stdout line that starts with `migrate-result `
+        (None when it printed none); a run past `timeout` stops and removes `container` and returns None for the code.
+        stderr and every other line are discarded unread: they may name the database."""
+        try:
+            result = subprocess.run(arguments, env={**self.environment, **variables}, stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL, text=True, errors="replace", timeout=timeout)
+        except subprocess.TimeoutExpired:
+            for command in (["docker", "stop", "--time", "10", container], ["docker", "rm", "--force", container]):
+                with contextlib.suppress(Exception):
+                    subprocess.run(command, env=self.environment, capture_output=True, timeout=60)
+            return None, None
+        output = (result.stdout or "")[-MIGRATE_OUTPUT_LIMIT:]
+        line = next((line.strip() for line in reversed(output.splitlines()) if line.startswith(MIGRATE_RESULT)), None)
+        return result.returncode, line
+
     def health_timeout(self):
         timeout = self.target.get("healthTimeoutSeconds", 120)
         require(type(timeout) is int and 10 <= timeout <= 300, "Invalid health timeout")
@@ -1872,6 +1974,10 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                 pulled = (docker.pull(destination, registry, unreadable) if registry or unreadable
                           else docker.pull(destination))
                 step["detail"] = pull_summary(manifest, pulled)
+            # Every declared item, on every forward deploy, before any service restarts; a return to an older release
+            # runs its rollback gate instead. A failure here leaves the previous release serving.
+            migrate_release(root, target, previous, manifest, compose, project, environment, docker, steps, record,
+                            job_id)
             mutation_started = True
             record["mutationStarted"] = True
             save()
@@ -1968,9 +2074,11 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                         record["reason"] += "; not healthy: " + ", ".join(states)
             settle_services(record, starting if mutation_started else None)
             # A release that declares it, or a target whose product promises expand-only migrations (Wheelhouse's own,
-            # decision 65): the previous images run on whatever schema this release left.
-            if mutation_started and previous and (manifest["rollbackCompatible"]
-                                                  or target.get("rollbackCompatible") is True):
+            # decision 65): the previous images run on whatever schema this release left. A release that ran its
+            # migrate step asks the previous images' own `migrate check` first (the rollback gate, M15).
+            if mutation_started and previous and restore_allowed(
+                    root, target, previous, record, steps, job_id, project,
+                    manifest["rollbackCompatible"] or target.get("rollbackCompatible") is True, docker_factory):
                 try:
                     with steps.run("Roll back to " + str(previous.get("release") or "the previous release")):
                         prior_bundle = root / "releases" / previous["id"]
@@ -2043,6 +2151,446 @@ def verify_release(target, manifest, record, verification, docker, project, cloc
     if summary:
         result["summary"] = summary
     return result
+
+
+# ---- Migrate step and rollback gate (migrations spec § 3.4) ----
+
+class MigrateFailed(CommandFailed):
+    """A migrate item or a rollback gate that stops a rollout before any service restarts; its message is operator-safe
+    and names the item, never a connection value."""
+
+
+INTERPOLATION = re.compile(r"\$\$|\$\{([A-Za-z_][A-Za-z0-9_]*)(?:(:?[-?])([^}]*))?\}|\$([A-Za-z_][A-Za-z0-9_]*)")
+# What a result line may carry that the runner never keeps: a password pair, whatever casing.
+PASSWORD_PAIR = re.compile(r"(?i)\b(password|pwd)\s*=\s*[^;\s]*")
+
+
+def interpolate(value, variables):
+    """Compose's interpolation of one string from `variables`: `${NAME}`, `$NAME`, `${NAME:-default}`,
+    `${NAME-default}`, `${NAME:?message}`, `${NAME?message}` and `$$`. A required variable that is unset refuses."""
+    if not isinstance(value, str):
+        return value
+
+    def replace(match):
+        if match.group(0) == "$$":
+            return "$"
+        name = match.group(1) or match.group(4)
+        operator, argument, present = match.group(2), match.group(3), variables.get(name)
+        if operator == ":-" and not present:
+            return argument
+        if operator == "-" and present is None:
+            return argument
+        if operator in (":?", "?") and (present is None or (operator == ":?" and present == "")):
+            raise Rejected("Compose needs " + name + ", which this target does not set")
+        return present or ""
+    return INTERPOLATION.sub(replace, value)
+
+
+def migrate_key(target, manifest, service):
+    """The migrate key (M8): the connection string of the target's own database (database.json in its settings folder)
+    for an item whose service needs PostgreSQL, the runtime role in v1; None otherwise, and the image's sets connect
+    through the service's own settings. Never logged, never an argument."""
+    if "postgres" not in service_needs(manifest, service):
+        return None
+    folder = settings_folder(target)
+    return target_database(folder) if folder.is_dir() else None
+
+
+def migrate_mounts(compose, definition, project, variables, docker):
+    """The service's mounts for its migrate container, as `-v` arguments: each bind (its settings file among them) with
+    its source interpolated as Compose would, and each named volume that already exists. A volume not created yet holds
+    nothing to migrate, and creating it here would leave it without Compose's labels."""
+    declared = compose.get("volumes") or {}
+    arguments = []
+    for mount in definition.get("volumes") or []:
+        if isinstance(mount, str):
+            parts = interpolate(mount, variables).split(":")
+            require(2 <= len(parts) <= 3, "Invalid service mount")
+            source, path = parts[0], parts[1]
+            kind = "bind" if source.startswith(("/", ".", "~")) else "volume"
+            read_only = len(parts) == 3 and "ro" in parts[2].split(",")
+        else:
+            require(isinstance(mount, dict), "Invalid service mount")
+            kind, source, path = mount.get("type", "volume"), interpolate(mount.get("source"), variables), mount.get("target")
+            read_only = mount.get("read_only") is True
+        require(kind in ("bind", "volume") and isinstance(source, str) and source and isinstance(path, str)
+                and path.startswith("/") and not set(":,\n") & set(source + path), "Invalid service mount")
+        if kind == "bind":
+            require(Path(source).is_absolute(), "A migrate container mounts absolute bind sources only")
+        else:
+            options = declared.get(source) if isinstance(declared.get(source), dict) else {}
+            full = options.get("name") or (source if options.get("external") else project + "_" + source)
+            try:
+                docker.execute(["docker", "volume", "inspect", "--format", "{{.Name}}", full], "docker volume inspect",
+                               timeout=30)
+            except CommandFailed:
+                continue
+            source = full
+        arguments += ["-v", source + ":" + path + (":ro" if read_only else "")]
+    return arguments
+
+
+def migrate_arguments(target, compose, manifest, project, service, command, key, variables, docker, container):
+    """The one-off migrate container (M8), modelled on the dev check: the service's release image, `--pull never`, the
+    command as its entrypoint, the service's environment, mounts and memory, the platform network, every capability
+    dropped and the image's own user unless the service names one. The migrate key travels by name only."""
+    definition = compose["services"][service]
+    declared = definition.get("environment") or {}
+    if isinstance(declared, list):
+        declared = dict(entry.split("=", 1) if "=" in entry else (entry, None) for entry in declared
+                        if isinstance(entry, str))
+    require(isinstance(declared, dict), "Invalid service environment")
+    environment = {str(name): str(interpolate(str(value), variables)) for name, value in declared.items()
+                   if value is not None}
+    environment.update(service_environment(target["environment"],
+                                           service in dotnet_services(manifest, compose["services"])))
+    environment.pop(MIGRATE_KEY, None)
+    network = target.get("variables", {}).get("PLATFORM_NETWORK")
+    memory = definition.get("mem_limit")
+    return ["docker", "run", "--rm", "--name", container, "--pull", "never",
+            *(["--network", network] if network else []), "--security-opt", "no-new-privileges:true",
+            "--cap-drop", "ALL", "--label", "wheelhouse.migrate=" + project,
+            *(["--memory", str(memory)] if memory else []),
+            *(["--user", str(definition["user"])] if definition.get("user") else []),
+            *(["--init"] if definition.get("init") is True else []),
+            *[part for name in sorted(environment) for part in ("-e", name + "=" + environment[name])],
+            *(["-e", MIGRATE_KEY] if key else []),
+            *migrate_mounts(compose, definition, project, variables, docker),
+            "--entrypoint", command[0], manifest["images"][service], *command[1:]]
+
+
+def short(value, limit):
+    return value[:limit] if isinstance(value, str) and value else None
+
+
+def count(value):
+    return value if type(value) is int and value >= 0 else None
+
+
+def scrubbed(value, secret=None):
+    """One operator-safe line of a result's message: password pairs and the migrate key itself removed, cut short."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    if secret:
+        value = value.replace(secret, "***")
+    return PASSWORD_PAIR.sub(lambda match: match.group(1) + "=***", " ".join(value.split()))[:300]
+
+
+def migration_labels(value):
+    return [{"label": item["label"][:100], "kind": item.get("kind") if item.get("kind") in MIGRATION_KINDS else None}
+            for item in (value if isinstance(value, list) else [])[:200]
+            if isinstance(item, dict) and isinstance(item.get("label"), str) and item["label"]]
+
+
+def migrate_result(line, secret=None):
+    """What the job keeps of a `migrate-result` line (M37): the verb, its outcome, a scrubbed message and per set its
+    status, state, levels before and after, the labels it applied with their kind, the rollback floor, background
+    migrations and lock wait. None when the line is missing or malformed: the exit code alone decides then."""
+    if not isinstance(line, str) or not line.startswith(MIGRATE_RESULT):
+        return None
+    try:
+        value = json.loads(line[len(MIGRATE_RESULT):])
+    except ValueError:
+        return None
+    if not isinstance(value, dict) or not isinstance(value.get("sets"), list):
+        return None
+    sets = []
+    for item in value["sets"][:50]:
+        if not isinstance(item, dict) or not short(item.get("name"), 64):
+            continue
+        background = item.get("background") if isinstance(item.get("background"), list) else []
+        sets.append({"name": short(item["name"], 64), "schema": short(item.get("schema"), 64),
+                     "status": short(item.get("status"), 20), "state": short(item.get("state"), 30),
+                     "levelBefore": count(item.get("levelBefore")), "levelAfter": count(item.get("levelAfter")),
+                     "applied": migration_labels(item.get("applied")),
+                     "rollbackFloor": short(item.get("rollbackFloor"), 64),
+                     "background": [name[:100] for name in background if isinstance(name, str)][:20],
+                     "lockWaitMs": count(item.get("lockWaitMs"))})
+    result = {"verb": short(value.get("verb"), 20), "outcome": short(value.get("outcome"), 20), "sets": sets}
+    message = scrubbed(value.get("message"), secret) or next(
+        (scrubbed(item.get("message"), secret) for item in value["sets"] if isinstance(item, dict) and item.get("message")),
+        None)
+    if message:
+        result["message"] = message
+    return result
+
+
+def migrate_status(code, run):
+    """An item's status from its exit (M37): `0` applied (some set applied a migration) or current, `1` refused, `3`
+    busy (after its retry), None (past its timeout) timed out, and anything else — `2`, a crash, Docker unable to start
+    it — failed."""
+    if code is None:
+        return "timed out"
+    if code == 0:
+        return "applied" if run and any(item["applied"] for item in run["sets"]) else "current"
+    return {1: "refused", 3: "busy"}.get(code, "failed")
+
+
+def set_summary(item):
+    """One set's line: `default 2 → 3: 1 applied (003-notes, expand)`, or `default at 3, current`."""
+    applied = item["applied"]
+    if applied:
+        newest = applied[-1]
+        label = newest["label"] + (", " + newest["kind"] if newest["kind"] else "")
+        levels = (" " + str(item["levelBefore"] if item["levelBefore"] is not None else 0) + " → "
+                  + str(item["levelAfter"]) if item["levelAfter"] is not None else "")
+        return (item["name"] + levels + ": " + (plural(len(applied), "migration") + " applied, newest " + label
+                                                 if len(applied) > 1 else "1 applied (" + label + ")"))
+    level = item["levelAfter"] if item["levelAfter"] is not None else item["levelBefore"]
+    return item["name"] + (" at " + str(level) if level is not None else "") + (", " + item["state"] if item["state"] else "")
+
+
+def migrate_detail(entry, timeout, problem=None):
+    """An item's operator-safe line, as its step reads it."""
+    code, status = entry["exitCode"], entry["status"]
+    sets = "; ".join(set_summary(item) for item in entry["sets"])
+    took = " in " + str(entry["seconds"]) + "s"
+    if problem:
+        return "It could not run: " + problem
+    if status == "timed out":
+        return "Timed out after " + str(timeout) + "s; the container was stopped"
+    if status in ("applied", "current"):
+        return (sets or "Exit 0, no migrate-result line") + took
+    if code in (125, 126, 127):
+        return "Docker could not start it (exit " + str(code) + ")"
+    head = ("Busy: the set's lock stayed held on both attempts" if status == "busy" else
+            "Refused" if status == "refused" else "Failed" if code == 2 else "Crashed")
+    message = entry.get("message") or sets
+    return head + " (exit " + str(code) + ")" + (": " + message if message else "") + took
+
+
+def run_migrate_item(target, manifest, compose, project, item, environment, docker, container, verb="migrate",
+                     timeout=None, clock=time.monotonic):
+    """Runs one migrate item in its one-off container: its command (`migrate`), or the same command's `check --json`
+    for a rollback gate or a check now. An exit 3 retries once. Never raises for what the container did; returns the
+    item's record entry — status, exit code, seconds, attempts, an operator-safe detail and each set its result line
+    reported."""
+    service = item["service"]
+    command = item["command"] + (["check", "--json"] if verb == "check" else [])
+    timeout = timeout or item["timeoutSeconds"]
+    started, begun = now(), clock()
+    code, line, attempts, problem, key = -1, None, 0, None, None
+    try:
+        key = migrate_key(target, manifest, service)
+        arguments = migrate_arguments(target, compose, manifest, project, service, command, key, environment, docker,
+                                      container)
+        while True:
+            attempts += 1
+            code, line = docker.migrate(arguments, {MIGRATE_KEY: key} if key else {}, timeout, container)
+            if code != 3 or attempts > 1:
+                break
+            time.sleep(MIGRATE_BUSY_PAUSE)
+    except Rejected as error:
+        code, problem = -1, reason(error)
+    except Exception as error:
+        code, problem = -1, type(error).__name__
+    run = migrate_result(line, key)
+    entry = {"service": service, "verb": verb, "release": manifest["release"],
+             "status": "failed" if problem else migrate_status(code, run),
+             "exitCode": code if type(code) is int and code >= 0 else None, "seconds": int(clock() - begun),
+             "attempts": attempts, "startedAt": started, "completedAt": now(), "reported": run is not None,
+             "migrateKey": key is not None, "sets": run["sets"] if run else []}
+    if run and run.get("message"):
+        entry["message"] = run["message"]
+    entry["detail"] = migrate_detail(entry, timeout, problem)
+    return entry
+
+
+def known_migrations(base):
+    """What the target last learned about each migration set (migrations.json): None before any migrate run."""
+    try:
+        value = read_json(Path(base) / MIGRATIONS_FILE)
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) and isinstance(value.get("sets"), list) else None
+
+
+def known_levels(base):
+    """Each set's level the target's database last reported, by set name."""
+    return {item["name"]: item["level"] for item in (known_migrations(base) or {}).get("sets", [])
+            if isinstance(item, dict) and isinstance(item.get("name"), str) and type(item.get("level")) is int}
+
+
+def remember_migrations(base, entries, source, job_id=None, snapshot=None):
+    """Folds what migrate runs reported into the target's migrations.json (M36, M38): per set its level now, its state,
+    rollback floor, the newest label it applied with its kind, and the release, job and source (`migrate`, `gate` or
+    `check`) that last reported it; a set a run applied to also keeps that job's pre-deploy snapshot (`appliedBy`), the
+    one a later rollback gate names. Returns the document, unchanged when no run reported a set."""
+    known = known_migrations(base) or {"updatedAt": None, "sets": []}
+    sets = {item["name"]: item for item in known["sets"] if isinstance(item, dict) and isinstance(item.get("name"), str)}
+    at, changed = now(), False
+    for entry in entries:
+        for reported in entry.get("sets") or []:
+            prior = sets.get(reported["name"], {})
+            level = reported["levelAfter"] if reported["levelAfter"] is not None else reported["levelBefore"]
+            item = {"newestLabel": None, "newestKind": None, **prior, "name": reported["name"],
+                    "schema": reported["schema"] or prior.get("schema"), "service": entry["service"],
+                    "level": level if level is not None else prior.get("level"), "state": reported["state"],
+                    "rollbackFloor": reported["rollbackFloor"], "release": entry.get("release"), "job": job_id,
+                    "source": source, "at": at}
+            if reported["applied"]:
+                newest = reported["applied"][-1]
+                item.update(newestLabel=newest["label"], newestKind=newest["kind"],
+                            appliedBy={"job": job_id, "snapshot": snapshot})
+            sets[reported["name"]] = item
+            changed = True
+    if not changed:
+        return known
+    document = {"updatedAt": at, "sets": [sets[name] for name in sorted(sets)]}
+    write_json(Path(base) / MIGRATIONS_FILE, document)
+    return document
+
+
+def snapshot_hint(path):
+    """Where a refused return leaves the owner: the pre-deploy snapshot that holds the older schema, else fix forward."""
+    return ("restore the pre-deploy snapshot " + path + " or deploy forward" if path else
+            "no pre-deploy snapshot holds the older schema (dev takes none); deploy forward")
+
+
+def running_manifest(base, previous):
+    """The manifest of the release the target runs, from its kept release folder; None when unreadable."""
+    identifier = (previous or {}).get("id")
+    if not isinstance(identifier, str) or not re.fullmatch(r"[0-9a-f-]{36}", identifier):
+        return None
+    try:
+        return validate_bundle(Path(base) / "releases" / identifier)
+    except Exception:
+        return None
+
+
+def migrate_mode(base, previous, manifest):
+    """How a rollout treats migrations (M13, M15): `migrate` runs every item forward on every deploy; `gate`, a return
+    to a release whose sets sit below the level the target's database reported, runs that release's `check` instead;
+    `trust`, leaving a release that migrates for one that declares no migrate item, falls back to rollbackCompatible;
+    None when neither release migrates. Returns the mode and the sets the release is behind on."""
+    known = known_levels(base)
+    if release_migrate(manifest):
+        behind = sorted(name for name, level in release_levels(manifest).items() if name in known and level < known[name])
+        return ("gate" if behind else "migrate"), behind
+    running = running_manifest(base, previous)
+    if running is not None and release_migrate(running):
+        return "trust", sorted(known)
+    return None, []
+
+
+def gate_release(base, target, manifest, compose, project, environment, docker, steps, record, job_id, hint,
+                 source="gate"):
+    """The rollback gate (M15): each migrate item's `check --json` from `manifest`'s images, one step each. Raises
+    MigrateFailed, naming `hint`, at the first that does not exit 0; what each check reported joins the record and the
+    target's migrations.json."""
+    for item in release_migrate(manifest):
+        with steps.run("Rollback gate " + item["service"]) as step:
+            entry = run_migrate_item(target, manifest, compose, project, item, environment, docker,
+                                     project + "-check-" + item["service"] + "-" + job_id[:8], verb="check")
+            entry["purpose"] = source
+            record.setdefault("migrations", []).append(entry)
+            with contextlib.suppress(Exception):
+                remember_migrations(base, [entry], "gate", job_id)
+            if entry["exitCode"] != 0:
+                raise MigrateFailed("Rollback gate: " + manifest["release"] + "'s " + item["service"]
+                                    + " image may not run on this database (" + entry["detail"] + "); " + hint)
+            step["detail"] = manifest["release"] + " may run on this database: " + entry["detail"]
+
+
+def migrate_release(base, target, previous, manifest, compose, project, environment, docker, steps, record, job_id):
+    """The migrate step of a rollout, after the pull and before the first wave (M13, M14): every item forward, in
+    order, whatever changed; or, on a return to an older release, the rollback gate. Any failure raises MigrateFailed
+    before a service restarts, so the previous release keeps serving."""
+    mode, behind = migrate_mode(base, previous, manifest)
+    if mode is None:
+        return
+    known = {item["name"]: item for item in (known_migrations(base) or {}).get("sets", []) if isinstance(item, dict)}
+    applied_by = next((((known.get(name) or {}).get("appliedBy") or {}).get("snapshot") for name in behind
+                       if ((known.get(name) or {}).get("appliedBy") or {}).get("snapshot")), None)
+    if mode == "gate":
+        gate_release(base, target, manifest, compose, project, environment, docker, steps, record, job_id,
+                     snapshot_hint(applied_by))
+        return
+    if mode == "trust":
+        running = running_manifest(base, previous)
+        label = str((previous or {}).get("release") or "the running release")
+        if not (running["rollbackCompatible"] is True or target.get("rollbackCompatible") is True):
+            steps.add("Rollback gate", "failed", now(), manifest["release"] + " declares no migrate item")
+            raise MigrateFailed("Rollback gate: " + manifest["release"] + " declares no migrate item to check, and "
+                                + label + " does not declare earlier releases compatible; " + snapshot_hint(applied_by))
+        warning = (manifest["release"] + " declares no migrate item to check; " + label
+                   + "'s rollback compatibility lets it run")
+        steps.add("Rollback gate", "warning", now(), warning)
+        record.setdefault("warnings", []).append("Rollback gate: " + warning)
+        return
+    snapshot = (record.get("snapshot") or {}).get("path")
+    for item in release_migrate(manifest):
+        with steps.run("Migrate " + item["service"]) as step:
+            entry = run_migrate_item(target, manifest, compose, project, item, environment, docker,
+                                     project + "-migrate-" + item["service"] + "-" + job_id[:8])
+            entry["purpose"] = "apply"
+            record.setdefault("migrations", []).append(entry)
+            with contextlib.suppress(Exception):
+                remember_migrations(base, [entry], "migrate", job_id, snapshot)
+            if entry["status"] not in ("applied", "current"):
+                raise MigrateFailed("Migrate " + item["service"] + ": " + entry["detail"]
+                                    + "; no service was restarted")
+            step["detail"] = entry["detail"]
+
+
+def restore_allowed(base, target, previous, record, steps, job_id, project, compatible, docker_factory):
+    """Whether the automatic restore after a failed rollout may run (M15). A rollout that migrated nothing keeps the
+    rule it had: the release's rollback compatibility. One that ran its migrate step asks the previous release's own
+    `migrate check` first: every item must exit 0, else the restore is refused, naming the pre-deploy snapshot; a
+    previous release with no migrate item falls back to rollbackCompatible with a warning."""
+    if not any(entry.get("verb") == "migrate" for entry in record.get("migrations") or []):
+        return compatible
+    hint = snapshot_hint((record.get("snapshot") or {}).get("path"))
+    prior = running_manifest(base, previous)
+    label = str(previous.get("release") or "the previous release")
+    if prior is None or not release_migrate(prior):
+        if compatible:
+            warning = label + " declares no migrate item to check; this release's rollback compatibility lets it return"
+            steps.add("Rollback gate", "warning", now(), warning)
+            record.setdefault("warnings", []).append("Rollback gate: " + warning)
+        return compatible
+    try:
+        bundle = Path(base) / "releases" / previous["id"]
+        prior_environment = environment_for(target, prior)
+        gate_release(base, target, prior, read_json(bundle / "compose.json"), project, prior_environment,
+                     docker_factory(target, prior_environment), steps, record, job_id, hint, source="restore")
+    except Exception as error:
+        record["reason"] = ((record.get("reason") or "The rollout failed") + "; the roll back was refused: "
+                            + (reason(error) or "the rollback gate could not run"))[:600]
+        return False
+    return True
+
+
+def migrate_check(target, docker_factory=None):
+    """"Check now" (M36): `migrate check --json` from each migrate item of the release the target runs, under the
+    deployment lock (refused while a rollout or a control runs). Writes nothing but the target's migrations.json; returns
+    each item's result and what the target now knows about every set."""
+    root, project = validate_target(target)
+    base = root / project
+    with deployment_lock(base):
+        current_path = base / "current.json"
+        require(current_path.is_file(), project + " runs no release yet; there is nothing to check")
+        current = read_json(current_path)
+        require(isinstance(current, dict) and isinstance(current.get("id"), str)
+                and str(uuid.UUID(current["id"])) == current["id"], "The release this target runs is unreadable")
+        bundle = base / "releases" / current["id"]
+        manifest = validate_bundle(bundle)
+        result = {"project": project, "release": manifest["release"], "checkedAt": now(), "items": []}
+        items = release_migrate(manifest)
+        if items:
+            environment = control_environment(target, manifest, bundle)
+            docker = (docker_factory or Docker)(target, environment)
+            compose = read_json(bundle / "compose.json")
+            run = uuid.uuid4().hex[:8]
+            for item in items:
+                entry = run_migrate_item(target, manifest, compose, project, item, environment, docker,
+                                         project + "-check-" + item["service"] + "-" + run, verb="check",
+                                         timeout=min(item["timeoutSeconds"], MIGRATE_CHECK_TIMEOUT))
+                entry["purpose"] = "check"
+                result["items"].append(entry)
+            remember_migrations(base, result["items"], "check")
+        result["migrations"] = known_migrations(base)
+        return result
 
 
 def plan_against(root, previous, compose, target, manifest, settings=None):
@@ -2386,7 +2934,7 @@ def lock_held(base):
 def summary(record):
     fields = ("id", "release", "sourceCommit", "kind", "branch", "versions", "sites", "status", "actor", "startedAt",
               "completedAt", "failure", "reason", "mutationStarted", "previous", "steps", "warnings", "snapshot",
-              "verification", "operation", "stopped", "health")
+              "verification", "operation", "stopped", "health", "migrations")
     return None if record is None else {key: record[key] for key in fields if key in record}
 
 
@@ -2402,7 +2950,7 @@ def state(target):
     elif active and active.get("mutationStarted") and active.get("status") in ("failed", "rollback_failed"):
         condition = "needs_reconciliation"
     return {"project": project, "condition": condition, "current": summary(current), "active": summary(active),
-            "stopped": stopped_of(base)}
+            "stopped": stopped_of(base), "migrations": known_migrations(base)}
 
 
 def empty_topology(availability, warning=None):
@@ -2906,7 +3454,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["validate", "apply", "launch", "status", "acknowledge", "state", "check",
                                            "host", "vitals", "topology", "logs", "watch", "prune", "passed",
-                                           "control-launch", "control"])
+                                           "control-launch", "control", "migrate-check"])
     parser.add_argument("--bundle")
     parser.add_argument("--target")
     parser.add_argument("--target-json")
@@ -2951,6 +3499,8 @@ def main():
             result = prune(target or read_json(args.target))
         elif args.action == "passed":
             result = passed(target or read_json(args.target), args.release)
+        elif args.action == "migrate-check":
+            result = migrate_check(target or read_json(args.target))
         elif args.action == "control-launch":
             result = control_launch(args.target, args.operation, [args.service] if args.service else [], args.actor)
         elif args.action == "control":

@@ -5,6 +5,7 @@ WHEELHOUSE_PIPELINES; locally the sibling checkout in the workbench serves. With
 """
 import copy
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -159,6 +160,53 @@ class BundleContractTests(unittest.TestCase):
         self.assertEqual(({"Billing:Mode": "test", "Jobs:Cleanup": "0 3 * * *"}, ["Stripe:ApiKey"]),
                          (settings["optional"], settings["secrets"]))
         self.assertEqual({"type": "date", "format": "dd.MM.yyyy"}, settings["types"]["Promo:EndsOn"])
+
+    @unittest.skipUnless(release is not None and hasattr(release, "record_sets"), "the pinned generator predates migrate")
+    def test_a_bundle_declaring_migrate_carries_the_items_sets_and_extensions_the_runner_reads(self):
+        declared = copy.deepcopy(DESCRIPTOR)
+        declared.update(migrate=[{"service": "api", "command": ["dotnet", "Pilot.Api.dll", "migrate"], "timeout": "5m"}],
+                        extensions=["postgres_fdw"])
+        self.descriptor = release.validate(declared)
+        self.bundle("main")
+        output, reports = self.repo / "bundle-main", self.repo / "sets"
+        reports.mkdir()
+        # What the image's `migrate sets --json` prints: the JSON report, then the result line last.
+        described = [{"name": "default", "schema": "public", "strategy": "bespoke", "ownerKind": "product", "level": 2,
+                      "contracts": [], "requires": [], "dependsOn": [], "extensions": ["postgres_fdw"]}]
+        (reports / "api.out").write_text(json.dumps({"sets": described}) + "\nmigrate-result "
+                                         + json.dumps({"verb": "sets", "exit": 0, "outcome": "current", "sets": []}) + "\n")
+        release.record_sets(output, reports)
+        validated = runner.validate_bundle(output)
+        self.assertEqual([{"service": "api", "command": ["dotnet", "Pilot.Api.dll", "migrate"], "timeoutSeconds": 300}],
+                         runner.release_migrate(validated))
+        self.assertIs(True, validated["migrations"])
+        self.assertEqual({"default": 2}, runner.release_levels(validated))
+        self.assertEqual({"api": described}, runner.release_migration_sets(validated))
+        self.assertEqual(["postgres_fdw"], runner.release_extensions(validated))
+
+    @unittest.skipUnless(release is not None and hasattr(release, "record_sets"), "the pinned generator predates migrate")
+    def test_a_bundle_without_migrate_carries_none_of_its_keys(self):
+        validated = self.bundle("main")
+        self.assertFalse({"migrate", "migrations", "migrationSets", "extensions"} & set(validated))
+        self.assertEqual(([], {}, []), (runner.release_migrate(validated), runner.release_migration_sets(validated),
+                                        runner.release_extensions(validated)))
+
+    @unittest.skipUnless(release is not None and hasattr(release, "pinned_images"), "the pinned generator predates pins")
+    def test_a_pinned_image_of_another_repository_passes_the_runner_by_digest(self):
+        declared = copy.deepcopy(DESCRIPTOR)
+        declared["services"]["identity"] = {"image": "ghcr.io/wow-two-sdk-beta/wow-two-sdk-beta.identity/identity:0.3.0",
+                                            "health": "/health", "needs": ["postgres"]}
+        self.descriptor = release.validate(declared)
+        identity = release.build_identity(self.repo, self.commit, "main")
+        planned = release.plan(self.descriptor, self.repo, self.commit, None, identity["release"], identity["version"])
+        images = {name: "ghcr.io/o/pilot/" + name + DIGEST for name in ("api", "edge")}
+        images.update(release.pinned_images(self.descriptor, {"identity": "sha256:" + "c" * 64}))
+        compose_bytes, manifest = release.render(self.descriptor, planned, images, "main", identity=identity)
+        release.write_bundle(self.repo / "pinned", compose_bytes, manifest)
+        validated = runner.validate_bundle(self.repo / "pinned")
+        self.assertEqual("ghcr.io/wow-two-sdk-beta/wow-two-sdk-beta.identity/identity@sha256:" + "c" * 64,
+                         validated["images"]["identity"])
+        self.assertEqual("0.3.0", validated["versions"]["identity"]["version"])
 
     @unittest.skipUnless(HAS_YAML, "PyYAML is not installed for this interpreter")
     def test_wheelhouse_own_descriptor_parses(self):

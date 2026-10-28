@@ -16,14 +16,16 @@ later sets take it; the primary repository serves the front door, so no set exis
   goes first. A service may depend on another repository's service.
 - The set bundle is schema 2: the product's sites and each service's routes. Rollback compatibility holds only when
   every component in the set declares it (a repository not in it yet declares nothing); .NET environments stay with the
-  services whose repository opted in.
+  services whose repository opted in. Migrate items run in repository order, an item after the items hosting the sets
+  its sets depend on; migration sets and extensions are every repository's.
 """
 from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
 import re
-from runner import (RELEASE, SHA, SLUG, dependency_waves, read_json, require, service_dependencies, write_json)
+from runner import (RELEASE, SHA, SLUG, dependency_waves, read_json, release_extensions, release_migrate,
+                    release_migration_sets, require, service_dependencies, write_json)
 
 SET_ID = re.compile(r"[a-z][a-z0-9-]*-set-([0-9a-f]{12})")
 DIGEST = 12
@@ -142,6 +144,7 @@ def compose(product, set_id, parts):
     holders = {}
     images, required, settings, versions, ports, needs, dotnet = {}, {}, {}, {}, {}, {}, []
     components, migrations, verify = [], [], None
+    migrate, migration_sets, extensions = [], {}, []
     for short, repository, manifest, document in parts:
         require(manifest["product"] == product,
                 repository + " releases product " + str(manifest["product"]) + ", not " + product)
@@ -175,6 +178,9 @@ def compose(product, set_id, parts):
         elif isinstance(manifest.get("dotnetEnvironment"), list):
             dotnet += list(manifest["dotnetEnvironment"])
         migrations.append(manifest.get("migrations"))
+        migrate += release_migrate(manifest)
+        migration_sets.update(release_migration_sets(manifest))
+        extensions += [name for name in release_extensions(manifest) if name not in extensions]
         if verify is None and isinstance(manifest.get("verify"), dict):
             verify = manifest["verify"]
         components.append({"name": short, "repository": repository, "release": manifest["release"],
@@ -205,6 +211,13 @@ def compose(product, set_id, parts):
         result["dotnetEnvironment"] = True if set(dotnet) == set(images) else sorted(set(dotnet))
     if verify is not None:
         result["verify"] = verify
+    # Written only when a repository declares them, so a set of releases without them stays as it was.
+    if migrate:
+        result["migrate"] = migrate_order(migrate, migration_sets)
+    if migration_sets:
+        result["migrationSets"] = migration_sets
+    if extensions:
+        result["extensions"] = extensions
     if all(type(value) is bool for value in migrations):
         result["migrations"] = any(migrations)
     elif True in migrations:
@@ -213,6 +226,29 @@ def compose(product, set_id, parts):
         result["branch"] = candidates[0]
     require(SHA.fullmatch(result["sourceCommit"]), "A full source commit is required")
     return result, compose_bytes
+
+
+def migrate_order(items, migration_sets):
+    """The set's migrate items in run order (M28, M43): repository order, except that an item whose sets depend on a set
+    another item hosts (`dependsOn`, from each image's `migrate sets --json`) runs after that item. Refuses a cycle."""
+    host = {entry["name"]: item["service"] for item in items for entry in migration_sets.get(item["service"], [])}
+    needs = {}
+    for item in items:
+        wanted = set()
+        for entry in migration_sets.get(item["service"], []):
+            for dependency in entry.get("dependsOn") or []:
+                name = dependency.get("set") if isinstance(dependency, dict) else dependency
+                if host.get(name) not in (None, item["service"]):
+                    wanted.add(host[name])
+        needs[item["service"]] = wanted
+    ordered, placed, remaining = [], set(), list(items)
+    while remaining:
+        ready = next((item for item in remaining if needs[item["service"]] <= placed), None)
+        require(ready is not None, "The release set's migrate items depend on each other in a cycle")
+        ordered.append(ready)
+        placed.add(ready["service"])
+        remaining.remove(ready)
+    return ordered
 
 
 def write(bundle, manifest, compose_bytes):

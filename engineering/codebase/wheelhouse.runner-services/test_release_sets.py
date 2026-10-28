@@ -204,6 +204,37 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual({('api', 'app', ('/api',)), ('web', 'app', ('/',)), ('studio', 'studio', ('/',))},
                          {(site['service'], site['site'], tuple(site['paths'])) for site in sites})
 
+    def test_migrate_items_merge_in_repository_order_after_the_sets_they_depend_on(self):
+        parts = self.parts()
+        # The app's set keys into the studio's, so the studio's item runs first although its repository is second.
+        parts[0][2].update(migrate=[{'service': 'api', 'command': ['dotnet', 'App.dll', 'migrate'], 'timeoutSeconds': 60}],
+                           migrationSets={'api': [{'name': 'default', 'level': 4,
+                                                   'dependsOn': [{'set': 'studio', 'level': 2}]}]},
+                           extensions=['pg_trgm'])
+        parts[1][2].update(migrate=[{'service': 'studio', 'command': ['dotnet', 'Studio.dll', 'migrate']}],
+                           migrationSets={'studio': [{'name': 'studio', 'level': 2}]},
+                           extensions=['pg_trgm', 'postgres_fdw'])
+        manifest, compose_bytes = release_sets.compose('pilot', 'pilot-set-0123456789ab', parts)
+        self.assertEqual(['studio', 'api'], [item['service'] for item in manifest['migrate']])
+        self.assertEqual(600, manifest['migrate'][0]['timeoutSeconds'])
+        self.assertEqual({'api', 'studio'}, set(manifest['migrationSets']))
+        self.assertEqual(['pg_trgm', 'postgres_fdw'], manifest['extensions'])
+        with tempfile.TemporaryDirectory() as folder:
+            release_sets.write(folder, manifest, compose_bytes)
+            validated = runner.validate_bundle(folder)
+        self.assertEqual({'default': 4, 'studio': 2}, runner.release_levels(validated))
+        # Without a dependency, repository order stands; a cycle refuses.
+        parts[0][2]['migrationSets']['api'][0]['dependsOn'] = []
+        self.assertEqual(['api', 'studio'], [item['service'] for item in release_sets.compose(
+            'pilot', 'pilot-set-0123456789ab', parts)[0]['migrate']])
+        parts[0][2]['migrationSets']['api'][0]['dependsOn'] = [{'set': 'studio', 'level': 2}]
+        parts[1][2]['migrationSets']['studio'][0]['dependsOn'] = [{'set': 'default', 'level': 1}]
+        with self.assertRaisesRegex(ValueError, 'cycle'):
+            release_sets.compose('pilot', 'pilot-set-0123456789ab', parts)
+        # A set whose repositories declare none of it stays as it was.
+        self.assertFalse({'migrate', 'migrationSets', 'extensions'} & set(release_sets.compose(
+            'pilot', 'pilot-set-0123456789ab', self.parts())[0]))
+
     def test_a_volume_two_repositories_name_is_refused_rather_than_renamed(self):
         with self.assertRaisesRegex(ValueError, 'Volume data is in both owner/pilot-app and owner/pilot-studio'):
             release_sets.compose('pilot', 'pilot-set-0123456789ab', self.parts(volume='data'))
