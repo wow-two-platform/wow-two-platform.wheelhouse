@@ -7,6 +7,9 @@
   <ItemGroup>
     <!-- Mediator (ISender.SendAsync) + AppResult.Match — controllers dispatch + collapse the union. -->
     <PackageReference Include="WoW2.Sdk.Beta.Be" />
+    <!-- Sign-in: cookies, API keys and the allowlist (Auth); GitHub OAuth and the claim normalizer (Providers). -->
+    <PackageReference Include="WoW2.Sdk.Beta.Be.Identity.Auth" />
+    <PackageReference Include="WoW2.Sdk.Beta.Be.Identity.Providers" />
   </ItemGroup>
 
   <ItemGroup>

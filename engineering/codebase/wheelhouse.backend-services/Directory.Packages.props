@@ -1,7 +1,8 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <BackendSdkVersion>10.0.80-beta</BackendSdkVersion>
+    <BackendSdkVersion>10.0.93-beta</BackendSdkVersion>
+    <IdentitySdkVersion>10.0.8-beta</IdentitySdkVersion>
   </PropertyGroup>
 
   <!-- be sdk: one family, bumped together. -->
@@ -12,11 +13,18 @@
     <PackageVersion Include="WoW2.Sdk.Beta.Be.Testing.Integrations" Version="$(BackendSdkVersion)" />
   </ItemGroup>
 
+  <!-- Identity left the be sdk's core at 10.0.82 (wow-two-sdk-beta.identity); the namespaces stayed. Auth: cookies,
+       API keys, the allowlist; Providers: GitHub OAuth and the claim normalizer. -->
+  <ItemGroup>
+    <PackageVersion Include="WoW2.Sdk.Beta.Be.Identity.Auth" Version="$(IdentitySdkVersion)" />
+    <PackageVersion Include="WoW2.Sdk.Beta.Be.Identity.Providers" Version="$(IdentitySdkVersion)" />
+  </ItemGroup>
+
   <!-- Data access. -->
   <ItemGroup>
     <PackageVersion Include="Dapper" Version="2.1.66" />
     <PackageVersion Include="EFCore.NamingConventions" Version="10.0.1" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.14" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
   </ItemGroup>
@@ -28,10 +36,10 @@
 
   <!-- Hosting abstractions. -->
   <ItemGroup>
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.14" />
   </ItemGroup>
 
   <!-- Tests. -->

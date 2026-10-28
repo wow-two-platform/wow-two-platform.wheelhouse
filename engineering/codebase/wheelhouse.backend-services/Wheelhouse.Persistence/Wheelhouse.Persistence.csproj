@@ -4,6 +4,8 @@
     <!-- Bespoke SQL migrator (engine + Postgres dialect + connection factory) ships in the mono-lib SDK
          (aligned with the rest of wheelhouse's 10.0.24-beta refs). -->
     <PackageReference Include="WoW2.Sdk.Beta.Be" />
+    <!-- IApiKeyRepository: integration keys are the API key store. -->
+    <PackageReference Include="WoW2.Sdk.Beta.Be.Identity.Auth" />
     <!-- EF Core (Npgsql provider) stays as a pure mapper over the SQL-owned schema; snake_case naming. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />

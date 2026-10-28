@@ -65,7 +65,7 @@ public static class VaultCli
         }
     }
 
-    private static int Print<T>(AppResult<T> result, Func<T, bool> passed)
+    private static int Print<T>(AppResult<T> result, Func<T, bool> passed) where T : notnull
     {
         if (result is AppResult<T>.Success { Data: var data })
         {
