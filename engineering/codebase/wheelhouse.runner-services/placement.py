@@ -4,7 +4,8 @@ dev and prod databases are created once, and each of its private sites gets a ta
 with its own single-use key.
 
 A placement asks only for what the product's deploy.yml calls for, as the console read it and passes it along
-(`declared`): databases when a service needs PostgreSQL, nodes for private sites. Public sites need none: they answer
+(`declared`): databases when a service needs PostgreSQL, with the untrusted extensions it declares created in them as
+superuser, and nodes for private sites. Public sites need none: they answer
 on the server's baseline hosts.
 
 Everything runs over prod's runner SSH as wheelhouse-deploy, through the kit's prepare.py on the host. Database
@@ -22,7 +23,7 @@ import infra_jobs
 import tailnet
 import upkeep
 from infra_jobs import Journal, remote
-from runner import EXPOSURES, SLUG, CommandFailed, Rejected, now, read_json, require
+from runner import EXPOSURES, EXTENSION, SLUG, CommandFailed, Rejected, now, read_json, require
 from transport import Ssh
 
 ROOT = upkeep.ROOT
@@ -56,7 +57,7 @@ def validate(request):
     product = str(request.get("product") or "")
     require(SLUG.fullmatch(product), "Invalid product")
     catalog.product(product)
-    exposures, postgres = declared(request.get("declared"))
+    exposures, postgres, extensions = declared(request.get("declared"))
     sites = request.get("sites") or []
     require(isinstance(sites, list) and len(sites) <= 10, "Place at most 10 sites at once")
     cleaned, names = [], set()
@@ -74,19 +75,26 @@ def validate(request):
     database = bool(request.get("database"))
     require(not database or postgres, "No service of the product needs PostgreSQL, so it takes no databases")
     require(database or cleaned, "Choose databases, sites or both")
-    return {"serverId": server.id, "product": product, "database": database, "sites": cleaned,
-            "declared": {"sites": dict(sorted(exposures.items())), "postgres": postgres}}
+    facts = {"sites": dict(sorted(exposures.items())), "postgres": postgres}
+    if extensions:
+        facts["extensions"] = extensions
+    return {"serverId": server.id, "product": product, "database": database, "sites": cleaned, "declared": facts}
 
 
 def declared(value):
-    """What the product's deploy.yml declares, as the console read it: each site's exposure, and whether a service needs
-    PostgreSQL. A request without it is refused, so nothing is placed that the manifest does not call for."""
+    """What the product's deploy.yml declares, as the console read it: each site's exposure, whether a service needs
+    PostgreSQL, and the untrusted extensions its migration sets need (M41). A request without it is refused, so nothing
+    is placed that the manifest does not call for."""
     require(isinstance(value, dict), "A placement follows the product's deploy.yml; the request carries none of it")
     sites = value.get("sites") or {}
     require(isinstance(sites, dict) and len(sites) <= 50 and all(
         isinstance(name, str) and SLUG.fullmatch(name) and exposure in EXPOSURES for name, exposure in sites.items()),
         "Invalid declared sites")
-    return sites, value.get("postgres") is True
+    extensions = value.get("extensions") or []
+    require(isinstance(extensions, list) and len(extensions) <= 50
+            and all(isinstance(name, str) and EXTENSION.fullmatch(name) for name in extensions),
+            "Invalid declared extensions")
+    return sites, value.get("postgres") is True, list(dict.fromkeys(extensions))
 
 
 def start(root, request, actor, launch=True):
@@ -142,11 +150,21 @@ def databases(ssh, journal):
     names = [product.replace("-", "_") + "_" + environment for environment in ("dev", "prod")]
     journal.record["facts"]["databases"] = names
     if len(present) == 2:
-        return "Kept " + " and ".join(names) + ": their credentials already exist on the host"
-    if present:
+        detail = "Kept " + " and ".join(names) + ": their credentials already exist on the host"
+    elif present:
         raise Rejected("Only " + present[0] + "'s database exists; review the host before creating the other")
-    remote(ssh, PREPARE + " --product " + shlex.quote(product) + " --database", timeout=180)
-    return "Created " + " and ".join(names) + "; each password stays in its database.json on the host"
+    else:
+        remote(ssh, PREPARE + " --product " + shlex.quote(product) + " --database", timeout=180)
+        detail = "Created " + " and ".join(names) + "; each password stays in its database.json on the host"
+    # The untrusted extensions the product declares (M41), as the platform PostgreSQL's superuser, in both databases;
+    # a rerun creates only what is missing, so a placement repeated after deploy.yml adds one brings it in.
+    extensions = (request.get("declared") or {}).get("extensions") or []
+    if extensions:
+        remote(ssh, PREPARE + " --product " + shlex.quote(product)
+               + "".join(" --extension " + shlex.quote(name) for name in extensions), timeout=180)
+        journal.record["facts"]["extensions"] = list(extensions)
+        detail += "; extensions " + ", ".join(extensions) + " created as superuser in both"
+    return detail
 
 
 def registered(ssh, product):

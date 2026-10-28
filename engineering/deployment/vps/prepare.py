@@ -2,8 +2,9 @@
 """Create a host's configuration without printing or replacing secrets.
 
 The control host (default): a Wheelhouse console environment's database, settings and target. A products host
-(`--server products`): its PostgreSQL password and rendered Compose file, each product's per-environment databases and
-settings folders, a tailnet node per private site, and a read-only GHCR sign-in for the deploy account."""
+(`--server products`): its PostgreSQL password and rendered Compose file, each product's per-environment databases with
+the untrusted extensions it declares and its settings folders, a tailnet node per private site, and a read-only GHCR
+sign-in for the deploy account."""
 import argparse
 import ipaddress
 import json
@@ -39,6 +40,8 @@ GITHUB_LOGIN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?")
 # GHCR takes classic personal access tokens; its read-only scope is read:packages.
 CLASSIC_TOKEN = re.compile(r"ghp_[A-Za-z0-9]{36,251}")
 REGISTRY = "ghcr.io"
+# An untrusted PostgreSQL extension a product declares (deploy.yml `extensions`); created as superuser at placement.
+EXTENSION = re.compile(r"[a-z][a-z0-9_-]{0,62}")
 READ_ONLY_SCOPES = {"read:packages"}
 
 
@@ -65,6 +68,19 @@ def create_database(root, name, password):
                             input=sql, capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
         raise ValueError("Database creation failed")
+
+
+def create_extensions(root, name, extensions):
+    """Create untrusted extensions in one database as the platform PostgreSQL's superuser (M41); SQL travels on stdin
+    and each name is checked and quoted, so a rerun creates only what is missing."""
+    sql = "".join('CREATE EXTENSION IF NOT EXISTS "' + extension + '";\n' for extension in extensions)
+    platform = root / "platform"
+    result = subprocess.run(["docker", "compose", "--env-file", str(platform / "host.env"),
+                             "-f", str(platform / "compose.yml"), "exec", "-T", "postgres",
+                             "psql", "-U", "postgres", "-d", name, "-v", "ON_ERROR_STOP=1", "-q"],
+                            input=sql, capture_output=True, text=True, timeout=120)
+    if result.returncode != 0:
+        raise ValueError("Extension creation failed")
 
 
 def prepare(root, identity_file, hostname, environment="dev", database=create_database):
@@ -249,6 +265,25 @@ def prepare_product_databases(root, product, database=create_database):
     return created
 
 
+def prepare_product_extensions(root, product, extensions, create=create_extensions):
+    """The product's declared untrusted extensions in its dev and prod databases, which must exist already."""
+    if not extensions or not all(isinstance(name, str) and EXTENSION.fullmatch(name) for name in extensions):
+        raise Refused("Use --extension with a PostgreSQL extension name, such as postgres_fdw")
+    folders = product_folders(root, product)
+    names = []
+    for environment in PRODUCT_ENVIRONMENTS:
+        if not (folders[environment] / "database.json").is_file():
+            raise Refused("Create the product's databases before its extensions")
+        name = product.replace("-", "_") + "_" + environment
+        try:
+            create(root, name, list(dict.fromkeys(extensions)))
+        except (ValueError, OSError, subprocess.SubprocessError):
+            raise Refused("Extension creation failed in " + name + "; is each extension installed in the platform "
+                          "PostgreSQL image?") from None
+        names.append(name)
+    return names
+
+
 def register_sites(root, product, sites):
     """Gives each (site, environment) its own tailnet node at a fixed address; a repeated site keeps its node."""
     nodes = site_nodes(root)
@@ -325,9 +360,10 @@ def ghcr_login(token_file, user, scopes=token_scopes, login=docker_login):
 
 
 def prepare_products(root, product=None, database=False, sites=(), tailnet=None, ghcr_user=None,
-                     ghcr_token_file=None, create=create_database, scopes=token_scopes, login=docker_login):
+                     ghcr_token_file=None, create=create_database, scopes=token_scopes, login=docker_login,
+                     extensions=(), extend=create_extensions):
     """Every products-host step the arguments ask for, in a safe order; returns operator-safe report lines."""
-    if (database or sites) and not product:
+    if (database or sites or extensions) and not product:
         raise Refused("Name the product with --product")
     if sites and not TAILNET.fullmatch(tailnet or ""):
         raise Refused("Use the actual tailnet name with --tailnet, such as tail1234.ts.net")
@@ -341,6 +377,10 @@ def prepare_products(root, product=None, database=False, sites=(), tailnet=None,
             for name in prepare_product_databases(root, product, create):
                 report.append("Database " + name + ": owner-only credentials in config/" + product + "-"
                               + name.rsplit("_", 1)[1] + "/database.json.")
+        if extensions:
+            names = prepare_product_extensions(root, product, list(extensions), extend)
+            report.append("Extensions " + ", ".join(dict.fromkeys(extensions)) + " in " + " and ".join(names)
+                          + ", created as superuser.")
         for environment, folder in folders.items():
             report.append("Settings for " + product + "-" + environment + ": " + str(folder) + "/<service>.json")
         if sites:
@@ -370,6 +410,8 @@ def main():
     parser.add_argument("--environment", choices=sorted(ENVIRONMENTS), help="control: dev (default) or prod")
     parser.add_argument("--product", help="products: the product's slug")
     parser.add_argument("--database", action="store_true", help="products: create the product's dev and prod databases")
+    parser.add_argument("--extension", action="append", default=[], metavar="NAME",
+                        help="products: an untrusted PostgreSQL extension to create in both databases as superuser")
     parser.add_argument("--site", action="append", default=[], metavar="SITE[=NODE]",
                         help="products: a tailnet node per environment for the product's site")
     parser.add_argument("--tailnet", help="products: the tailnet name, such as tail1234.ts.net")
@@ -382,7 +424,7 @@ def main():
         sites = [(site, node or (args.product or "") + "-" + site) for site, node in map(parse_site, args.site)]
         try:
             report = prepare_products(args.root, args.product, args.database, sites, args.tailnet, args.ghcr_user,
-                                      args.ghcr_token_file)
+                                      args.ghcr_token_file, extensions=args.extension)
         except Refused as error:
             print("Products configuration refused: " + str(error) + ".", file=sys.stderr)
             return 1
@@ -394,6 +436,7 @@ def main():
         print("\n".join(report))
         return 0
     if (args.identity_file is None or args.hostname is None or args.product or args.database or args.site
+            or args.extension
             or args.tailnet or args.ghcr_user or args.ghcr_token_file):
         parser.error("the control host takes --identity-file and --hostname; products options need --server products")
     environment = args.environment or "dev"

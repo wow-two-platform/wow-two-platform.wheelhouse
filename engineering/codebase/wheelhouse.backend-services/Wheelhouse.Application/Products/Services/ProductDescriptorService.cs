@@ -8,9 +8,10 @@ using Wheelhouse.Domain.Products.Entities;
 namespace Wheelhouse.Application.Products.Services;
 
 /// <summary>Reads a product's <c>engineering/deployment/deploy.yml</c> at its branch head: the services, their needs and
-/// the sites with their exposure. A product built from several repositories (decision 70) reads each repository that
-/// deploys something and merges them as its release sets compose: every service and site once — two repositories naming
-/// one is a problem — and the primary repository's front door as the product's. The file source keeps a head for a few minutes and each commit's file for good, so a read costs GitHub
+/// the sites with their exposure, and the untrusted PostgreSQL extensions. A product built from several repositories
+/// (decision 70) reads each repository that deploys something and merges them as its release sets compose: every service
+/// and site once — two repositories naming one is a problem — the primary repository's front door as the product's, and
+/// every repository's extensions once each. The file source keeps a head for a few minutes and each commit's file for good, so a read costs GitHub
 /// little. A descriptor that cannot be read or parsed comes back with the reason and nothing else.</summary>
 public sealed class ProductDescriptorService(IRepositoryFileSource files)
 {
@@ -36,8 +37,14 @@ public sealed class ProductDescriptorService(IRepositoryFileSource files)
         var sites = new List<ProductDescriptorSiteDto>();
         var owners = new Dictionary<string, string>(StringComparer.Ordinal);
         var siteOwners = new Dictionary<string, string>(StringComparer.Ordinal);
+        var extensions = new List<string>();
         foreach (var (repository, _, descriptor) in reads)
         {
+            // Extensions are the product's databases' own, so repositories may share one.
+            foreach (var extension in descriptor.Extensions)
+                if (!extensions.Contains(extension, StringComparer.Ordinal))
+                    extensions.Add(extension);
+
             foreach (var service in descriptor.Services)
             {
                 if (owners.TryGetValue(service.Service, out var owner))
@@ -59,7 +66,7 @@ public sealed class ProductDescriptorService(IRepositoryFileSource files)
             }
         }
 
-        return new ProductDescriptorDto { Commit = reads[0].Commit, Services = services, Sites = sites };
+        return new ProductDescriptorDto { Commit = reads[0].Commit, Services = services, Sites = sites, Extensions = extensions };
     }
 
     /// <summary>Reads one repository's descriptor at its branch head.</summary>

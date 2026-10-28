@@ -56,6 +56,8 @@ def main():
                         help="place: a site the product's deploy.yml declares, public or private")
     parser.add_argument("--needs-postgres", action="store_true",
                         help="place: a service in the product's deploy.yml needs PostgreSQL")
+    parser.add_argument("--declared-extension", action="append", default=[], metavar="NAME",
+                        help="place: an untrusted PostgreSQL extension the product's deploy.yml declares")
     parser.add_argument("--no-launch", action="store_true",
                         help="enroll, place, upkeep: record the job only; the caller runs its -run action itself")
     args = parser.parse_args()
@@ -88,7 +90,8 @@ def main():
             result = placement.start(root, {"serverId": args.server, "product": args.product,
                                             "database": args.database, "sites": list(map(parse_site, args.site)),
                                             "declared": {"sites": dict(map(parse_declared, args.declared_site)),
-                                                         "postgres": args.needs_postgres}},
+                                                         "postgres": args.needs_postgres,
+                                                         "extensions": args.declared_extension}},
                                      args.actor, launch=not args.no_launch)
         elif args.action == "place-run":
             result = placement.run(root, args.job)

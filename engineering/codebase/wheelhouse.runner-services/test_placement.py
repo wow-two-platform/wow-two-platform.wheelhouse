@@ -43,7 +43,10 @@ FAKE_DOCKER = textwrap.dedent("""\
         print(json.dumps({"hostAddress": os.environ.get("HOST_ADDRESS", "")}))
         sys.exit(0)
     if "exec" in sys.argv:
-        sys.stdin.read()
+        sql = sys.stdin.read()
+        if "EXTENSION" in sql:
+            with open(root / "extensions.log", "a") as log:
+                log.write(sys.argv[sys.argv.index("-d") + 1] + " " + sql.replace("\\n", " ").strip() + "\\n")
         sys.exit(int(os.environ.get("DATABASE_FAILS", "0")))
     if "up" in sys.argv and "--wait" not in sys.argv:
         for node in sys.argv[sys.argv.index("-d") + 1:]:
@@ -177,6 +180,44 @@ class PlacementTests(unittest.TestCase):
         self.assertIn("Kept ocharo_platform_dev and ocharo_platform_prod", result["steps"][1]["detail"])
         self.assertIn("Every node had already joined", result["steps"][3]["detail"])
         self.assertEqual(minted, len(self.fake.keys))
+
+    def test_declared_extensions_are_created_as_superuser_and_a_rerun_brings_new_ones(self):
+        declared = {**DECLARED, "extensions": ["postgres_fdw"]}
+        job = placement.start(self.root, {"serverId": "ocharo-products", "product": "ocharo-platform", "database": True,
+                                          "declared": declared, "sites": []}, "sulton-max", launch=False)
+        result = placement.run(self.root, job["id"])
+        self.assertEqual("succeeded", result["status"], result.get("reason"))
+        self.assertEqual(["postgres_fdw"], result["facts"]["extensions"])
+        self.assertTrue(result["steps"][1]["detail"].endswith("; extensions postgres_fdw created as superuser in both"))
+        log = (self.host / "extensions.log").read_text().splitlines()
+        self.assertEqual(['ocharo_platform_dev CREATE EXTENSION IF NOT EXISTS "postgres_fdw";',
+                          'ocharo_platform_prod CREATE EXTENSION IF NOT EXISTS "postgres_fdw";'], log)
+        # deploy.yml gained one: a rerun keeps the databases and creates what is missing.
+        declared["extensions"] = ["postgres_fdw", "pg_partman"]
+        job = placement.start(self.root, {"serverId": "ocharo-products", "product": "ocharo-platform", "database": True,
+                                          "declared": declared, "sites": []}, "sulton-max", launch=False)
+        rerun = placement.run(self.root, job["id"])
+        self.assertEqual("succeeded", rerun["status"], rerun.get("reason"))
+        self.assertIn("Kept ocharo_platform_dev and ocharo_platform_prod", rerun["steps"][1]["detail"])
+        self.assertEqual(4, len((self.host / "extensions.log").read_text().splitlines()))
+        with self.assertRaisesRegex(Rejected, "Invalid declared extensions"):
+            placement.start(self.root, {"serverId": "ocharo-products", "product": "ocharo-platform", "database": True,
+                                        "declared": {**DECLARED, "extensions": ["Bad Name"]}, "sites": []},
+                            "sulton-max", launch=False)
+
+    def test_the_cli_passes_the_declared_extensions_along(self):
+        import contextlib
+        import io
+        import infra
+        seen = {}
+        argv = ["infra.py", "place", "--root", str(self.root), "--server", "ocharo-products", "--product",
+                "ocharo-platform", "--database", "--needs-postgres", "--declared-extension", "postgres_fdw",
+                "--declared-extension", "pg_trgm", "--no-launch"]
+        with patch.object(infra.inventory, "install"), patch("sys.argv", argv), \
+                patch.object(infra.placement, "start", side_effect=lambda root, request, actor, launch: seen.update(
+                    request) or {"id": "x"}), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, infra.main())
+        self.assertEqual({"sites": {}, "postgres": True, "extensions": ["postgres_fdw", "pg_trgm"]}, seen["declared"])
 
     def test_a_half_created_database_pair_is_refused_for_review(self):
         folder = self.host / "config" / "ocharo-platform-dev"

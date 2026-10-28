@@ -118,6 +118,28 @@ public sealed class CatalogParserTests
         parsed.Value.Services.Select(service => (service.Service, service.Image))
             .Should().Equal(("management", null), ("redirect", "ghcr.io/sulton-max/pin-redirect"));
         parsed.Value.Sites.Should().BeEmpty();
+        parsed.Value.Extensions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ParseDescriptor_ShouldReadTheDeclaredExtensionsOnceEachInFileOrder()
+    {
+        var parsed = DeployDescriptorParser.Parse(Bytes(
+            """
+            descriptor: 2
+            product: haven
+            extensions: [postgres_fdw, "uuid-ossp", postgres_fdw, pg_trgm]
+            services:
+              api:
+                needs: [postgres]
+            """));
+        var empty = DeployDescriptorParser.Parse(Bytes("product: haven\nextensions: []\nservices: { api: {} }\n"));
+        var bare = DeployDescriptorParser.Parse(Bytes("product: haven\nextensions:\nservices: { api: {} }\n"));
+
+        parsed.Problem.Should().BeNull();
+        parsed.Value!.Extensions.Should().Equal("postgres_fdw", "uuid-ossp", "pg_trgm");
+        empty.Value!.Extensions.Should().BeEmpty();
+        bare.Value!.Extensions.Should().BeEmpty();
     }
 
     [Fact]
@@ -178,6 +200,13 @@ public sealed class CatalogParserTests
     [InlineData("product: pin\nservices:\n  api: { needs: postgres }\n", "line 3: services.api.needs must be a list.")]
     [InlineData("product: pin\nservices:\n  api: { sites: { app: { exposure: open } } }\n", "line 3: services.api.sites.app.exposure must be public or private.")]
     [InlineData("descriptor: 2\nproduct: pin\nsites: { app: { primary: yes } }\nservices: { api: {} }\n", "line 3: sites.app.primary must be true or false.")]
+    [InlineData("product: pin\nservices: { api: {} }\nextensions: uuid-ossp\n", "line 3: extensions must be a list.")]
+    [InlineData("product: pin\nservices: { api: {} }\nextensions: [postgres_fdw, Uuid-Ossp]\n", "line 3: extensions must be lowercase extension names.")]
+    [InlineData("product: pin\nservices: { api: {} }\nextensions:\n  - pgcrypto\n  - 'pg trgm'\n", "line 5: extensions must be lowercase extension names.")]
+    [InlineData("product: pin\nservices: { api: {} }\nextensions: [1pg]\n", "line 3: extensions must be lowercase extension names.")]
+    [InlineData("product: pin\nservices: { api: {} }\nextensions: [\"pgcrypto\\n\"]\n", "line 3: extensions must be lowercase extension names.")]
+    [InlineData("product: pin\nservices: { api: {} }\nextensions: [{ name: pgcrypto }]\n", "line 3: extensions must be lowercase extension names.")]
+    [InlineData("product: pin\nservices: { api: {} }\nextensions: [xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]\n", "line 3: extensions must be lowercase extension names.")]
     public void ParseDescriptor_ShouldNameTheLineAndField_WhenTheFileBreaksARule(string text, string problem)
     {
         DeployDescriptorParser.Parse(Bytes(text)).Problem.Should().Be(problem);

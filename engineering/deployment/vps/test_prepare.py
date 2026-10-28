@@ -191,6 +191,39 @@ class ProductsPrepareTests(unittest.TestCase):
                           report)
             self.assertFalse(any(password in line for line in report))
 
+    def test_declared_extensions_are_created_as_superuser_in_both_databases(self):
+        made = []
+
+        def extend(root, name, extensions):
+            made.append((name, extensions))
+        with self.assertRaisesRegex(prepare.Refused, "databases before its extensions"):
+            self.products(product="ocharo-platform", extensions=["postgres_fdw"], extend=extend)
+        report = self.products(product="ocharo-platform", database=True, extensions=["postgres_fdw", "uuid-ossp"],
+                               extend=extend)
+        self.assertEqual([("ocharo_platform_dev", ["postgres_fdw", "uuid-ossp"]),
+                          ("ocharo_platform_prod", ["postgres_fdw", "uuid-ossp"])], made)
+        self.assertIn("Extensions postgres_fdw, uuid-ossp in ocharo_platform_dev and ocharo_platform_prod, created as "
+                      "superuser.", report)
+        # A rerun on kept databases creates only what is missing; a name that is not one refuses before any SQL.
+        self.products(product="ocharo-platform", extensions=["postgres_fdw"], extend=extend)
+        self.assertEqual(4, len(made))
+        with self.assertRaisesRegex(prepare.Refused, "extension name"):
+            self.products(product="ocharo-platform", extensions=['x"; DROP DATABASE y; --'], extend=extend)
+        self.assertEqual(4, len(made))
+
+    def test_extension_sql_quotes_each_name_and_runs_as_superuser_in_one_database(self):
+        calls = []
+
+        def run(arguments, **options):
+            calls.append((arguments, options["input"]))
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+        with mock.patch.object(prepare.subprocess, "run", side_effect=run):
+            prepare.create_extensions(self.root, "ocharo_platform_dev", ["pg_trgm", "uuid-ossp"])
+        [(arguments, sql)] = calls
+        self.assertEqual(["psql", "-U", "postgres", "-d", "ocharo_platform_dev", "-v", "ON_ERROR_STOP=1", "-q"],
+                         arguments[-8:])
+        self.assertEqual('CREATE EXTENSION IF NOT EXISTS "pg_trgm";\nCREATE EXTENSION IF NOT EXISTS "uuid-ossp";\n', sql)
+
     def test_existing_database_credentials_are_never_replaced(self):
         self.products(product="ocharo-platform", database=True)
         original = (self.root / "config/ocharo-platform-dev/database.json").read_bytes()

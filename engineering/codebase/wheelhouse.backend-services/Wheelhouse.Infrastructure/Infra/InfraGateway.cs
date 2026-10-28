@@ -84,6 +84,8 @@ public sealed class InfraGateway(
             arguments.AddRange(["--declared-site", site.Name + "=" + site.Exposure]);
         if (request.Descriptor.NeedsPostgres)
             arguments.Add("--needs-postgres");
+        foreach (var extension in request.Descriptor.Extensions)
+            arguments.AddRange(["--declared-extension", extension]);
         return StartAsync([.. arguments, "--no-launch"],
             job => job.TryGetProperty("id", out var id) && Guid.TryParse(id.GetString(), out var parsed)
                 ? ["place-run", "--job", parsed.ToString("D")]

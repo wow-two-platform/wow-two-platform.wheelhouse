@@ -5,12 +5,16 @@ using YamlDotNet.RepresentationModel;
 namespace Wheelhouse.Application.Catalog.Parsers;
 
 /// <summary>Parses the parts of a product's <c>deploy.yml</c> Wheelhouse reads: <c>product</c>, each service's key,
-/// optional <c>image</c> and <c>needs</c>, and the sites the product publishes with their exposure — descriptor 2's
-/// top-level <c>sites</c>, or descriptor 1's per-service sites, where a site any service makes private is private. The
+/// optional <c>image</c> and <c>needs</c>, the sites the product publishes with their exposure — descriptor 2's
+/// top-level <c>sites</c>, or descriptor 1's per-service sites, where a site any service makes private is private — and
+/// the optional top-level <c>extensions</c>, the untrusted PostgreSQL extensions its databases take. The
 /// shared publish workflow validates the rest; this reader ignores it. A refusal names the line and the field.</summary>
 public static class DeployDescriptorParser
 {
     private const string Exposures = "^(public|private)$";
+
+    /// <summary>A PostgreSQL extension's name as <c>CREATE EXTENSION</c> takes it quoted, such as <c>uuid-ossp</c>.</summary>
+    private const string ExtensionName = @"^[a-z][a-z0-9_-]{0,62}\z";
 
     /// <summary>Parses a deployment descriptor.</summary>
     /// <param name="content">The file's bytes, UTF-8.</param>
@@ -53,7 +57,10 @@ public static class DeployDescriptorParser
             }
 
             return YamlParse<DeployDescriptorModel>.Ok(
-                new DeployDescriptorModel(product, found, second ? Roles(root) : Merged(perService)));
+                new DeployDescriptorModel(product, found, second ? Roles(root) : Merged(perService))
+                {
+                    Extensions = Extensions(root),
+                });
         }
         catch (YamlRefusal refusal)
         {
@@ -104,6 +111,20 @@ public static class DeployDescriptorParser
         [
             .. YamlReader.Sequence(node, field + ".needs").Children
                 .Select(need => YamlReader.Matching(need, field + ".needs", InventoryPatternConstants.Slug, "lowercase words"))
+                .Distinct(StringComparer.Ordinal),
+        ];
+    }
+
+    /// <summary>The untrusted PostgreSQL extensions the top-level <c>extensions</c> declares, once each, in file order;
+    /// none when it declares none.</summary>
+    private static List<string> Extensions(YamlMappingNode root)
+    {
+        if (YamlReader.Get(root, "extensions") is not { } node)
+            return [];
+        return
+        [
+            .. YamlReader.Sequence(node, "extensions").Children
+                .Select(extension => YamlReader.Matching(extension, "extensions", ExtensionName, "lowercase extension names"))
                 .Distinct(StringComparer.Ordinal),
         ];
     }

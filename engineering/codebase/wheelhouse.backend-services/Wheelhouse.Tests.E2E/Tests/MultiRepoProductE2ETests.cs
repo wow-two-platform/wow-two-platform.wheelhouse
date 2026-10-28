@@ -444,6 +444,15 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
             .Select(item => (item.GetProperty("name").GetString(), item.GetProperty("exposure").GetString(), item.GetProperty("primary").GetBoolean()))
             .Should().Equal(("desk", "public", true), ("studio", "public", false), ("motion", "private", false));
         descriptor.GetProperty("needsPostgres").GetBoolean().Should().BeTrue();
+        descriptor.GetProperty("extensions").GetArrayLength().Should().Be(0);
+
+        // Extensions belong to the product's databases: every repository's, once each, in first-seen order.
+        Fixture.RepositoryFiles.Push(Platform, Descriptor,
+            PlatformDescriptor.Replace("product: ocharo\n", "product: ocharo\nextensions: [postgres_fdw, uuid-ossp]\n"));
+        Fixture.RepositoryFiles.Push(Studio, Descriptor, StudioDescriptor + "\nextensions: [uuid-ossp, pg_trgm]\n");
+        (await DataAsync(await AdminClient.GetAsync("api/products/ocharo/descriptor"))).GetProperty("extensions")
+            .EnumerateArray().Select(item => item.GetString()).Should().Equal("postgres_fdw", "uuid-ossp", "pg_trgm");
+        Fixture.RepositoryFiles.Push(Platform, Descriptor, PlatformDescriptor);
 
         // Two repositories naming one site is a problem the placement and environment forms show.
         Fixture.RepositoryFiles.Push(Studio, "engineering/deployment/deploy.yml", StudioDescriptor.Replace("studio: {}", "desk: {}"));

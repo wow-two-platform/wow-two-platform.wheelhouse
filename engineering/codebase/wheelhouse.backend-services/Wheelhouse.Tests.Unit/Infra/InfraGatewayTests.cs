@@ -81,6 +81,7 @@ public sealed class InfraGatewayTests : IDisposable
                 new ProductDescriptorSiteDto { Name = "admin", Exposure = "private" },
                 new ProductDescriptorSiteDto { Name = "app", Exposure = "public", Primary = true },
             ],
+            Extensions = ["postgres_fdw", "uuid-ossp"],
         };
         var request = new ProductPlacementRequest("ocharo-platform", "ocharo-products", true,
             [new ProductPlacementSite("admin", "ocharo-platform-admin")], descriptor);
@@ -90,7 +91,8 @@ public sealed class InfraGatewayTests : IDisposable
         var calls = await Calls(2);
         Arguments(calls[0]).Should().Equal("place", "--server", "ocharo-products", "--product", "ocharo-platform", "--actor",
             "sulton-max", "--database", "--site", "admin=ocharo-platform-admin", "--declared-site", "admin=private",
-            "--declared-site", "app=public", "--needs-postgres", "--no-launch", "--root", _root);
+            "--declared-site", "app=public", "--needs-postgres", "--declared-extension", "postgres_fdw",
+            "--declared-extension", "uuid-ossp", "--no-launch", "--root", _root);
         Arguments(calls[1]).Should().Equal("place-run", "--job", "6f1c2a9e-0000-4000-8000-000000000001", "--root", _root);
     }
 

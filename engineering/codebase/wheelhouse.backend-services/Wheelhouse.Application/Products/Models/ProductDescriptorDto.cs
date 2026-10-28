@@ -16,6 +16,11 @@ public sealed record ProductDescriptorDto
     /// <summary>Gets each site the product publishes.</summary>
     public IReadOnlyList<ProductDescriptorSiteDto> Sites { get; init; } = [];
 
+    /// <summary>Gets each untrusted PostgreSQL extension the product's databases take, which Wheelhouse creates as
+    /// superuser when it places them: every repository's top-level <c>extensions</c>, once each, in first-seen order.
+    /// Empty when none declares any.</summary>
+    public IReadOnlyList<string> Extensions { get; init; } = [];
+
     /// <summary>Gets whether any service needs PostgreSQL, so the product takes a dev and a prod database.</summary>
     public bool NeedsPostgres => Services.Any(service => service.Needs.Contains("postgres", StringComparer.Ordinal));
 }

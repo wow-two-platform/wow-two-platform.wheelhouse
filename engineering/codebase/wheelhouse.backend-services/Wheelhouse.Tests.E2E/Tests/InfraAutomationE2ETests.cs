@@ -122,6 +122,8 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
             .Select(site => (site.GetProperty("name").GetString(), site.GetProperty("exposure").GetString(),
                 site.GetProperty("primary").GetBoolean()))
             .Should().Equal(("app", "public", true), ("ops", "private", false));
+        data.GetProperty("extensions").EnumerateArray().Select(extension => extension.GetString())
+            .Should().Equal("postgres_fdw", "uuid-ossp");
         (await AdminClient.GetAsync("api/products/missing/descriptor")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -135,6 +137,7 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
         data.GetProperty("problem").GetString().Should().Contain("has no engineering/deployment/deploy.yml");
         data.GetProperty("services").GetArrayLength().Should().Be(0);
         data.GetProperty("sites").GetArrayLength().Should().Be(0);
+        data.GetProperty("extensions").GetArrayLength().Should().Be(0);
     }
 
     [Fact]
@@ -154,6 +157,7 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
         // The runner gets what deploy.yml declares, so it checks the request against it too.
         request.Descriptor.NeedsPostgres.Should().BeTrue();
         request.Descriptor.Sites.Select(site => (site.Name, site.Exposure)).Should().Equal(("app", "public"), ("ops", "private"));
+        request.Descriptor.Extensions.Should().Equal("postgres_fdw", "uuid-ossp");
         (await LastAudit()).Should().Be(("product.place", "foreverpin", "succeeded"));
     }
 
@@ -397,10 +401,11 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
     private const string DescriptorPath = "engineering/deployment/deploy.yml";
 
     /// <summary>A descriptor 1 product: management needs PostgreSQL and serves the public app site and the private ops
-    /// site; redirect needs nothing.</summary>
+    /// site; redirect needs nothing. Its databases take two untrusted extensions.</summary>
     private const string Descriptor = """
         descriptor: 1
         product: foreverpin
+        extensions: [postgres_fdw, "uuid-ossp"]
         services:
           management:
             needs: [postgres]
