@@ -2085,9 +2085,9 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                     if states:
                         record["reason"] += "; not healthy: " + ", ".join(states)
             settle_services(record, starting if mutation_started else None)
-            # A release that declares it, or a target whose product promises expand-only migrations (Wheelhouse's own,
-            # decision 65): the previous images run on whatever schema this release left. A release that ran its
-            # migrate step asks the previous images' own `migrate check` first (the rollback gate, M15).
+            # A release that declares it, or a target that does: the previous images run on whatever schema this release
+            # left. A release that ran its migrate step asks the previous images' own `migrate check` first (the
+            # rollback gate, M15); a gated return restores the release it left, which ran on this very database.
             if mutation_started and previous and restore_allowed(
                     root, target, previous, record, steps, job_id, project,
                     manifest["rollbackCompatible"] or target.get("rollbackCompatible") is True, docker_factory):
@@ -2549,12 +2549,22 @@ def restore_allowed(base, target, previous, record, steps, job_id, project, comp
     """Whether the automatic restore after a failed rollout may run (M15). A rollout that migrated nothing keeps the
     rule it had: the release's rollback compatibility. One that ran its migrate step asks the previous release's own
     `migrate check` first: every item must exit 0, else the restore is refused, naming the pre-deploy snapshot; a
-    previous release with no migrate item falls back to rollbackCompatible with a warning."""
-    if not any(entry.get("verb") == "migrate" for entry in record.get("migrations") or []):
+    previous release with no migrate item falls back to rollbackCompatible with a warning. A gated return (a return to
+    an older release that passed its rollback gate) checked and changed nothing in the database, and the release it
+    leaves ran on that very database: it restores that release whatever the rollback compatibility says, through the
+    same check when that release declares migrate."""
+    entries = record.get("migrations") or []
+    migrated = any(entry.get("verb") == "migrate" for entry in entries)
+    gated = not migrated and any(entry.get("purpose") == "gate" for entry in entries)
+    if not migrated and not gated:
         return compatible
     hint = snapshot_hint((record.get("snapshot") or {}).get("path"))
     prior = running_manifest(base, previous)
     label = str(previous.get("release") or "the previous release")
+    if gated and prior is not None and not release_migrate(prior):
+        steps.add("Rollback gate", "succeeded", now(), label + " ran on this database, and the return changed nothing "
+                                                           "in it")
+        return True
     if prior is None or not release_migrate(prior):
         if compatible:
             warning = label + " declares no migrate item to check; this release's rollback compatibility lets it return"

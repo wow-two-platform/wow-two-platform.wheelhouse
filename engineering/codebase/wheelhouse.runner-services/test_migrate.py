@@ -435,6 +435,62 @@ class MigrateStepTests(unittest.TestCase):
                     runner.acknowledge(self.target, result["id"])
                     (self.base / "current.json").unlink(missing_ok=True)
 
+    def test_a_failed_gated_return_restores_the_newer_release_without_rollback_compatibility(self):
+        self.release("v1", "1", [(1, "001-pings", "expand")])
+        self.apply()
+        self.release("v2", "2", [(1, "001-pings", "expand"), (2, "002-notes", "expand")])
+        self.apply()
+        # The return passes its gate, then the older containers fail; neither release declares compatibility.
+        self.release("v1", "1", [(1, "001-pings", "expand")])
+        FakeDocker.fail = "v1"
+        FakeDocker.events = []
+        result = self.apply()
+        FakeDocker.fail = None
+        self.assertEqual("rolled_back", result["status"])
+        self.assertEqual(["pull", "check:v1", "up:v1", "check:v2", "pull", "up:v2", "verify:v2"], self.flow())
+        self.assertEqual("v2", self.current())
+        self.assertEqual(["gate", "restore"], [entry["purpose"] for entry in result["migrations"]])
+        self.assertEqual([1, 2], [ordinal for ordinal, _, _ in Rig.history])
+        # Nothing to reconcile: the next deploy goes ahead.
+        self.release("v2", "2", [(1, "001-pings", "expand"), (2, "002-notes", "expand")])
+        self.assertEqual("succeeded", self.apply()["status"])
+
+    def test_a_failed_gated_return_from_a_release_without_migrate_restores_it(self):
+        # The release it leaves declares no migrate item: it ran on this database, and the return changed nothing.
+        self.release("v1", "1", [(1, "001-pings", "expand")])
+        self.apply()
+        # v2 lets an earlier-style release without migrate run after it (trust).
+        self.release("v2", "2", [(1, "001-pings", "expand"), (2, "002-notes", "expand")], compatible=True)
+        self.apply()
+        self.release("v3", "3", [], migrate=False)
+        self.assertEqual("succeeded", self.apply()["status"])
+        self.release("v1", "1", [(1, "001-pings", "expand")])
+        FakeDocker.fail = "v1"
+        FakeDocker.events = []
+        result = self.apply()
+        FakeDocker.fail = None
+        self.assertEqual("rolled_back", result["status"])
+        self.assertEqual(["pull", "check:v1", "up:v1", "pull", "up:v3", "verify:v3"], self.flow())
+        self.assertEqual("v3 ran on this database, and the return changed nothing in it",
+                         [step for step in result["steps"] if step["name"] == "Rollback gate"][-1]["detail"])
+
+    def test_a_failed_gated_return_whose_newer_release_no_longer_checks_is_refused(self):
+        self.release("v1", "1", [(1, "001-pings", "expand")])
+        self.apply()
+        self.release("v2", "2", [(1, "001-pings", "expand"), (2, "002-notes", "expand")])
+        self.apply()
+        self.release("v1", "1", [(1, "001-pings", "expand")])
+        FakeDocker.fail = "v1"
+        FakeDocker.events = []
+        # The gate passes; the newer release's own check then refuses, so nothing is restored blindly.
+        Rig.forced = [(0, result_line("check", "current", "ahead-compatible", 2, 2)),
+                      (1, result_line("check", "refused", "behind", 2, 2))]
+        result = self.apply()
+        FakeDocker.fail = None
+        self.assertEqual("failed", result["status"])
+        self.assertEqual(["pull", "check:v1", "up:v1", "check:v2"], self.flow())
+        self.assertIn("; the roll back was refused: Rollback gate: v2's api image may not run", result["reason"])
+
     def test_a_previous_release_without_migrate_falls_back_to_rollback_compatibility(self):
         for compatible, outcome in ((True, "rolled_back"), (False, "failed")):
             with self.subTest(compatible=compatible):
