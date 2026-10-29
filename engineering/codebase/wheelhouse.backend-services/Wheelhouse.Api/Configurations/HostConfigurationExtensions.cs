@@ -60,7 +60,7 @@ public static partial class HostConfigurationExtensions
         return builder;
     }
 
-    /// <summary>Configures the SDK boot floor for a single-user control plane — output cache, rate limiting, and OTLP export off; OpenAPI on a local run only;
+    /// <summary>Configures the SDK boot floor for a single-user control plane — output cache, rate limiting, and OTLP export off; OpenAPI on a local run only (the SDK default);
     /// the SPA served inside the pipeline; forwarded headers trusted only from loopback and <c>Deployment:TrustedProxies</c> —
     /// and the opt-in HTTP ProblemDetails boundary, so every error the host writes is a problem document.</summary>
     public static WebApplicationBuilder AddPlatformDefaults(this WebApplicationBuilder builder)
@@ -72,8 +72,6 @@ public static partial class HostConfigurationExtensions
             o.EnableOutputCache = false;
             o.EnableRateLimiting = false;
             o.EnableOtlpExporters = false;
-            // Deployed dev runs as Development too; the API's shape stays on the developer's machine.
-            o.ExposeOpenApi = LocalRun.IsLocal(builder.Environment, builder.Configuration);
             o.SpaHosting = static _ => { };
             foreach (var proxy in proxies)
                 o.TrustedProxies.Add(proxy);
@@ -148,8 +146,7 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddProcessClient(Wheelhouse.Infrastructure.Deployments.RunnerProcess.ClientName,
             (options, _) => Wheelhouse.Infrastructure.Deployments.RunnerProcess.Configure(options));
         builder.Services.AddScoped<IDeploymentGateway, Wheelhouse.Infrastructure.Deployments.DeploymentGateway>();
-        // The history projection: one runner read serves a page's concurrent reads for Deployment:HistorySeconds.
-        builder.Services.AddSingleton<Wheelhouse.Infrastructure.Deployments.DeploymentRecordsMemo>();
+        // The history projection: one runner read, held in the SDK cache, serves every read for Deployment:HistorySeconds.
         builder.Services.AddScoped<IDeploymentRecords, Wheelhouse.Infrastructure.Deployments.RunnerDeploymentRecords>();
         // The vitals snapshot: one runner read and one SSH read per host serve every tab for Deployment:VitalsSeconds.
         builder.Services.AddSingleton<Wheelhouse.Infrastructure.Deployments.ServerVitalsMemo>();

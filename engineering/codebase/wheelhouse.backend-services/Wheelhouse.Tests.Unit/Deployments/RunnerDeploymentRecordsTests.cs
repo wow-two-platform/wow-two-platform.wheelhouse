@@ -1,39 +1,53 @@
 using System.Text.Json;
 using AwesomeAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Time.Testing;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments.History.Models;
 using Wheelhouse.Infrastructure.Deployments;
 using Wheelhouse.Infrastructure.Settings;
+using WoW.Two.Sdk.Beta.Be.Caching.Core;
+using WoW.Two.Sdk.Beta.Be.Caching.Hybrid;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Tests.Unit.Deployments;
 
 /// <summary>
-/// Tests for <see cref="RunnerDeploymentRecords"/>: one runner read serves a page's reads for
+/// Tests for <see cref="RunnerDeploymentRecords"/>: one runner read, held in the SDK cache, serves every read for
 /// <c>Deployment:HistorySeconds</c>, a failed read is never held, and a malformed record is skipped.
 /// </summary>
-public sealed class RunnerDeploymentRecordsTests
+public sealed class RunnerDeploymentRecordsTests : IDisposable
 {
     private readonly CountingGateway _gateway = new();
-    private readonly FakeTimeProvider _time = new(DateTimeOffset.Parse("2026-10-17T10:00:00Z"));
-    private readonly DeploymentRecordsMemo _memo = new();
+    private readonly ServiceProvider _services = new ServiceCollection().AddLogging().AddHybridCaching().BuildServiceProvider();
+
+    public void Dispose() => _services.Dispose();
 
     private RunnerDeploymentRecords Records(int seconds = 3) =>
-        new(_gateway, _memo, new DeploymentSettings { HistorySeconds = seconds }, _time, NullLogger<RunnerDeploymentRecords>.Instance);
+        new(_gateway, _services.GetRequiredService<ICacheRepository>(), new DeploymentSettings { HistorySeconds = seconds },
+            NullLogger<RunnerDeploymentRecords>.Instance);
 
     [Fact]
     public async Task ListAsync_ShouldShareOneRunnerRead_WhileItIsFresh()
     {
         (await Records().ListAsync(CancellationToken.None)).Should().BeOfType<AppResult<IReadOnlyList<DeploymentRecord>>.Success>();
-        _time.Advance(TimeSpan.FromSeconds(2));
-        await Records().ListAsync(CancellationToken.None);
+        await Task.WhenAll(Enumerable.Range(0, 5).Select(_ => Records().ListAsync(CancellationToken.None)));
         _gateway.Reads.Should().Be(1);
 
-        _time.Advance(TimeSpan.FromSeconds(2));
+        await _services.GetRequiredService<ICacheRepository>().RemoveAsync(RunnerDeploymentRecords.CacheKey);
         await Records().ListAsync(CancellationToken.None);
+        _gateway.Reads.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ListAsync_ShouldReadAgain_OnceTheHeldReadExpires()
+    {
+        await Records(seconds: 1).ListAsync(CancellationToken.None);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(1300));
+        await Records(seconds: 1).ListAsync(CancellationToken.None);
+
         _gateway.Reads.Should().Be(2);
     }
 
@@ -97,7 +111,9 @@ public sealed class RunnerDeploymentRecordsTests
     /// <summary>Answers the history read with one good record and two malformed ones, counting reads.</summary>
     private sealed class CountingGateway : IDeploymentGateway
     {
-        public int Reads { get; private set; }
+        private int _reads;
+
+        public int Reads => _reads;
 
         public AppError? Failure { get; set; }
 
@@ -121,7 +137,7 @@ public sealed class RunnerDeploymentRecordsTests
         {
             if (resource == "observation")
                 return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(Observation)));
-            Reads++;
+            Interlocked.Increment(ref _reads);
             if (Failure is not null)
                 return Task.FromResult(AppResult<JsonElement>.Fail(Failure));
             return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new object[]

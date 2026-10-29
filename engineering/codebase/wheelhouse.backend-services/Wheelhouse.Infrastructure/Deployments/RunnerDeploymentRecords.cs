@@ -3,59 +3,46 @@ using Microsoft.Extensions.Logging;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments.History.Models;
 using Wheelhouse.Infrastructure.Settings;
+using WoW.Two.Sdk.Beta.Be.Caching.Core;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Infrastructure.Deployments;
 
 /// <summary>Reads the runner's deployment history projection and one submission's observation from its local files.
-/// A record the runner wrote malformed is skipped, never fatal; a failed read is never held.</summary>
+/// One history read serves every request for <c>Deployment:HistorySeconds</c> through the SDK cache, so a page's
+/// concurrent reads share one runner process; a record the runner wrote malformed is skipped, never fatal; a failed read
+/// is never held.</summary>
 public sealed partial class RunnerDeploymentRecords(
     IDeploymentGateway gateway,
-    DeploymentRecordsMemo memo,
+    ICacheRepository cache,
     DeploymentSettings settings,
-    TimeProvider time,
     ILogger<RunnerDeploymentRecords> logger) : IDeploymentRecords
 {
+    /// <summary>Holds the cache key of the last history read.</summary>
+    public const string CacheKey = "deployment-history";
+
     /// <inheritdoc />
     public async Task<AppResult<IReadOnlyList<DeploymentRecord>>> ListAsync(CancellationToken ct)
     {
         var freshFor = TimeSpan.FromSeconds(Math.Clamp(settings.HistorySeconds, 0, 300));
-        if (Fresh(freshFor) is { } held)
-            return AppResult<IReadOnlyList<DeploymentRecord>>.Ok(held);
+        if (freshFor == TimeSpan.Zero)
+            return await ReadRunnerAsync(ct);
 
-        await memo.Gate.WaitAsync(ct);
-        try
-        {
-            if (Fresh(freshFor) is { } shared)
-                return AppResult<IReadOnlyList<DeploymentRecord>>.Ok(shared);
-
-            var read = await gateway.ReadAsync("history", null, ct);
-            if (read is not AppResult<JsonElement>.Success { Data: var document })
-                return AppResult<IReadOnlyList<DeploymentRecord>>.Fail(((AppResult<JsonElement>.Failure)read).Error);
-            if (document.ValueKind != JsonValueKind.Array)
-                return AppResult<IReadOnlyList<DeploymentRecord>>.Fail(
-                    AppErrorFactory.ExternalUnavailable("Deployment history is unreadable."));
-
-            var records = new List<DeploymentRecord>(document.GetArrayLength());
-            var skipped = 0;
-            foreach (var element in document.EnumerateArray())
+        var entry = new CacheEntryOptions { Expiration = freshFor, LocalCacheExpiration = freshFor };
+        var held = await cache.GetOrCreateUnlessTransientAsync<DeploymentRecordsRead>(
+            CacheKey,
+            async token => await ReadRunnerAsync(token) switch
             {
-                if (Parse(element) is { } record)
-                    records.Add(record);
-                else
-                    skipped++;
-            }
-
-            if (skipped > 0)
-                LogSkipped(logger, skipped);
-            memo.Last = (time.GetUtcNow(), records);
-            return AppResult<IReadOnlyList<DeploymentRecord>>.Ok(records);
-        }
-        finally
-        {
-            memo.Gate.Release();
-        }
+                AppResult<IReadOnlyList<DeploymentRecord>>.Success { Data: var records } => CacheResult.Keep(new DeploymentRecordsRead(records, null)),
+                AppResult<IReadOnlyList<DeploymentRecord>>.Failure { Error: var error } => CacheResult.Transient(new DeploymentRecordsRead([], error)),
+                _ => throw new InvalidOperationException("A result is a success or a failure."),
+            },
+            entry,
+            ct);
+        return held.Failure is { } failure
+            ? AppResult<IReadOnlyList<DeploymentRecord>>.Fail(failure)
+            : AppResult<IReadOnlyList<DeploymentRecord>>.Ok(held.Records);
     }
 
     /// <inheritdoc />
@@ -76,9 +63,29 @@ public sealed partial class RunnerDeploymentRecords(
         return AppResult<DeploymentObservation>.Ok(observation);
     }
 
-    /// <summary>The held read while it is fresh. @internal</summary>
-    private IReadOnlyList<DeploymentRecord>? Fresh(TimeSpan freshFor) =>
-        freshFor > TimeSpan.Zero && memo.Last is { } last && time.GetUtcNow() - last.At < freshFor ? last.Records : null;
+    /// <summary>Reads the history from the runner, skipping malformed records. @internal</summary>
+    private async Task<AppResult<IReadOnlyList<DeploymentRecord>>> ReadRunnerAsync(CancellationToken ct)
+    {
+        var read = await gateway.ReadAsync("history", null, ct);
+        if (read is not AppResult<JsonElement>.Success { Data: var document })
+            return AppResult<IReadOnlyList<DeploymentRecord>>.Fail(((AppResult<JsonElement>.Failure)read).Error);
+        if (document.ValueKind != JsonValueKind.Array)
+            return AppResult<IReadOnlyList<DeploymentRecord>>.Fail(AppErrorFactory.ExternalUnavailable("Deployment history is unreadable."));
+
+        var records = new List<DeploymentRecord>(document.GetArrayLength());
+        var skipped = 0;
+        foreach (var element in document.EnumerateArray())
+        {
+            if (Parse(element) is { } record)
+                records.Add(record);
+            else
+                skipped++;
+        }
+
+        if (skipped > 0)
+            LogSkipped(logger, skipped);
+        return AppResult<IReadOnlyList<DeploymentRecord>>.Ok(records);
+    }
 
     /// <summary>Reads one record, or null when it lacks an identity, a status or a submission instant. @internal</summary>
     private static DeploymentRecord? Parse(JsonElement element)
