@@ -762,7 +762,7 @@ Each rollout records its steps in its job record as they start and end, so the d
 | Verify end to end | Dev only, when the release declares `verify`: its check in a one-off container from the service's release image; a failure is a warning and holds auto-promote |
 | Remove unused images | Images only releases older than the newest three used; skipped when there are none |
 | Remove old files | Release folders beyond the newest ten whose images are gone, and this project's uploads beyond the newest ten once a day old |
-| Roll back to … | The previous release, for a failed rollout that declared rollback compatibility, or whose migrate step ran and whose previous release passed its rollback gate |
+| Roll back to … | The previous release, for a failed rollout that declared rollback compatibility, or whose migrate step ran and whose previous release passed its rollback gate, or a failed gated return (it changed nothing in the database the previous release ran on) |
 
 A step's detail is operator-safe text; a failed step shows the refused rule or failed command, never command output.
 
@@ -1002,7 +1002,10 @@ Pulls finish before replacement. Success requires healthy containers with the ex
 Failed image pulls preserve the running release. A failed rollout restores prior images only if the incoming bundle explicitly
 declares `rollbackCompatible: true`. The default release generator leaves this false. A rollout that ran its migrate step
 asks the previous release's own `migrate check` instead: exit 0 restores, anything else leaves the failure for a
-reconcile, naming the snapshot; a previous release without a `migrate` item falls back to `rollbackCompatible`.
+reconcile, naming the snapshot; a previous release without a `migrate` item falls back to `rollbackCompatible`. A
+failed gated return (a return to an older release that passed its rollback gate) restores the release it left either
+way: the return checked and changed nothing, so that release's own `migrate check` decides, or, without one, it simply
+returns.
 
 ### Migrate step
 
