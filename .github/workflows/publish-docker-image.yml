@@ -4,6 +4,7 @@
 #   other branches → candidate sha-<commit>; work happens on main only (no test branch or environment since 2026-10-17)
 #   workflow_dispatch → a candidate for one commit that has no build yet
 #   pull request  → ci only
+#   renovate/**   → ci only, never published; Renovate fast-forwards main to a pinned-images branch that passes
 # A push that changes only docs, planning or markdown runs no build, test, publish or deploy; its gate still passes.
 # One push event tests/builds its final SHA once, regardless of its commit count.
 # Dev deployment is enabled only after the VPS and environment secrets are provisioned; once Wheelhouse deploys itself
@@ -12,7 +13,7 @@ name: publish-docker-image
 
 on:
   push:
-    branches: ['**', '!renovate/**']
+    branches: ['**']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -27,13 +28,13 @@ permissions:
 
 concurrency:
   group: delivery-${{ github.repository }}-${{ inputs.commit || github.ref }}
-  # main queues, so a newer push never cancels an active target operation; other refs cancel a superseded run.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main') }}
+  # One run per ref at a time, queued, so a newer push never cancels an active target operation. No cancel-in-progress:
+  # GitHub refuses queue: max beside one that evaluates true, and starts no job.
   queue: max
 
 jobs:
   delivery:
-    uses: wow-two-platform/wow-two-platform.pipelines/.github/workflows/delivery.yml@v0.12.0
+    uses: wow-two-platform/wow-two-platform.pipelines/.github/workflows/delivery.yml@v0.13.0
     with:
       commit: ${{ inputs.commit }}
       # Backend: unit, integration, E2E and migration tiers (Testcontainers on the runner's Docker); it also builds
