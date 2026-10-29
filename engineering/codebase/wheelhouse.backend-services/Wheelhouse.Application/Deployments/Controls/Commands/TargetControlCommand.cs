@@ -7,8 +7,9 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Deployments.Controls.Commands;
 
 /// <summary>Stops, starts or restarts the release an environment runs (decision 45): <paramref name="Service"/>, or
-/// the whole environment without one; a restart takes one service. Prod needs <paramref name="Confirm"/>, its target ID
-/// typed, and a <paramref name="Reason"/>.</summary>
+/// the whole environment without one; a restart takes one service. A reset drops and recreates the environment's
+/// database for the next deploy to rebuild. Prod needs <paramref name="Confirm"/>, its target ID typed, and a
+/// <paramref name="Reason"/>.</summary>
 /// <param name="Target">The target's slug.</param>
 /// <param name="Operation">What to do.</param>
 /// <param name="Service">The service; null for the whole environment.</param>
@@ -23,7 +24,9 @@ public sealed record TargetControlCommand(
     public string OperationName => Operation.ToString().ToLowerInvariant();
 
     /// <inheritdoc />
-    public string AuditAction => (Service is null ? "environment." : "service.") + OperationName;
+    public string AuditAction => Operation == ControlOperation.Reset
+        ? "database.reset"
+        : (Service is null ? "environment." : "service.") + OperationName;
 
     /// <inheritdoc />
     public string AuditSubject => Service is null ? Target : Target + "/" + Service;

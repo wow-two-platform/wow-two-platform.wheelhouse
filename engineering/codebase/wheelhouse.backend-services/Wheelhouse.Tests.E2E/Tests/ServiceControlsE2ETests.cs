@@ -18,9 +18,9 @@ namespace Wheelhouse.Tests.E2E.Tests;
 
 /// <summary>
 /// E2E for service controls (decision 45): the owner stops, starts or restarts one service, or stops and starts a whole
-/// environment; prod needs its target ID typed and a reason; Wheelhouse's own environments, integration keys and a
-/// target a running fleet still promotes are refused; each control is audited and reads in the history beside the
-/// deploys without counting as one, and a stopped environment reads as stopped.
+/// environment, or resets its database (v0.9); prod needs its target ID typed and a reason; Wheelhouse's own
+/// environments, integration keys and a target a running fleet still promotes are refused; each control is audited and
+/// reads in the history beside the deploys without counting as one, and a stopped environment reads as stopped.
 /// </summary>
 [Collection(WheelhouseCollection.Name)]
 public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBase(fixture)
@@ -67,7 +67,63 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
         audit.GetProperty("detail").GetString().Should().Be("reason: cache stuck");
     }
 
+    [Fact]
+    public async Task Reset_ShouldReachTheRunnerOnDev_AndProdNeedsItsTargetIdTypedAndAReason()
+    {
+        var dev = await ControlAsync("foreverpin-dev", new { operation = "reset" });
+        dev.StatusCode.Should().Be(HttpStatusCode.Accepted, await dev.Content.ReadAsStringAsync());
+        Fixture.Deployments.Controls.Should().Equal(("foreverpin-dev", "reset", (string?)null, "test-admin", (string?)null));
+
+        var untyped = await ControlAsync("foreverpin-prod", new { operation = "reset", reason = "schema drifted" });
+        untyped.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await untyped.Content.ReadAsStringAsync()).Should().Contain("Type foreverpin-prod to reset prod");
+        var silent = await ControlAsync("foreverpin-prod", new { operation = "reset", confirm = "foreverpin-prod" });
+        silent.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await silent.Content.ReadAsStringAsync()).Should().Contain("Give a reason to reset prod");
+        Fixture.Deployments.Controls.Should().HaveCount(1, "nothing reaches the runner before both are given");
+
+        var accepted = await ControlAsync("foreverpin-prod",
+            new { operation = "reset", confirm = "foreverpin-prod", reason = "schema drifted" });
+        accepted.StatusCode.Should().Be(HttpStatusCode.Accepted, await accepted.Content.ReadAsStringAsync());
+        Fixture.Deployments.Controls[^1].Should().Be(("foreverpin-prod", "reset", (string?)null, "test-admin", "schema drifted"));
+        var audit = (await DataAsync("/api/audit")).EnumerateArray()
+            .Where(entry => entry.GetProperty("action").GetString() == "database.reset").ToList();
+        audit.Should().Contain(entry => entry.GetProperty("subject").GetString() == "foreverpin-dev");
+        audit.Should().Contain(entry => entry.GetProperty("subject").GetString() == "foreverpin-prod"
+            && entry.GetProperty("detail").GetString() == "reason: schema drifted");
+    }
+
+    [Fact]
+    public async Task History_ShouldReadAReset_AndLeaveNothingStoppedBehindIt()
+    {
+        const string id = "00000000-0000-4000-8000-000000000c05";
+        var now = Fixture.Host.Clock.GetUtcNow();
+        Fixture.Deployments.History.Add(new
+        {
+            id = StopId, targetId = "foreverpin-dev", release = "v1.0.0", actor = "test-admin", status = "succeeded",
+            operation = new { kind = "stop", services = Array.Empty<string>() },
+            stopped = new { environment = true, services = Array.Empty<string>(), at = Instant(now.AddHours(-2)), actor = "test-admin" },
+            submittedAt = Instant(now.AddHours(-2)), completedAt = Instant(now.AddHours(-2).AddSeconds(20)),
+        });
+        Fixture.Deployments.History.Add(new
+        {
+            id, targetId = "foreverpin-dev", release = "v1.0.0", actor = "test-admin", status = "succeeded",
+            deployReason = "schema drifted", operation = new { kind = "reset", services = Array.Empty<string>() }, stopped = (object?)null,
+            submittedAt = Instant(now.AddHours(-1)), completedAt = Instant(now.AddHours(-1).AddSeconds(40)),
+        });
+
+        var item = (await DataAsync("/api/deployments/history")).GetProperty("items").EnumerateArray()
+            .Single(entry => entry.GetProperty("id").GetString() == id);
+        (item.GetProperty("operation").GetProperty("kind").GetString(), item.GetProperty("state").GetString())
+            .Should().Be(("reset", "succeeded"));
+        var dev = (await DataAsync("/api/portfolio/summary?weeks=2")).GetProperty("products").EnumerateArray()
+            .Single(product => product.GetProperty("product").GetString() == "foreverpin").GetProperty("environments")
+            .EnumerateArray().Single(row => row.GetProperty("environment").GetString() == "dev");
+        dev.GetProperty("stopped").ValueKind.Should().Be(JsonValueKind.Null, "the reset hands every service to the next deploy");
+    }
+
     [Theory]
+    [InlineData("{\"operation\":\"reset\",\"service\":\"management\"}", "never one service")]
     [InlineData("{\"operation\":\"restart\"}", "Restart one service at a time")]
     [InlineData("{\"operation\":\"stop\",\"service\":\"Management;rm\"}", "Service")]
     [InlineData("{\"operation\":\"pause\"}", "operation")]
@@ -105,7 +161,7 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
             });
         }
 
-        foreach (var body in new object[] { new { operation = "stop" }, new { operation = "restart", service = "console" } })
+        foreach (var body in new object[] { new { operation = "stop" }, new { operation = "restart", service = "console" }, new { operation = "reset" } })
         {
             var refused = await ControlAsync("wheelhouse-dev", body);
             refused.StatusCode.Should().Be(HttpStatusCode.Conflict);

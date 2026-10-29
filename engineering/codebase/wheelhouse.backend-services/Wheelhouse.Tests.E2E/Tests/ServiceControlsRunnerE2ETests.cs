@@ -33,7 +33,8 @@ public sealed class ServiceControlsRunnerE2ETests(WheelhouseAppFixture fixture) 
         var inventory = await File.ReadAllTextAsync(Path.Combine(_root, "inventory.json"));
         inventory.Should().Contain("/srv/settings/foreverpin-dev/management.json", "the target names its host settings file");
 
-        foreach (var body in new object[] { new { operation = "restart", service = "management" }, new { operation = "stop" } })
+        foreach (var body in new object[] { new { operation = "restart", service = "management" }, new { operation = "stop" },
+                     new { operation = "reset" } })
         {
             var response = await ControlAsync("foreverpin-dev", body);
             response.StatusCode.Should().Be(HttpStatusCode.Conflict);

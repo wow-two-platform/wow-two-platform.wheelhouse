@@ -1,8 +1,11 @@
 using System.Text.Json;
 using AwesomeAssertions;
+using Wheelhouse.Application.Deployments.Controls.Commands;
+using Wheelhouse.Application.Deployments.Controls.Validators;
 using Wheelhouse.Application.Deployments.History.Models;
 using Wheelhouse.Application.Deployments.History.Services;
 using Wheelhouse.Infrastructure.Deployments;
+using Wheelhouse.Domain.Deployments.Enums;
 using Wheelhouse.Infrastructure.Settings;
 using Wheelhouse.Tests.Unit.Fakes;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
@@ -35,6 +38,35 @@ public sealed class ServiceControlTests : IDisposable
         Args(await gateway.ControlAsync("foreverpin-prod", "restart", "management", "max", "cache; rm -rf /", CancellationToken.None))
             .Should().Equal("control", "--target", "foreverpin-prod", "--operation", "restart", "--actor", "max",
                 "--service", "management", "--reason", "cache; rm -rf /");
+        Args(await gateway.ControlAsync("foreverpin-prod", "reset", null, "max", "schema drifted", CancellationToken.None))
+            .Should().Equal("control", "--target", "foreverpin-prod", "--operation", "reset", "--actor", "max",
+                "--reason", "schema drifted");
+    }
+
+    [Fact]
+    public void Reset_ShouldTakeTheWholeEnvironment_AndAuditAsADatabaseReset()
+    {
+        var validator = new TargetControlCommandValidator();
+        var reset = new TargetControlCommand("foreverpin-prod", ControlOperation.Reset, null, "max", " schema drifted ");
+        validator.Validate(reset).IsValid.Should().BeTrue();
+        (reset.OperationName, reset.AuditAction, reset.AuditSubject, reset.AuditDetail)
+            .Should().Be(("reset", "database.reset", "foreverpin-prod", "reason: schema drifted"));
+
+        var named = validator.Validate(reset with { Service = "management" });
+        named.IsValid.Should().BeFalse();
+        named.Errors.Should().ContainSingle(error => error.ErrorMessage == "A reset takes the environment's database, never one service.");
+    }
+
+    [Fact]
+    public void StopsOf_ShouldLetAResetClearAnOlderStop()
+    {
+        var stopped = new TargetStopDto(true, [], null, "max");
+        DeploymentEntry Entry(DeploymentRecord record) => new(record, "foreverpin", "own-ventures", "dev", null, null);
+
+        DeploymentHistoryService.StopsOf([
+            Entry(Control("reset", "succeeded", null) with { Operation = new DeploymentOperationDto("reset", []) }),
+            Entry(Control("stop", "succeeded", stopped)),
+        ]).Should().BeEmpty("the reset leaves every service for the next deploy to start, with nothing marked stopped");
     }
 
     [Theory]
