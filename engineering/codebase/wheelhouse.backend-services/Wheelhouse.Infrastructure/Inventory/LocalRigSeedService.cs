@@ -114,11 +114,10 @@ public sealed partial class LocalRigSeedService(
         var key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
         try
         {
-            using var stream = new FileStream(vaultKey.Location, new FileStreamOptions
-            {
-                Mode = FileMode.CreateNew, Access = FileAccess.Write,
-                UnixCreateMode = OperatingSystem.IsWindows() ? null : UnixFileMode.UserRead | UnixFileMode.UserWrite,
-            });
+            var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
+            if (!OperatingSystem.IsWindows())
+                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            using var stream = new FileStream(vaultKey.Location, options);
             using var writer = new StreamWriter(stream);
             writer.WriteLine(Convert.ToBase64String(key));
             LogRigKey(logger);

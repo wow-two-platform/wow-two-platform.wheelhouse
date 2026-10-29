@@ -1,5 +1,6 @@
 using FluentValidation;
 using Wheelhouse.Application.InfraJobs;
+using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Application.Servers.Commands;
 
@@ -17,7 +18,7 @@ public sealed class ServerEnrollCommandValidator : AbstractValidator<ServerEnrol
             .Must(address => !address.StartsWith("100.", StringComparison.Ordinal) || !InTailnet(address))
             .WithMessage("'Public Address' must be the public address, not a tailnet one.");
         RuleFor(x => x.SshPort).InclusiveBetween(1, 65535);
-        RuleFor(x => x.LoginUser).Matches(InfraPatterns.LoginUser)
+        RuleFor(x => x.LoginUser).Matches(InventoryPatternConstants.SshUser)
             .WithMessage("'Login User' must be root or the image's administrator, such as ubuntu.");
         RuleFor(x => x.Admin).Matches(InfraPatterns.Admin).WithMessage("'Admin' must be a lowercase account name.")
             .Must(admin => !InfraPatterns.ReservedAdmins.Contains(admin))

@@ -1,13 +1,11 @@
 namespace Wheelhouse.Application.InfraJobs;
 
-/// <summary>Holds the shapes infrastructure requests take — the same ones the runner enforces again.</summary>
+/// <summary>Holds the shapes infrastructure requests take — the same ones the runner enforces again; the account a fresh
+/// image delivers takes <see cref="Inventory.Constants.InventoryPatternConstants.SshUser"/>.</summary>
 public static class InfraPatterns
 {
     /// <summary>Holds the shape of a public IPv4 address.</summary>
     public const string PublicAddress = @"^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}$";
-
-    /// <summary>Holds the shape of the account a fresh image delivers.</summary>
-    public const string LoginUser = "^[a-z_][a-z0-9_-]{0,31}$";
 
     /// <summary>Holds the shape of the administrator's name.</summary>
     public const string Admin = "^[a-z][a-z0-9-]{0,30}$";

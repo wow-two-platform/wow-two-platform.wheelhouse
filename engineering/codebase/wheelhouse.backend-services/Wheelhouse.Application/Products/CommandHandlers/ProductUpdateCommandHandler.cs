@@ -3,7 +3,6 @@ using Wheelhouse.Application.Catalog.Services;
 using Wheelhouse.Application.Products;
 using Wheelhouse.Application.Products.Commands;
 using Wheelhouse.Application.Products.Models;
-using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Products.Services;
 using Wheelhouse.Domain.Products.Enums;
 using Wheelhouse.Domain.Products.Models;
