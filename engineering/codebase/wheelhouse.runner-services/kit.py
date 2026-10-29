@@ -9,9 +9,11 @@ from pathlib import Path
 import tarfile
 from runner import require
 
-# What a fresh host needs; enroll-products.sh sources the two scripts beside it and lays out the rest.
+# What a fresh host needs; enroll-products.sh sources the two scripts beside it and lays out the rest. postgres-move.py
+# stays in the uploaded folder: a host whose PostgreSQL 16 data waits for its move to 18 (the kit's postgres-pg18
+# volume) refuses the kit's platform step until the owner runs it from there (vps.md § PostgreSQL 18).
 FILES = ("enroll-products.sh", "bootstrap-products.sh", "create-admin.sh", "repair-networks.sh", "authorize-runner.sh",
-         "prepare.py", "products.compose.yml", "tailscale-serve-products.json")
+         "prepare.py", "postgres-move.py", "products.compose.yml", "tailscale-serve-products.json")
 IMAGE_KIT = Path("/app/kit")
 # The ingress this kit lays out on a products host (products.compose.yml): public sites on websecure (host port 443)
 # with HTTP-01 certificates from the letsencrypt resolver, private sites on the private entry point behind their site

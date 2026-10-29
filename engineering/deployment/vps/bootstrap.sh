@@ -45,7 +45,7 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 deploy_user=wheelhouse-deploy
 deploy_root=/srv/wheelhouse
 for source in platform.compose.yml tailscale-serve.json control-only.yml prepare.py prepare_canary.py authorize-runner.sh \
-    self-deploy.py harden-control.sh bootstrap-products.sh; do
+    self-deploy.py harden-control.sh bootstrap-products.sh postgres-move.py; do
     [[ -f "$script_dir/$source" ]] || { echo "Missing bootstrap asset: $source" >&2; exit 1; }
 done
 # Fail rather than removing a pre-existing container stack's engine packages.
@@ -116,6 +116,8 @@ for directory in "$deploy_root" "$deploy_root/config" "$deploy_root/platform" \
     [[ ! -L "$directory" ]] || { echo 'Refusing a symlinked deployment directory.' >&2; exit 1; }
     install -d -m 0700 -o "$deploy_user" -g "$deploy_group" "$directory"
 done
+# PostgreSQL 18 never starts empty beside a host's 16 data: postgres-move.py moves it first (vps.md § PostgreSQL 18).
+python3 "$script_dir/postgres-move.py" check --root "$deploy_root" --project wheelhouse-platform || exit 1
 install -m 0600 -o "$deploy_user" -g "$deploy_group" \
     "$script_dir/platform.compose.yml" "$deploy_root/platform/compose.yml"
 install -m 0644 -o "$deploy_user" -g "$deploy_group" \

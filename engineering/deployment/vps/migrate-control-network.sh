@@ -12,6 +12,9 @@ deploy_root=/srv/wheelhouse
 deploy_user=wheelhouse-deploy
 deploy_group=$(id -gn "$deploy_user")
 
+# PostgreSQL 18 never starts empty beside a host's 16 data: postgres-move.py moves it first (vps.md § PostgreSQL 18).
+python3 "$script_dir/postgres-move.py" check --root "$deploy_root" --project wheelhouse-platform || exit 1
+
 # Dynamic addresses come only from .128/25, so no container can take Traefik's or PostgreSQL's fixed one.
 if ! docker network inspect control >/dev/null 2>&1; then
     docker network create --driver bridge --subnet 172.30.1.0/24 --ip-range 172.30.1.128/25 --gateway 172.30.1.1 \

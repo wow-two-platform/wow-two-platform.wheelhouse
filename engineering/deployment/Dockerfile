@@ -40,7 +40,7 @@ RUN python3 -m compileall -q --invalidation-mode checked-hash /app/runner
 # The products-host kit an enrollment uploads, from the `kit` build context (deploy.yml): it ships with the release, so
 # an enrollment never fetches it, and its digest is recorded on each job.
 COPY --from=kit enroll-products.sh bootstrap-products.sh create-admin.sh repair-networks.sh authorize-runner.sh prepare.py \
-     products.compose.yml tailscale-serve-products.json tailnet-policy.hujson /app/kit/
+     postgres-move.py products.compose.yml tailscale-serve-products.json tailnet-policy.hujson /app/kit/
 RUN mkdir -p /data/keys /data/deployments && chown -R app:app /data
 ENV ASPNETCORE_HTTP_PORTS=8080 DataProtection__KeyPath=/data/keys
 USER app

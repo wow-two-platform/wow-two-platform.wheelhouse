@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Moves a Wheelhouse host's platform PostgreSQL from 16 to 18 by dump and restore, and reads where it stands. Runs on
-the control host or a products host as wheelhouse-deploy, from a copy of the kit; prod's console runs it over SSH
-(Servers › the server › PostgreSQL). vps.md § PostgreSQL 18.
+the control host or a products host as wheelhouse-deploy, from the kit folder (it installs the kit's Compose template
+beside it and imports prepare.py from there). vps.md § PostgreSQL 18.
 
   status [--json]                        the platform PostgreSQL's image, its 16 and 18 volumes, the move and its runs
-  check                                  exit 0 when 18 may start; 3 while 16 data waits for the move or a move runs
+  check [--project NAME]                 exit 0 when 18 may start; 3 while 16 data waits for the move or a move runs;
+                                         the kit's scripts ask it before they install the platform Compose file
   move   --reason TEXT [--actor NAME]    starts the move detached and prints its job; --wait follows it instead.
          [--wait] [--yes] [--json]       Asks for the platform's project typed unless --yes
 
@@ -17,9 +18,9 @@ The move, each step recorded in <root>/platform/postgres-move/jobs/<job>.json as
   switch   the 18 Compose file and the move marker; PostgreSQL recreated on 18 at the same addresses and aliases
   start    the workloads it stopped, each until healthy
 
-The 16 volume is never touched, so the move can be undone (vps.md). A failure before the switch completes removes the
-new volume, puts the 16 Compose file back and starts the stopped workloads on 16 again. Nothing here prints a password
-or any row; database output is discarded. Only the Python standard library and the Docker CLI are needed."""
+The 16 volume is never touched, so the move can be undone (vps.md). A failure before the workloads start again removes
+the new volume, puts the 16 Compose file back and starts the stopped workloads on 16 again. Nothing here prints a
+password or any row; database output is discarded. Only the Python standard library and the Docker CLI are needed."""
 import argparse
 import datetime
 import fcntl
@@ -36,19 +37,23 @@ import tempfile
 import time
 import uuid
 
+# prepare.py, beside this script in the kit: the guard every kit script shares, and the products host's Compose render.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import prepare  # noqa: E402
+
 ROOT = Path("/srv/wheelhouse")
 IMAGE = "postgres:18-alpine"
 MAJOR = 18
 # The Compose project each kit names, its host role and the kit template the move installs for it.
-ROLES = {"wheelhouse-platform": ("control", "platform.compose.yml"),
-         "wheelhouse-products": ("products", "products.compose.yml")}
+ROLES = {prepare.CONTROL_PROJECT: ("control", "platform.compose.yml"),
+         prepare.PRODUCTS_PROJECT: ("products", "products.compose.yml")}
 # 16 kept its cluster in the `postgres` volume at /var/lib/postgresql/data; 18 keeps it in `postgres-pg18` at
 # /var/lib/postgresql (the cluster in 18/docker) and refuses a 16 data directory.
-PREVIOUS = "postgres"
+PREVIOUS = prepare.PREVIOUS_VOLUME
 CURRENT = "postgres-pg18"
 NETWORKS = ("control", "platform")
-FOLDER = "postgres-move"
-MARKER = "moved.json"
+FOLDER = prepare.MOVE_FOLDER
+MARKER = prepare.MOVE_MARKER
 STEPS = (("check", "Check the host"), ("stop", "Stop the workloads"), ("dump", "Dump PostgreSQL 16"),
          ("restore", "Restore into PostgreSQL 18"), ("switch", "Switch the platform to 18"),
          ("start", "Start the workloads"))
@@ -68,8 +73,9 @@ DATABASES = "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistem
 ROLE_NAMES = "SELECT rolname FROM pg_roles WHERE rolname !~ '^pg_' ORDER BY 1"
 
 
-class Refused(ValueError):
-    """A refusal whose message names a rule, a volume, a container or a table, never a password or a row."""
+class Refused(prepare.Refused):
+    """A refusal whose message names a rule, a volume, a container or a table, never a password or a row; prepare.py's
+    own refusals (its guard, its render) read the same way."""
 
 
 def require(condition, message):
@@ -162,40 +168,24 @@ def volume_present(docker, name):
 
 
 def marker_of(root):
-    path = folder_of(root) / MARKER
-    try:
-        value = read_json(path) if path.is_file() and not path.is_symlink() else None
-    except (OSError, ValueError):
-        return None
-    return value if isinstance(value, dict) else None
+    return prepare.move_recorded(Path(root))
 
 
 def busy(root):
     """Whether a live move holds the host's move lock; the lock file is never created here."""
-    try:
-        with (folder_of(root) / "lock").open("r") as stream:
-            try:
-                fcntl.flock(stream, fcntl.LOCK_SH | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return True
-            fcntl.flock(stream, fcntl.LOCK_UN)
-            return False
-    except FileNotFoundError:
-        return False
+    return prepare.move_running(Path(root))
 
 
 def guard(root, project=None, docker=None):
-    """Why PostgreSQL 18 must not start on this host now, or None when it may: 16 data waits in the previous volume
-    with no move recorded (18 would start empty beside it), or a move runs. The kit's prepare.py, bootstrap.sh and
-    every script that installs the platform Compose file ask this first."""
-    if busy(root):
-        return "A PostgreSQL move runs on this host; wait for it to finish (postgres-move.py status)"
+    """Why PostgreSQL 18 must not start on this host now, or None when it may (prepare.postgres_guard): a move runs, or
+    16 data waits in the previous volume with no move recorded, where 18 would start empty beside it. bootstrap.sh,
+    retire-test.sh and migrate-control-network.sh ask it through `check` before they install the platform Compose
+    file; prepare.py --server products asks it before it renders one."""
     project = project or project_of(root)
-    previous = project + "_" + PREVIOUS
-    if volume_present(docker or Docker(), previous) and marker_of(root) is None:
-        return ("PostgreSQL 16 data waits in " + previous + "; 18 would start empty beside it. Move it first: "
-                "postgres-move.py move (vps.md § PostgreSQL 18)")
-    return None
+    require(project in ROLES, "Unknown platform project: " + str(project))
+    # Without a Docker of the caller's, prepare.py's own reading: a host without the Docker CLI holds no volume yet.
+    present = (lambda name: volume_present(docker, name)) if docker else None
+    return prepare.postgres_guard(Path(root), project, present)
 
 
 def postgres_container(docker, project):
@@ -306,10 +296,10 @@ def restore_lines(path):
 class Move:
     """One move, run as its own process under the host's move lock."""
 
-    def __init__(self, root, job, docker=None, kit=None, clock=time.monotonic, sleep=time.sleep):
+    def __init__(self, root, job, docker=None, kit=None, clock=None, sleep=None):
         self.root, self.job, self.docker = Path(root), job, docker or Docker()
         self.kit = Path(kit) if kit else Path(__file__).resolve().parent
-        self.clock, self.sleep = clock, sleep
+        self.clock, self.sleep = clock or time.monotonic, sleep or time.sleep
         self.project = job["project"]
         self.role, self.template = ROLES[self.project]
         self.platform = self.root / "platform"
@@ -479,8 +469,8 @@ class Move:
         if self.role == "control":
             install(self.kit / self.template, self.platform / "compose.yml")
         else:
+            # A products host runs the file prepare.py renders from the template and its registered site nodes.
             install(self.kit / self.template, self.platform / "products.compose.yml")
-            prepare = load_prepare(self.kit)
             prepare.render_products_compose(self.root)
         self.docker.run(compose_command(self.root, "config", "--quiet"), timeout=60)
         self.docker.run(compose_command(self.root, "up", "--detach", "--wait", "postgres"), timeout=600)
@@ -545,7 +535,7 @@ class Move:
         for name, action in attempts:
             try:
                 action()
-            except (Refused, OSError, subprocess.SubprocessError):
+            except (prepare.Refused, OSError, subprocess.SubprocessError):
                 problems.append(name)
         return problems
 
@@ -563,7 +553,7 @@ class Move:
                                 ("restore", self.restore), ("switch", self.switch), ("start", self.start)):
                 self.run_step(key, action)
         except BaseException as error:  # noqa: BLE001 - a record must end whatever stopped it
-            message = (str(error) if isinstance(error, Refused) else
+            message = (str(error) if isinstance(error, prepare.Refused) else
                        "The step failed unexpectedly (" + type(error).__name__ + ")")
             running = next((item for item in self.job["steps"] if item["status"] == "running"), None)
             if running:
@@ -588,13 +578,6 @@ def install(source, destination):
         os.chmod(stream.name, 0o600)
         stream.write(Path(source).read_bytes())
     os.replace(stream.name, destination)
-
-
-def load_prepare(kit):
-    """The kit's prepare.py, beside this script: it renders a products host's compose.yml from the new template."""
-    sys.path.insert(0, str(kit))
-    import prepare  # noqa: PLC0415
-    return prepare
 
 
 def gib(count):
@@ -632,7 +615,8 @@ def new_job(root, actor, reason):
            "steps": [{"key": key, "title": title, "status": "pending", "detail": None, "startedAt": None,
                       "completedAt": None} for key, title in STEPS]}
     write_json(folder / "jobs" / (identifier + ".json"), job)
-    for old in [path for path in sorted((folder / "jobs").glob("*.json"))][:-KEEP_JOBS * 2]:
+    # The newest journals stay; job IDs are random, so their age is their modification time.
+    for old in sorted((folder / "jobs").glob("*.json"), key=lambda path: path.stat().st_mtime)[:-KEEP_JOBS]:
         old.unlink(missing_ok=True)
     return job
 
@@ -669,18 +653,22 @@ def follow(root, identifier, output, clock=time.monotonic, sleep=time.sleep):
         sleep(2)
 
 
-def confirm(project, assume_yes, ask=input):
+def confirm(project, assume_yes, ask=None):
     if assume_yes:
         return
-    require(ask("Every workload on this host stops during the move. Type " + project + " to continue: ").strip()
-            == project, "Not confirmed; nothing changed")
+    try:
+        typed = (ask or input)("Every workload on this host stops during the move. Type " + project + " to continue: ")
+    except EOFError:
+        typed = ""
+    require(typed.strip() == project, "Not confirmed; nothing changed")
 
 
 def main(argv=None, output=sys.stdout):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("action", choices=["status", "check", "move", "run"])
     parser.add_argument("--root", type=Path, default=ROOT)
-    parser.add_argument("--project", choices=sorted(ROLES), help="check: the platform's project before compose.yml exists")
+    parser.add_argument("--project", choices=sorted(ROLES),
+                        help="check: the platform's project, for a host whose compose.yml does not exist yet")
     parser.add_argument("--reason", help="move: why, kept on the job")
     parser.add_argument("--actor", help="move: who, as the console names its user")
     parser.add_argument("--job", help="run: the queued move to run")
@@ -715,22 +703,20 @@ def main(argv=None, output=sys.stdout):
             return 0
         job = new_job(arguments.root, actor_of(arguments.actor), arguments.reason or "")
         try:
-            confirm(job["project"], arguments.yes or arguments.json)
+            confirm(job["project"], arguments.yes)
         except Refused:
             (folder_of(arguments.root) / "jobs" / (job["id"] + ".json")).unlink(missing_ok=True)
             raise
+        # The move runs as its own process, so it outlives this session: a dropped SSH connection never cuts it short.
+        subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "run", "--root", str(arguments.root),
+                          "--job", job["id"]], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
         if arguments.wait:
-            subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "run", "--root", str(arguments.root),
-                              "--job", job["id"]], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
             print("Moving " + job["project"] + " to PostgreSQL " + str(MAJOR) + " (job " + job["id"] + ")", file=output)
             ended = follow(arguments.root, job["id"], output)
             print(json.dumps({key: ended.get(key) for key in ("id", "status", "reason", "warnings") if ended.get(key)}),
                   file=output)
             return 0 if ended["status"] == "succeeded" else 1
-        subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "run", "--root", str(arguments.root),
-                          "--job", job["id"]], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
         if arguments.json:
             print(json.dumps(job), file=output)
         else:
@@ -738,7 +724,7 @@ def main(argv=None, output=sys.stdout):
                   + " detached; every workload on the host stops for a few minutes. Read it with: postgres-move.py "
                   "status", file=output)
         return 0
-    except Refused as error:
+    except prepare.Refused as error:
         print("Refused: " + str(error), file=sys.stderr)
         return 2
     except KeyboardInterrupt:

@@ -16,6 +16,8 @@ from unittest import mock
 import prepare
 
 KIT = Path(__file__).resolve().parent
+# Docker's own reading of a volume, kept before the products tests stand in for it.
+VOLUME_PRESENT = prepare.volume_present
 TOKEN = "ghp_" + "T0kenValueNeverPrinted" + "x" * 14
 
 
@@ -151,6 +153,17 @@ class ProductsPrepareTests(unittest.TestCase):
         self.root.chmod(0o700)
         shutil.copy(KIT / "products.compose.yml", self.root / "platform" / "products.compose.yml")
         self.created = []
+        # No PostgreSQL 16 volume on this stand-in host unless a test names one; Docker itself is never asked.
+        self.volumes = set()
+        patcher = mock.patch.object(prepare, "volume_present", lambda name: name in self.volumes)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # The CLI runs as its own process: a Docker that holds no volume stands in for the host's.
+        self.bin = self.directory / "stand-in"
+        self.bin.mkdir()
+        (self.bin / "docker").write_text("#!/bin/sh\nexit 1\n")
+        (self.bin / "docker").chmod(0o755)
+        self.cli_environment = {**os.environ, "PATH": str(self.bin) + os.pathsep + os.environ["PATH"]}
 
     def database(self, root, name, password):
         self.created.append((name, password))
@@ -160,6 +173,42 @@ class ProductsPrepareTests(unittest.TestCase):
 
     def compose(self):
         return (self.root / "platform" / "compose.yml").read_text()
+
+    def test_sixteen_data_waiting_for_its_move_refuses_the_platform_before_anything_is_written(self):
+        self.volumes.add("wheelhouse-products_postgres")
+        with self.assertRaisesRegex(prepare.Refused, "PostgreSQL 16 data waits in wheelhouse-products_postgres; 18 would "
+                                                     "start empty beside it. Move it first: postgres-move.py move"):
+            self.products(product="ocharo-platform", database=True)
+        self.assertFalse((self.root / "platform/compose.yml").exists())
+        self.assertFalse((self.root / "platform/.secrets").exists())
+        self.assertEqual([], self.created)
+        # The finished move's record lets the kit's 18 start on the moved data; the 16 volume stays as it was.
+        move = self.root / "platform" / "postgres-move"
+        move.mkdir(mode=0o700)
+        (move / "moved.json").write_text(json.dumps({"from": 16, "to": 18, "volume": "wheelhouse-products_postgres-pg18"}))
+        self.products()
+        self.assertIn("postgres-pg18:/var/lib/postgresql", self.compose())
+
+    def test_a_running_move_refuses_the_platform(self):
+        move = self.root / "platform" / "postgres-move"
+        move.mkdir(mode=0o700)
+        with open(move / "lock", "w") as lock:
+            prepare.fcntl.flock(lock, prepare.fcntl.LOCK_EX)
+            with self.assertRaisesRegex(prepare.Refused, "A PostgreSQL move runs on this host"):
+                self.products()
+        self.products()
+
+    def test_a_volume_counts_only_when_docker_names_it_back(self):
+        # The runner's stand-in Dockers answer every call with exit 0 and nothing on stdout: that is no volume.
+        for script, present in (("exit 0", False), ("echo wheelhouse-products_postgres", True),
+                                ("echo wheelhouse-products_postgres-pg18", False),
+                                ("echo 'Error: no such volume' >&2; exit 1", False)):
+            with self.subTest(script=script):
+                (self.bin / "docker").write_text("#!/bin/sh\n" + script + "\n")
+                with mock.patch.dict(os.environ, {"PATH": self.cli_environment["PATH"]}):
+                    self.assertEqual(present, VOLUME_PRESENT("wheelhouse-products_postgres"))
+        with mock.patch.dict(os.environ, {"PATH": str(self.directory / "empty")}):
+            self.assertFalse(VOLUME_PRESENT("wheelhouse-products_postgres"), "no Docker CLI holds no volume")
 
     def test_platform_password_is_created_once_and_kept(self):
         self.products()
@@ -350,7 +399,8 @@ class ProductsPrepareTests(unittest.TestCase):
         token = self.token_file("ghp_" + "Wr0ngShapeNeverPrinted")
         result = subprocess.run([sys.executable, str(Path(prepare.__file__)), "--server", "products",
                                  "--root", str(self.root), "--ghcr-user", "test-owner",
-                                 "--ghcr-token-file", str(token)], capture_output=True, text=True)
+                                 "--ghcr-token-file", str(token)], capture_output=True, text=True,
+                                env=self.cli_environment)
         self.assertEqual(1, result.returncode)
         self.assertIn("Use a classic token with read:packages only", result.stderr)
         self.assertNotIn("Wr0ngShapeNeverPrinted", result.stdout + result.stderr)
@@ -360,7 +410,7 @@ class ProductsPrepareTests(unittest.TestCase):
     def test_products_cli_refuses_control_options(self):
         result = subprocess.run([sys.executable, str(Path(prepare.__file__)), "--server", "products",
                                  "--root", str(self.root), "--hostname", "wheelhouse.test-tailnet.ts.net"],
-                                capture_output=True, text=True)
+                                capture_output=True, text=True, env=self.cli_environment)
         self.assertEqual(2, result.returncode)
         self.assertFalse((self.root / "platform/.secrets").exists())
 

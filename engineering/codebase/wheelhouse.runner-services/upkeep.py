@@ -81,7 +81,8 @@ def server_of(server):
 
 def converge_platform(ssh):
     """prepare.py --server products keeps the PostgreSQL password and renders compose.yml again; then PostgreSQL and
-    Traefik start or stay. Shared with the enrollment's platform step."""
+    Traefik start or stay. Shared with the enrollment's platform step. prepare.py refuses first while PostgreSQL 16 data
+    waits for its move to 18, so the kit's 18 never starts empty beside it; the refusal names postgres-move.py."""
     remote(ssh, PREPARE, timeout=120)
     remote(ssh, COMPOSE + " up -d --wait postgres ingress", timeout=900)
     return "PostgreSQL and the ingress run; compose.yml rendered from the kit"

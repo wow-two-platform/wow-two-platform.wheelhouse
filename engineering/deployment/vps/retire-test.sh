@@ -15,6 +15,8 @@ deploy_group=$(id -gn "$deploy_user")
 compose=(sudo -u "$deploy_user" docker compose --project-directory "$deploy_root/platform"
     -f "$deploy_root/platform/compose.yml" --env-file "$deploy_root/platform/host.env")
 
+# PostgreSQL 18 never starts empty beside a host's 16 data: postgres-move.py moves it first (vps.md § PostgreSQL 18).
+python3 "$script_dir/postgres-move.py" check --root "$deploy_root" --project wheelhouse-platform || exit 1
 install -m 0600 -o "$deploy_user" -g "$deploy_group" "$script_dir/platform.compose.yml" "$deploy_root/platform/compose.yml"
 "${compose[@]}" up -d --remove-orphans
 docker volume rm wheelhouse-platform_canary-test 2>/dev/null || true

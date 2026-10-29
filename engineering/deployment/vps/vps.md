@@ -1,6 +1,6 @@
 # Wheelhouse dev VPS
 
-*Last updated: 2026-10-27*
+*Last updated: 2026-10-29*
 
 This bootstrap prepares the private control-plane host on Ubuntu 26.04 amd64: `wheelhouse-prod` and
 `wheelhouse-dev` side by side, each with its own database and sign-in. GitHub builds the image; the existing
@@ -20,14 +20,15 @@ A second VPS that runs products only is wired by [§ Products host](#products-ho
 | [Canary generator](prepare_canary.py) | VPS, deployment account | The canary's dev and prod databases and settings files |
 | [Runner authorization](authorize-runner.sh) | VPS, administrator | A console's own runner SSH identity for this host; with `--remote` and `--accept`, prod's identity for a products host |
 | [Identity template](identity.example.json) | Copy to a private VPS file | Real OAuth credentials and owner allowlist, supplied by the operator |
-| [Platform Compose](platform.compose.yml) | VPS | PostgreSQL 16, private Traefik ingress and the canary's tailnet nodes |
-| [Products Compose](products.compose.yml) | Products VPS | PostgreSQL 16, Traefik (a private entry point, and public 80 and 443 with HTTP-01 certificates) and the site nodes `prepare.py` renders in |
+| [Platform Compose](platform.compose.yml) | VPS | PostgreSQL 18, private Traefik ingress and the canary's tailnet nodes |
+| [Products Compose](products.compose.yml) | Products VPS | PostgreSQL 18, Traefik (a private entry point, and public 80 and 443 with HTTP-01 certificates) and the site nodes `prepare.py` renders in |
 | [Site Serve config](tailscale-serve-products.json) | Products VPS, each site node | Tailnet HTTPS `:443` to Traefik's private entry point |
 | [Network and access](network.md) | Reference | Paths in, tailnet policy and tags, Docker networks, verification |
 | [Console allowlist](control-only.yml) | VPS ingress folder | Traefik middleware: the console entry points accept only the host itself |
 | [Tailnet policy](tailnet-policy.hujson) | Tailscale admin console | Owner devices reach consoles, SSH, canary and product sites; the control host reaches a products host's SSH only |
 | [Network migration](migrate-control-network.sh) | VPS, administrator, once | Moves an existing host onto the `control` and `platform` split |
 | [Break-glass self-deploy](self-deploy.py) | Control host, deployment account | Status, deploy and rollback of both consoles when none answers, with the release image's own runner |
+| [PostgreSQL move](postgres-move.py) | Either host, deployment account, once | A host's PostgreSQL 16 data moved to 18 by dump and restore; `check` is the kit scripts' guard ([§ PostgreSQL 18](#postgresql-18)) |
 | [Host hardening](harden-control.sh) | Control host, administrator, after the self-deploy trial | Firewall, keys-only SSH, unattended security updates; then tailnet-only SSH and pinned runner keys |
 
 The control-host scripts do not accept SSH host keys, enroll Tailscale, fetch operator credentials or start Wheelhouse;
@@ -448,7 +449,8 @@ sudo -u wheelhouse-deploy docker compose --env-file /srv/wheelhouse/platform/hos
 ```
 
 Rerunning `prepare.py --server products` keeps the PostgreSQL password and renders `compose.yml` again, after a kit
-update too: run it after every `bootstrap-products.sh` rerun.
+update too: run it after every `bootstrap-products.sh` rerun. A host whose PostgreSQL 16 data waits for its move is
+refused until [§ PostgreSQL 18](#postgresql-18) has run.
 
 ### 5. Products and their sites (owner runs the script)
 
@@ -595,6 +597,79 @@ sudo bash repair-networks.sh           # recreates each network that lacks the r
 - A network whose subnet or gateway differ is refused, untouched: that is an address review, not a repair.
 - `rehearse.py networks` proves both: dynamic containers first, Traefik still at `.2`; and a repair that keeps a fixed
   address and moves a dynamic one into the range.
+
+## PostgreSQL 18
+
+The kit runs PostgreSQL 18 (`postgres:18-alpine`) on its own volume, `postgres-pg18`, mounted at `/var/lib/postgresql`
+([postgres convention § Version](../../../../../../conventions/development/backend/dotnet/core/mla/domains/persistence/database/postgres/postgres.md#version)).
+A host made before it keeps its 16 cluster in `wheelhouse-platform_postgres` (control) or `wheelhouse-products_postgres`
+(products). 18 refuses that data directory and would start empty on the new volume beside it, so every kit step that
+installs or renders the platform Compose file refuses while 16 data waits with no move recorded: `bootstrap.sh`,
+`retire-test.sh` and `migrate-control-network.sh` through `postgres-move.py check`, and `prepare.py --server products`,
+so Refresh kit and a placement stop at their platform step naming this section.
+
+[`postgres-move.py`](postgres-move.py) moves the data, as the deploy account. Each step lands in
+`platform/postgres-move/jobs/<job>.json` as it runs:
+
+| Step | What happens |
+|---|---|
+| Check the host | 16 runs, no move ran, no rollout or control holds a target's lock (all held to the end), room for twice the data; `postgres:18-alpine` pulled |
+| Stop the workloads | Every running container on `control` and `platform` outside the platform's own project: consoles, canary, products |
+| Dump PostgreSQL 16 | `pg_dumpall` with 18's client into `platform/postgres-move/runs/<job>/`; each database's every table counted |
+| Restore into PostgreSQL 18 | A temporary 18 on the new volume; databases, roles and every table's row count must match 16's |
+| Switch the platform to 18 | 16's Compose files kept as `*.pg16.yml`, `moved.json` written, the kit's file installed (products: rendered with its site nodes); PostgreSQL recreated on 18 at the same addresses and aliases |
+| Start the workloads | What it stopped, each until running and healthy |
+
+- Every database, role, password and row moves, Wheelhouse's own `wheelhouse_prod` and `wheelhouse_dev` included;
+  nothing prints a password or a row.
+- The control host's move stops both consoles for a few minutes: run it from an SSH session, never from a console.
+- A failure before the workloads start again removes the new volume, puts 16 back and starts what it stopped; the job
+  names the step, and the dump stays in `runs/<job>/` for review. The 16 volume is never removed.
+- Rehearsed 2026-10-29 on a local Docker-in-Docker control host: 16 with four databases, a partitioned table, a
+  materialized view and an extension moved to 18.6; every row, and each role's password over TCP, held.
+
+The owner's run, control host first, then the products host; one command per step:
+
+1. Copy the kit to the host, from the repository:
+
+```sh
+scp -r engineering/deployment/vps <admin>@<host>:wheelhouse-kit
+```
+
+2. Lay it out for the deploy account (a products host's Refresh kit leaves the same folder):
+
+```sh
+sudo sh -c 'install -d -m 0700 -o wheelhouse-deploy -g wheelhouse-deploy /srv/wheelhouse/bootstrap/kit && cp -r wheelhouse-kit/. /srv/wheelhouse/bootstrap/kit/ && chown -R wheelhouse-deploy:wheelhouse-deploy /srv/wheelhouse/bootstrap/kit'
+```
+
+3. Read where it stands; `needs-move; PostgreSQL 16` is expected:
+
+```sh
+sudo -u wheelhouse-deploy python3 /srv/wheelhouse/bootstrap/kit/postgres-move.py status
+```
+
+4. Move, following each step; it asks for the platform's project typed (`wheelhouse-platform` or
+   `wheelhouse-products`):
+
+```sh
+sudo -u wheelhouse-deploy python3 /srv/wheelhouse/bootstrap/kit/postgres-move.py move --reason "PostgreSQL 18" --wait
+```
+
+5. Read it again; `moved; PostgreSQL 18` is expected:
+
+```sh
+sudo -u wheelhouse-deploy python3 /srv/wheelhouse/bootstrap/kit/postgres-move.py status
+```
+
+6. Verify. Control host: both consoles sign in, and `self-deploy.py status` reads both ready. Products host: Wheelhouse
+   prod's **Servers › the server › Kit › Refresh kit** succeeds, and each product's check passes.
+
+- A session cut short leaves the move running: it is its own process; `status` reads it.
+- Undo, which loses what was written to 18 since: as the deploy account in `/srv/wheelhouse/platform`, copy
+  `compose.pg16.yml` back over `compose.yml` (a products host also `products.compose.pg16.yml` over
+  `products.compose.yml`), remove `postgres-move/moved.json`, then `docker compose --env-file host.env -f compose.yml up
+  -d --wait postgres`.
+- `wheelhouse-*_postgres` stays until the owner removes it, once both hosts have run on 18 for a while.
 
 ## Break-glass self-deploy
 

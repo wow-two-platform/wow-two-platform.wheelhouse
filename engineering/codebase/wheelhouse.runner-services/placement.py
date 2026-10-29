@@ -1,7 +1,8 @@
 """Places a product on a products host from the console, in place of vps.md's hand-run steps 4 and 5: the host
-converges to this Wheelhouse's kit (upkeep.converge: the kit, its firewall, PostgreSQL and the ingress), the product's
-dev and prod databases are created once, and each of its private sites gets a tailnet node per environment that joins
-with its own single-use key.
+converges to this Wheelhouse's kit (upkeep.converge: the kit, its firewall, PostgreSQL 18 on its `postgres-pg18` volume
+and the ingress), the product's dev and prod databases are created once, and each of its private sites gets a tailnet
+node per environment that joins with its own single-use key. A host whose PostgreSQL 16 data still waits for its move
+(postgres-move.py, vps.md § PostgreSQL 18) stops at the platform step, before any database or node is created.
 
 A placement asks only for what the product's deploy.yml calls for, as the console read it and passes it along
 (`declared`): databases when a service needs PostgreSQL, with the untrusted extensions it declares created in them as

@@ -23,13 +23,15 @@ x-canary-node: &canary-node
     options: { max-size: 10m, max-file: "3" }
 services:
   postgres:
-    image: postgres:16-alpine
+    # PostgreSQL 18 keeps its cluster in /var/lib/postgresql/18/docker and refuses a 16 data directory, so its
+    # volume names the major; a host's 16 data stays in `postgres` until postgres-move.py moves it (vps.md).
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD_FILE: /run/bootstrap/postgres-password
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
     volumes:
-      - postgres:/var/lib/postgresql/data
+      - postgres-pg18:/var/lib/postgresql
       - ./.secrets/postgres-password:/run/bootstrap/postgres-password:ro
       - ./.secrets/wheelhouse-dev.sql:/docker-entrypoint-initdb.d/10-wheelhouse-dev.sql:ro
     networks:
@@ -117,6 +119,6 @@ networks:
     name: platform
     external: true
 volumes:
-  postgres:
+  postgres-pg18:
   canary-dev:
   canary:

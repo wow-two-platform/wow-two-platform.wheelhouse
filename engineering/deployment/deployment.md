@@ -1,6 +1,6 @@
 # Deployment operations
 
-*Last updated: 2026-10-28*
+*Last updated: 2026-10-29*
 
 ## Ownership and current boundary
 
@@ -876,7 +876,10 @@ secrets into it (`catalog.py`'s `LOCAL_SECRETS`). It hosts ForeverPin's `dev` an
 once. Dev is the default; prod deploys on demand. `WHEELHOUSE_REHEARSAL=1` exposes the local
 targets, vault and imported bundles; a deployed control plane never sets it. The rig's databases run PostgreSQL 18 on
 volumes named for the major (`*-pg18`): a rig last run on 16 starts empty and keeps its 16 volumes, which
-`docker volume rm` drops once nothing there is needed.
+`docker volume rm` drops once nothing there is needed. The local products host is the exception: its kit refuses
+`prepare.py` while its own Docker holds `wheelhouse-products_postgres` from a 16 run, as a real host does, until
+`postgres-move.py` moves it ([VPS › PostgreSQL 18](vps/vps.md#postgresql-18)) or the rig's `products-docker` volume is
+dropped.
 
 ```sh
 cd engineering/deployment/rehearsal
@@ -1082,7 +1085,9 @@ A service's recent container output is readable on request through `logs`; Docke
 2. Verify the SSH fingerprint through the provider console; install the pinned known-hosts file.
 3. Install Docker/Compose and Python using the chosen OS's official instructions.
 4. Configure private administration and firewall; expose only intended ingress on 80/443.
-5. Start Traefik and PostgreSQL on the private platform network; Traefik's file provider reads `/srv/wheelhouse/ingress`.
+5. Start Traefik and PostgreSQL 18 on the private platform network; Traefik's file provider reads
+   `/srv/wheelhouse/ingress`. A host still on PostgreSQL 16 moves first: one `postgres-move.py move` per host
+   ([VPS › PostgreSQL 18](vps/vps.md#postgresql-18)), run by the owner over SSH, control host first.
 6. Create distinct least-privilege databases/users for every product/environment.
 7. Write protected runtime settings and registry credentials.
 8. Name each prod site's host on its environment under Products; the runner routes it after a verified rollout.

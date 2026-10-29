@@ -20,13 +20,16 @@ KIT = Path(__file__).resolve().parents[2] / "deployment" / "vps"
 PUBLIC = "203.0.113.20"
 
 # Docker on the products host: the root phase reports the host's address (or fails), Compose succeeds, and
-# `docker ps` is never reached because the test answers the public check itself.
+# `docker ps` is never reached because the test answers the public check itself. Every other call answers exit 0 with
+# nothing on stdout, `volume inspect` included, unless $VOLUMES names the volume: then it prints the name, as Docker does.
 FAKE_DOCKER = textwrap.dedent("""\
     #!/usr/bin/env python3
     import json, os, sys
     from pathlib import Path
     with open(Path(os.environ["HOST_ROOT"]) / "docker.log", "a") as log:
         log.write(" ".join(sys.argv[1:]) + "\\n")
+    if sys.argv[1:3] == ["volume", "inspect"] and sys.argv[-1] in os.environ.get("VOLUMES", "").split():
+        print(sys.argv[-1])
     if sys.argv[1] == "run" and "nsenter" in sys.argv:
         if os.environ.get("ROOT_PHASE_FAILS"):
             print("This bootstrap is reviewed only for Ubuntu 26.04 amd64.", file=sys.stderr)
@@ -110,7 +113,9 @@ class UpkeepTests(unittest.TestCase):
         self.assertEqual(["succeeded"] * 4, [step["status"] for step in result["steps"]])
         # The kit went up as the deploy account; its root phase ran through Docker before PostgreSQL and Traefik.
         self.assertEqual(sorted(kit.FILES), sorted(path.name for path in (self.host / "bootstrap" / "kit").iterdir()))
-        helper, platform = self.docker_calls()
+        # prepare.py asked whether 16 data waits (the stand-in names none) before Compose started 18.
+        helper, guard, platform = self.docker_calls()
+        self.assertEqual("volume inspect --format {{.Name}} wheelhouse-products_postgres", guard)
         self.assertEqual("run --rm --privileged --pid=host --userns=host --network=none " + upkeep.HELPER
                          + " nsenter -t 1 -m -u -i -n -p -- bash " + str(self.host)
                          + "/bootstrap/kit/enroll-products.sh upkeep", helper)
@@ -146,6 +151,25 @@ class UpkeepTests(unittest.TestCase):
         self.assertEqual(["succeeded", "succeeded", "succeeded", "failed"], [step["status"] for step in result["steps"]])
         self.assertIn("No public address is recorded", result["reason"])
         self.assertNotIn("ingress", result["facts"])
+
+    def test_a_host_whose_postgresql_16_data_waits_for_its_move_stops_at_the_platform(self):
+        # The kit's PostgreSQL 18 would start empty beside 16's volume: prepare.py refuses before rendering compose.yml.
+        self.enrolled()
+        self.environment["VOLUMES"] = "wheelhouse-products_postgres"
+        result = self.upkeep()
+        self.assertEqual("failed", result["status"])
+        self.assertEqual("platform", next(step["key"] for step in result["steps"] if step["status"] == "failed"))
+        self.assertIn("PostgreSQL 16 data waits in wheelhouse-products_postgres; 18 would start empty beside it. Move "
+                      "it first: postgres-move.py move", result["reason"])
+        self.assertFalse((self.host / "platform" / "compose.yml").exists())
+        self.assertFalse(any(" up " in call for call in self.docker_calls()))
+        # Once the move is recorded on the host, the same kit converges.
+        moved = self.host / "platform" / "postgres-move"
+        moved.mkdir(mode=0o700)
+        (moved / "moved.json").write_text(json.dumps({"from": 16, "to": 18}))
+        again = self.upkeep()
+        self.assertEqual("succeeded", again["status"], again.get("reason"))
+        self.assertIn("postgres-pg18:/var/lib/postgresql", (self.host / "platform" / "compose.yml").read_text())
 
     def test_a_failed_root_phase_stops_before_the_platform(self):
         self.enrolled()

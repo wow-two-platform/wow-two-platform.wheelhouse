@@ -4,8 +4,10 @@
 The control host (default): a Wheelhouse console environment's database, settings and target. A products host
 (`--server products`): its PostgreSQL password and rendered Compose file, each product's per-environment databases with
 the untrusted extensions it declares and its settings folders, a tailnet node per private site, and a read-only GHCR
-sign-in for the deploy account."""
+sign-in for the deploy account. A products host whose PostgreSQL 16 data waits for its move to 18 is refused first
+(postgres-move.py)."""
 import argparse
+import fcntl
 import ipaddress
 import json
 import os
@@ -43,10 +45,71 @@ REGISTRY = "ghcr.io"
 # An untrusted PostgreSQL extension a product declares (deploy.yml `extensions`); created as superuser at placement.
 EXTENSION = re.compile(r"[a-z][a-z0-9_-]{0,62}")
 READ_ONLY_SCOPES = {"read:packages"}
+# The kit's Compose projects: the control host's platform and a products host's.
+CONTROL_PROJECT = "wheelhouse-platform"
+PRODUCTS_PROJECT = "wheelhouse-products"
+# PostgreSQL 16 kept its cluster in the project's `postgres` volume; the kit's 18 keeps it in `postgres-pg18` and
+# refuses a 16 data directory. postgres-move.py moves one into the other and records it in platform/postgres-move/.
+PREVIOUS_VOLUME = "postgres"
+MOVE_FOLDER = "postgres-move"
+MOVE_MARKER = "moved.json"
 
 
 class Refused(ValueError):
     """A refusal whose message names a rule, never an input value; the CLI prints it as it is."""
+
+
+def volume_present(name):
+    """Whether Docker holds a volume of exactly this name: `docker volume inspect` must print the name back, so a
+    stand-in Docker that answers every call with exit 0 and no output reads as no volume. No Docker CLI, no volume."""
+    try:
+        result = subprocess.run(["docker", "volume", "inspect", "--format", "{{.Name}}", name], capture_output=True,
+                                text=True, timeout=30)
+    except FileNotFoundError:
+        return False
+    except subprocess.TimeoutExpired:
+        raise Refused("Docker did not answer whether " + name + " exists") from None
+    return result.returncode == 0 and result.stdout.strip() == name
+
+
+def move_running(root):
+    """Whether a PostgreSQL move holds the host's move lock now; the lock file is never created here."""
+    try:
+        with (root / "platform" / MOVE_FOLDER / "lock").open("r") as stream:
+            try:
+                fcntl.flock(stream, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            fcntl.flock(stream, fcntl.LOCK_UN)
+            return False
+    except FileNotFoundError:
+        return False
+
+
+def move_recorded(root):
+    """The finished move's record (platform/postgres-move/moved.json), or None when no move to 18 is recorded."""
+    path = root / "platform" / MOVE_FOLDER / MOVE_MARKER
+    if not path.is_file() or path.is_symlink():
+        return None
+    try:
+        value = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def postgres_guard(root, project, present=None):
+    """Why the kit's PostgreSQL 18 must not start on this host now, or None when it may: a move runs, or 16 data waits
+    in the project's `postgres` volume with no move recorded, where 18 would start empty beside it. Every step that
+    installs or renders the platform Compose file asks this first: prepare.py --server products, bootstrap.sh,
+    retire-test.sh and migrate-control-network.sh (the last three through postgres-move.py check)."""
+    if move_running(root):
+        return "A PostgreSQL move runs on this host; wait for it to finish (postgres-move.py status)"
+    previous = project + "_" + PREVIOUS_VOLUME
+    if (present or volume_present)(previous) and move_recorded(root) is None:
+        return ("PostgreSQL 16 data waits in " + previous + "; 18 would start empty beside it. Move it first: "
+                "postgres-move.py move (vps.md § PostgreSQL 18)")
+    return None
 
 
 def private_directory(path):
@@ -217,8 +280,12 @@ def render_products_compose(root):
 
 
 def prepare_products_platform(root):
-    """The products host's PostgreSQL password, created once and kept on every rerun, and its rendered Compose file."""
+    """The products host's PostgreSQL password, created once and kept on every rerun, and its rendered Compose file.
+    Refused before anything is written while 16 data waits for its move, so a kit refresh never starts 18 empty."""
     dedicated_root(root)
+    waiting = postgres_guard(root, PRODUCTS_PROJECT)
+    if waiting:
+        raise Refused(waiting)
     platform = root / "platform"
     # acme/ holds the public ingress's certificates and ACME account, written by Traefik as this account.
     for directory in (root, root / "config", platform, platform / ".secrets", platform / "sites", platform / "acme"):

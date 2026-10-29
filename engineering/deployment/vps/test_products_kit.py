@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 import prepare
 
@@ -483,8 +484,9 @@ class ComposeTests(unittest.TestCase):
         self.root.chmod(0o700)
         shutil.copy(KIT / "products.compose.yml", self.root / "platform" / "products.compose.yml")
         shutil.copy(KIT / "tailscale-serve-products.json", self.root / "platform" / "tailscale-serve.json")
-        prepare.prepare_products(self.root, "ocharo-platform", sites=[("app", "ocharo-desk")],
-                                 tailnet="tail1234.ts.net")
+        with mock.patch.object(prepare, "volume_present", lambda name: False):
+            prepare.prepare_products(self.root, "ocharo-platform", sites=[("app", "ocharo-desk")],
+                                     tailnet="tail1234.ts.net")
         self.compose = (self.root / "platform" / "compose.yml").read_text()
 
     def test_the_products_platform_runs_no_console_and_publishes_only_the_public_ingress_beyond_loopback(self):
@@ -497,6 +499,11 @@ class ComposeTests(unittest.TestCase):
         # The private entry point on loopback; web and websecure on every address, as host ports 80 and 443.
         self.assertEqual([("127.0.0.1:", "18080", "8080"), ("", "80", "8081"), ("", "443", "8443")], published)
         self.assertIn("ipv4_address: 172.30.0.3\n        aliases: [wheelhouse-postgres]", self.compose)
+        # PostgreSQL 18 on a volume of its own, mounted where 18 keeps its cluster; 16's `postgres` volume is left alone.
+        self.assertIn("    image: postgres:18-alpine\n", self.compose)
+        self.assertIn("      - postgres-pg18:/var/lib/postgresql\n", self.compose)
+        self.assertIn("\nvolumes:\n  postgres-pg18:\nservices:\n", self.compose)
+        self.assertNotIn("/var/lib/postgresql/data", self.compose)
         self.assertIn("--entryPoints.private.address=:8080", self.compose)
         self.assertEqual(1, self.compose.count("--entryPoints.private.address"))
 

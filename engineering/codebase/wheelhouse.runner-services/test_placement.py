@@ -37,6 +37,8 @@ FAKE_DOCKER = textwrap.dedent("""\
     root = Path(os.environ["HOST_ROOT"])
     with open(root / "docker.log", "a") as log:
         log.write(" ".join(sys.argv[1:]) + "\\n")
+    if sys.argv[1:3] == ["volume", "inspect"] and sys.argv[-1] in os.environ.get("VOLUMES", "").split():
+        print(sys.argv[-1])
     if sys.argv[1] == "run" and "nsenter" in sys.argv:
         # The kit's root phase through the deploy account's Docker access: here it only reports the host's address.
         print("Kit laid out; firewall: 80 and 443 public, SSH exposure kept.")
@@ -152,14 +154,16 @@ class PlacementTests(unittest.TestCase):
         self.assertEqual([], list((self.host / "private" / "sites").iterdir()))
         compose = (self.host / "platform" / "compose.yml").read_text()
         self.assertIn("../private/sites/ocharo-desk.env", compose)
-        self.assertIn("up -d --wait postgres ingress", self.docker_calls()[1])
+        self.assertEqual("volume inspect --format {{.Name}} wheelhouse-products_postgres", self.docker_calls()[1])
+        self.assertIn("up -d --wait postgres ingress", self.docker_calls()[2])
 
     def test_the_platform_step_brings_the_host_to_this_kit_first(self):
         result = self.place(database=False)
         self.assertEqual("succeeded", result["status"], result.get("reason"))
         # The kit went up as the deploy account, then its root phase ran through Docker, before PostgreSQL and Traefik.
         self.assertEqual(sorted(kit.FILES), sorted(path.name for path in (self.host / "bootstrap" / "kit").iterdir()))
-        helper, platform = self.docker_calls()[:2]
+        helper, guard, platform = self.docker_calls()[:3]
+        self.assertEqual("volume inspect --format {{.Name}} wheelhouse-products_postgres", guard)
         # The rig's switch (set for these tests) lets the kit accept an arm64 host; a real host runs without it.
         self.assertTrue(helper.startswith("run --rm --privileged --pid=host --userns=host --network=none "
                                           "-e WHEELHOUSE_REHEARSAL=1 " + upkeep.HELPER
@@ -171,6 +175,17 @@ class PlacementTests(unittest.TestCase):
                          (facts["kitDigest"], facts["publicAddress"], facts["addressSource"],
                           facts["ingress"]["entryPoints"][0]))
         self.assertIn("Kit " + kit.digest()[:12] + " laid out", result["steps"][0]["detail"])
+
+    def test_a_host_still_on_postgresql_16_places_nothing_until_its_move(self):
+        # The platform step converges to the kit's PostgreSQL 18 (postgres-pg18); with 16 data waiting beside it and no
+        # move recorded, prepare.py refuses before compose.yml is rendered, so no database or node is created.
+        self.environment["VOLUMES"] = "wheelhouse-products_postgres"
+        result = self.place()
+        self.assertEqual("failed", result["status"])
+        self.assertEqual(["failed", "pending", "pending", "pending"], [step["status"] for step in result["steps"]])
+        self.assertIn("PostgreSQL 16 data waits in wheelhouse-products_postgres", result["reason"])
+        self.assertFalse((self.host / "config" / "ocharo-platform-dev").exists())
+        self.assertEqual(0, len(self.fake.keys))
 
     def test_a_rerun_keeps_databases_and_joined_nodes_and_mints_nothing(self):
         self.place()
