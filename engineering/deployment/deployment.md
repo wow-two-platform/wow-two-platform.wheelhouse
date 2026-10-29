@@ -109,9 +109,9 @@ Wheelhouse ships like the products it deploys. `engineering/deployment/deploy.ym
 description, homepage), one service, `console`, with its settings keys, `keys` and `deployments` volumes, a private
 `console` site and `needs: [postgres]`, one `migrate` item on `console`
 ([§ Wheelhouse migrates itself](#wheelhouse-migrates-itself)), and `dotnetEnvironment: true`: `wheelhouse-dev` runs as
-`Development`, `wheelhouse-prod` as `Production`. Its workflows pin pipelines `v0.12.0`, the first generator that
-carries `migrate` and records each item image's migration sets (`v0.11.0` accepts the identity keys, `v0.5.0` writes
-`dotnetEnvironment`).
+`Development`, `wheelhouse-prod` as `Production`. Its workflows pin pipelines `v0.13.0`, which checks Renovate's
+branches without publishing (`v0.12.0` carries `migrate` and records each item image's migration sets, `v0.11.0`
+accepts the identity keys, `v0.5.0` writes `dotnetEnvironment`).
 
 | Workflow | Runs on | Does |
 |---|---|---|
