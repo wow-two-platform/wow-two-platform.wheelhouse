@@ -14,6 +14,8 @@ export const MigrationSource = {
   Gate: 'gate',
   /** The owner's Check now. */
   Check: 'check',
+  /** A database reset: every set at level 0 until the next deploy's migrate step builds the schema again. */
+  Reset: 'reset',
 } as const;
 export type MigrationSource = (typeof MigrationSource)[keyof typeof MigrationSource];
 
@@ -98,6 +100,7 @@ const SourceWords: Readonly<Record<MigrationSource, string>> = {
   migrate: 'Migrated',
   gate: 'Rollback gate',
   check: 'Checked',
+  reset: 'Reset',
 };
 
 /** Pure rules over a target's migration readings and checks. */

@@ -604,7 +604,7 @@ python3 $R reconcile --root /path/to/inventory --target foreverpin-dev --job <ac
 python3 $R vitals   --root /path/to/inventory [--target foreverpin-dev]
 python3 $R stats    --root /path/to/inventory --days 30
 python3 $R logs     --root /path/to/inventory --target foreverpin-dev --service management --tail 200
-python3 $R control  --root /path/to/inventory --target foreverpin-dev --operation stop|start|restart [--service management] --actor operator [--reason "…"]
+python3 $R control  --root /path/to/inventory --target foreverpin-dev --operation stop|start|restart|reset [--service management] --actor operator [--reason "…"]
 python3 $R stops    --root /path/to/inventory
 ```
 
@@ -614,6 +614,8 @@ python3 $R stops    --root /path/to/inventory
 `--service` (a restart names one) — as a job followed like a deploy; it refuses Wheelhouse's own targets and runs only
 while no rollout or other control does. While anything stays stopped (`stops` lists it), every deploy is refused with
 `<target> is stopped; start it before deploying`: start it first ([architecture](../architecture/architecture.md#service-controls)).
+`--operation reset` takes no `--service`: it snapshots and drops the environment's database and leaves its services for
+the next deploy ([§ Database reset](#database-reset)).
 `submit --confirm <target>` carries the typed confirmation that prod on the local server requires; `submit --fleet <id>`
 keeps the fleet rollout that submitted it on the job (the API sets it).
 
@@ -992,12 +994,14 @@ drops the console's database, the vault's data and the target's state.
   lock
   active.json
   current.json                  release, service versions and site URLs of the verified rollout
-  migrations.json               each migration set's last reading: level, newest label, state, release, source
+  migrations.json               each migration set's last reading: level, newest label, state, release, source (a
+                                database reset sets every level to 0)
   stopped.json                  what the owner stopped (the environment or services); deploys refused while present
   jobs/<job-id>.json
   releases/<job-id>/{release,compose}.json
   releases/<job-id>/images-removed    marks an older release whose images were removed
-  snapshots/<job-id>/           prod only: <host>-<database>.dump, <volume>.tar.gz, snapshot.json (newest 5 kept)
+  snapshots/<job-id>/           prod rollouts and every database reset: <host>-<database>.dump, <volume>.tar.gz,
+                                snapshot.json (newest 5 kept)
 /srv/wheelhouse/ingress/<product>-<environment>.yml   Traefik routes for the verified release's sites
 ```
 
@@ -1038,6 +1042,20 @@ without them deploys as before. Spec: `wow-two-ws/ideas/migrations-analysis-2026
   `rollbackCompatible`, with a warning, or refuses.
 - Placement creates a product's `extensions` as the platform PostgreSQL's superuser in both databases (`prepare.py
   --extension`); a rerun adds the ones `deploy.yml` gained.
+
+### Database reset
+
+A product's environment whose database should start over (a dev schema gone astray, a trial's data) is reset from the
+console, never Wheelhouse's own ([architecture § Service controls](../architecture/architecture.md#service-controls)):
+
+1. **Products › the product › the environment › Migrations › Reset database.** Dev confirms once; prod asks for its
+   target ID typed and a reason. The job snapshots the database into `snapshots/<job>/`, stops every service, drops and
+   creates the database again through the platform PostgreSQL, and sets the environment's migration levels to 0.
+2. **Deploy the environment again** (Redeploy release, or the next release): its migrate step builds the schema from 0
+   and the services start.
+
+- The deployment page shows the snapshot and its restore commands, as for a prod rollout.
+- A release without a `migrate` item is refused: nothing would rebuild its database.
 
 Before a prod rollout pulls anything, the runner takes a restore point in `snapshots/<job-id>/`: `pg_dump --format
 custom` of each PostgreSQL database a service that `needs: [postgres]` connects to (every Npgsql `ConnectionStrings`

@@ -1,7 +1,9 @@
 /**
  * Service controls (decision 45): the owner stops, starts or restarts the release an environment runs — one service, or
  * the whole environment for a stop or a start. A stop keeps containers, volumes and routes; every deploy to an
- * environment with something stopped is refused until a start, so an automatic deploy never starts it silently.
+ * environment with something stopped is refused until a start, so an automatic deploy never starts it silently. A reset
+ * (v0.9) snapshots the environment's database, drops and creates it again empty, and leaves every service stopped for
+ * the next deploy, whose migrate step builds the schema and starts them.
  */
 
 /** What a control does. */
@@ -9,6 +11,7 @@ export const ControlOperation = {
   Stop: 'stop',
   Start: 'start',
   Restart: 'restart',
+  Reset: 'reset',
 } as const;
 export type ControlOperation = (typeof ControlOperation)[keyof typeof ControlOperation];
 
@@ -78,9 +81,11 @@ export const ServiceControls = {
   /** Whether a control needs the target ID typed and a reason: prod does. */
   isGuarded: (target: ControlTarget): boolean => target.environment === 'prod',
 
-  /** A control's name: `Stop management`, `Start the environment`. */
+  /** A control's name: `Stop management`, `Start the environment`, `Reset the database`. */
   label: (operation: ControlOperation, service: string | null): string =>
-    `${ServiceControls.verb(operation)} ${service ?? 'the environment'}`,
+    operation === ControlOperation.Reset
+      ? 'Reset the database'
+      : `${ServiceControls.verb(operation)} ${service ?? 'the environment'}`,
 
   /** A recorded control's name, as lists show it. */
   labelOf: (operation: DeploymentOperation): string =>
@@ -88,7 +93,13 @@ export const ServiceControls = {
 
   /** An operation's verb, capitalised. */
   verb: (operation: ControlOperation): string =>
-    operation === ControlOperation.Stop ? 'Stop' : operation === ControlOperation.Start ? 'Start' : 'Restart',
+    operation === ControlOperation.Stop
+      ? 'Stop'
+      : operation === ControlOperation.Start
+        ? 'Start'
+        : operation === ControlOperation.Reset
+          ? 'Reset'
+          : 'Restart',
 
   /** What a stopped environment's state reads: `Stopped`, or `management stopped`. */
   stateLabel: (stop: TargetStop): string =>
@@ -97,6 +108,9 @@ export const ServiceControls = {
   /** What a control does, for its confirmation. */
   consequence: (request: ControlRequest): string => {
     const subject = request.service ?? request.target.id;
+    if (request.operation === ControlOperation.Reset)
+      return `${subject}'s database is snapshotted, then dropped and created again, empty. Every service stops until the `
+        + "next deploy's migrate step builds the schema and starts them; the snapshot stays on the target.";
     if (request.operation === ControlOperation.Restart)
       return `${subject} stops and starts again on the release it runs.`;
     if (request.operation === ControlOperation.Start)

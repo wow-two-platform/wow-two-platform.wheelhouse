@@ -5,6 +5,7 @@ import {
   DatabaseBackup,
   DatabaseZap,
   Dot,
+  Eraser,
   FileCog,
   FileMinus,
   Globe,
@@ -45,5 +46,6 @@ export const StepKindIcons: Readonly<Record<StepKind, Component>> = {
   [StepKind.RemoveFiles]: FileMinus,
   [StepKind.RollBack]: History,
   [StepKind.Restore]: ArchiveRestore,
+  [StepKind.Reset]: Eraser,
   [StepKind.Other]: Dot,
 };

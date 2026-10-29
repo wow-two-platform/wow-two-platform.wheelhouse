@@ -3,7 +3,7 @@ import type { ControlRequest } from "@/domain/deployments/controls";
 
 /** The control the owner asked for and whether its confirmation is open. */
 export interface ControlConfirmModalProps {
-  /** The stop, start or restart to confirm; null while none is asked for. */
+  /** The stop, start, restart or database reset to confirm; null while none is asked for. */
   readonly request: ControlRequest | null;
   /** The controlled dialog state. */
   readonly open: boolean;
@@ -12,7 +12,7 @@ export interface ControlConfirmModalProps {
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { Pause, Play, RotateCw } from "lucide-vue-next";
+import { Eraser, Pause, Play, RotateCw } from "lucide-vue-next";
 
 import { Field, TextInput } from "@wow-two-beta/fe/presentation/forms";
 import { TypedConfirmModal } from "@wow-two-beta/fe/presentation/overlays";
@@ -23,8 +23,9 @@ import { ControlOperation, ServiceControls } from "@/domain/deployments/controls
 import { failureReason } from "@/integration/common";
 
 /**
- * Confirms a stop, start or restart before it is queued: dev asks once, prod asks for its target ID typed and a reason.
- * The job then reads in the environment's deployments like a deploy; the dialog stays until the target ends it.
+ * Confirms a stop, start, restart or database reset before it is queued: dev asks once, prod asks for its target ID typed
+ * and a reason. The job then reads in the environment's deployments like a deploy; the dialog stays until the target
+ * ends it.
  */
 defineOptions({ name: "ControlConfirmModal" });
 const props = defineProps<ControlConfirmModalProps>();
@@ -43,18 +44,20 @@ const label = computed(() =>
 const title = computed(() => (props.request ? `${label.value} on ${props.request.target.id}?` : ""));
 const guarded = computed(() => (props.request ? ServiceControls.isGuarded(props.request.target) : false));
 const tone = computed(() =>
-  props.request?.operation === ControlOperation.Stop
+  props.request?.operation === ControlOperation.Stop || props.request?.operation === ControlOperation.Reset
     ? "danger"
     : props.request?.operation === ControlOperation.Restart
       ? "warning"
       : "primary",
 );
 const icon = computed(() =>
-  props.request?.operation === ControlOperation.Stop
-    ? Pause
-    : props.request?.operation === ControlOperation.Restart
-      ? RotateCw
-      : Play,
+  props.request?.operation === ControlOperation.Reset
+    ? Eraser
+    : props.request?.operation === ControlOperation.Stop
+      ? Pause
+      : props.request?.operation === ControlOperation.Restart
+        ? RotateCw
+        : Play,
 );
 const error = computed(() => outcome.value ?? failureReason(control.error.value));
 

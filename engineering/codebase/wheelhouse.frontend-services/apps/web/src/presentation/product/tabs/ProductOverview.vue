@@ -558,6 +558,7 @@ function openDeploy(job?: DeploymentJob): void {
               :key="target.id"
               :target="target.id"
               :migrations="state.data.value.migrations"
+              :control="controlTarget"
             />
             <EnvironmentCompare
               v-if="product"

@@ -56,8 +56,8 @@ test("a set reads by name and schema, its state in the console's vocabulary, and
   );
   assert.deepEqual(["ahead-compatible", "current", "owner-conflict", null].map(MigrationRules.wordOf),
     ["ahead, compatible", "current", "owner conflict", "no reading"]);
-  assert.deepEqual(["migrate", "gate", "check", "later"].map(MigrationRules.sourceOf),
-    ["Migrated", "Rollback gate", "Checked", "later"]);
+  assert.deepEqual(["migrate", "gate", "check", "reset", "later"].map(MigrationRules.sourceOf),
+    ["Migrated", "Rollback gate", "Checked", "Reset", "later"]);
   assert.equal(MigrationRules.spansServices([set(), set({ name: "identity" })]), false);
   assert.equal(MigrationRules.spansServices([set(), set({ service: "jobs" })]), true);
   assert.deepEqual(MigrationRules.setsOf(null), []);

@@ -46,6 +46,23 @@ test("a control reads by what it does", () => {
   assert.match(ServiceControls.consequence({ target: dev, operation: "stop", service: null }), /volumes and routes stay/);
 });
 
+test("a database reset takes the whole environment and says what it drops and what rebuilds it", () => {
+  assert.equal(ControlOperation.Reset, "reset");
+  assert.equal(ServiceControls.label(ControlOperation.Reset, null), "Reset the database");
+  assert.equal(ServiceControls.labelOf({ kind: "reset", services: [] }), "Reset the database");
+  assert.equal(ServiceControls.verb(ControlOperation.Reset), "Reset");
+  const consequence = ServiceControls.consequence({ target: prod, operation: ControlOperation.Reset, service: null });
+  assert.match(consequence, /^foreverpin-prod's database is snapshotted, then dropped and created again, empty/);
+  assert.match(consequence, /next deploy's migrate step builds the schema/);
+  assert.equal(ServiceControls.isGuarded(prod), true, "prod's reset asks for its target ID typed and a reason");
+  const item = DeploymentItemSchema.parse({ id: "r1", status: "succeeded", outcome: "succeeded", state: "succeeded",
+    attention: "none", submittedAt: "2026-10-29T10:00:00Z", operation: { kind: "reset", services: [] } });
+  assert.deepEqual(item.operation, { kind: "reset", services: [] });
+  const queued = ControlSubmittedSchema.parse({ id: "r1", targetId: "foreverpin-dev", status: "queued",
+    operation: { kind: "reset", services: [] }, release: "v1.0.0" });
+  assert.equal(queued.operation.kind, "reset");
+});
+
 test("a stopped environment's pill reads stopped, never failed", () => {
   const summary = { environment: "dev", lastDeploy: null, running: null, weekly: [], lastAttempt: null,
     stopped: { environment: true, services: [] } };

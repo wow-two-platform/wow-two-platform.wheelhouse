@@ -1,4 +1,5 @@
 <script lang="ts">
+import type { ControlTarget } from "@/domain/deployments/controls";
 import type { TargetMigrations } from "@/domain/deployments/migrations";
 
 /** Defines an environment's Migrations panel. */
@@ -7,28 +8,34 @@ export interface MigrationsPanelProps {
   readonly target: string;
   /** What the target last learned about each migration set, from its state. */
   readonly migrations: TargetMigrations | null | undefined;
+  /** The environment a database reset acts on; none offers no reset (Wheelhouse itself keeps its data). */
+  readonly control?: ControlTarget | null;
 }
 </script>
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { DatabaseZap, ShieldCheck } from "lucide-vue-next";
+import { DatabaseZap, Eraser, ShieldCheck } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge, RelativeTime } from "@wow-two-beta/fe/presentation/display";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 
 import { useMigrationsCheck } from "@/application/deployments";
 import { ReleaseSets } from "@/domain/deployments";
+import { ControlOperation, type ControlRequest } from "@/domain/deployments/controls";
 import { MigrationRules, type MigrationCheck } from "@/domain/deployments/migrations";
 import { failureReason } from "@/integration/common";
 import { InfoPopover, StatusPill } from "@/presentation/common/components";
+import ControlConfirmModal from "@/presentation/deployments/components/ControlConfirmModal.vue";
 
 /**
  * An environment's migration sets as its target last read them (migrations spec M38 stage 1): per set its name, level,
  * newest migration with its kind, its state against the release, and which release read it when. Check now runs
  * `migrate check` from the image the environment runs (`GET /api/deployments/targets/{target}/migrations`, up to about
- * 90 seconds), shows any item that did not pass, and reads the target's state again. The page keys the panel by target,
- * so a check's answer never follows the owner to another environment.
+ * 90 seconds), shows any item that did not pass, and reads the target's state again. Reset database drops and creates
+ * the environment's database again after a snapshot (v0.9): dev asks once, prod for its target ID typed and a reason;
+ * the next deploy's migrate step builds the schema. The page keys the panel by target, so a check's answer never
+ * follows the owner to another environment.
  */
 defineOptions({ name: "MigrationsPanel" });
 const props = defineProps<MigrationsPanelProps>();
@@ -42,6 +49,16 @@ const sets = computed(() => MigrationRules.setsOf(props.migrations));
 const namesService = computed(() => MigrationRules.spansServices(sets.value));
 const failures = computed(() => (result.value ? MigrationRules.failures(result.value) : []));
 const blocking = computed(() => failures.value.some(MigrationRules.isBlocking));
+/** The database reset the owner is confirming. */
+const reset = ref<ControlRequest | null>(null);
+const confirmingReset = ref(false);
+
+/** Asks to confirm a reset of the environment's database. @internal */
+function askReset(): void {
+  if (!props.control) return;
+  reset.value = { target: props.control, operation: ControlOperation.Reset, service: null };
+  confirmingReset.value = true;
+}
 
 /** Runs Check now; its answer replaces the last one. @internal */
 async function checkNow(): Promise<void> {
@@ -69,6 +86,10 @@ async function checkNow(): Promise<void> {
             Check now runs a write-free check from the image the environment runs, up to a minute and a half; it is refused
             while a rollout runs.
           </p>
+          <p class="mt-2">
+            Reset database snapshots the environment's database, drops it and creates it again, empty, and stops every
+            service. The next deploy's migrate step builds the schema and starts them again.
+          </p>
         </InfoPopover>
       </div>
       <Button
@@ -80,6 +101,9 @@ async function checkNow(): Promise<void> {
         @click="checkNow"
       >
         <template #leading><ShieldCheck :size="14" /></template>Check now
+      </Button>
+      <Button v-if="props.control" size="sm" variant="outline" tone="danger" class="max-md:min-h-11" @click="askReset">
+        <template #leading><Eraser :size="14" /></template>Reset database
       </Button>
     </div>
     <div aria-live="polite" class="empty:hidden mb-3 flex flex-col gap-2">
@@ -125,5 +149,6 @@ async function checkNow(): Promise<void> {
         /></span>
       </li>
     </ul>
+    <ControlConfirmModal :open="confirmingReset" :request="reset" @update:open="confirmingReset = $event" />
   </section>
 </template>

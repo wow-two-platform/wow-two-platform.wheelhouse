@@ -14,13 +14,15 @@ test("each runner step name reads as its kind, and a name the runner adds later 
     "Render settings", "Check target", "Snapshot data", "Pull images", "Dry-run migrations", "Start desk, jobs",
     "Start containers", "Verify services", "Publish sites", "Probe sites", "Verify end to end", "Remove unused images",
     "Remove old files", "Roll back to v0.8.4", "Restore the previous release", "Drain traffic", "Wait for health",
-    "Stop api", "Restart api", "Migrate api", "Rollback gate api", "Something new",
+    "Stop api", "Restart api", "Migrate api", "Rollback gate api", "Snapshot the database", "Stop the environment",
+    "Reset ocharo_dev", "Migration levels to 0", "Something new",
   ];
   assert.deepEqual(names.map(StepKinds.of), [
     StepKind.RenderSettings, StepKind.CheckTarget, StepKind.Snapshot, StepKind.Pull, StepKind.Migrations, StepKind.Start,
     StepKind.Start, StepKind.Verify, StepKind.PublishSites, StepKind.ProbeSites, StepKind.VerifyEndToEnd,
     StepKind.RemoveImages, StepKind.RemoveFiles, StepKind.RollBack, StepKind.Restore, StepKind.Drain, StepKind.Wait,
-    StepKind.Stop, StepKind.Restart, StepKind.Migrations, StepKind.RollbackGate, StepKind.Other,
+    StepKind.Stop, StepKind.Restart, StepKind.Migrations, StepKind.RollbackGate, StepKind.Snapshot, StepKind.Stop,
+    StepKind.Reset, StepKind.Migrations, StepKind.Other,
   ]);
 });
 
