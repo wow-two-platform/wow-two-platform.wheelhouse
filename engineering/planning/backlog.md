@@ -50,7 +50,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 |---|---|---|
 | Retire CI's deploy path and its secrets after the burn-in | engineering | After the self-deploy burn-in below; fallback in `deployment.md` § Activation |
 | Close the control host's public SSH | engineering | Once CI's deploy path is retired |
-| Ability to gate Wheelhouse's own returns without forced compatibility | feature | Once neither console keeps a release from before the migrate step (v0.7.8 first declares it), drop the forced `rollbackCompatible` from `self-deploy.py` `gated()` and `fleet.py`; a return to v0.7.7 or earlier is then refused |
 | Burn in Wheelhouse's self-deploy with three self-promotions | product | Runs to 2026-10-31; the first self-promotion ran 2026-10-24. Fallback in `deployment.md` § Activation |
 | Ability to manage the control host's firewall, SSH and updates like a products host | feature | |
 | Ability to rebuild the control host from backups, rehearsed | feature | |
@@ -108,8 +107,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Ability to move a host's PostgreSQL 16 data to 18 by dump and restore | feature | Owner 2026-10-28: PostgreSQL 18 everywhere; live hosts hold 16 data, which 18 refuses (postgres convention § Version). Unrun draft [`iteration-9-postgres-move.draft.py`](version-track/v0.7/iteration-9-postgres-move.draft.py): stops the host's workloads, dumps 16, restores into 18 on a new volume, compares row counts, switches, restarts, keeps the 16 volume; runs detached from prod's console over SSH or as one owner command. Still to wire: compose files on new `postgres-pg18` volumes; a guard refusing a kit refresh that would start 18 on 16 data in `prepare.py`, `bootstrap.sh`, `retire-test.sh` and `migrate-control-network.sh`; `vps/*.compose.yml`, `kit.py`, `placement.py` and the Dockerfile. The test fakes answer `docker volume inspect` with exit 0, so the guard must find the volume name on stdout. Tests, local stacks and the runner's snapshot image are on 18 already |
-| Ability to reset a product's database by dropping and recreating it | feature | Owner 2026-10-28, for the product sweep: a `reset` operation on the service-control path; prod asks for the typed target ID and a reason, Wheelhouse's own targets refused. Snapshot first, stop the services, drop and recreate through the platform PostgreSQL container, set `migrations.json` levels to 0; the next deploy's migrate step rebuilds the schema. The canary declares `migrate` without a `database.json`, so the reset reads its connection string from the settings file |
 | Ability to back up databases and volumes off-provider on a schedule | feature | |
 | Ability to restore a backup and prove it works | feature | |
 | Ability to drain requests and show maintenance before a rollout | feature | |
