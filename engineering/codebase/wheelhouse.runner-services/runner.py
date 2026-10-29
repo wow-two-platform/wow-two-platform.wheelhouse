@@ -114,9 +114,17 @@ VERIFY_MEMORY = "512m"
 VERIFY_SUMMARY_LIMIT = 300
 # Service controls (decision 45): what the owner may do to the release a target runs. A stop keeps containers, volumes
 # and routes and leaves `stopped.json`, which every deploy refuses until a start removes it; a start brings back the
-# same release, never pulling or recreating; a restart is one service's stop and start.
-OPERATIONS = ("stop", "start", "restart")
+# same release, never pulling or recreating; a restart is one service's stop and start. A reset (v0.9) drops and
+# recreates the environment's database and leaves its services stopped for the next deploy's migrate step to rebuild.
+OPERATIONS = ("stop", "start", "restart", "reset")
 STOPPED = "stopped.json"
+# A database and its owner the reset names in SQL: plain lowercase identifiers only, so quoting can never break.
+IDENTIFIER = re.compile(r"[a-z_][a-z0-9_]{0,62}")
+# What a reset never drops: the cluster's own databases and Wheelhouse's (its consoles keep their data, v0.9).
+PROTECTED_DATABASES = ("postgres", "template0", "template1", "wheelhouse_dev", "wheelhouse_prod")
+SELF_PRODUCT = "wheelhouse"
+# The platform PostgreSQL a reset acts through: the kit's `postgres` service, in a `wheelhouse-*` Compose project.
+POSTGRES_SERVICE = "postgres"
 # How long a stopping container gets to exit before Docker kills it.
 STOP_GRACE_SECONDS = 30
 # The settings file each service of a release mounted, as its rollout's Compose interpolated it; kept beside the
@@ -949,12 +957,14 @@ def snapshot_sources(target, manifest, compose, project):
     return databases, volumes
 
 
-def take_snapshot(base, job_id, target, manifest, compose, project, docker):
+def take_snapshot(base, job_id, target, manifest, compose, project, docker, sources=None):
     """Dumps each database and tars each existing named volume into <base>/snapshots/<job>/ before anything changes,
-    beside a snapshot.json naming them and how to restore them; keeps the newest snapshots. Returns the snapshot, or
-    None when there is nothing to snapshot. Any failure removes the partial snapshot and fails the rollout."""
+    beside a snapshot.json naming them and how to restore them; keeps the newest snapshots. `sources` names the
+    databases and volumes when the caller knows them (a reset: its database alone), else the release's
+    (snapshot_sources). Returns the snapshot, or None when there is nothing to snapshot. Any failure removes the partial
+    snapshot and fails the rollout."""
     image, keep = snapshot_settings(target)
-    databases, volumes = snapshot_sources(target, manifest, compose, project)
+    databases, volumes = sources if sources is not None else snapshot_sources(target, manifest, compose, project)
     present = []
     for volume in volumes:
         try:
@@ -1266,23 +1276,32 @@ def mounted_file(path):
     return path.is_absolute() and path.is_file() and not path.is_symlink()
 
 
-def control_environment(target, manifest, bundle):
-    """What Compose interpolates for a control of the release a target runs: each service's settings file as that
-    release's rollout mounted it (`settings-paths.json` beside the release), else the rendered file, else the host file
-    the target names — a release applied before its target rendered mounted that one. Neither renders nor checks a
-    file's contents: a control changes no settings, it only needs the running containers' own files."""
-    environment = base_environment(target)
+def mounted_settings(target, manifest, bundle):
+    """Each service's settings file as the running release's rollout mounted it (`settings-paths.json` beside the
+    release), else the rendered file, else the host file the target names — a release applied before its target
+    rendered mounted that one."""
     try:
         recorded = read_json(Path(bundle) / SETTINGS_PATHS)
     except (OSError, ValueError):
         recorded = {}
     recorded = recorded if isinstance(recorded, dict) else {}
+    paths = {}
     for service in sorted(manifest.get("requiredConfiguration") or {}):
         host = target.get("settings", {}).get(service)
         candidates = [recorded.get(service), rendered_path(target, service) if renders(target) else None, host]
         path = next((Path(item) for item in candidates if isinstance(item, (str, Path)) and mounted_file(Path(item))),
                     None)
         require(path is not None, "No settings file for " + service + " is left on this target; deploy the release again")
+        paths[service] = path
+    return paths
+
+
+def control_environment(target, manifest, bundle):
+    """What Compose interpolates for a control of the release a target runs: each service's settings file as it is
+    mounted (mounted_settings). Neither renders nor checks a file's contents: a control changes no settings, it only
+    needs the running containers' own files."""
+    environment = base_environment(target)
+    for service, path in mounted_settings(target, manifest, bundle).items():
         environment[settings_variable(service)] = str(path)
     return environment
 
@@ -1770,6 +1789,20 @@ class Docker:
         release created — nothing is pulled or recreated — and waits for their health checks."""
         self.compose(bundle, "up", "--detach", "--wait", "--wait-timeout", str(self.health_timeout()),
                      "--no-recreate", "--pull", "never", *(["--no-deps", *services] if services else []))
+
+    def psql(self, container, database, sql, step, timeout=300):
+        """SQL on stdin as the platform PostgreSQL's superuser over its own socket, inside its container: the rows, one
+        a line, unaligned. Only names and counts are ever asked for; nothing it answers reaches a record unread."""
+        try:
+            result = subprocess.run(["docker", "exec", "-i", container, "psql", "-U", "postgres", "-d", database, "-X",
+                                     "-q", "-A", "-t", "-v", "ON_ERROR_STOP=1"], input=sql, env=self.environment,
+                                    capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise CommandFailed(step + " timed out after " + str(timeout) + "s") from None
+        if result.returncode:
+            raise CommandFailed(step + " failed (exit " + str(result.returncode) + "); inspect the platform PostgreSQL "
+                                "privately")
+        return [line for line in result.stdout.splitlines() if line]
 
     def verify(self, bundle, manifest):
         for service, image in manifest["images"].items():
@@ -2758,7 +2791,10 @@ def write_stopped(base, stopped, actor):
 
 
 def control_label(operation, services):
-    """A control's one-line name, as its step and history read it: `Stop management`, `Start the environment`."""
+    """A control's one-line name, as its step and history read it: `Stop management`, `Start the environment`,
+    `Reset the database`."""
+    if operation == "reset":
+        return "Reset the database"
     return operation.capitalize() + " " + (", ".join(services) if services else "the environment")
 
 
@@ -2783,6 +2819,13 @@ def control_plan(base, operation, services):
         require(name in manifest["images"], "The release " + manifest["release"] + " has no service " + name)
     stopped = stopped_of(base) or {"environment": False, "services": []}
     whole = stopped["environment"]
+    if operation == "reset":
+        # The whole environment's database, whatever was stopped: the next deploy rebuilds it and starts everything.
+        require(not services, "A reset takes the environment's database, never one service")
+        require(manifest["product"] != SELF_PRODUCT, "Wheelhouse's own databases are never reset; they keep their data")
+        require(release_migrate(manifest), "The release " + manifest["release"] + " declares no migrate item, so no "
+                                           "deploy would rebuild a reset database; deploy one that does first")
+        return current, bundle, manifest, None
     if operation == "stop":
         require(not whole, base.name + " is already stopped")
         require(not set(services) & set(stopped["services"]), ", ".join(services) + " is already stopped")
@@ -2797,6 +2840,110 @@ def control_plan(base, operation, services):
         require(services[0] not in stopped["services"], services[0] + " is stopped; start it instead")
         after = stopped if stopped["services"] else None
     return current, bundle, manifest, after
+
+
+def reset_databases(target, manifest, bundle):
+    """The databases a reset drops and recreates, each as connection_of reads it: the target's own database.json when the
+    host kit placed one; else, for a product that declares migrate without one (the canary), every PostgreSQL connection
+    string in the settings file each migrate item's service mounts. Each database and its owner must be plain
+    identifiers, and never one of the cluster's own or Wheelhouse's."""
+    folder = settings_folder(target)
+    value = target_database(folder) if folder.is_dir() else None
+    found = []
+    if value is not None:
+        found.append(connection_of(value))
+    else:
+        mounted = mounted_settings(target, manifest, bundle)
+        for item in release_migrate(manifest):
+            path = mounted.get(item["service"])
+            if path is None:
+                continue
+            settings = private_settings(path, item["service"])
+            for key in flat_keys(settings):
+                text = configuration_value(settings, key)
+                if connection_key(key) and isinstance(text, str):
+                    found.append(connection_of(text))
+    databases, seen = [], set()
+    for connection in found:
+        if connection is None or (connection["host"], connection["port"], connection["database"]) in seen:
+            continue
+        seen.add((connection["host"], connection["port"], connection["database"]))
+        require(IDENTIFIER.fullmatch(connection["database"]) and IDENTIFIER.fullmatch(connection["username"] or ""),
+                "A reset names only plain lowercase databases and owners: " + connection["database"])
+        require(connection["database"] not in PROTECTED_DATABASES, connection["database"] + " is never reset")
+        databases.append({**connection, "service": next((item["service"] for item in release_migrate(manifest)), None)})
+    require(databases, "No database to reset: the target has no database.json, and no migrate item's settings name a "
+                       "PostgreSQL connection string")
+    return databases
+
+
+def platform_postgres(docker, target, databases):
+    """The platform PostgreSQL's container on the target's network (the kit's `postgres` service in a `wheelhouse-*`
+    project), checked to be the very host every database's connection names: one of its aliases or its address there.
+    A reset acts through it as the superuser, so a database anywhere else is refused."""
+    network = target.get("variables", {}).get("PLATFORM_NETWORK")
+    require(network, "The target names no platform network, so its PostgreSQL cannot be found")
+    try:
+        ids = docker.execute(["docker", "ps", "--quiet", "--filter", "network=" + network,
+                              "--filter", "label=com.docker.compose.service=" + POSTGRES_SERVICE], "docker ps",
+                             timeout=30).split()
+        details = json.loads(docker.execute(["docker", "inspect", *ids[:10]], "docker inspect", timeout=30)) if ids else []
+    except ValueError:
+        details = []
+    for item in details if isinstance(details, list) else []:
+        labels = (item.get("Config") or {}).get("Labels") or {}
+        if not str(labels.get("com.docker.compose.project", "")).startswith("wheelhouse-"):
+            continue
+        endpoint = ((item.get("NetworkSettings") or {}).get("Networks") or {}).get(network) or {}
+        names = set(endpoint.get("Aliases") or []) | set(endpoint.get("DNSNames") or []) | {endpoint.get("IPAddress")}
+        for database in databases:
+            require(database["host"] in names, database["database"] + " is on " + database["host"] + ", not the "
+                    "platform PostgreSQL; a reset drops only what the platform holds")
+        return item.get("Id") or ids[0]
+    raise Rejected("No platform PostgreSQL runs on " + network + "; start the host's platform first")
+
+
+def owned_database(docker, container, database):
+    """Refuses a database whose owner is not a role on the platform PostgreSQL, or that belongs to another role: the
+    reset recreates it for the owner its connection names, and never drops another's."""
+    name, owner = database["database"], database["username"]
+    found = docker.psql(container, "postgres", "SELECT (SELECT count(*) FROM pg_roles WHERE rolname = '" + owner
+                        + "'), (SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '" + name + "');\n",
+                        "Read " + name)
+    roles, _, current = (found[0] if found else "0|").partition("|")
+    require(roles == "1", name + "'s owner " + owner + " is not a role on the platform PostgreSQL")
+    require(current in ("", owner), name + " belongs to " + current + ", not " + owner + "; refusing to drop it")
+
+
+def reset_database(docker, container, database, extensions):
+    """Drops and recreates one database through the platform PostgreSQL, owned by the role it had, with the release's
+    declared extensions created again as the superuser (M41)."""
+    name, owner = database["database"], database["username"]
+    docker.psql(container, "postgres", 'DROP DATABASE IF EXISTS "' + name + '" WITH (FORCE);\n'
+                + 'CREATE DATABASE "' + name + '" OWNER "' + owner + '";\n', "Reset " + name)
+    if extensions:
+        docker.psql(container, name, "".join('CREATE EXTENSION IF NOT EXISTS "' + extension + '";\n'
+                                             for extension in extensions), "Extensions in " + name)
+
+
+def reset_levels(base, job_id, release, snapshot):
+    """Every migration set the target knows goes to level 0, read as `behind` from source `reset`: the database holds no
+    schema until the next deploy's migrate step rebuilds it, which no rollback gate may then hold up. Returns how many
+    sets it set."""
+    known = known_migrations(base)
+    if not known or not known["sets"]:
+        return 0
+    at = now()
+    sets = []
+    for item in known["sets"]:
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            continue
+        reset = {key: value for key, value in item.items() if key != "appliedBy"}
+        reset.update(level=0, newestLabel=None, newestKind=None, state="behind", rollbackFloor=None, release=release,
+                     job=job_id, source="reset", at=at, resetFrom=item.get("level"), snapshot=snapshot)
+        sets.append(reset)
+    write_json(Path(base) / MIGRATIONS_FILE, {"updatedAt": at, "sets": sets})
+    return len(sets)
 
 
 def control_ready(base):
@@ -2860,10 +3007,14 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker):
         steps = Steps(record, save)
         docker = None
         names = services or sorted(manifest["images"])
+        prior = stopped_of(base)
+        progress = {"stopped": False, "dropped": False}
         try:
             docker = docker_factory(target, control_environment(target, manifest, bundle))
             environment_override(bundle, target["environment"])
-            if operation == "stop":
+            if operation == "reset":
+                reset(base, target, manifest, bundle, project, docker, steps, record, job_id, actor, names, progress)
+            elif operation == "stop":
                 # Marked first: a stop cut short still keeps deploys from starting what it reached.
                 write_stopped(base, after, actor)
                 with steps.run(control_label("stop", services)) as step:
@@ -2885,14 +3036,17 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker):
             record["failure"] = type(error).__name__
             if reason(error):
                 record["reason"] = reason(error)
-            if docker is not None and operation != "stop" and isinstance(error, CommandFailed):
+            if operation == "reset":
+                record["reason"] = reset_failed(record.get("reason"), docker, bundle, prior, progress, record)
+            elif docker is not None and operation != "stop" and isinstance(error, CommandFailed):
                 with contextlib.suppress(Exception):
                     states = docker.unhealthy(bundle)
                     if states:
                         record["reason"] = record.get("reason", "The control failed") + "; not healthy: " + ", ".join(states)
         record["stopped"] = stopped_of(base)
-        if docker is not None:
-            # A service the owner keeps stopped has no health to report.
+        if docker is not None and operation != "reset":
+            # A service the owner keeps stopped has no health to report; a reset leaves every service stopped for the
+            # next deploy, so it reports none either.
             with contextlib.suppress(Exception):
                 record["health"] = {name: value for name, value in docker.service_health(bundle).items()
                                     if value in HEALTH and not (record["stopped"] and (
@@ -2900,6 +3054,54 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker):
         record["completedAt"] = now()
         save()
         return record
+
+
+def reset(base, target, manifest, bundle, project, docker, steps, record, job_id, actor, names, progress):
+    """A reset's steps (v0.9): the database snapshot, every service stopped, each database dropped and recreated through
+    the platform PostgreSQL with the release's extensions, the migration levels set to 0. What the owner had marked
+    stopped is cleared: every service stays stopped until the next deploy migrates the empty database and starts them."""
+    databases = reset_databases(target, manifest, bundle)
+    container = platform_postgres(docker, target, databases)
+    for database in databases:
+        owned_database(docker, container, database)
+    record["reset"] = {"databases": [database["database"] for database in databases]}
+    with steps.run("Snapshot the database") as step:
+        taken = take_snapshot(base, job_id, target, manifest, read_json(Path(bundle) / "compose.json"), project, docker,
+                              sources=(databases, []))
+        record["snapshot"] = taken
+        step["detail"] = plural(len(taken["databases"]), "database") + " in " + taken["path"]
+    with steps.run("Stop the environment") as step:
+        progress["stopped"] = True
+        docker.stop(bundle, [])
+        step["detail"] = plural(len(names), "service") + " stopped until the next deploy"
+    extensions = release_extensions(manifest)
+    for database in databases:
+        with steps.run("Reset " + database["database"]) as step:
+            progress["dropped"] = True
+            reset_database(docker, container, database, extensions)
+            step["detail"] = ("Dropped and created again, owned by " + database["username"]
+                              + ("; extensions " + ", ".join(extensions) + " created as superuser" if extensions else ""))
+    with steps.run("Migration levels to 0") as step:
+        count = reset_levels(base, job_id, manifest["release"], taken["path"])
+        step["detail"] = ((plural(count, "migration set") + " at level 0" if count else "No migration set recorded yet")
+                          + "; the next deploy's migrate step builds the schema")
+    write_stopped(base, None, actor)
+
+
+def reset_failed(why, docker, bundle, prior, progress, record):
+    """What a failed reset left, appended to its reason: before any database was dropped, the environment starts again
+    on its database (unless the owner had stopped something); after, it stays stopped and the snapshot holds the data."""
+    why = why or "The reset failed"
+    snapshot = (record.get("snapshot") or {}).get("path")
+    if progress["dropped"]:
+        return (why + "; the environment stays stopped" + ("; its data is in " + snapshot if snapshot else ""))[:600]
+    if progress["stopped"] and prior is None and docker is not None:
+        try:
+            docker.start(bundle, [])
+            return (why + "; nothing was dropped, and the environment started again on its database")[:600]
+        except Exception:
+            return (why + "; nothing was dropped, but the environment did not start again: start it")[:600]
+    return (why + "; nothing was dropped")[:600]
 
 
 def passed(target, release):
@@ -2957,7 +3159,7 @@ def lock_held(base):
 def summary(record):
     fields = ("id", "release", "sourceCommit", "kind", "branch", "versions", "sites", "status", "actor", "startedAt",
               "completedAt", "failure", "reason", "mutationStarted", "previous", "steps", "warnings", "snapshot",
-              "verification", "operation", "stopped", "health", "migrations")
+              "verification", "operation", "stopped", "health", "migrations", "reset")
     return None if record is None else {key: record[key] for key in fields if key in record}
 
 
@@ -3486,7 +3688,7 @@ def main():
     parser.add_argument("--actor", default="operator")
     parser.add_argument("--job")
     parser.add_argument("--service", help="logs: the service to read; control: the service, or none for the environment")
-    parser.add_argument("--operation", choices=OPERATIONS, help="control: stop, start or restart")
+    parser.add_argument("--operation", choices=OPERATIONS, help="control: stop, start, restart or reset")
     parser.add_argument("--tail", type=int, default=200)
     parser.add_argument("--stdin", action="store_true",
                         help="launch, apply: read this deploy's settings values and registry sign-in from stdin")

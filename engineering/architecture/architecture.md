@@ -1,6 +1,6 @@
 # Wheelhouse architecture
 
-*Last updated: 2026-10-28*
+*Last updated: 2026-10-29*
 
 ## Runtime
 
@@ -191,6 +191,21 @@ promotion replace them), as is a target a running fleet has yet to promote (409)
   item; never hiding or counting as a deploy); state, vitals and watch reads carry `stopped`, the portfolio summary a
   stopped environment's `stopped`, so the console reads it as stopped, never failed, and a watch ignores what the owner
   stopped.
+- **Database reset (v0.9).** `reset` takes the whole environment, of a release that declares `migrate`, and never
+  Wheelhouse's own (409 from the console, refused by the transport and the runner too); it is audited as
+  `database.reset` with subject `{target}`, and prod needs its target ID typed and a reason. The database is the
+  target's `database.json`, else every PostgreSQL connection string in the settings file each migrate item's service
+  mounts (the canary's `DatabaseSettings:ConnectionString`); its name and owner must be plain lowercase identifiers,
+  never `postgres`, a template, `wheelhouse_prod` or `wheelhouse_dev`, and its host one of the platform PostgreSQL's
+  aliases or its address on the target's network (the kit's `postgres` service in a `wheelhouse-*` project). The owner
+  must be a role and own the database, else it is refused before anything changes. Then, as recorded steps: the
+  database's `pg_dump` into `snapshots/<job>/` (dev too); every service stopped; `DROP DATABASE … WITH (FORCE)` and
+  `CREATE DATABASE … OWNER …` through `docker exec` of the platform PostgreSQL as its superuser, with the release's
+  `extensions` created again; every set in `migrations.json` at level 0, state `behind`, source `reset`. Nothing stays
+  marked stopped: the next deploy migrates forward from 0 (never a rollback gate) and starts the containers with
+  `--no-recreate`. A failure before the drop starts the environment again (unless the owner had stopped something); after
+  it, the environment stays stopped and the reason names the snapshot. The console offers Reset database on the
+  environment's Migrations panel.
 
 ## Settings at deploy
 

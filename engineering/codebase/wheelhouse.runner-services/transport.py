@@ -389,16 +389,19 @@ def launched(root, request_id, launch):
 
 def control(root, target_id, operation, service, actor, reason=None):
     """Stops, starts or restarts the release a target runs (decision 45): one service, or the whole environment
-    without one; a restart takes one service. Submitted like a deploy — the runner and the target uploaded, the target's
+    without one; a restart takes one service. A reset (v0.9) drops and recreates the environment's database for the
+    next deploy's migrate step to rebuild. Submitted like a deploy — the runner and the target uploaded, the target's
     worker detached, the job recorded here and followed — and refused while a rollout or another control runs.
-    Wheelhouse's own targets are never controlled from here: the console would stop itself."""
+    Wheelhouse's own targets are never controlled from here: the console would stop itself, or lose its data."""
     reason = deploy_reason(reason)
     require(operation in OPERATIONS, "Unknown control: " + str(operation))
     require(service is None or (isinstance(service, str) and SLUG.fullmatch(service)), "Invalid service")
     require(operation != "restart" or service, "Restart one service at a time")
+    require(operation != "reset" or service is None, "A reset takes the environment's database, never one service")
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
     config = fleet.resolve_target(root, target_id)
-    require(not config.get("self"), "Wheelhouse's own environments are never stopped or restarted from the console")
+    require(not config.get("self"), "Wheelhouse's own environments are never stopped, restarted or reset from the "
+                                    "console")
     target_root, _ = validate_target(config["target"])
     require(re.fullmatch(r"/[A-Za-z0-9/_-]+", str(target_root)), "SSH root requires a simple absolute path")
     ssh = Ssh(config["ssh"])
@@ -1122,7 +1125,8 @@ def main():
                         help="compose: name=bundle, one per repository of the product that has released, in order (the local server only)")
     parser.add_argument("--confirm", help="submit: the target ID, typed, for prod on the local server")
     parser.add_argument("--reason", help="submit, control: the owner's one-line why, kept on the job")
-    parser.add_argument("--operation", help="control: stop, start or restart; --service names one, none the environment")
+    parser.add_argument("--operation", help="control: stop, start, restart or reset; --service names one, none the "
+                                            "environment")
     parser.add_argument("--fleet", help="submit: the fleet rollout the submission belongs to, kept on the job")
     parser.add_argument("--from", dest="start", help="changelog: the release the target runs now")
     parser.add_argument("--to", dest="end", help="changelog: the release to promote")

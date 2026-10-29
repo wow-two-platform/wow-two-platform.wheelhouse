@@ -366,7 +366,7 @@ class TransportControlTests(unittest.TestCase):
         fake, commands = self.fake_ssh()
         with patch.object(transport.fleet, "resolve_target", return_value=config), \
                 patch.object(transport, "Ssh", fake), \
-                self.assertRaisesRegex(ValueError, "never stopped or restarted from the console"):
+                self.assertRaisesRegex(ValueError, "never stopped, restarted or reset from the console"):
             transport.control(self.root, "wheelhouse-dev", "stop", None, "max")
         self.assertEqual([], commands)
 
