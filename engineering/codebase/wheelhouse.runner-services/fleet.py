@@ -289,7 +289,7 @@ def resolve_target(root, identifier):
                        "render": True, **local_settings_root(server),
                        # Wheelhouse's own: a console its ingress cannot reach rolls back, since no one could open it,
                        # and every release may, since its migrations only expand (decision 65). The rollback gate
-                       # decides returns between releases that declare migrate; this covers older ones (v0.7 Iteration 9).
+                       # decides returns between releases that declare migrate; this covers older ones (backlog § Hosting).
                        **({"probeGate": True, "rollbackCompatible": True} if is_self(target) else {})}}
 
 
