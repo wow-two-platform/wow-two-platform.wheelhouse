@@ -107,6 +107,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Fix a database reset inside the post-rollout watch reading as degraded | fix | The reset leaves the services stopped until the next deploy; the watch reads them exited |
 | Ability to back up databases and volumes off-provider on a schedule | feature | |
 | Ability to restore a backup and prove it works | feature | |
 | Ability to drain requests and show maintenance before a rollout | feature | |
