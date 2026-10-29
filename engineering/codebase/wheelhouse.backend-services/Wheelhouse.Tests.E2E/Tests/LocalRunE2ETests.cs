@@ -93,7 +93,7 @@ public sealed class LocalRunE2ETests : IDisposable
         var serve = () => app.RequireLoginAllowlist();
 
         serve.Should().NotThrow();
-        LocalRun.IsLocal(builder.Environment, builder.Configuration).Should().BeTrue();
+        builder.Environment.IsLocalRun(builder.Configuration).Should().BeTrue();
     }
 
     /// <summary>A bare host over the throwaway content root, without the process environment, so the E2E fixture's

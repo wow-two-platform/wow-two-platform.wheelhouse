@@ -30,7 +30,7 @@ public sealed class GitHubAppRig : IDisposable
         };
         if (writeKey)
             WriteKey(Key.ExportRSAPrivateKeyPem());
-        GitHub.Answers["GET app/installations"] = () => FakeGitHubApi.Json(HttpStatusCode.OK, "[]");
+        GitHub.Answers["GET app/installations"] = () => ScriptedHttpMessageHandler.JsonAnswer(HttpStatusCode.OK, "[]");
         Monitor = new GitHubAccessMonitor(Settings, Clock);
         Tokens = new GitHubAppTokens(
             new SingleClientHttpClientFactory(GitHub, new Uri("https://api.github.com/")), Settings, Clock, Monitor,
@@ -52,8 +52,8 @@ public sealed class GitHubAppRig : IDisposable
     /// <summary>Gets the clock, starting at a fixed instant.</summary>
     public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 19, 9, 0, 0, TimeSpan.Zero));
 
-    /// <summary>Gets the scripted GitHub.</summary>
-    public FakeGitHubApi GitHub { get; } = new();
+    /// <summary>Gets the scripted GitHub: answers by method and path, every call recorded with its host and credential.</summary>
+    public ScriptedHttpMessageHandler GitHub { get; } = new();
 
     /// <summary>Gets the access monitor.</summary>
     public GitHubAccessMonitor Monitor { get; }
@@ -80,11 +80,18 @@ public sealed class GitHubAppRig : IDisposable
     {
         _installations.Add((owner, installation));
         var listing = string.Join(",", _installations.Select(item => $$$"""{"id":{{{item.Id}}},"account":{"login":"{{{item.Owner}}}"}}"""));
-        GitHub.Answers["GET app/installations"] = () => FakeGitHubApi.Json(HttpStatusCode.OK, "[" + listing + "]");
+        GitHub.Answers["GET app/installations"] = () => ScriptedHttpMessageHandler.JsonAnswer(HttpStatusCode.OK, "[" + listing + "]");
         var issued = 0;
         GitHub.Answers[$"POST app/installations/{installation}/access_tokens"] =
-            () => FakeGitHubApi.Token($"ghs_{owner}_{++issued}", Clock.GetUtcNow() + (lifetime ?? TimeSpan.FromHours(1)));
+            () => Token($"ghs_{owner}_{++issued}", Clock.GetUtcNow() + (lifetime ?? TimeSpan.FromHours(1)));
     }
+
+    /// <summary>Builds an installation token answer, as GitHub issues one.</summary>
+    /// <param name="token">The token.</param>
+    /// <param name="expiresAt">When it expires.</param>
+    public static HttpResponseMessage Token(string token, DateTimeOffset expiresAt) =>
+        ScriptedHttpMessageHandler.JsonAnswer(
+            HttpStatusCode.Created, $$$"""{"token":"{{{token}}}","expires_at":"{{{expiresAt:O}}}","permissions":{}}""");
 
     /// <inheritdoc />
     public void Dispose()

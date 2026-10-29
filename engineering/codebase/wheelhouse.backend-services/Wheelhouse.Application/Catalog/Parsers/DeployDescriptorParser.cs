@@ -1,6 +1,7 @@
 using Wheelhouse.Application.Catalog.Models;
 using Wheelhouse.Application.Inventory.Constants;
 using YamlDotNet.RepresentationModel;
+using WoW.Two.Sdk.Beta.Be.Foundation.Serialization.Yaml;
 
 namespace Wheelhouse.Application.Catalog.Parsers;
 
@@ -62,7 +63,7 @@ public static class DeployDescriptorParser
                     Extensions = Extensions(root),
                 });
         }
-        catch (YamlRefusal refusal)
+        catch (YamlRefusalException refusal)
         {
             return YamlParse<DeployDescriptorModel>.Fail(refusal.Message);
         }

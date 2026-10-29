@@ -11,6 +11,7 @@ using Wheelhouse.Application.Tailnet.Queries;
 using Wheelhouse.Application.Tailnet.QueryHandlers;
 using Wheelhouse.Infrastructure.Infra;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Foundation.Configuration;
 
 namespace Wheelhouse.Tests.Unit.Infra;
 
@@ -19,7 +20,7 @@ public sealed class InfraAccessTests
 {
     private static ConsoleInfraAccess Access(string? environment) =>
         new(new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { [ConsoleInfraAccess.DeployEnvironmentKey] = environment })
+            .AddInMemoryCollection(new Dictionary<string, string?> { [LocalRunExtensions.DeployEnvironmentVariable] = environment })
             .Build());
 
     [Theory]

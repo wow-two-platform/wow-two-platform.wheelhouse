@@ -3,6 +3,7 @@ using Wheelhouse.Application.Deployments.History.Queries;
 using Wheelhouse.Application.Deployments.History.Services;
 using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Web.Contracts.Paging;
 
 namespace Wheelhouse.Application.Deployments.History.QueryHandlers;
 
@@ -18,14 +19,14 @@ public sealed class DeploymentHistoryQueryHandler(DeploymentHistoryService histo
         if (read is not AppResult<DeploymentHistory>.Success { Data: var loaded })
             return AppResult<DeploymentPageDto>.Fail(((AppResult<DeploymentHistory>.Failure)read).Error);
 
-        var after = request.Cursor is { } cursor && DeploymentCursor.TryRead(cursor, out var position) ? position : ((long, string)?)null;
-        var matching = DeploymentQuerying.SelectWithControls(loaded, request.Filter)
-            .Where(entry => after is not { } start || DeploymentCursor.IsAfter(entry, start))
-            .Take(request.Limit + 1)
-            .ToList();
-        var more = matching.Count > request.Limit;
-        var page = matching.Take(request.Limit).ToList();
-        return AppResult<DeploymentPageDto>.Ok(new DeploymentPageDto(
-            [.. page.Select(DeploymentItemDto.From)], more ? DeploymentCursor.After(page[^1]) : null));
+        // Newest first by submission instant, then identifier: a page continues after the last entry it showed, so a new
+        // submission never shifts a later page. The cursor is the SDK's opaque page token.
+        var page = DeploymentQuerying.SelectWithControls(loaded, request.Filter).ToTokenPage(
+            entry => entry.Record.SubmittedAt.UtcTicks,
+            entry => entry.Record.Id,
+            new TokenPageApiRequest { PageToken = request.Cursor, PageSize = request.Limit },
+            descending: true,
+            maxPageSize: DeploymentHistoryQuery.MaxLimit);
+        return AppResult<DeploymentPageDto>.Ok(new DeploymentPageDto([.. page.Items.Select(DeploymentItemDto.From)], page.NextPageToken));
     }
 }

@@ -25,8 +25,7 @@ public static class VaultKeyCheckJobExtensions
             (checks, ct) => checks.CheckFileAsync(ct),
             (options, root) =>
             {
-                var minutes = root.GetRequiredService<IConfiguration>().GetValue(MinutesKey, 60);
-                options.Interval = minutes <= 0 ? TimeSpan.Zero : TimeSpan.FromMinutes(Math.Clamp(minutes, 1, 1440));
+                options.UseConfiguredInterval(root.GetRequiredService<IConfiguration>(), MinutesKey, 60, TimeSpan.FromMinutes(1), 1, 1440);
                 options.Cadence = PeriodicJobCadence.FixedDelay;
                 options.LogExceptionDetails = false;
             });

@@ -6,6 +6,7 @@ using Wheelhouse.Application.SecretsVault.Models;
 using Wheelhouse.Domain.Settings.Enums;
 using WoW.Two.Sdk.Beta.Be.Data.Sessions;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
+using WoW.Two.Sdk.Beta.Be.Foundation.Identifiers.Generators;
 using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
@@ -21,7 +22,8 @@ public sealed class DeploymentSettingsSaveCommandHandler(
     IEnvironmentSettingsRepository store,
     IEnvironmentSecrets secrets,
     IDataSession session,
-    DeploymentSettingsService settings)
+    DeploymentSettingsService settings,
+    IIdGenerator ids)
     : ICommandHandler<DeploymentSettingsSaveCommand, AppResult<DeploySettingsSavedDto>>
 {
     /// <inheritdoc />
@@ -38,7 +40,7 @@ public sealed class DeploymentSettingsSaveCommandHandler(
             return AppResult<DeploySettingsSavedDto>.Fail(AppErrorFactory.Validation(string.Join(" ", problems)));
 
         // A generated secret's value is made here and goes to the vault only; the reply names its version alone.
-        var values = request.Values.Select(value => value.Generate is { } format ? value with { Value = SecretValues.Generate(format) } : value).ToList();
+        var values = request.Values.Select(value => value.Generate is { } format ? value with { Value = ids.GenerateSecret(format) } : value).ToList();
         var generated = values.Where(value => value.Generate is not null).Select(value => value.Key).ToHashSet(StringComparer.Ordinal);
         var removals = values.Where(value => value.Remove).Select(value => value.Key).ToList();
         var writes = values.Where(value => value.Secret && !value.Remove)

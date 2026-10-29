@@ -40,19 +40,14 @@ public static class HostConfiguration
         // SDK pipeline: forwarded headers, secure headers, response compression, then the Vue workspace from wwwroot
         // (single deploy: API + UI in one host) before routing, so its public assets carry the headers and encoding and
         // load before sign-in. Auth runs after routing and before idempotency, so keys are scoped per caller; the SDK's
-        // MCP guard screens /mcp after it. The fallback policy gates the controllers while the SPA
-        // shell and the anonymous /health stay reachable. Maps OpenAPI (dev), the health probe and the SPA fallback:
-        // an unmatched /api/* 404s as JSON, any other unmatched route serves index.html; fallbacks rank after the
-        // endpoints below.
+        // MCP guard screens /mcp after it. The fallback policy gates the controllers while the SPA shell and the anonymous
+        // probes stay reachable. Maps OpenAPI (dev), /health, /api/system/ready and the SPA fallback: an unmatched /api/*
+        // or /.well-known/* (where MCP clients probe OAuth metadata) 404s as JSON, any other unmatched route serves
+        // index.html; fallbacks rank after the endpoints below.
         app.UseApiDefaults(useIdentity: pipeline => pipeline.UseWheelhouseAuth());
 
         app.MapControllers();
         app.MapWheelhouseMcp();
-
-        // /.well-known/* is a discovery namespace: MCP clients probe OAuth metadata there, so a miss must be a real 404,
-        // never the SPA shell. The SDK SPA fallback reserves only /api; this literal prefix outranks its catch-all.
-        app.MapFallback("/.well-known/{**path}", () => Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Not Found"))
-            .AllowAnonymous();
 
         return app;
     }

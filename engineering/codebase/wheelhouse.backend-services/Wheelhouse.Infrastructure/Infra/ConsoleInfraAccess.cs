@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Wheelhouse.Application.Abstractions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Configuration;
 
 namespace Wheelhouse.Infrastructure.Infra;
 
@@ -8,9 +9,6 @@ namespace Wheelhouse.Infrastructure.Infra;
 /// developer's machine may.</summary>
 public sealed class ConsoleInfraAccess(IConfiguration configuration) : IInfraAccess
 {
-    /// <summary>The variable the runner sets on every deployed container: the environment it runs in.</summary>
-    public const string DeployEnvironmentKey = "DEPLOY_ENVIRONMENT";
-
     /// <summary>The refusal deployed dev answers with.</summary>
     public const string DevRefusal =
         "Only Wheelhouse prod drives Tailscale, enrolls servers, places products and refreshes host kits; "
@@ -18,5 +16,5 @@ public sealed class ConsoleInfraAccess(IConfiguration configuration) : IInfraAcc
 
     /// <inheritdoc />
     public string? Refusal =>
-        string.Equals(configuration[DeployEnvironmentKey], "dev", StringComparison.OrdinalIgnoreCase) ? DevRefusal : null;
+        configuration.GetDeployEnvironment() == "dev" ? DevRefusal : null;
 }

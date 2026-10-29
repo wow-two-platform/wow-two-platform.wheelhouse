@@ -2,6 +2,7 @@ using Wheelhouse.Application.Catalog.Models;
 using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Domain.Catalog.Enums;
 using YamlDotNet.RepresentationModel;
+using WoW.Two.Sdk.Beta.Be.Foundation.Serialization.Yaml;
 
 namespace Wheelhouse.Application.Catalog.Parsers;
 
@@ -54,7 +55,7 @@ public static class CatalogParser
 
             return YamlParse<CatalogDocument>.Ok(new CatalogDocument(workspaces, entries, Hub(root)));
         }
-        catch (YamlRefusal refusal)
+        catch (YamlRefusalException refusal)
         {
             return YamlParse<CatalogDocument>.Fail(refusal.Message);
         }

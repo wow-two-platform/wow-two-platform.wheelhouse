@@ -5,19 +5,20 @@ using Microsoft.Extensions.Hosting;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments.SelfDeploy.Constants;
 using Wheelhouse.Application.Inventory.Constants;
+using WoW.Two.Sdk.Beta.Be.Foundation.Configuration;
 
 namespace Wheelhouse.Infrastructure.Deployments;
 
 /// <summary>This console as the runner deployed it: <c>DEPLOY_ENVIRONMENT</c>, which the runner gives every deployed
 /// service, else <c>prod</c> when it runs as Production and <c>dev</c> otherwise (as <c>/api/system/status</c> reports
-/// it); its start is when the host built this singleton; its hostname is read from its settings on each use.</summary>
+/// it), read on each use; its start is when the host built this singleton; its hostname is read from its settings on each use.</summary>
 public sealed class ConsoleIdentity(IConfiguration configuration, IHostEnvironment host, TimeProvider time) : IConsoleIdentity
 {
     /// <summary>The key a Wheelhouse deploy renders the console site's URL under.</summary>
     public const string SiteUrlKey = "Sites:" + SelfProduct.Site + ":Url";
 
     /// <inheritdoc />
-    public string Environment { get; } = configuration["DEPLOY_ENVIRONMENT"]?.Trim().ToLowerInvariant() switch
+    public string Environment => configuration.GetDeployEnvironment() switch
     {
         "dev" => "dev",
         "prod" => "prod",

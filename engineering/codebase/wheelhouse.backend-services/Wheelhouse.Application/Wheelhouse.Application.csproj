@@ -6,8 +6,6 @@
     <!-- ApiKeySecretFactory: minting an integration key. -->
     <PackageReference Include="WoW2.Sdk.Beta.Be.Identity.Auth" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-    <!-- The wow2 catalog and each product's deploy.yml are YAML; the be sdk has no YAML reader yet. -->
-    <PackageReference Include="YamlDotNet" />
   </ItemGroup>
 
   <ItemGroup>

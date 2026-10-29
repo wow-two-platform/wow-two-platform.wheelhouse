@@ -21,9 +21,9 @@ public sealed class GitHubAppTokensTests : IDisposable
         var token = await _rig.Tokens.GetAsync("Sulton-Max", CancellationToken.None);
 
         token!.Token.Should().Be("ghs_sulton-max_1");
-        _rig.GitHub.Calls.Select(call => call.Key).Should().Equal(
+        _rig.GitHub.Requests.Select(call => call.Route).Should().Equal(
             "GET app/installations", "POST app/installations/11/access_tokens");
-        _rig.GitHub.Calls.Should().AllSatisfy(call =>
+        _rig.GitHub.Requests.Should().AllSatisfy(call =>
         {
             call.Host.Should().Be("api.github.com");
             call.Authorization.Should().StartWith("Bearer ").And.Match("Bearer *.*.*", "each App call carries the signed App token");
@@ -40,7 +40,7 @@ public sealed class GitHubAppTokensTests : IDisposable
         var organization = await _rig.Tokens.GetAsync("ocharo-hq", CancellationToken.None);
 
         (user!.Token, organization!.Token).Should().Be(("ghs_sulton-max_1", "ghs_ocharo-hq_1"));
-        _rig.GitHub.CountOf("GET app/installations").Should().Be(1);
+        _rig.GitHub.CountOfRoute("GET app/installations").Should().Be(1);
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed class GitHubAppTokensTests : IDisposable
 
         kept.Should().BeSameAs(first);
         renewed!.Token.Should().Be("ghs_sulton-max_2");
-        _rig.GitHub.CountOf("POST app/installations/11/access_tokens").Should().Be(2);
+        _rig.GitHub.CountOfRoute("POST app/installations/11/access_tokens").Should().Be(2);
     }
 
     [Fact]
@@ -68,8 +68,8 @@ public sealed class GitHubAppTokensTests : IDisposable
             .Select(_ => Task.Run(() => _rig.Tokens.GetAsync("sulton-max", CancellationToken.None))));
 
         tokens.Select(token => token!.Token).Distinct().Should().Equal("ghs_sulton-max_1");
-        _rig.GitHub.CountOf("GET app/installations").Should().Be(1);
-        _rig.GitHub.CountOf("POST app/installations/11/access_tokens").Should().Be(1);
+        _rig.GitHub.CountOfRoute("GET app/installations").Should().Be(1);
+        _rig.GitHub.CountOfRoute("POST app/installations/11/access_tokens").Should().Be(1);
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public sealed class GitHubAppTokensTests : IDisposable
         (await _rig.Tokens.GetAsync("wow-two", CancellationToken.None)).Should().BeNull();
         (await _rig.Tokens.GetAsync("wow-two", CancellationToken.None)).Should().BeNull();
 
-        _rig.GitHub.CountOf("GET app/installations").Should().Be(1, "the list is kept ten minutes");
+        _rig.GitHub.CountOfRoute("GET app/installations").Should().Be(1, "the list is kept ten minutes");
         _rig.Tokens.IsInstalled("wow-two").Should().BeFalse();
         _rig.Monitor.Current().Should().BeEmpty("an owner without the App is named only when a repository needs it");
 
@@ -98,7 +98,7 @@ public sealed class GitHubAppTokensTests : IDisposable
         var again = await _rig.Tokens.BorrowAsync(CancellationToken.None);
 
         (lent!.Token, again).Should().Be(("ghs_sulton-max_1", lent));
-        _rig.GitHub.CountOf("POST app/installations/11/access_tokens").Should().Be(1);
+        _rig.GitHub.CountOfRoute("POST app/installations/11/access_tokens").Should().Be(1);
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public sealed class GitHubAppTokensTests : IDisposable
 
         (await _rig.Tokens.GetAsync("sulton-max", CancellationToken.None)).Should().BeNull();
 
-        _rig.GitHub.Calls.Should().BeEmpty();
+        _rig.GitHub.Requests.Should().BeEmpty();
         _rig.Monitor.Current().Should().ContainSingle().Which.Cause.Should().Be(GitHubAccessCauses.KeyInvalid);
     }
 
@@ -151,7 +151,7 @@ public sealed class GitHubAppTokensTests : IDisposable
         rig.Tokens.IsConfigured.Should().BeFalse();
         (await rig.Tokens.GetAsync("sulton-max", CancellationToken.None)).Should().BeNull();
 
-        rig.GitHub.Calls.Should().BeEmpty();
+        rig.GitHub.Requests.Should().BeEmpty();
         rig.Monitor.Current().Should().ContainSingle().Which.Cause.Should().Be(GitHubAccessCauses.KeyMissing);
     }
 
@@ -162,7 +162,7 @@ public sealed class GitHubAppTokensTests : IDisposable
 
         (await rig.Tokens.GetAsync("sulton-max", CancellationToken.None)).Should().BeNull();
 
-        rig.GitHub.Calls.Should().BeEmpty();
+        rig.GitHub.Requests.Should().BeEmpty();
         rig.Monitor.Current().Should().ContainSingle().Which.Cause.Should().Be(GitHubAccessCauses.AppIdMissing);
     }
 

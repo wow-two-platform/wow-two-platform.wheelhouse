@@ -73,7 +73,7 @@ public sealed class GitHubCredentialsTests : IDisposable
         await client.SendAsync(Get("repos/wow-two/wow-two-ws/commits/main", "SIGNED-IN"));
         await client.SendAsync(Get("repos/wow-two/wow-two-ws/commits/main"));
 
-        var reads = _rig.GitHub.Calls.Where(call => call.Key.StartsWith("GET repos/", StringComparison.Ordinal)).ToList();
+        var reads = _rig.GitHub.Requests.Where(call => call.Route.StartsWith("GET repos/", StringComparison.Ordinal)).ToList();
         reads.Select(call => call.Authorization).Should().Equal(
             "Bearer ghs_ocharo-hq_1", "Bearer SIGNED-IN", "Bearer ghs_ocharo-hq_1");
     }
@@ -114,7 +114,7 @@ public sealed class GitHubCredentialsTests : IDisposable
         await client.SendAsync(Get("repos/sulton-max/10x-ventures/commits/main"));
         await client.SendAsync(Get("repos/sulton-max/10x-ventures/commits/main"));
 
-        _rig.GitHub.Calls.Where(call => call.Key.StartsWith("GET repos/", StringComparison.Ordinal))
+        _rig.GitHub.Requests.Where(call => call.Route.StartsWith("GET repos/", StringComparison.Ordinal))
             .Select(call => call.Authorization).Should().Equal("Bearer ghs_sulton-max_1", "Bearer ghs_sulton-max_2");
         _rig.Monitor.Current().Should().Contain(item => item.Owner == "sulton-max" && item.Status == 401);
     }
@@ -130,7 +130,7 @@ public sealed class GitHubCredentialsTests : IDisposable
         var response = await client.SendAsync(Get("repos/wow-two/wow-two-ws/commits/main"));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        _rig.GitHub.Calls.Where(call => call.Key.StartsWith("GET repos/", StringComparison.Ordinal))
+        _rig.GitHub.Requests.Where(call => call.Route.StartsWith("GET repos/", StringComparison.Ordinal))
             .Select(call => call.Authorization).Should().Equal("Bearer ghs_ocharo-hq_1", null);
         _rig.Monitor.Current().Should().BeEmpty();
     }
@@ -176,7 +176,7 @@ public sealed class GitHubCredentialsTests : IDisposable
 
         await client.SendAsync(Get("rate_limit"));
 
-        _rig.GitHub.Calls.Should().ContainSingle().Which.Authorization.Should().BeNull();
+        _rig.GitHub.Requests.Should().ContainSingle().Which.Authorization.Should().BeNull();
     }
 
     private HttpClient Client() =>

@@ -3,6 +3,7 @@ using Wheelhouse.Application.Deployments.Settings.CommandHandlers;
 using Wheelhouse.Application.Deployments.Settings.Models;
 using Wheelhouse.Application.Deployments.Settings.Services;
 using Wheelhouse.Domain.Settings.Enums;
+using WoW.Two.Sdk.Beta.Be.Foundation.Identifiers.Generators;
 
 namespace Wheelhouse.Tests.Unit.Settings;
 
@@ -10,6 +11,8 @@ namespace Wheelhouse.Tests.Unit.Settings;
 /// comparison a failed deploy's hint reads (<see cref="DeploymentSettingsService.Compare"/>).</summary>
 public sealed class SettingsSaveRulesTests
 {
+    private static readonly IIdGenerator Ids = new CryptographicIdGenerator();
+
     private static readonly Dictionary<string, KeyDeclaration> Declared = new()
     {
         ["Limits:Max"] = new("Limits:Max", SettingType.Number, null, null, false, true, false),
@@ -44,13 +47,13 @@ public sealed class SettingsSaveRulesTests
     }
 
     [Fact]
-    public void SecretValues_ShouldBe32RandomBytes_AsHexOrBase64Url_AndNeverPrintThroughTheValue()
+    public void SecretValues_ShouldBe256RandomBits_AsHexOrBase64Url_AndNeverPrintThroughTheValue()
     {
-        var hex = Enumerable.Range(0, 20).Select(_ => SecretValues.Generate(SecretValues.Hex)).ToList();
+        var hex = Enumerable.Range(0, 20).Select(_ => Ids.GenerateSecret(SecretValues.Hex)).ToList();
         hex.Should().OnlyContain(value => System.Text.RegularExpressions.Regex.IsMatch(value, "^[0-9a-f]{64}$"));
         hex.Distinct().Should().HaveCount(20);
-        SecretValues.Generate(SecretValues.Base64Url).Should().MatchRegex("^[A-Za-z0-9_-]{43}$");
-        FluentActions.Invoking(() => SecretValues.Generate("words")).Should().Throw<ArgumentOutOfRangeException>();
+        Ids.GenerateSecret(SecretValues.Base64Url).Should().MatchRegex("^[A-Za-z0-9_-]{43}$");
+        FluentActions.Invoking(() => Ids.GenerateSecret("words")).Should().Throw<ArgumentOutOfRangeException>();
         new DeploySettingValue("Stripe:Account", hex[0], true) { Generate = SecretValues.Hex }.ToString()
             .Should().NotContain(hex[0]).And.Contain("generate hex");
     }

@@ -13,6 +13,7 @@ using Wheelhouse.Infrastructure.Infra;
 using Wheelhouse.Infrastructure.Jobs;
 using WoW.Two.Sdk.Beta.Be.Jobs.Core.BackgroundServices;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Foundation.Configuration;
 
 namespace Wheelhouse.Tests.Integration.Tests;
 
@@ -66,7 +67,7 @@ public sealed class InfraFollowerTests
 
     private IHost CreateHost(string environment) => new HostBuilder()
         .ConfigureAppConfiguration(configuration => configuration.AddInMemoryCollection(
-            new Dictionary<string, string?> { [ConsoleInfraAccess.DeployEnvironmentKey] = environment }))
+            new Dictionary<string, string?> { [LocalRunExtensions.DeployEnvironmentVariable] = environment }))
         .ConfigureServices(services =>
         {
             services.AddSingleton<TimeProvider>(_time);

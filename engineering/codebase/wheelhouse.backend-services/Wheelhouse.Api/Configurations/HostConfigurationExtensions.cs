@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Wheelhouse.Application;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Infrastructure.Jobs;
@@ -29,6 +28,7 @@ using WoW.Two.Sdk.Beta.Be.Web.Antiforgery;
 using WoW.Two.Sdk.Beta.Be.Web.DataProtection;
 using WoW.Two.Sdk.Beta.Be.Web.Json;
 using WoW.Two.Sdk.Beta.Be.Web.ProblemDetails;
+using WoW.Two.Sdk.Beta.Be.Foundation.Identifiers.Generators;
 
 namespace Wheelhouse.Api.Configurations;
 
@@ -61,7 +61,8 @@ public static partial class HostConfigurationExtensions
     }
 
     /// <summary>Configures the SDK boot floor for a single-user control plane — output cache, rate limiting, and OTLP export off; OpenAPI on a local run only (the SDK default);
-    /// the SPA served inside the pipeline; forwarded headers trusted only from loopback and <c>Deployment:TrustedProxies</c> —
+    /// the SPA served inside the pipeline (<c>/.well-known/*</c> 404s, reserved by the SDK); readiness at
+    /// <c>/api/system/ready</c>; forwarded headers trusted only from loopback and <c>Deployment:TrustedProxies</c> —
     /// and the opt-in HTTP ProblemDetails boundary, so every error the host writes is a problem document.</summary>
     public static WebApplicationBuilder AddPlatformDefaults(this WebApplicationBuilder builder)
     {
@@ -73,6 +74,8 @@ public static partial class HostConfigurationExtensions
             o.EnableRateLimiting = false;
             o.EnableOtlpExporters = false;
             o.SpaHosting = static _ => { };
+            // Deployment health gates probe readiness; /health stays liveness and skips the database check.
+            o.ReadinessEndpointPath = "/api/system/ready";
             foreach (var proxy in proxies)
                 o.TrustedProxies.Add(proxy);
         });
@@ -100,11 +103,8 @@ public static partial class HostConfigurationExtensions
         // export). An export waits its turn behind another and reads the whole inventory, so its hook gets 30 seconds.
         builder.Services.AddDataSession<WheelhouseDbContext>(o => o.HookTimeout = TimeSpan.FromSeconds(30));
 
-        // /api/system/ready reports this check; /health stays liveness and skips readiness checks.
-        builder.Services.AddHealthChecks()
-            .AddDatabaseReadinessCheck<WheelhouseDbContext>(tags: [WheelhouseDatabase.ReadinessTag]);
-        builder.Services.Configure<HealthCheckOptions>(o =>
-            o.Predicate = check => !check.Tags.Contains(WheelhouseDatabase.ReadinessTag));
+        // The SDK readiness endpoint, /api/system/ready, reports this check (tag `ready`); /health skips it.
+        builder.Services.AddHealthChecks().AddDatabaseReadinessCheck<WheelhouseDbContext>();
 
         builder.Services.AddScoped<IWorkspacesRepository, WorkspacesRepository>();
         builder.Services.AddScoped<IPinsRepository, PinsRepository>();
@@ -249,6 +249,8 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddMediatorInterceptor(typeof(Wheelhouse.Application.Audit.Interceptors.AuditRecordingInterceptor<,>));
         builder.Services.AddMediatorInterceptor(typeof(Wheelhouse.Application.Inventory.Interceptors.InventoryExportingInterceptor<,>));
         builder.Services.AddMediatorValidatingInterceptor();
+        // Generated secret values (SDK cryptographic selection; the SDK registers no generator itself).
+        builder.Services.AddSingleton<IIdGenerator, CryptographicIdGenerator>();
         builder.Services.AddScoped<Wheelhouse.Application.Workspaces.Services.DefaultWorkspaceService>();
         builder.Services.AddScoped<Wheelhouse.Application.Catalog.Services.CatalogReader>();
         builder.Services.AddScoped<Wheelhouse.Application.Catalog.Services.CatalogReleaseService>();

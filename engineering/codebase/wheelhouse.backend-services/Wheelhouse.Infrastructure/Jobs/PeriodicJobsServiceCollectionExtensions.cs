@@ -82,8 +82,7 @@ public static partial class PeriodicJobsServiceCollectionExtensions
             },
             (options, root) =>
             {
-                var minutes = Read(root, VitalsMinutesKey, 5);
-                options.Interval = minutes <= 0 ? TimeSpan.Zero : TimeSpan.FromMinutes(minutes);
+                options.UseConfiguredInterval(Configuration(root), VitalsMinutesKey, 5, TimeSpan.FromMinutes(1));
                 options.Cadence = PeriodicJobCadence.FixedRate;
                 options.LogExceptionDetails = false;
             });
@@ -103,7 +102,7 @@ public static partial class PeriodicJobsServiceCollectionExtensions
             FollowJob,
             (scope, ct) => scope.GetRequiredService<DeploymentFollowing>()
                 .PassAsync(Idle(scope, FollowIdleSecondsKey), ct),
-            (options, root) => options.Delay(Read(root, FollowSecondsKey, 10), 1, 300));
+            (options, root) => options.Delay(root, FollowSecondsKey, 10, 1, 300));
     }
 
     /// <summary>Runs the automation passes every <see cref="AutomationSecondsKey"/> seconds: the watch windows (each
@@ -116,7 +115,7 @@ public static partial class PeriodicJobsServiceCollectionExtensions
             AutomationJob,
             (scope, ct) => scope.GetRequiredService<DeploymentAutomationService>()
                 .RunOnceAsync(ct, Math.Clamp(Read(scope, WatchMinutesKey, 10), 0, 120)),
-            (options, root) => options.Delay(Read(root, AutomationSecondsKey, 120), 10, 3600));
+            (options, root) => options.Delay(root, AutomationSecondsKey, 120, 10, 3600));
 
     /// <summary>Moves the running fleet rollout every <see cref="FleetSecondsKey"/> seconds: records the finished outcome of
     /// the product it is on and submits the next. A pass with no running fleet reads one row and nothing else; shutdown
@@ -127,7 +126,7 @@ public static partial class PeriodicJobsServiceCollectionExtensions
         services.AddPeriodicJob<FleetRolloutService>(
             FleetJob,
             (fleet, ct) => fleet.AdvanceRunningAsync(ct),
-            (options, root) => options.Delay(Read(root, FleetSecondsKey, 10), 2, 300));
+            (options, root) => options.Delay(root, FleetSecondsKey, 10, 2, 300));
 
     /// <summary>Runs the scheduled settings applies that are due every <see cref="ApplySecondsKey"/> seconds; each acts for
     /// the owner who scheduled it.</summary>
@@ -137,7 +136,7 @@ public static partial class PeriodicJobsServiceCollectionExtensions
         services.AddPeriodicJob<SettingsApplyService>(
             ApplyJob,
             (applies, ct) => applies.RunDueAsync(ct),
-            (options, root) => options.Delay(Read(root, ApplySecondsKey, 60), 10, 600));
+            (options, root) => options.Delay(root, ApplySecondsKey, 60, 10, 600));
 
     /// <summary>Records finished enrollments, placements and upkeeps (<see cref="InfraJobRecorder.FollowAsync"/>): each
     /// lands in the audit trail as its owner, and an enrolled server moves to its tailnet address. A pass every
@@ -154,21 +153,26 @@ public static partial class PeriodicJobsServiceCollectionExtensions
             InfraFollowJob,
             (scope, ct) => scope.GetRequiredService<InfraJobRecorder>()
                 .FollowAsync(Idle(scope, InfraFollowIdleSecondsKey), ct),
-            (options, root) => options.Delay(
-                root.GetService<IInfraAccess>()?.Refusal is null ? Read(root, InfraFollowSecondsKey, 10) : 0, 2, 300));
+            (options, root) =>
+            {
+                options.Delay(root, InfraFollowSecondsKey, 10, 2, 300);
+                if (root.GetService<IInfraAccess>()?.Refusal is not null)
+                    options.Interval = TimeSpan.Zero;
+            });
     }
 
-    /// <summary>Sets a fixed delay of <paramref name="seconds"/> within its bounds, or turns the job off at zero or less, and
+    /// <summary>Sets a fixed delay of the configured seconds within its bounds, or turns the job off at zero or less, and
     /// logs a failed pass by its type only.</summary>
-    private static void Delay(this PeriodicJobOptions options, int seconds, int min, int max)
+    private static void Delay(this PeriodicJobOptions options, IServiceProvider root, string key, int fallback, int min, int max)
     {
-        options.Interval = seconds <= 0 ? TimeSpan.Zero : TimeSpan.FromSeconds(Math.Clamp(seconds, min, max));
+        options.UseConfiguredInterval(Configuration(root), key, fallback, TimeSpan.FromSeconds(1), min, max);
         options.Cadence = PeriodicJobCadence.FixedDelay;
         options.LogExceptionDetails = false;
     }
 
-    private static int Read(IServiceProvider services, string key, int fallback) =>
-        services.GetRequiredService<IConfiguration>().GetValue(key, fallback);
+    private static IConfiguration Configuration(IServiceProvider services) => services.GetRequiredService<IConfiguration>();
+
+    private static int Read(IServiceProvider services, string key, int fallback) => Configuration(services).GetValue(key, fallback);
 
     /// <summary>A follower's idle interval: the configured seconds (default 300) within 30–3600.</summary>
     private static TimeSpan Idle(IServiceProvider services, string key) =>

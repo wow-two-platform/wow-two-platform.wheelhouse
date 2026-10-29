@@ -51,7 +51,7 @@ public static class AuthConfigurationExtensions
         builder.Services.AddCookieAuthentication(o =>
         {
             o.Mode = AuthChallengeMode.Api;
-            o.CookieName = SessionCookies.SessionCookieName(builder.Configuration[Configurations.LocalRun.DeployEnvironmentKey]);
+            o.CookieName = SessionCookies.SessionCookieName(builder.Configuration.GetDeployEnvironment());
             o.ExpireTimeSpan = TimeSpan.FromHours(8);
         });
 
@@ -116,7 +116,7 @@ public static class AuthConfigurationExtensions
     public static WebApplication RequireLoginAllowlist(this WebApplication app)
     {
         var authSettings = ConfigurationMapper.Load<AuthSettings>(app.Configuration, "Identity");
-        if ((app.Environment.IsProduction() || Configurations.LocalRun.IsDeployed(app.Configuration))
+        if ((app.Environment.IsProduction() || app.Configuration.IsDeployed())
             && !authSettings.AllowedGitHubLogins.Any(login => !string.IsNullOrWhiteSpace(login)))
             throw new InvalidOperationException("A deployed console requires Identity:AllowedGitHubLogins.");
         return app;

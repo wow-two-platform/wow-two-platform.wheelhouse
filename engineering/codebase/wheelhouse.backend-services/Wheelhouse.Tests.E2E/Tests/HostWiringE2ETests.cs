@@ -46,12 +46,13 @@ public sealed class HostWiringE2ETests(WheelhouseAppFixture fixture) : Wheelhous
     }
 
     [Fact]
-    public async Task Ready_ShouldReturn200WithoutABody_WhenTheDatabaseAcceptsConnections()
+    public async Task Ready_ShouldReturn200_WhenTheDatabaseAcceptsConnections()
     {
         var response = await AnonymousClient.GetAsync("/api/system/ready");
 
+        // Health gates read the status alone; the SDK readiness endpoint writes the aggregate word.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+        (await response.Content.ReadAsStringAsync()).Should().Be("Healthy");
     }
 
     [Fact]

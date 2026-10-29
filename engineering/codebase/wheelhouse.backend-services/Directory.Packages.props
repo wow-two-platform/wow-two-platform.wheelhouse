@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <BackendSdkVersion>10.0.93-beta</BackendSdkVersion>
+    <BackendSdkVersion>10.0.94-beta</BackendSdkVersion>
     <IdentitySdkVersion>10.0.8-beta</IdentitySdkVersion>
   </PropertyGroup>
 
@@ -27,11 +27,6 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.14" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
-  </ItemGroup>
-
-  <!-- Formats: the wow2 catalog and deploy.yml are YAML; the be sdk ships no YAML reader. -->
-  <ItemGroup>
-    <PackageVersion Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
 
   <!-- Hosting abstractions. -->

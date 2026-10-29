@@ -103,7 +103,7 @@ Reserve unit for I/O-free logic; everything user-facing is covered e2e. Full rul
   Badge, Heading, Text, EmptyState, Alert, Spinner, TextInput, …) before hand-rolling. Tailwind v4 wiring: `index.css`
   imports `tailwindcss` + `@wow-two-beta/fe/styles.css` and `@source`s the package's `dist` so its
   utility classes are generated. Shared capability gaps belong in the SDK. Product composition stays local.
-- **Backend → be sdk `WoW2.Sdk.Beta.Be` (adopted, `10.0.93-beta`; identity from `WoW2.Sdk.Beta.Be.Identity.*`
+- **Backend → be sdk `WoW2.Sdk.Beta.Be` (adopted, `10.0.94-beta`; identity from `WoW2.Sdk.Beta.Be.Identity.*`
   `10.0.8-beta`, split out of the core at `10.0.82`).** `v0.2` migrated every layer onto
   the SDK: host floor (`AddApiDefaults`/`UseApiDefaults`), mediator + results + validation, identity
   (GitHub OAuth + cookie + allowlist/default-deny + scoped API keys), the bespoke SQL

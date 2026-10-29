@@ -2,6 +2,7 @@ using Wheelhouse.Application.Catalog.Parsers;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Domain.Products.Models;
 using YamlDotNet.RepresentationModel;
+using WoW.Two.Sdk.Beta.Be.Foundation.Serialization.Yaml;
 
 namespace Wheelhouse.Application.Products;
 
@@ -40,7 +41,7 @@ public static class DescriptorIdentityParser
                 services);
             return ProductManifestParse.Valid(manifest);
         }
-        catch (YamlRefusal refusal)
+        catch (YamlRefusalException refusal)
         {
             return ProductManifestParse.Invalid(refusal.Message);
         }

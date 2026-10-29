@@ -12,6 +12,7 @@ using Wheelhouse.Tests.E2E.Harness;
 using WoW.Two.Sdk.Beta.Be.Data;
 using WoW.Two.Sdk.Beta.Be.Data.Migrations.Bespoke;
 using WoW.Two.Sdk.Beta.Be.Testing.Data.Migrations.Verbs;
+using WoW.Two.Sdk.Beta.Be.Foundation.Configuration;
 
 namespace Wheelhouse.Tests.E2E.Tests;
 
@@ -143,7 +144,7 @@ public sealed class MigrateVerbE2ETests(WheelhouseAppFixture fixture) : IAsyncLi
         {
             ["ConnectionStrings:Wheelhouse"] = connectionString,
             ["DB_CONNECTION"] = connectionString,
-            [LocalRun.DeployEnvironmentKey] = "dev",
+            [LocalRunExtensions.DeployEnvironmentVariable] = "dev",
         });
         builder.Configure();
         return builder.Build();
