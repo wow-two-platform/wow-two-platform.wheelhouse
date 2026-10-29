@@ -10,7 +10,7 @@ export interface LegacyProductSecretsProps {
 import { computed, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { ExternalLink, KeyRound } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Button, RefreshButton } from "@wow-two-beta/fe/presentation/actions";
 import {
   Badge,
   EmptyState,
@@ -36,7 +36,7 @@ import { useInvalidate, useRefresh } from "@/bootstrap/query";
 import { VaultStatus } from "@/domain/secrets";
 import { EnvironmentOrder, type DeploymentEnvironment } from "@/domain/targets";
 import { failureReason } from "@/integration/common";
-import { Panel, RefreshButton } from "@/presentation/common/components";
+import { Panel } from "@/presentation/common/components";
 import SecretsTable from "@/presentation/secrets/components/SecretsTable.vue";
 import TokensTable from "@/presentation/secrets/components/TokensTable.vue";
 
@@ -141,7 +141,7 @@ watch(
           >{{ environment }}</ToggleInput
         >
       </ToggleGroup>
-      <RefreshButton size="md" icon-only :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
+      <RefreshButton size="md" is-icon-only :is-refreshing="refresh.refreshing.value" @click="refresh.refresh" />
     </PageHeaderActions>
 
     <EmptyState

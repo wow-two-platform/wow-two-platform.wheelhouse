@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { ExternalLink } from 'lucide-vue-next';
 
 import { Badge } from '@wow-two-beta/fe/presentation/display';
@@ -45,7 +46,7 @@ const title = computed(() =>
         </p>
         <p v-if="data.migrations.length" class="flex flex-wrap items-center gap-2">
           <Badge variant="warning">Has migrations</Badge>
-          <span class="text-xs text-muted-foreground">{{ data.migrations.length }} changed {{ data.migrations.length === 1 ? 'file' : 'files' }} under Migrations/</span>
+          <span class="text-xs text-muted-foreground">{{ data.migrations.length }} changed {{ pluralize(data.migrations.length, 'file') }} under Migrations/</span>
         </p>
         <section v-for="item in data.releases" :key="item.release" class="flex flex-col gap-1">
           <a :href="item.url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 font-mono text-xs font-medium hover:text-primary">
@@ -56,7 +57,7 @@ const title = computed(() =>
         </section>
         <section v-if="data.commits?.length" class="flex flex-col gap-1">
           <p class="text-xs font-medium">
-            {{ data.totalCommits ?? data.commits.length }} {{ (data.totalCommits ?? data.commits.length) === 1 ? 'commit' : 'commits' }}
+            {{ data.totalCommits ?? data.commits.length }} {{ pluralize(data.totalCommits ?? data.commits.length, 'commit') }}
             <a v-if="data.compareUrl" :href="data.compareUrl" target="_blank" rel="noopener noreferrer" class="ml-1 font-normal text-primary hover:underline">compare</a>
           </p>
           <ul class="flex max-h-48 flex-col gap-0.5 overflow-auto">

@@ -9,6 +9,7 @@ export interface ServerUpkeepProps {
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { RefreshCw } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { RelativeTime } from "@wow-two-beta/fe/presentation/display";
@@ -121,7 +122,7 @@ async function refresh(): Promise<void> {
     />
     <details v-else-if="latest?.steps.length" class="text-sm">
       <summary class="cursor-pointer text-xs font-medium text-muted-foreground max-md:py-2">
-        {{ latest.steps.length }} {{ latest.steps.length === 1 ? "step" : "steps" }}
+        {{ latest.steps.length }} {{ pluralize(latest.steps.length, "step") }}
       </summary>
       <JobSteps class="mt-2" :steps="latest.steps" :label="`${props.server.name} kit refresh steps`" />
     </details>

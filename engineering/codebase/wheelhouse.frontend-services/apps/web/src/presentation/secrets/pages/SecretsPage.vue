@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { ChevronLeft, KeyRound } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Button, RefreshButton } from "@wow-two-beta/fe/presentation/actions";
 import {
   Badge,
   EmptyState,
@@ -36,8 +37,8 @@ import {
   ListDetailLayout,
   PageHeaderActions,
 } from "@wow-two-beta/fe/presentation/layout";
-import { InfoPopover, Panel, RefreshButton } from "@/presentation/common/components";
-import { useListDetailRoute } from "@/presentation/common/hooks";
+import { InfoPopover, Panel } from "@/presentation/common/components";
+import { useListDetailRoute } from "@wow-two-beta/fe/router";
 import NamespaceList from "../components/NamespaceList.vue";
 import SecretsTable from "../components/SecretsTable.vue";
 import TokensTable from "../components/TokensTable.vue";
@@ -130,7 +131,7 @@ function selectNamespace(slug: string): void {
 
 <template>
   <PageHeaderActions>
-    <RefreshButton size="md" :refreshing="refreshing" @refresh="refresh" />
+    <RefreshButton size="md" :is-refreshing="refreshing" @click="refresh" />
   </PageHeaderActions>
   <BuiltInVaultPanel class="mb-6" />
   <DataRegion
@@ -212,7 +213,7 @@ function selectNamespace(slug: string): void {
             ><Badge :variant="dueCount > 0 ? 'warning' : 'success'">
               {{
                 dueCount > 0
-                  ? `${dueCount} rotation issue${dueCount === 1 ? "" : "s"}`
+                  ? `${dueCount} rotation ${pluralize(dueCount, "issue")}`
                   : "Rotation up to date"
               }}
             </Badge></SkeletonStateSlot

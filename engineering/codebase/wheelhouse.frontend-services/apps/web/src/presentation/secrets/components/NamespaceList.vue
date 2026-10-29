@@ -10,7 +10,7 @@ export interface NamespaceListProps {
 import { computed, ref, watch } from "vue";
 import { Plus } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
-import { Text } from "@wow-two-beta/fe/presentation/display";
+import { ListGroup, ListGroupItem, Text } from "@wow-two-beta/fe/presentation/display";
 import { DataRegion, useSkeletonItems } from "@wow-two-beta/fe/presentation/feedback";
 import { useVaultNamespaces } from "@/application/secrets";
 import NamespaceModal from "./NamespaceModal.vue";
@@ -59,37 +59,20 @@ watch(
       empty-description="Create one per product environment."
       loading-label="Loading namespaces"
     >
-      <ul class="flex flex-col gap-1">
-        <li v-for="(item, index) in rows" :key="item?.slug ?? `placeholder-${index}`">
-          <button
-            type="button"
-            :aria-current="item && item.slug === selected ? 'true' : undefined"
-            class="flex min-h-14 w-full flex-col justify-center rounded-xl px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            :class="
-              item && item.slug === selected
-                ? 'bg-primary-soft text-primary-soft-foreground'
-                : 'hover:bg-muted'
-            "
-            @click="item && emit('select', item.slug)"
-          >
-            <Text as="span" class="w-full truncate font-mono text-xs font-medium text-inherit" skeleton-width="70%">{{
-              item?.slug
-            }}</Text>
-            <Text
-              as="span"
-              class="w-full truncate text-xs"
-              :class="
-                item && item.slug === selected
-                  ? 'text-primary-soft-foreground'
-                  : 'text-muted-foreground'
-              "
-              skeleton-width="90%"
-            >
-              {{ item?.name }}
-            </Text>
-          </button>
-        </li>
-      </ul>
+      <ListGroup class="flex flex-col gap-1 [&>li]:py-0">
+        <ListGroupItem
+          v-for="(item, index) in rows"
+          :key="item?.slug ?? `placeholder-${index}`"
+          :description="item?.name ?? ''"
+          :is-selected="Boolean(item) && item?.slug === selected"
+          class="[&>button]:min-h-14 [&>button]:rounded-xl"
+          @select="item && emit('select', item.slug)"
+        >
+          <Text as="span" class="w-full truncate font-mono text-xs font-medium text-inherit" skeleton-width="70%">{{
+            item?.slug
+          }}</Text>
+        </ListGroupItem>
+      </ListGroup>
     </DataRegion>
     <NamespaceModal
       :vault="vault"

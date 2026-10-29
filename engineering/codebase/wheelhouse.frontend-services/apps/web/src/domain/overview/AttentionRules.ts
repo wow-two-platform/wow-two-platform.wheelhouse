@@ -3,6 +3,7 @@ import { ReleaseSets, TargetCondition, type DeploymentStats } from '@/domain/dep
 import { ServerExtensions, RESTART_WARNING, USAGE_THRESHOLDS, type ServerVitals } from '@/domain/servers';
 import { ServiceControls } from '@/domain/deployments/controls/ServiceControls';
 import { VaultStatus, type VaultHygiene, type VaultSummary } from '@/domain/secrets';
+import { pluralize } from '@wow-two-beta/fe/foundation/formatters';
 
 /** How urgent an attention item is. */
 export type AttentionTone = 'danger' | 'warning';
@@ -49,7 +50,7 @@ export const AttentionRules = {
           items.push({ id: `container:${id}:${container.service}`, tone: 'danger',
             title: `${container.service} on ${id} is ${ServerExtensions.containerLabel(container)}`,
             detail: `${container.state === 'running' ? 'Running but failing its health check' : 'Not serving traffic'}; `
-              + `${container.restarts} restart${container.restarts === 1 ? '' : 's'}.`, href: '/servers' });
+              + `${container.restarts} ${pluralize(container.restarts, 'restart')}.`, href: '/servers' });
         else if (container.restarts >= RESTART_WARNING)
           items.push({ id: `restarts:${id}:${container.service}`, tone: 'warning',
             title: `${container.service} on ${id} restarted ${container.restarts} times`,
@@ -123,18 +124,18 @@ export const AttentionRules = {
     const items: AttentionItem[] = [];
     if (hygiene.overdueSecrets.length)
       items.push({ id: `secrets:${vault.id}`, tone: 'warning',
-        title: `${hygiene.overdueSecrets.length} secret${hygiene.overdueSecrets.length === 1 ? '' : 's'} in ${vault.name} due for rotation`,
+        title: `${hygiene.overdueSecrets.length} ${pluralize(hygiene.overdueSecrets.length, 'secret')} in ${vault.name} due for rotation`,
         detail: `Older than ${hygiene.secretRotationDays} days: ${listed(hygiene.overdueSecrets.map((secret) => `${secret.namespace}/${secret.key}`))}.`,
         href: '/secrets' });
     const expired = hygiene.overdueTokens.filter((token) => token.reason === 'expired');
     if (expired.length)
       items.push({ id: `tokens-expired:${vault.id}`, tone: 'danger',
-        title: `${expired.length} product token${expired.length === 1 ? '' : 's'} in ${vault.name} expired`,
+        title: `${expired.length} product ${pluralize(expired.length, 'token')} in ${vault.name} expired`,
         detail: `Revoke or replace: ${listed(expired.map((token) => `${token.namespace}/${token.name}`))}.`, href: '/secrets' });
     const due = hygiene.overdueTokens.filter((token) => token.reason !== 'expired');
     if (due.length)
       items.push({ id: `tokens:${vault.id}`, tone: 'warning',
-        title: `${due.length} product token${due.length === 1 ? '' : 's'} in ${vault.name} due for rotation`,
+        title: `${due.length} product ${pluralize(due.length, 'token')} in ${vault.name} due for rotation`,
         detail: `${listed(due.map((token) => `${token.namespace}/${token.name} (${token.reason})`))}.`, href: '/secrets' });
     return items;
   },

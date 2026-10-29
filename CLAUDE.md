@@ -99,7 +99,7 @@ Reserve unit for I/O-free logic; everything user-facing is covered e2e. Full rul
 
 ## Beta SDK usage (per workspace direction)
 
-- **Frontend → fe sdk `@wow-two-beta/fe` (`0.0.33`, in `apps/web/package.json`).** Use its components (Button, Card,
+- **Frontend → fe sdk `@wow-two-beta/fe` (`0.0.34`, in `apps/web/package.json`).** Use its components (Button, Card,
   Badge, Heading, Text, EmptyState, Alert, Spinner, TextInput, …) before hand-rolling. Tailwind v4 wiring: `index.css`
   imports `tailwindcss` + `@wow-two-beta/fe/styles.css` and `@source`s the package's `dist` so its
   utility classes are generated. Shared capability gaps belong in the SDK. Product composition stays local.

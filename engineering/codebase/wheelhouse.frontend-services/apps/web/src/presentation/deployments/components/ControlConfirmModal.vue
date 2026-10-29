@@ -14,17 +14,8 @@ export interface ControlConfirmModalProps {
 import { computed, ref, watch } from "vue";
 import { Pause, Play, RotateCw } from "lucide-vue-next";
 
-import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Field, TextInput } from "@wow-two-beta/fe/presentation/forms";
-import {
-  Modal,
-  ModalContent,
-  ModalDescription,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-  TypedConfirmModal,
-} from "@wow-two-beta/fe/presentation/overlays";
+import { TypedConfirmModal } from "@wow-two-beta/fe/presentation/overlays";
 
 import { useTargetControl } from "@/application/deployments";
 import { JobStatus } from "@/domain/deployments";
@@ -33,7 +24,7 @@ import { failureReason } from "@/integration/common";
 
 /**
  * Confirms a stop, start or restart before it is queued: dev asks once, prod asks for its target ID typed and a reason.
- * The job then reads in the environment's deployments like a deploy.
+ * The job then reads in the environment's deployments like a deploy; the dialog stays until the target ends it.
  */
 defineOptions({ name: "ControlConfirmModal" });
 const props = defineProps<ControlConfirmModalProps>();
@@ -42,7 +33,6 @@ defineSlots<{}>();
 
 const control = useTargetControl();
 const reason = ref("");
-const missingReason = ref(false);
 /** While the queued control runs on its target: what it is doing. */
 const progress = ref<string | null>(null);
 /** Why the target failed or refused the control, once it ended so. */
@@ -59,16 +49,20 @@ const tone = computed(() =>
       ? "warning"
       : "primary",
 );
-const error = computed(() =>
-  missingReason.value ? "Give a reason." : (outcome.value ?? failureReason(control.error.value)),
+const icon = computed(() =>
+  props.request?.operation === ControlOperation.Stop
+    ? Pause
+    : props.request?.operation === ControlOperation.Restart
+      ? RotateCw
+      : Play,
 );
+const error = computed(() => outcome.value ?? failureReason(control.error.value));
 
 /** Clears the reason and the last refusal whenever the dialog opens on another control. @internal */
 watch(
   () => [props.open, props.request?.target.id, props.request?.operation, props.request?.service],
   () => {
     reason.value = "";
-    missingReason.value = false;
     progress.value = null;
     outcome.value = null;
     control.reset();
@@ -76,15 +70,10 @@ watch(
 );
 
 /** Queues the control — prod sends the typed ID and the reason — and stays until the target ends it: a success closes
- * the dialog, a failure or refusal stays in it with the target's reason. @internal */
-async function submit(typed?: string) {
+ * the dialog, a failure or refusal keeps it open with the target's reason. @internal */
+async function submit(typed: string) {
   const request = props.request;
   if (!request) return;
-  if (guarded.value && !reason.value.trim()) {
-    missingReason.value = true;
-    throw new Error("Give a reason.");
-  }
-  missingReason.value = false;
   outcome.value = null;
   const result = await control.mutateAsync({
     target: request.target.id,
@@ -98,52 +87,29 @@ async function submit(typed?: string) {
   progress.value = null;
   if (ended && ended.status !== JobStatus.Succeeded) {
     outcome.value = ended.reason || `The target could not ${request.operation} it (${ended.status}).`;
-    if (guarded.value) throw new Error(outcome.value);
-    return;
+    throw new Error(outcome.value);
   }
-  if (!guarded.value) emit("update:open", false);
   return result;
 }
 </script>
 
 <template>
   <TypedConfirmModal
-    v-if="guarded && props.request"
-    :open="props.open"
+    :open="props.open && Boolean(props.request)"
     :title="title"
-    :description="ServiceControls.consequence(props.request)"
-    :expected="props.request.target.id"
-    :confirm-label="ServiceControls.verb(props.request.operation)"
+    :description="props.request ? ServiceControls.consequence(props.request) : ''"
+    v-bind="guarded && props.request ? { expected: props.request.target.id } : {}"
+    :can-confirm="!guarded || reason.trim().length > 0"
+    :confirm-label="props.request ? ServiceControls.verb(props.request.operation) : ''"
     :tone="tone"
     :error="error"
     @update:open="emit('update:open', $event)"
     @confirm="submit"
   >
-    <Field label="Reason" is-required>
+    <template #confirm-icon><component :is="icon" :size="16" aria-hidden="true" /></template>
+    <Field v-if="guarded" label="Reason" is-required>
       <TextInput v-model="reason" autocomplete="off" maxlength="300" />
     </Field>
     <p v-if="progress" role="status" class="text-sm text-muted-foreground">{{ progress }}</p>
   </TypedConfirmModal>
-  <Modal v-else :open="props.open && Boolean(props.request)" @update:open="emit('update:open', $event)">
-    <ModalContent class="w-full max-w-md">
-      <ModalHeader>
-        <ModalTitle>{{ title }}</ModalTitle>
-        <ModalDescription>{{ props.request ? ServiceControls.consequence(props.request) : "" }}</ModalDescription>
-      </ModalHeader>
-      <p v-if="progress" role="status" class="px-6 text-sm text-muted-foreground">{{ progress }}</p>
-      <p v-if="error" role="alert" class="px-6 text-sm text-destructive">{{ error }}</p>
-      <ModalFooter>
-        <Button type="button" variant="outline" tone="neutral" @click="emit('update:open', false)">Cancel</Button>
-        <Button type="button" :tone="tone" :is-loading="control.loading.value || progress !== null" @click="submit()">
-          <template #leading
-            ><Pause v-if="props.request?.operation === ControlOperation.Stop" :size="16" aria-hidden="true" /><RotateCw
-              v-else-if="props.request?.operation === ControlOperation.Restart"
-              :size="16"
-              aria-hidden="true" /><Play v-else :size="16" aria-hidden="true"
-          /></template>
-          {{ props.request ? ServiceControls.verb(props.request.operation) : "" }}
-        </Button>
-      </ModalFooter>
-    </ModalContent>
-  </Modal>
 </template>

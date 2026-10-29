@@ -12,6 +12,7 @@ export interface WorkspaceStatPillsProps {
 </script>
 <script setup lang="ts">
 import { computed } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { SkeletonState } from "@wow-two-beta/fe/presentation/feedback";
 import { StatusState, StatusWords } from "@/domain/common/StatusVocabulary";
 import { ProductConditionWords } from "@/domain/portfolio";
@@ -34,7 +35,6 @@ defineOptions({ name: "WorkspaceStatPills" });
 const props = withDefaults(defineProps<WorkspaceStatPillsProps>(), { isSingleLine: false });
 defineSlots<{}>();
 
-const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 const pills = computed<StatPill[]>(() => {
   const stats = props.stats;
   if (!stats) return [];
@@ -45,11 +45,11 @@ const pills = computed<StatPill[]>(() => {
     result.push({
       state: StatusState.Succeeded,
       text: rollouts.succeeded ? `${rollouts.succeeded} · ${rollouts.successRate}%` : `${rollouts.successRate}%`,
-      title: `${rollouts.succeeded} of ${finished} ${plural(finished, "rollout", "rollouts")} ${StatusWords.succeeded} in ${props.rangeText}: ${rollouts.successRate}%`,
+      title: `${rollouts.succeeded} of ${finished} ${pluralize(finished, "rollout")} ${StatusWords.succeeded} in ${props.rangeText}: ${rollouts.successRate}%`,
     });
   }
   const now = (state: StatusState, count: number, word: string) => {
-    if (count > 0) result.push({ state, text: String(count), title: `${count} ${plural(count, "product", "products")} ${word}` });
+    if (count > 0) result.push({ state, text: String(count), title: `${count} ${pluralize(count, "product")} ${word}` });
   };
   now(StatusState.Failed, stats.failing, ProductConditionWords.failing);
   now(StatusState.Degraded, stats.degraded, ProductConditionWords.attention);

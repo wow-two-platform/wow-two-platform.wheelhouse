@@ -13,11 +13,11 @@ import { computed, nextTick, ref, useTemplateRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { CalendarDays, List, MousePointerClick, X } from "lucide-vue-next";
 
-import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Button, RefreshButton } from "@wow-two-beta/fe/presentation/actions";
 import { Badge } from "@wow-two-beta/fe/presentation/display";
 import { ToggleGroup, ToggleInput } from "@wow-two-beta/fe/presentation/forms";
 import { DataRegion } from "@wow-two-beta/fe/presentation/feedback";
-import { TailwindBreakpoints, useBreakpoint } from "@wow-two-beta/fe/foundation/device";
+import { TailwindBreakpoints, useBreakpointUp } from "@wow-two-beta/fe/foundation/device";
 import { useResizeObserver } from "@wow-two-beta/fe/foundation/observers";
 
 import {
@@ -35,7 +35,7 @@ import { usePortfolio } from "@/application/portfolio";
 import { useShowAllAttempts } from "@/application/preferences";
 import { DayLanes, DeploymentFilters, ReleaseSets } from "@/domain/deployments";
 import { useRefresh } from "@/bootstrap/query";
-import { InfoPopover, Panel, RefreshButton } from "@/presentation/common/components";
+import { InfoPopover, Panel } from "@/presentation/common/components";
 
 import { useDeploymentViewRoute } from "../../hooks/useDeploymentViewRoute";
 import ActivityGrid from "./ActivityGrid.vue";
@@ -157,7 +157,7 @@ const refresh = useRefresh(() =>
   Promise.all(isGrid.value ? [activity.refetch(), ...(route.day.value ? [dayList.refetch()] : [])] : [list.refetch()]),
 );
 
-const breakpoint = useBreakpoint(TailwindBreakpoints);
+const isWide = useBreakpointUp(TailwindBreakpoints, "lg");
 const gridArea = useTemplateRef<HTMLElement>("gridArea");
 const gridBox = useTemplateRef<HTMLElement>("gridBox");
 /** The room left beside the calendar, which sizes to its days. */
@@ -171,7 +171,7 @@ useResizeObserver(gridArea, measure);
 useResizeObserver(gridBox, measure);
 /** The day panel sits beside the calendar from `lg`, when the panel holds both. */
 const isSide = computed(
-  () => (breakpoint.value === "lg" || breakpoint.value === "xl" || breakpoint.value === "2xl") && spare.value >= SidePanelRoom,
+  () => isWide.value && spare.value >= SidePanelRoom,
 );
 
 /** The chosen day's date, its year left out in the current one so the today tag fits beside it. */
@@ -208,7 +208,7 @@ function setView(value: unknown): void {
           <List :size="14" aria-hidden="true" /><span class="ml-1">List</span>
         </ToggleInput>
       </ToggleGroup>
-      <RefreshButton variant="ghost" size="md" icon-only class="max-md:size-11" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh()" />
+      <RefreshButton variant="ghost" size="md" is-icon-only class="max-md:size-11" :is-refreshing="refresh.refreshing.value" @click="refresh.refresh()" />
     </template>
     <div class="flex min-w-0 flex-col gap-5">
       <DeploymentFilterBar

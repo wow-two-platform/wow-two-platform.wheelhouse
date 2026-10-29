@@ -26,7 +26,7 @@ Controls that sit together share one height; the row's place sets it.
 - **`md` (40px):** the top bar (page actions through `PageHeaderActions`, the sidebar toggle, the profile trigger), dialog and sheet footers, a panel's full-width action, and any row that holds a picker or a segmented control. Every `SelectPicker` trigger is `md`; a segmented `ToggleGroup` takes `sm` items, whose track stands 40px tall.
 - **`sm` (32px):** every other row inside a panel, card, table or list: row and card actions, panel-header buttons, toolbars without a picker, actions inside an alert or empty block, paging.
 - **Phones (below `md`):** a row that grows to the 44px touch target grows whole: labelled buttons and triggers `max-md:min-h-11`, icon-only buttons `max-md:size-11`, segmented items `max-md:min-h-9` (a 44px track). The top bar and dialog footers stay at 40px.
-- **Icon-only buttons** take `shape="square"` at their row's size; `RefreshButton icon-only` does this itself.
+- **Icon-only buttons** take `shape="square"` at their row's size; the SDK `RefreshButton is-icon-only` does this itself.
 - **Destructive actions** keep `tone="danger"` and their row's size: `DeleteConfirm` is `md` in a dialog footer, where it sits on the left with Cancel and the primary on the right, and `size="sm"` in a list row.
 
 ## Repo-specific deltas

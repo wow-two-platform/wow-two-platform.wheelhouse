@@ -13,7 +13,7 @@ export interface ServiceLogsModalProps {
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 
-import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Button, RefreshButton } from "@wow-two-beta/fe/presentation/actions";
 import { Alert, Spinner } from "@wow-two-beta/fe/presentation/feedback";
 import {
   SelectPicker,
@@ -35,7 +35,6 @@ import {
 import { useRefresh } from "@/bootstrap/query";
 import { useServiceLogs } from "@/application/deployments";
 import { Measures } from "@/domain/common";
-import { RefreshButton } from "@/presentation/common/components";
 
 /** Reads one service's last container lines on demand. Nothing stores them; closing the viewer discards the view. */
 defineOptions({ name: "ServiceLogsModal" });
@@ -103,7 +102,7 @@ watch(lines, async () => {
                 ></SelectPicker
               >
             </div>
-            <RefreshButton size="md" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
+            <RefreshButton size="md" :is-refreshing="refresh.refreshing.value" @click="refresh.refresh" />
           </div>
         </div>
         <Alert

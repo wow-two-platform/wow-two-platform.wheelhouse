@@ -34,6 +34,8 @@ import { Badge } from "@wow-two-beta/fe/presentation/display";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 import {
   Field,
+  NumberInput,
+  RowsField,
   SelectPicker,
   SelectPickerContent,
   SelectPickerItem,
@@ -50,7 +52,7 @@ import {
   ModalTitle,
   ModalSize,
 } from "@wow-two-beta/fe/presentation/overlays";
-import { useFormDialogSession } from "@wow-two-beta/fe/forms-engine";
+import { useFieldArray, useFormDialogSession } from "@wow-two-beta/fe/forms-engine";
 import { useAppForm } from "@/bootstrap/form";
 import {
   firstFreeEnvironment,
@@ -72,7 +74,7 @@ import { SelfDeployRules } from "@/domain/deployments";
 import { EnvironmentOrder, type DeploymentEnvironment } from "@/domain/targets";
 import type { SiteHostRow } from "@/application/targets/TargetForms";
 import { failureReason } from "@/integration/common";
-import { DeleteConfirm, RowsField } from "@/presentation/common/components";
+import { DeleteConfirm } from "@/presentation/common/components";
 
 /** Edits where an environment runs, which settings files its services read and which requests prove a rollout.
  * Shows, read-only, what the product declares: the services deploy.yml names (the environment runs each on the chosen
@@ -111,6 +113,23 @@ const form = useAppForm({
     return result;
   },
 });
+
+/** The settings files a target's services read, a row each. @internal */
+const settingRows = useFieldArray<Record<string, string | number>>(form, "settings");
+/** The requests that prove a rollout, a row each. @internal */
+const checkRows = useFieldArray<Record<string, string | number>>(form, "smokeChecks");
+const SettingColumns = [
+  { key: "service", label: "Service" },
+  { key: "path", label: "Path on the host" },
+] as const;
+const CheckColumns = [
+  { key: "service", label: "Service" },
+  { key: "path", label: "Path" },
+  { key: "status", label: "Status" },
+] as const;
+/** Each text column's example value, per list. @internal */
+const SettingPlaceholders: Readonly<Record<string, string>> = { service: "api", path: "/srv/settings/product/api.json" };
+const CheckPlaceholders: Readonly<Record<string, string>> = { service: "api", path: "/health" };
 
 /** The site rows for an environment on a server: the product's sites with the host each answers on. @internal */
 function rowsFor(environment: DeploymentEnvironment, server: string): SiteHostRow[] {
@@ -260,30 +279,66 @@ async function remove(): Promise<void> {
               /></Field>
             </div>
           </fieldset>
-          <RowsField
-            v-else
-            :form="form"
-            name="settings"
-            label="Host settings files (optional)"
-            add-label="Add service"
-            :blank="{ service: '', path: '' }"
-            :columns="[
-              { key: 'service', label: 'Service', placeholder: 'api' },
-              { key: 'path', label: 'Path on the host', placeholder: '/srv/settings/product/api.json' },
-            ]"
-          />
-          <RowsField
-            :form="form"
-            name="smokeChecks"
-            label="Smoke checks"
-            add-label="Add check"
-            :blank="{ service: '', path: '/health', status: 200 }"
-            :columns="[
-              { key: 'service', label: 'Service', placeholder: 'api' },
-              { key: 'path', label: 'Path', placeholder: '/health' },
-              { key: 'status', label: 'Status', isNumeric: true },
-            ]"
-          />
+          <form.Field v-else name="settings" v-slot="list">
+            <RowsField
+              label="Host settings files (optional)"
+              add-label="Add service"
+              :columns="SettingColumns"
+              :rows="settingRows.rows"
+              :errors="list.errors"
+              @add="settingRows.push({ service: '', path: '' })"
+              @remove="settingRows.remove"
+            >
+              <template #cell="{ row, column, label }">
+                <settingRows.Field :index="row.index" :name="column.key" v-slot="cell">
+                  <Field class="min-w-0">
+                    <TextInput
+                      :model-value="String(cell.value ?? '')"
+                      :aria-label="label"
+                      :placeholder="SettingPlaceholders[column.key]"
+                      autocomplete="off"
+                      @update:model-value="cell.setValue($event ?? '')"
+                      @blur="cell.onBlur"
+                    />
+                  </Field>
+                </settingRows.Field>
+              </template>
+            </RowsField>
+          </form.Field>
+          <form.Field name="smokeChecks" v-slot="list">
+            <RowsField
+              label="Smoke checks"
+              add-label="Add check"
+              :columns="CheckColumns"
+              :rows="checkRows.rows"
+              :errors="list.errors"
+              @add="checkRows.push({ service: '', path: '/health', status: 200 })"
+              @remove="checkRows.remove"
+            >
+              <template #cell="{ row, column, label }">
+                <checkRows.Field :index="row.index" :name="column.key" v-slot="cell">
+                  <Field class="min-w-0">
+                    <NumberInput
+                      v-if="column.key === 'status'"
+                      :model-value="Number(cell.value)"
+                      :aria-label="label"
+                      @update:model-value="cell.setValue($event ?? 0)"
+                      @blur="cell.onBlur"
+                    />
+                    <TextInput
+                      v-else
+                      :model-value="String(cell.value ?? '')"
+                      :aria-label="label"
+                      :placeholder="CheckPlaceholders[column.key]"
+                      autocomplete="off"
+                      @update:model-value="cell.setValue($event ?? '')"
+                      @blur="cell.onBlur"
+                    />
+                  </Field>
+                </checkRows.Field>
+              </template>
+            </RowsField>
+          </form.Field>
           <!-- The product declares its sites and Wheelhouse derives their hosts (decisions 47, 68), so nothing is typed. -->
           <fieldset class="flex flex-col gap-2">
             <legend class="mb-1 text-sm font-medium">Site hosts</legend>

@@ -7,10 +7,10 @@ export interface ProductActivityProps {
 </script>
 <script setup lang="ts">
 import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
+import { RefreshButton } from "@wow-two-beta/fe/presentation/actions";
 import { AuditKeys } from "@/application/audit";
 import { useInvalidate, useRefresh } from "@/bootstrap/query";
 import AuditEntriesPanel from "@/presentation/audit/components/AuditEntriesPanel.vue";
-import { RefreshButton } from "@/presentation/common/components";
 
 /**
  * The audit trail's entries about the product — its own edits, its services' status, its environments, its
@@ -26,7 +26,7 @@ const refresh = useRefresh(() => invalidate(AuditKeys.all));
 <template>
   <div>
     <PageHeaderActions>
-      <RefreshButton size="md" icon-only :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
+      <RefreshButton size="md" is-icon-only :is-refreshing="refresh.refreshing.value" @click="refresh.refresh" />
     </PageHeaderActions>
     <AuditEntriesPanel :product="props.product" />
   </div>

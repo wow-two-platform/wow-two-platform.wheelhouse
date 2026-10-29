@@ -20,7 +20,7 @@ import { BottomSheet, BottomSheetTitle, Popover, PopoverContent, PopoverTrigger 
 
 import { EntitySelection } from "@/domain/deployments";
 
-import { useIsPhone } from "../../hooks/useIsPhone";
+import { TailwindBreakpoints, useBreakpointBelow } from "@wow-two-beta/fe/foundation/device";
 import EntityTreeList from "./EntityTreeList.vue";
 
 /**
@@ -31,7 +31,7 @@ defineOptions({ name: "EntityPicker" });
 const props = defineProps<EntityPickerProps>();
 const emit = defineEmits<{ "update:modelValue": [value: string[]] }>();
 const open = ref(false);
-const isPhone = useIsPhone();
+const isPhone = useBreakpointBelow(TailwindBreakpoints, "md");
 
 const count = computed(() => props.modelValue.length);
 const summary = computed(() => {

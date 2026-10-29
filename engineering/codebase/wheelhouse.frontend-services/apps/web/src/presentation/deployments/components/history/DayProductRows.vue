@@ -14,6 +14,7 @@ export interface DayProductRowsProps {
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { RouterLink, useRouter } from "vue-router";
 import { ArrowUpRight } from "lucide-vue-next";
 
@@ -227,7 +228,7 @@ function unlisten(): void {
             <ul
               v-if="lane.glyphs.length"
               class="flex flex-wrap gap-1"
-              :aria-label="`${lane.environment}, ${lane.glyphs.length} ${lane.glyphs.length === 1 ? 'deploy' : 'deploys'}, oldest first`"
+              :aria-label="`${lane.environment}, ${lane.glyphs.length} ${pluralize(lane.glyphs.length, 'deploy')}, oldest first`"
             >
               <li v-for="glyph in lane.glyphs" :key="glyph.item.id" class="flex">
                 <a

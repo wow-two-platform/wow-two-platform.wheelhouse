@@ -33,7 +33,7 @@ import {
 } from "@/domain/portfolio";
 import DateRangeChoices from "@/presentation/deployments/components/history/DateRangeChoices.vue";
 import DateRangeFilter from "@/presentation/deployments/components/history/DateRangeFilter.vue";
-import { useIsPhone } from "@/presentation/deployments/hooks/useIsPhone";
+import { TailwindBreakpoints, useBreakpointBelow } from "@wow-two-beta/fe/foundation/device";
 import ShowInactiveSwitch from "@/presentation/shell/components/ShowInactiveSwitch.vue";
 import ChoiceChips from "./ChoiceChips.vue";
 import WorkspaceFilterList from "./WorkspaceFilterList.vue";
@@ -49,7 +49,7 @@ defineOptions({ name: "ProductFilters" });
 const props = defineProps<ProductFiltersProps>();
 const emit = defineEmits<{ change: [filter: Partial<Filter>] }>();
 defineSlots<{}>();
-const isPhone = useIsPhone();
+const isPhone = useBreakpointBelow(TailwindBreakpoints, "md");
 const sheetOpen = ref(false);
 const workspacesOpen = ref(false);
 

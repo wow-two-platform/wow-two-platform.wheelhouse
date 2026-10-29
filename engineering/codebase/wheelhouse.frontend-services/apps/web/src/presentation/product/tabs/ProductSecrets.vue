@@ -13,10 +13,11 @@ import { EmptyState } from "@wow-two-beta/fe/presentation/display";
 import { DataRegion } from "@wow-two-beta/fe/presentation/feedback";
 import { ToggleGroup, ToggleInput } from "@wow-two-beta/fe/presentation/forms";
 import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
+import { RefreshButton } from "@wow-two-beta/fe/presentation/actions";
 import { SettingsKeys, useEnvironmentSettings } from "@/application/settings";
 import { useInvalidate, useRefresh } from "@/bootstrap/query";
 import { EnvironmentOrder } from "@/domain/targets";
-import { Panel, RefreshButton } from "@/presentation/common/components";
+import { Panel } from "@/presentation/common/components";
 import ApplyBar from "@/presentation/settings/components/ApplyBar.vue";
 import SecretsEditor from "@/presentation/settings/components/SecretsEditor.vue";
 import VaultStateAlert from "@/presentation/settings/components/VaultStateAlert.vue";
@@ -58,7 +59,7 @@ const refresh = useRefresh(() => invalidate(SettingsKeys.of(place.target.value?.
           >{{ environment }}</ToggleInput
         >
       </ToggleGroup>
-      <RefreshButton size="md" icon-only :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
+      <RefreshButton size="md" is-icon-only :is-refreshing="refresh.refreshing.value" @click="refresh.refresh" />
     </PageHeaderActions>
     <EmptyState
       v-if="!place.environment.value"

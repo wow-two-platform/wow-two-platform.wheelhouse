@@ -18,6 +18,7 @@ export interface DeploySettingsPanelProps {
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { Check, KeyRound, Pencil, Sparkles } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
@@ -128,7 +129,7 @@ function edit(key: string, event: MouseEvent): void {
     <div class="flex flex-wrap items-center gap-2">
       <p class="text-sm font-medium">Settings</p>
       <Badge v-if="missing.length" variant="warning"
-        >{{ missing.length }} required {{ missing.length === 1 ? "value" : "values" }} missing{{ held.length ? ` · ${held.length} set` : "" }}</Badge
+        >{{ missing.length }} required {{ pluralize(missing.length, "value") }} missing{{ held.length ? ` · ${held.length} set` : "" }}</Badge
       >
       <template v-else>
         <Badge v-if="held.length" variant="success">{{ held.length }} set</Badge>

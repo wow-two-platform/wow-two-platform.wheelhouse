@@ -6,6 +6,7 @@ import {
   type CatalogImportResult,
   type CatalogSource,
 } from './Catalog';
+import { pluralize } from '@wow-two-beta/fe/foundation/formatters';
 
 /** One catalog workspace's apps, and how many of them can be imported, are in Wheelhouse, or deploy elsewhere. */
 export interface CatalogWorkspaceGroup {
@@ -39,7 +40,7 @@ export type WorkspaceSelection = (typeof WorkspaceSelection)[keyof typeof Worksp
 
 /** Counts a word: `1 product`, `3 products`. @internal */
 function count(value: number, noun: string): string {
-  return `${value} ${noun}${value === 1 ? '' : 's'}`;
+  return `${value} ${pluralize(value, noun)}`;
 }
 
 /** Each change an import brings an existing product, in words. */

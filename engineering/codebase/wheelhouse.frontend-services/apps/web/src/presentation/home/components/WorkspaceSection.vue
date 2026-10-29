@@ -18,6 +18,7 @@ export interface WorkspaceSectionProps {
 </script>
 <script setup lang="ts">
 import { computed } from 'vue';
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { RouterLink } from 'vue-router';
 import { useSkeletonItems } from '@wow-two-beta/fe/presentation/feedback';
 import { ConsolePaths } from '@/application/navigation';
@@ -49,8 +50,7 @@ const headingId = computed(() => `home-workspace-${props.group.workspace?.slug ?
         <template v-else>{{ name }}</template>
       </h2>
       <span v-if="!props.isLoading" class="shrink-0 text-xs tabular-nums text-muted-foreground"
-        >{{ props.group.products.length }} product{{ props.group.products.length === 1 ? '' : 's'
-        }}<template v-if="hidden > 0"> · {{ hidden }} inactive hidden</template></span
+        >{{ props.group.products.length }} {{ pluralize(props.group.products.length, 'product') }}<template v-if="hidden > 0"> · {{ hidden }} inactive hidden</template></span
       >
     </header>
     <ul v-if="cards.length" role="list" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3" :aria-label="name">

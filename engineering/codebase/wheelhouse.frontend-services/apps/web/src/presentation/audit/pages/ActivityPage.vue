@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { ShieldAlert, ShieldCheck } from "lucide-vue-next";
 import { Text } from "@wow-two-beta/fe/presentation/display";
 import { DataRegion } from "@wow-two-beta/fe/presentation/feedback";
 import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
+import { RefreshButton } from "@wow-two-beta/fe/presentation/actions";
 
 import { AuditKeys, useAuditVerification } from "@/application/audit";
 import { useInvalidate, useRefresh } from "@/bootstrap/query";
 import { AuditExtensions } from "@/domain/audit";
-import { RefreshButton } from "@/presentation/common/components";
 import AuditEntriesPanel from "../components/AuditEntriesPanel.vue";
 
 /**
@@ -28,7 +29,7 @@ onMounted(() => void verification.refetch());
 <template>
   <div class="space-y-6">
     <PageHeaderActions
-      ><RefreshButton size="md" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh"
+      ><RefreshButton size="md" :is-refreshing="refresh.refreshing.value" @click="refresh.refresh"
     /></PageHeaderActions>
     <section class="rounded-2xl border border-border bg-card p-5" aria-label="Audit chain">
       <DataRegion
@@ -66,7 +67,7 @@ onMounted(() => void verification.refetch());
           <div v-else class="min-w-0">
             <Text class="font-medium">
               Chain intact · {{ verification.data.value?.entries ?? 0 }}
-              {{ verification.data.value?.entries === 1 ? "entry" : "entries" }}
+              {{ pluralize(verification.data.value?.entries ?? 0, "entry", "entries") }}
             </Text>
             <Text class="mt-1 text-sm text-muted-foreground">
               No stored entry was edited, reordered or removed from the middle. A verified chain cannot show that

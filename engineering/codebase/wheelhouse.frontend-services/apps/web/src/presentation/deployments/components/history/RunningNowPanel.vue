@@ -16,6 +16,7 @@ export interface RunningNowPanelProps {
 
 <script setup lang="ts">
 import { ReleaseSets } from "@/domain/deployments";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { ServiceControls } from "@/domain/deployments/controls";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
@@ -49,7 +50,7 @@ function elapsed(item: DeploymentItem): string {
 </script>
 
 <template>
-  <Panel title="Running now" :description="`${props.items.length} ${props.items.length === 1 ? 'rollout' : 'rollouts'} in progress.`">
+  <Panel title="Running now" :description="`${props.items.length} ${pluralize(props.items.length, 'rollout')} in progress.`">
     <FleetRolloutCard
       v-if="props.fleet"
       :fleet="props.fleet"

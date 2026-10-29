@@ -17,7 +17,7 @@ import { BottomSheet, BottomSheetTitle, Popover, PopoverContent, PopoverTrigger 
 
 import { DeploymentFilters, type DeploymentRange as Range } from "@/domain/deployments";
 
-import { useIsPhone } from "../../hooks/useIsPhone";
+import { TailwindBreakpoints, useBreakpointBelow } from "@wow-two-beta/fe/foundation/device";
 import DateRangeChoices from "./DateRangeChoices.vue";
 
 /**
@@ -28,7 +28,7 @@ defineOptions({ name: "DateRangeFilter" });
 const props = defineProps<DateRangeFilterProps>();
 const emit = defineEmits<{ "update:modelValue": [value: Range] }>();
 const open = ref(false);
-const isPhone = useIsPhone();
+const isPhone = useBreakpointBelow(TailwindBreakpoints, "md");
 const label = computed(() => DeploymentFilters.label(props.modelValue));
 
 function choose(value: Range): void {

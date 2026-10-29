@@ -20,6 +20,7 @@ export interface IssuesPanelProps {
 
 <script setup lang="ts">
 import { ReleaseSets } from "@/domain/deployments";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { computed } from "vue";
 import { RouterLink, useRouter } from "vue-router";
 import { ArrowUpRight, DatabaseZap, Hammer, KeyRound, RotateCcw, TriangleAlert, Wrench } from "lucide-vue-next";
@@ -79,7 +80,7 @@ function describe(issue: DeploymentIssue): string {
 <template>
   <Panel
     title="Issues"
-    :description="`${total} ${total === 1 ? 'issue needs' : 'issues need'} attention.`"
+    :description="`${total} ${pluralize(total, 'issue needs', 'issues need')} attention.`"
   >
     <ul class="flex flex-col divide-y divide-border">
       <li

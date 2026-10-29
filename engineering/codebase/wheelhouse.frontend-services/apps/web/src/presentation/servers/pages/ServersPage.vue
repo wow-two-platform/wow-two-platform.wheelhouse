@@ -3,7 +3,7 @@ import { ReleaseSets } from "@/domain/deployments";
 import { computed, ref } from 'vue';
 import { RouterLink } from 'vue-router';
 import { ExternalLink, KeyRound, Pencil, Plus, Server as ServerIcon } from 'lucide-vue-next';
-import { Button } from '@wow-two-beta/fe/presentation/actions';
+import { Button, RefreshButton } from '@wow-two-beta/fe/presentation/actions';
 import {
   Badge,
   RelativeTime,
@@ -13,7 +13,9 @@ import {
   TableRow,
   TableCell,
   TableHeaderCell,
+  Sparkline,
   Text,
+  type SparklineThreshold,
 } from '@wow-two-beta/fe/presentation/display';
 import { DataRegion, useSkeletonItems } from '@wow-two-beta/fe/presentation/feedback';
 import {
@@ -43,19 +45,20 @@ import {
   TrendRanges,
   VpsProvider,
   VpsProviderLabels,
+  USAGE_THRESHOLDS,
   hostTrend,
   serverConsoleOf,
   type Server,
+  type TrendPoint,
   type TrendRange,
 } from '@/domain/servers';
 import type { VaultDefinition } from '@/domain/secrets';
 import { Measures } from '@/domain/common';
 import { AttentionRules, type AttentionItem } from '@/domain/overview';
-import { InfoPopover, Panel, RefreshButton } from '@/presentation/common/components';
+import { InfoPopover, Panel } from '@/presentation/common/components';
 import { ProductIcon } from '@/presentation/products';
 import PortfolioAttention from '../components/PortfolioAttention.vue';
 import ResourceMeter from '../components/ResourceMeter.vue';
-import TrendLine from '../components/TrendLine.vue';
 import ServerFormModal from '../components/ServerFormModal.vue';
 import VaultFormModal from '../components/VaultFormModal.vue';
 import AddServerMenu from '@/presentation/infrastructure/components/AddServerMenu.vue';
@@ -136,6 +139,28 @@ const vaultRows = (server: Server | undefined): ReadonlyArray<VaultDefinition | 
 const TrendLabels: Record<TrendRange, string> = { day: 'Last 24 hours', week: 'Last 7 days', month: 'Last 30 days' };
 const trendRange = ref<TrendRange>('day');
 const history = useVitalsHistory(() => TrendRanges[trendRange.value]);
+/** The host figures drawn as trends, in order. @internal */
+const TrendFigures = [
+  { figure: 'loadPercent', label: 'CPU load' },
+  { figure: 'memoryPercent', label: 'Memory' },
+  { figure: 'diskPercent', label: 'Fullest disk' },
+] as const;
+/** The meters' warning and danger levels, dashed across every trend. */
+const UsageLevels: readonly SparklineThreshold[] = [
+  { value: USAGE_THRESHOLDS[0], tone: 'warning' },
+  { value: USAGE_THRESHOLDS[1], tone: 'danger' },
+];
+/** One server's trends: each figure's readings, its peak, a scale reaching at least 100% and a spoken summary. */
+const trendsOf = (server: Server | undefined) =>
+  TrendFigures.map(({ figure, label }) => {
+    const points: TrendPoint[] = server ? hostTrend(history.data.value ?? [], server.slug, figure) : [];
+    const values = points.map((point) => point.value);
+    const peak = Math.round(Math.max(0, ...values));
+    const latest = Math.round(values.at(-1) ?? 0);
+    const summary =
+      points.length < 2 ? `${label}: not enough readings yet` : `${label}: now ${latest}%, peak ${peak}%`;
+    return { label, points, peak, ceiling: Math.max(100, ...values), summary };
+  });
 /** The trend window, fixed per read so the lines line up across servers. */
 const trendWindow = computed(() => {
   const until = history.data.value ? Date.now() : 0;
@@ -145,7 +170,7 @@ const trendWindow = computed(() => {
 <template>
   <div class="space-y-6">
     <PageHeaderActions>
-      <RefreshButton size="md" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
+      <RefreshButton size="md" :is-refreshing="refresh.refreshing.value" @click="refresh.refresh" />
       <AddServerMenu :is-disabled="serverForm.open" @register="serverForm = { open: true, server: null }" />
     </PageHeaderActions>
     <PortfolioAttention />
@@ -264,12 +289,12 @@ const trendWindow = computed(() => {
               <ResourceMeter
                 label="CPU load"
                 :value="hostOf(server) ? ServerExtensions.loadPercent(hostOf(server)!) : null"
-                :refreshing="refresh.refreshing.value"
+                :is-refreshing="refresh.refreshing.value"
               />
               <ResourceMeter
                 label="Memory"
                 :value="hostOf(server) ? ServerExtensions.memoryPercent(hostOf(server)!) : null"
-                :refreshing="refresh.refreshing.value"
+                :is-refreshing="refresh.refreshing.value"
               />
               <ResourceMeter
                 v-for="disk in hostOf(server)?.disks"
@@ -277,7 +302,7 @@ const trendWindow = computed(() => {
                 :label="`Disk · ${disk.path}`"
                 :value="ServerExtensions.diskPercent(disk)"
                 :detail="`${Measures.bytes(disk.freeBytes)} free of ${Measures.bytes(disk.totalBytes)}`"
-                :refreshing="refresh.refreshing.value"
+                :is-refreshing="refresh.refreshing.value"
               />
             </div>
             <Text v-else class="text-sm text-muted-foreground"
@@ -326,21 +351,33 @@ const trendWindow = computed(() => {
               loading-label="Reading trends"
               class="grid gap-3 sm:grid-cols-3"
             >
-              <TrendLine
-                label="CPU load"
-                :points="server ? hostTrend(history.data.value ?? [], server.slug, 'loadPercent') : []"
-                v-bind="trendWindow"
-              />
-              <TrendLine
-                label="Memory"
-                :points="server ? hostTrend(history.data.value ?? [], server.slug, 'memoryPercent') : []"
-                v-bind="trendWindow"
-              />
-              <TrendLine
-                label="Fullest disk"
-                :points="server ? hostTrend(history.data.value ?? [], server.slug, 'diskPercent') : []"
-                v-bind="trendWindow"
-              />
+              <div
+                v-for="trend in trendsOf(server)"
+                :key="trend.label"
+                class="min-w-0 rounded-xl border border-border bg-card p-3"
+              >
+                <div class="mb-2 flex items-center justify-between gap-3 text-xs">
+                  <Text as="span" class="truncate text-xs text-muted-foreground">{{ trend.label }}</Text>
+                  <Text v-if="trend.points.length >= 2" as="span" class="text-xs font-medium tabular-nums"
+                    >peak {{ trend.peak }}%</Text
+                  >
+                </div>
+                <Sparkline
+                  v-if="trend.points.length >= 2"
+                  :points="trend.points"
+                  v-bind="trendWindow"
+                  :min="0"
+                  :max="trend.ceiling"
+                  :thresholds="UsageLevels"
+                  :width="240"
+                  :height="48"
+                  class="h-12 w-full"
+                  :aria-label="trend.summary"
+                />
+                <div v-else class="flex h-12 items-center">
+                  <Text as="span" class="text-xs text-muted-foreground">Not enough readings yet</Text>
+                </div>
+              </div>
             </DataRegion>
           </section>
           <section class="mb-5" :aria-label="`${server?.name ?? 'Server'} vaults`">

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, provide, ref } from 'vue';
 import { RouterLink } from 'vue-router';
-import { Button } from '@wow-two-beta/fe/presentation/actions';
+import { Button, RefreshButton } from '@wow-two-beta/fe/presentation/actions';
 import { DataRegion } from '@wow-two-beta/fe/presentation/feedback';
 import { PageHeaderActions } from '@wow-two-beta/fe/presentation/layout';
 import { ConsolePaths } from '@/application/navigation';
@@ -10,7 +10,6 @@ import { TrendScalesKey, useProductFacts, usePortfolio, type PortfolioGroup } fr
 import { useRefresh } from '@/bootstrap/query';
 import { PinKind } from '@/domain/pins';
 import type { Product } from '@/domain/products';
-import { RefreshButton } from '@/presentation/common/components';
 import AttentionSummary from '../components/AttentionSummary.vue';
 import PinnedStrip from '../components/PinnedStrip.vue';
 import WorkspaceSection from '../components/WorkspaceSection.vue';
@@ -47,7 +46,7 @@ function isPinned(product: Product): boolean {
 <template>
   <div class="flex flex-col gap-8">
     <PageHeaderActions>
-      <RefreshButton size="md" icon-only :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
+      <RefreshButton size="md" is-icon-only :is-refreshing="refresh.refreshing.value" @click="refresh.refresh" />
     </PageHeaderActions>
     <!-- Phones lead with the pins: the sidebar that lists them is absent there. -->
     <PinnedStrip class="md:hidden" />

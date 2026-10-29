@@ -7,6 +7,7 @@ export interface WorkspacesModalProps {
 </script>
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { ArrowDown, ArrowUp, GripVertical, Pencil, Plus } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Text } from "@wow-two-beta/fe/presentation/display";
@@ -108,9 +109,8 @@ const moveClass =
                 <Text class="truncate text-sm font-medium" skeleton-width="8rem">{{ workspace?.name }}</Text>
                 <Text class="truncate text-xs text-muted-foreground" skeleton-width="10rem"
                   ><template v-if="workspace"
-                    ><span class="font-mono">{{ workspace.slug }}</span> · {{ counts.get(workspace.id) ?? 0 }} product{{
-                      (counts.get(workspace.id) ?? 0) === 1 ? "" : "s"
-                    }}</template
+                    ><span class="font-mono">{{ workspace.slug }}</span> · {{ counts.get(workspace.id) ?? 0 }}
+                    {{ pluralize(counts.get(workspace.id) ?? 0, "product") }}</template
                   ></Text
                 >
               </div>

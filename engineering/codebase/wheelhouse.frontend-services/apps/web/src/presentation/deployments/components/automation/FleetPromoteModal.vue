@@ -14,6 +14,7 @@ export interface FleetPromoteModalProps {
 
 <script setup lang="ts">
 import { ReleaseSets } from "@/domain/deployments";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { computed, ref, watch } from "vue";
 import { ArrowRight, Layers } from "lucide-vue-next";
 
@@ -126,7 +127,7 @@ function close(open: boolean): void {
     <ModalContent class="w-full max-w-2xl">
       <ModalClose />
       <ModalHeader class="pr-8">
-        <ModalTitle>Promote {{ props.items.length }} {{ props.items.length === 1 ? "product" : "products" }} to prod?</ModalTitle>
+        <ModalTitle>Promote {{ props.items.length }} {{ pluralize(props.items.length, "product") }} to prod?</ModalTitle>
         <ModalDescription>
           One at a time, in this order, each through the usual prod gates. The fleet stops at the first failure and the rest
           are not started; you can cancel it between products.
@@ -162,7 +163,7 @@ function close(open: boolean): void {
         <Alert
           v-if="unchecked"
           severity="warning"
-          :title="`${unchecked} ${unchecked === 1 ? 'release has' : 'releases have'} no passed dev check`"
+          :title="`${unchecked} ${pluralize(unchecked, 'release has', 'releases have')} no passed dev check`"
           description="Auto-promote waits for a passed check; this fleet promotes them anyway."
         />
         <Alert

@@ -17,7 +17,7 @@ export interface ProductTileProps {
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import { Pin, TriangleAlert } from "lucide-vue-next";
-import { Badge, Text } from "@wow-two-beta/fe/presentation/display";
+import { Badge, Card, CardLink, Text } from "@wow-two-beta/fe/presentation/display";
 import { ConsolePaths } from "@/application/navigation";
 import { ProductStatusRules, identityNoticeOf } from "@/domain/products";
 import { EnvironmentOrder } from "@/domain/targets";
@@ -30,8 +30,8 @@ import ProductTrend from "./ProductTrend.vue";
 /**
  * A product at a glance: its mark, name (with a pin when pinned and a warning when its manifest is ignored), a
  * two-line description, then one pill per environment and its deploy trend. The whole card opens the product — its
- * name is a link stretched over the card — while the open-site and overflow controls, and each pill's details, sit
- * above that link. An inactive product is dimmed and labelled.
+ * name is the SDK card link stretched over the card — while the open-site and overflow controls, and each pill's
+ * details, sit above that link. An inactive product is dimmed and labelled.
  */
 defineOptions({ name: "ProductTile" });
 const props = withDefaults(defineProps<ProductTileProps>(), { isPinned: false });
@@ -41,20 +41,24 @@ const inactive = computed(() => Boolean(props.product && !ProductStatusRules.isA
 const notice = computed(() => identityNoticeOf(props.product));
 </script>
 <template>
-  <article
-    class="group relative flex min-w-0 flex-col gap-2.5 rounded-2xl border border-border bg-card p-4 transition-[border-color,box-shadow,opacity] duration-150 hover:border-primary/40 hover:shadow-sm has-[a[data-card-link]:focus-visible]:outline-2 has-[a[data-card-link]:focus-visible]:outline-offset-2 has-[a[data-card-link]:focus-visible]:outline-ring motion-reduce:transition-none"
+  <Card
+    role="article"
+    variant="surface"
+    tone="neutral"
+    radius="2xl"
+    padding="lg"
+    :elevation="0"
+    class="group flex min-w-0 flex-col gap-2.5 bg-card text-foreground transition-[border-color,box-shadow,opacity] duration-150 hover:border-primary/40 hover:shadow-sm motion-reduce:transition-none"
     :class="inactive ? 'opacity-60 hover:opacity-90' : ''"
   >
     <div class="flex min-w-0 items-center gap-3">
       <ProductIcon :product-slug="props.product?.slug ?? null" :name="props.product?.name ?? ''" />
       <div class="flex min-w-0 flex-1 items-center gap-1.5">
         <Text as="span" class="min-w-0 truncate text-sm font-semibold text-inherit" skeleton-width="8rem"
-          ><RouterLink
-            v-if="props.product"
-            :to="ConsolePaths.product(props.product.slug)"
-            data-card-link
-            class="outline-none after:absolute after:inset-0 after:rounded-2xl after:content-['']"
-            >{{ props.product.name }}</RouterLink
+          ><CardLink v-if="props.product" as-child
+            ><RouterLink :to="ConsolePaths.product(props.product.slug)" class="after:rounded-2xl">{{
+              props.product.name
+            }}</RouterLink></CardLink
           ></Text
         >
         <Pin v-if="props.isPinned" :size="13" class="shrink-0 fill-current text-primary" aria-label="Pinned" />
@@ -79,5 +83,5 @@ const notice = computed(() => identityNoticeOf(props.product));
       </ul>
       <span class="ms-auto flex shrink-0 items-center"><ProductTrend :facts="props.product ? props.facts : undefined" :weeks="props.weeks" /></span>
     </div>
-  </article>
+  </Card>
 </template>

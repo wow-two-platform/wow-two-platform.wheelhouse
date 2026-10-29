@@ -8,6 +8,7 @@ export interface BuildUsagePanelProps {
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { Hammer } from "lucide-vue-next";
 
 import { DataRegion, SkeletonStateSlot } from "@wow-two-beta/fe/presentation/feedback";
@@ -73,7 +74,7 @@ const days = computed(() => usage.data.value?.days ?? 30);
               ><SkeletonStateSlot>{{ average ?? "—" }}</SkeletonStateSlot></span
             ><span v-if="average" class="text-xs text-muted-foreground">min</span>
             <span class="ms-auto truncate text-xs text-muted-foreground tabular-nums"
-              >{{ floor }}{{ runs }} {{ runs === 1 ? "run" : "runs" }}</span
+              >{{ floor }}{{ runs }} {{ pluralize(runs, "run") }}</span
             >
           </dd>
         </div>

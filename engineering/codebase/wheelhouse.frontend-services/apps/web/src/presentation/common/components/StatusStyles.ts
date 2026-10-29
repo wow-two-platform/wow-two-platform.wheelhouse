@@ -1,4 +1,5 @@
 import type { Component } from "vue";
+import type { BadgeBorderStyle, BadgeVariant } from "@wow-two-beta/fe/presentation/display";
 import {
   Activity,
   CircleArrowUp,
@@ -115,6 +116,46 @@ export const StatusToneClass: Readonly<Record<StatusTone, string>> = {
     "border-dashed border-border-strong bg-transparent text-subtle-foreground [&_svg]:text-subtle-foreground [&_[data-detail]]:text-subtle-foreground [&_[data-env]]:font-medium",
 };
 
+/** One tone as an SDK `Badge`: its variant, the outline's style, and the classes for the pill and its icon. */
+export interface StatusBadgeLook {
+  readonly variant: BadgeVariant;
+  readonly borderStyle: BadgeBorderStyle;
+  /** Extra classes on the pill, over the variant's. */
+  readonly className: string;
+  /** The icon's colour where the pill's text colour is not it. */
+  readonly iconClass: string;
+}
+
+/**
+ * Each tone as a `Badge`, matching `StatusToneClass`: calm keeps the card fill with only its icon green, the loud tones
+ * take their tint, quiet mutes, and empty dashes a stronger outline around subtle text.
+ */
+export const StatusBadges: Readonly<Record<StatusTone, StatusBadgeLook>> = {
+  calm: { variant: "surface", borderStyle: "solid", className: "", iconClass: "text-success" },
+  info: { variant: "info", borderStyle: "solid", className: "", iconClass: "" },
+  warning: { variant: "warning", borderStyle: "solid", className: "", iconClass: "" },
+  danger: { variant: "danger", borderStyle: "solid", className: "", iconClass: "" },
+  quiet: { variant: "quiet", borderStyle: "solid", className: "", iconClass: "" },
+  empty: {
+    variant: "quiet",
+    borderStyle: "dashed",
+    className: "border-border-strong text-subtle-foreground [&_[data-detail]]:text-subtle-foreground",
+    iconClass: "",
+  },
+};
+
+/** A state's badge: its tone's, except CI, which is calm with a muted icon since nothing here deployed it. */
+export function statusBadge(state: StatusState): StatusBadgeLook {
+  return state === "ci"
+    ? { ...StatusBadges.calm, iconClass: "text-muted-foreground" }
+    : StatusBadges[StatusTones[state]];
+}
+
+/** Whether a state's icon turns: the deploying spinner, held still under reduced motion by the badge. */
+export function isSpinningState(state: StatusState | DeployState | ServiceResult): boolean {
+  return state === "deploying" || state === "in_progress" || state === "starting";
+}
+
 /** A state's classes: its tone's, except CI, which is calm with a muted icon since nothing here deployed it. */
 export function statusClass(state: StatusState): string {
   return state === "ci"
@@ -136,7 +177,5 @@ export function deployStateClass(reading: { readonly state: DeployState; readonl
 
 /** The icon's motion: the deploying spinner turns slowly, and holds still under reduced motion. */
 export function statusIconClass(state: StatusState | DeployState | ServiceResult): string {
-  return state === "deploying" || state === "in_progress" || state === "starting"
-    ? "animate-spin [animation-duration:2s] motion-reduce:animate-none"
-    : "";
+  return isSpinningState(state) ? "animate-spin [animation-duration:2s] motion-reduce:animate-none" : "";
 }

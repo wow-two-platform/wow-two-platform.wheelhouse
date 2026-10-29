@@ -25,6 +25,7 @@ export interface ProductGroupSectionProps {
 </script>
 <script setup lang="ts">
 import { ChevronDown } from "lucide-vue-next";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { Text } from "@wow-two-beta/fe/presentation/display";
 import ProductListRow from "./ProductListRow.vue";
 import ProductTile from "./ProductTile.vue";
@@ -59,7 +60,7 @@ defineSlots<{}>();
           props.isLoading ? "" : (props.workspace?.name ?? "No workspace")
         }}</Text>
         <span v-if="!props.isLoading" class="shrink-0 text-xs tabular-nums text-muted-foreground"
-          >{{ props.products.length }} product{{ props.products.length === 1 ? "" : "s" }}</span
+          >{{ props.products.length }} {{ pluralize(props.products.length, "product") }}</span
         >
       </button>
       <span class="h-px min-w-6 flex-1 bg-border" aria-hidden="true" />

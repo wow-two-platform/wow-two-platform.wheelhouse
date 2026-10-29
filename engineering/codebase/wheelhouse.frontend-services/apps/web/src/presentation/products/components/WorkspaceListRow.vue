@@ -17,6 +17,7 @@ export const WorkspaceRowColumns = "grid-cols-[minmax(0,1fr)_5.5rem_minmax(0,15r
 </script>
 <script setup lang="ts">
 import { Text } from "@wow-two-beta/fe/presentation/display";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import WorkspaceStatPills from "./WorkspaceStatPills.vue";
 import WorkspaceTrend from "./WorkspaceTrend.vue";
 
@@ -52,7 +53,7 @@ defineSlots<{}>();
       }}</span>
     </div>
     <span class="text-xs tabular-nums text-muted-foreground"
-      ><template v-if="props.stats">{{ props.stats.products }} product{{ props.stats.products === 1 ? "" : "s" }}</template></span
+      ><template v-if="props.stats">{{ props.stats.products }} {{ pluralize(props.stats.products, "product") }}</template></span
     >
     <WorkspaceStatPills :stats="props.isLoading ? undefined : props.stats" :range-text="props.rangeText" />
     <div class="flex justify-end"><WorkspaceTrend :rollouts="props.isLoading ? null : (props.stats?.rollouts ?? null)" fill /></div>

@@ -20,6 +20,7 @@ export interface PlacementModalProps {
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 import {
@@ -122,7 +123,7 @@ function nodeOf(site: string, server: string): string {
             <CheckboxField
               :model-value="field.value"
               label="Create dev and prod databases"
-              :description="`${plan.databases.join(', ')} ${plan.databases.length === 1 ? 'needs' : 'need'} PostgreSQL`"
+              :description="`${plan.databases.join(', ')} ${pluralize(plan.databases.length, 'needs', 'need')} PostgreSQL`"
               @update:model-value="field.setValue($event === true)"
             />
           </form.Field>

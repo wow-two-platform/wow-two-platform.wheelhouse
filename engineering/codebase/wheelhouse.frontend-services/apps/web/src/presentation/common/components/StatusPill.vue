@@ -12,31 +12,32 @@ export interface StatusPillProps {
 }
 </script>
 <script setup lang="ts">
-import { statusClass, StatusIcons, statusIconClass } from "./StatusStyles";
+import { computed } from "vue";
+import { Badge } from "@wow-two-beta/fe/presentation/display";
+import { StatusIcons, isSpinningState, statusBadge } from "./StatusStyles";
 
 /**
- * An outlined status pill: the state's icon, a label, then an optional detail. Its tone, icon and words come from the
- * console's status vocabulary, the same as an environment's pill, so a state reads alike wherever it shows.
+ * The console's status pill: the SDK outlined badge with the state's icon, a label, then an optional detail. Its tone,
+ * icon and words come from the console's status vocabulary, the same as an environment's pill, so a state reads alike
+ * wherever it shows.
  */
 defineOptions({ name: "StatusPill" });
 const props = withDefaults(defineProps<StatusPillProps>(), { detail: null });
 defineSlots<{}>();
+
+const look = computed(() => statusBadge(props.state));
 </script>
 <template>
-  <span
-    class="inline-flex h-6 max-w-full shrink-0 items-center gap-1.5 rounded-full border ps-1.5 pe-2.5 text-xs whitespace-nowrap"
-    :class="statusClass(props.state)"
+  <Badge
+    :variant="look.variant"
+    is-outlined
+    :border-style="look.borderStyle"
+    v-bind="props.detail ? { detail: props.detail } : {}"
+    :is-spinning="isSpinningState(props.state)"
+    class="shrink-0"
+    :class="look.className"
   >
-    <component
-      :is="StatusIcons[props.state]"
-      :size="14"
-      aria-hidden="true"
-      class="shrink-0"
-      :class="statusIconClass(props.state)"
-    />
-    <span class="min-w-0 truncate font-medium">{{ props.label }}</span>
-    <span v-if="props.detail" data-detail class="min-w-0 truncate text-muted-foreground tabular-nums">{{
-      props.detail
-    }}</span>
-  </span>
+    <template #leading><component :is="StatusIcons[props.state]" :size="14" :class="look.iconClass" /></template>
+    {{ props.label }}
+  </Badge>
 </template>

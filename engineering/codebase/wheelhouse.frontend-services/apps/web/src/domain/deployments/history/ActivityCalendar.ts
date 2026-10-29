@@ -1,4 +1,5 @@
 import type { ActivityDay } from './models/DeploymentActivity';
+import { pluralize } from '@wow-two-beta/fe/foundation/formatters';
 
 /** What a day's cell says: no applied rollout, or the loudest attention among its applied, finished ones. */
 export type CellTone = 'empty' | 'success' | 'danger' | 'warning';
@@ -115,8 +116,8 @@ export const ActivityCalendar = {
     const { calm, look, act } = ActivityCalendar.attention(day);
     const parts: string[] = [];
     if (calm) parts.push(`${calm} succeeded`);
-    if (look) parts.push(`${look} ${look === 1 ? 'needs' : 'need'} a look`);
-    if (act) parts.push(`${act} ${act === 1 ? 'needs' : 'need'} action`);
+    if (look) parts.push(`${look} ${pluralize(look, 'needs', 'need')} a look`);
+    if (act) parts.push(`${act} ${pluralize(act, 'needs', 'need')} action`);
     if (day?.notApplied) parts.push(`${day.notApplied} changed nothing`);
     return `${LONG_DATE.format(utc(date))}: ${parts.length ? parts.join(' · ') : 'no deployments'}`;
   },

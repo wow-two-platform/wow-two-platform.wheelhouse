@@ -15,7 +15,7 @@ import { computed, onBeforeUnmount, onMounted, ref, useId, useTemplateRef } from
 import { Info } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
-import { TailwindBreakpoints, useBreakpoint } from "@wow-two-beta/fe/foundation/device";
+import { TailwindBreakpoints, useBreakpointBelow } from "@wow-two-beta/fe/foundation/device";
 import {
   BottomSheet,
   BottomSheetTitle,
@@ -49,8 +49,7 @@ defineSlots<Record<string, (() => unknown) | undefined>>();
 
 const open = ref(false);
 const titleId = `info-${useId()}`;
-const breakpoint = useBreakpoint(TailwindBreakpoints);
-const isPhone = computed(() => breakpoint.value === null || breakpoint.value === "sm");
+const isPhone = useBreakpointBelow(TailwindBreakpoints, "md");
 const sectionKeys = computed(() => props.sections.map((item) => item.key));
 const anchor = useTemplateRef<HTMLElement>("anchor");
 

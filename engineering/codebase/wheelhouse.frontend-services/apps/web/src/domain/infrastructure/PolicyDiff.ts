@@ -1,4 +1,5 @@
 import type { PolicyDiffHunk, PolicyDiffLine } from './Tailnet';
+import { pluralize } from '@wow-two-beta/fe/foundation/formatters';
 
 const Markers: Readonly<Record<PolicyDiffLine['kind'], string>> = { same: ' ', add: '+', remove: '-' };
 const Words: Readonly<Record<PolicyDiffLine['kind'], string>> = { same: 'unchanged', add: 'added', remove: 'removed' };
@@ -38,8 +39,8 @@ export const PolicyDiff = {
     const { added, removed } = PolicyDiff.counts(hunks);
     if (!added && !removed) return 'No change';
     const parts = [
-      added ? `${added} ${added === 1 ? 'line' : 'lines'} added` : '',
-      removed ? `${removed}${added ? '' : removed === 1 ? ' line' : ' lines'} removed` : '',
+      added ? `${added} ${pluralize(added, 'line')} added` : '',
+      removed ? `${removed}${added ? '' : ` ${pluralize(removed, 'line')}`} removed` : '',
     ].filter(Boolean);
     return parts.join(', ');
   },

@@ -11,6 +11,7 @@ export interface AttemptsToggleProps {
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { Eye, EyeOff } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
@@ -33,7 +34,7 @@ defineSlots<{}>();
 const shown = useShowAllAttempts();
 const hint = computed(() => {
   const count = props.hidden ?? 0;
-  const what = `${count} earlier or unchanged ${count === 1 ? "attempt" : "attempts"}`;
+  const what = `${count} earlier or unchanged ${pluralize(count, "attempt")}`;
   return shown.value ? `Showing every attempt — hide the ${what}` : `${what} hidden — show every attempt`;
 });
 </script>

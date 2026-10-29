@@ -13,7 +13,7 @@ export interface ProfileMenuProps {
 import { computed, defineAsyncComponent, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { Check, ChevronDown, LogOut } from 'lucide-vue-next';
-import { TailwindBreakpoints, useBreakpoint } from '@wow-two-beta/fe/foundation/device';
+import { TailwindBreakpoints, useBreakpointBelow } from '@wow-two-beta/fe/foundation/device';
 import { useColorMode } from '@wow-two-beta/fe/foundation/primitives';
 import { Button } from '@wow-two-beta/fe/presentation/actions';
 import { Avatar } from '@wow-two-beta/fe/presentation/display';
@@ -47,12 +47,11 @@ defineSlots<{}>();
 const router = useRouter();
 const colorMode = useColorMode();
 const showInactive = useShowInactive();
-const breakpoint = useBreakpoint(TailwindBreakpoints);
 const sheetOpen = ref(false);
 /** True from the first time the sheet opens; until then its code is not loaded. */
 const sheetWanted = ref(false);
 /** Below `md`: the profile opens as a bottom sheet. */
-const isPhone = computed(() => !['md', 'lg', 'xl', '2xl'].includes(breakpoint.value ?? ''));
+const isPhone = useBreakpointBelow(TailwindBreakpoints, 'md');
 /** The appearance the owner chose: `system` while the mode follows the operating system. */
 const appearance = computed(() => (colorMode.followsSystem ? 'system' : colorMode.mode));
 const consoleVersion = __APP_VERSION__;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ReleaseSets } from "@/domain/deployments";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { computed, nextTick, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import {
@@ -15,7 +16,7 @@ import {
   Server,
   ShieldCheck,
 } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Button, RefreshButton } from "@wow-two-beta/fe/presentation/actions";
 import {
   Badge,
   DescriptionGroup,
@@ -79,7 +80,7 @@ import {
   ServiceLogsModal,
   useDeployModal,
 } from "@/presentation/deployments";
-import { InfoPopover, RefreshButton, ReleaseLabel } from "@/presentation/common/components";
+import { InfoPopover, ReleaseLabel } from "@/presentation/common/components";
 import { ResourceMeter } from "@/presentation/servers";
 import BuildUsagePanel from "../BuildUsagePanel.vue";
 import HostingPanel from "@/presentation/infrastructure/components/HostingPanel.vue";
@@ -446,9 +447,9 @@ function openDeploy(job?: DeploymentJob): void {
       </ToggleGroup>
       <RefreshButton
         size="md"
-        icon-only
-        :refreshing="refresh.refreshing.value"
-        @refresh="refresh.refresh"
+        is-icon-only
+        :is-refreshing="refresh.refreshing.value"
+        @click="refresh.refresh"
       />
       <Button :is-disabled="!target" @click="openDeploy()"
         ><template #leading><Rocket :size="16" /></template>Deploy</Button
@@ -523,7 +524,7 @@ function openDeploy(job?: DeploymentJob): void {
                     }}</SkeletonStateSlot></span
                   ><Text as="span" class="mt-2 block text-xs text-muted-foreground">{{
                     drift?.behind != null && drift.behind > 0
-                      ? `${drift.behind} newer published release${drift.behind === 1 ? "" : "s"}`
+                      ? `${drift.behind} newer published ${pluralize(drift.behind, "release")}`
                       : state.data.value?.current
                         ? "Last verified on this target"
                         : "A successful rollout establishes this state"
@@ -585,11 +586,11 @@ function openDeploy(job?: DeploymentJob): void {
                 <RefreshButton
                   variant="ghost"
                   size="md"
-                  icon-only
+                  is-icon-only
                   label="Refresh services"
                   class="max-md:size-11"
-                  :refreshing="servicesRefresh.refreshing.value"
-                  @refresh="servicesRefresh.refresh"
+                  :is-refreshing="servicesRefresh.refreshing.value"
+                  @click="servicesRefresh.refresh"
                 />
                 <ToggleGroup
                   variant="segmented"
@@ -760,11 +761,11 @@ function openDeploy(job?: DeploymentJob): void {
                     <ResourceMeter
                       label="Host CPU load"
                       :value="hostVitals ? ServerExtensions.loadPercent(hostVitals) : null"
-                      :refreshing="refresh.refreshing.value"
+                      :is-refreshing="refresh.refreshing.value"
                     /><ResourceMeter
                       label="Host memory"
                       :value="hostVitals ? ServerExtensions.memoryPercent(hostVitals) : null"
-                      :refreshing="refresh.refreshing.value"
+                      :is-refreshing="refresh.refreshing.value"
                     />
                   </div>
                 </SkeletonStateGroup>

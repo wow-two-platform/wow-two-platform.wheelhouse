@@ -11,7 +11,7 @@ import { ReleaseSets } from "@/domain/deployments";
 import { computed, ref } from "vue";
 import { Rocket } from "lucide-vue-next";
 
-import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Button, RefreshButton } from "@wow-two-beta/fe/presentation/actions";
 import {
   Badge,
   RelativeTime,
@@ -34,7 +34,7 @@ import {
 
 import { useRefresh } from "@/bootstrap/query";
 import { useReleaseArtifacts } from "@/application/deployments";
-import { InfoPopover, Panel, RefreshButton } from "@/presentation/common/components";
+import { InfoPopover, Panel } from "@/presentation/common/components";
 
 /**
  * Lists the deployable catalog: published releases and commit builds from approved repositories, newest first. A
@@ -101,7 +101,7 @@ const rows = useSkeletonItems(() => (releases.data.value ? visible.value : undef
             :value="value"
             :label="label" /></SelectPickerContent
       ></SelectPicker>
-      <RefreshButton variant="ghost" size="md" :refreshing="refresh.refreshing.value" @refresh="refresh.refresh()" />
+      <RefreshButton variant="ghost" size="md" :is-refreshing="refresh.refreshing.value" @click="refresh.refresh()" />
     </template>
     <DataRegion
       :is-first-load="releases.isFirstLoad.value"

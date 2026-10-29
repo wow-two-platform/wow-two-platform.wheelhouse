@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { RouterLink } from "vue-router";
 import { FileKey, KeyRound, LockKeyhole } from "lucide-vue-next";
 import { Badge } from "@wow-two-beta/fe/presentation/display";
@@ -32,7 +33,7 @@ const reasonText: Record<string, string> = {
 </script>
 
 <template>
-  <Panel v-if="total" title="Secrets" :description="`${total} ${total === 1 ? 'issue needs' : 'issues need'} attention.`">
+  <Panel v-if="total" title="Secrets" :description="`${total} ${pluralize(total, 'issue needs', 'issues need')} attention.`">
     <ul class="flex flex-col divide-y divide-border">
       <li v-if="sealed" class="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
         <LockKeyhole :size="18" class="mt-0.5 text-destructive" aria-hidden="true" />

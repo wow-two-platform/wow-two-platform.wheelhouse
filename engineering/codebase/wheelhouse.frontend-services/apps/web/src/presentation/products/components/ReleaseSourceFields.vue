@@ -11,9 +11,9 @@ export interface ReleaseSourceFieldsProps {
 <script setup lang="ts">
 import { Alert, Spinner } from "@wow-two-beta/fe/presentation/feedback";
 import { Field, TextInput } from "@wow-two-beta/fe/presentation/forms";
+import { RefreshButton } from "@wow-two-beta/fe/presentation/actions";
 import { useProductReleaseSource } from "@/application/products";
 import { failureReason } from "@/integration/common";
-import { RefreshButton } from "@/presentation/common/components";
 
 /**
  * Shows, read-only, what Wheelhouse takes from the repository when the product publishes: the shared publish
@@ -36,10 +36,10 @@ const source = useProductReleaseSource(() => props.query);
       </div>
       <RefreshButton
         v-if="props.query"
-        :refreshing="source.refreshing.value"
-        icon-only
+        :is-refreshing="source.refreshing.value"
+        is-icon-only
         label="Read the repository again"
-        @refresh="source.refresh"
+        @click="source.refresh"
       />
     </div>
     <p v-if="!props.query" class="text-sm text-muted-foreground">Enter the slug and repository to read it</p>

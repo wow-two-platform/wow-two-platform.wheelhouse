@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { Download, ExternalLink } from 'lucide-vue-next';
 import { NoticeTone, notify } from '@wow-two-beta/fe/feedback';
-import { Button } from '@wow-two-beta/fe/presentation/actions';
+import { Button, RefreshButton } from '@wow-two-beta/fe/presentation/actions';
 import { Heading, Text } from '@wow-two-beta/fe/presentation/display';
 import { Alert, DataRegion, useSkeletonItems } from '@wow-two-beta/fe/presentation/feedback';
 import { PageHeaderActions } from '@wow-two-beta/fe/presentation/layout';
@@ -11,7 +11,6 @@ import { useWorkspaces } from '@/application/workspaces';
 import { useRefresh } from '@/bootstrap/query';
 import { CatalogRules, type CatalogWorkspaceGroup } from '@/domain/catalog';
 import { failureReason } from '@/integration/common';
-import { RefreshButton } from '@/presentation/common/components';
 import CatalogWorkspacePanel from '../components/CatalogWorkspacePanel.vue';
 
 /**
@@ -76,7 +75,7 @@ async function runImport(slugs: readonly string[], workspace: CatalogWorkspaceGr
 <template>
   <div class="flex flex-col gap-6">
     <PageHeaderActions>
-      <RefreshButton size="md" icon-only :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
+      <RefreshButton size="md" is-icon-only :is-refreshing="refresh.refreshing.value" @click="refresh.refresh" />
       <Button :is-disabled="!selection.length" :is-loading="importing && importingWorkspace === null" @click="runImport(selection)">
         <template #leading><Download :size="16" /></template>Import{{ selection.length ? ` ${selection.length}` : '' }}
       </Button>

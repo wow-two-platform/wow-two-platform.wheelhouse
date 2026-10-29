@@ -18,7 +18,7 @@ export const ProductRowColumns = "grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_4.75rem
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import { Pin, TriangleAlert } from "lucide-vue-next";
-import { Badge, Text } from "@wow-two-beta/fe/presentation/display";
+import { Badge, CardLink, Text } from "@wow-two-beta/fe/presentation/display";
 import { ConsolePaths } from "@/application/navigation";
 import { ProductStatusRules, identityNoticeOf } from "@/domain/products";
 import { EnvironmentOrder } from "@/domain/targets";
@@ -48,12 +48,8 @@ const notice = computed(() => identityNoticeOf(props.product));
     <div class="flex min-w-0 items-center gap-3">
       <ProductIcon :product-slug="props.product?.slug ?? null" :name="props.product?.name ?? ''" size="sm" />
       <Text as="span" class="shrink-0 truncate text-sm font-semibold text-inherit max-lg:min-w-0 max-lg:shrink" skeleton-width="7rem"
-        ><RouterLink
-          v-if="props.product"
-          :to="ConsolePaths.product(props.product.slug)"
-          data-card-link
-          class="outline-none after:absolute after:inset-0 after:content-['']"
-          >{{ props.product.name }}</RouterLink
+        ><CardLink v-if="props.product" as-child
+          ><RouterLink :to="ConsolePaths.product(props.product.slug)">{{ props.product.name }}</RouterLink></CardLink
         ></Text
       >
       <Pin v-if="props.isPinned" :size="12" class="-ms-1.5 shrink-0 fill-current text-primary" aria-label="Pinned" />

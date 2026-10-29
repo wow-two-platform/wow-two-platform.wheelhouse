@@ -11,6 +11,7 @@ export interface ApplyBarProps {
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { CalendarClock, Play, X } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { RelativeTime } from "@wow-two-beta/fe/presentation/display";
@@ -70,7 +71,7 @@ async function run(): Promise<void> {
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="min-w-0 text-sm">
         <p v-if="props.plan.unapplied.length" class="font-medium">
-          {{ props.plan.unapplied.length }} {{ props.plan.unapplied.length === 1 ? "change waits" : "changes wait" }} for a deploy
+          {{ props.plan.unapplied.length }} {{ pluralize(props.plan.unapplied.length, "change waits", "changes wait") }} for a deploy
         </p>
         <p v-if="props.plan.unapplied.length" class="truncate font-mono text-xs text-muted-foreground" :title="props.plan.unapplied.join(', ')">
           {{ props.plan.unapplied.join(", ") }}

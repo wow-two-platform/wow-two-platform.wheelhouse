@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { FileCheck2 } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { DataRegion } from "@wow-two-beta/fe/presentation/feedback";
@@ -61,7 +62,7 @@ const online = computed(() => status.value?.nodes.filter((node) => node.online).
           <StatusPill v-else-if="connection === TailnetConnection.Refused" state="failed" label="Refused" />
           <StatusPill v-else state="none" label="Not configured" />
           <span v-if="connection === TailnetConnection.Connected" class="text-muted-foreground"
-            >{{ status.nodes.length }} {{ status.nodes.length === 1 ? "node" : "nodes" }} · {{ online }} online</span
+            >{{ status.nodes.length }} {{ pluralize(status.nodes.length, "node") }} · {{ online }} online</span
           >
         </p>
         <p v-if="connection === TailnetConnection.ProdOnly || connection === TailnetConnection.Refused" class="text-muted-foreground">

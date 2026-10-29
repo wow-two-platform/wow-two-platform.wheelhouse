@@ -5,7 +5,7 @@ import { computed, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { ArrowRight, Crosshair, ExternalLink, FileText, RotateCcw, TriangleAlert, Undo2, Wrench } from "lucide-vue-next";
 
-import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Button, RefreshButton } from "@wow-two-beta/fe/presentation/actions";
 import { Badge, DescriptionGroup, RelativeTime } from "@wow-two-beta/fe/presentation/display";
 import { Alert, DataRegion } from "@wow-two-beta/fe/presentation/feedback";
 import { PageHeaderActions } from "@wow-two-beta/fe/presentation/layout";
@@ -16,7 +16,7 @@ import { useProducts } from "@/application/products";
 import { useRefresh } from "@/bootstrap/query";
 import { Attention, ChangeReasonWords, DeployState, Measures, ServiceResult, ServiceResultTones, ServiceResultWords } from "@/domain/common";
 import { DeploymentOutcome, DeploymentStates, ServiceRollouts, TargetCondition } from "@/domain/deployments";
-import { InfoPopover, Panel, RefreshButton, ServiceResultIcons } from "@/presentation/common/components";
+import { InfoPopover, Panel, ServiceResultIcons } from "@/presentation/common/components";
 import { ProductIcon } from "@/presentation/products";
 
 import DeployModal from "../components/DeployModal.vue";
@@ -187,7 +187,7 @@ function rollBack(): void {
 <template>
   <div class="flex min-w-0 flex-col gap-6">
     <PageHeaderActions>
-      <RefreshButton size="md" icon-only :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
+      <RefreshButton size="md" is-icon-only :is-refreshing="refresh.refreshing.value" @click="refresh.refresh" />
       <Button
         v-if="deployment?.bundleId && targetExists"
         :variant="fitting === 'redeploy' || fitting === 'retry' ? 'solid' : 'outline'"

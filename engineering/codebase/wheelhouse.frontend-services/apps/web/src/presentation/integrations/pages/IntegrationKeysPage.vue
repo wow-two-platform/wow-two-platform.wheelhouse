@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import { KeyRound, Plus } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import {
@@ -64,7 +65,7 @@ async function confirmRevoke(key: IntegrationKey): Promise<void> {
         ><template #leading><KeyRound :size="16" /></template>Create key</Button
       ></template
     >
-    <Panel :title="`${live} live ${live === 1 ? 'key' : 'keys'}`">
+    <Panel :title="`${live} live ${pluralize(live, 'key')}`">
       <Alert v-if="revokeError" severity="danger" :description="revokeError" class="mb-3" />
       <Table density="compact" is-hoverable class="md:min-w-[44rem]">
         <TableHead>

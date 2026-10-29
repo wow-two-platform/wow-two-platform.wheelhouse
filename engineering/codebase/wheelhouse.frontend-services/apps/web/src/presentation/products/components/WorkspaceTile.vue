@@ -16,6 +16,7 @@ export interface WorkspaceTileProps {
 </script>
 <script setup lang="ts">
 import { Text } from "@wow-two-beta/fe/presentation/display";
+import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
 import WorkspaceStatPills from "./WorkspaceStatPills.vue";
 import WorkspaceTrend from "./WorkspaceTrend.vue";
 
@@ -48,7 +49,7 @@ defineSlots<{}>();
         </button></Text
       >
       <span v-if="props.stats" class="shrink-0 text-xs tabular-nums text-muted-foreground"
-        >{{ props.stats.products }} product{{ props.stats.products === 1 ? "" : "s" }}</span
+        >{{ props.stats.products }} {{ pluralize(props.stats.products, "product") }}</span
       >
     </div>
     <Text class="line-clamp-2 min-h-[2lh] text-[13px] leading-snug text-muted-foreground" skeleton-width="12rem">{{

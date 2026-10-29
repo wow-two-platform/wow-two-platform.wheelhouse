@@ -2,7 +2,7 @@
 import { computed, nextTick, provide, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { LayoutGrid, Layers, List, Plus } from "lucide-vue-next";
-import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Button, RefreshButton } from "@wow-two-beta/fe/presentation/actions";
 import { EmptyState } from "@wow-two-beta/fe/presentation/display";
 import { DataRegion } from "@wow-two-beta/fe/presentation/feedback";
 import { ToggleGroup, ToggleInput } from "@wow-two-beta/fe/presentation/forms";
@@ -30,8 +30,7 @@ import {
 } from "@/domain/portfolio";
 import type { Product } from "@/domain/products";
 import type { Workspace } from "@/domain/workspaces";
-import { RefreshButton } from "@/presentation/common/components";
-import { useIsPhone } from "@/presentation/deployments/hooks/useIsPhone";
+import { TailwindBreakpoints, useBreakpointBelow, useReducedMotion } from "@wow-two-beta/fe/foundation/device";
 import ProductFilters from "../components/ProductFilters.vue";
 import ProductFormModal from "../components/ProductFormModal.vue";
 import ProductGroupSection from "../components/ProductGroupSection.vue";
@@ -61,7 +60,8 @@ const facts = useProductFacts(() => filter.value.range);
 const pins = usePins();
 const viewChoice = useProductsView();
 const expansion = useGroupExpansion();
-const isPhone = useIsPhone();
+const isPhone = useBreakpointBelow(TailwindBreakpoints, "md");
+const reducedMotion = useReducedMotion();
 const refresh = useRefresh(() =>
   Promise.all([portfolio.products.reload(), portfolio.workspaces.reload(), facts.refresh(), activity.refresh()]),
 );
@@ -163,8 +163,9 @@ async function openWorkspace(workspace: Workspace | null): Promise<void> {
   if (workspace && route.hash !== workspaceHash(workspace.slug))
     await router.replace({ path: route.path, query: route.query, hash: workspaceHash(workspace.slug) });
   await nextTick();
-  const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-  document.getElementById(groupIdOf(workspace))?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+  document
+    .getElementById(groupIdOf(workspace))
+    ?.scrollIntoView({ behavior: reducedMotion.value ? "auto" : "smooth", block: "start" });
 }
 
 /* A `#workspace-{slug}` address — an old /w/ link, the scope bar's crumb — scrolls to the group once it has drawn. */
@@ -209,7 +210,7 @@ function emptyTextOf(group: PortfolioGroup): string {
           ><List :size="14" aria-hidden="true" /><span class="ml-1">Rows</span></ToggleInput
         >
       </ToggleGroup>
-      <RefreshButton size="md" icon-only :refreshing="refresh.refreshing.value" @refresh="refresh.refresh" />
+      <RefreshButton size="md" is-icon-only :is-refreshing="refresh.refreshing.value" @click="refresh.refresh" />
       <Button
         variant="outline"
         tone="neutral"
