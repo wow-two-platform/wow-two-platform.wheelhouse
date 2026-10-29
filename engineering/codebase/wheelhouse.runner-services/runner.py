@@ -86,8 +86,9 @@ UNREADABLE_HINT = ("an App token cannot read a private repository's packages; pl
 SQLITE_HEADER = "SQLite format 3"
 FILE_DATABASES = ("*.db", "*.db3", "*.sqlite", "*.sqlite3", "*.litedb", "*.mdb", "*.duckdb", "*.realm", "*.wt", "*.bdb")
 # Pre-deploy snapshots on prod: the image that runs pg_dump and tar (the platform's own PostgreSQL image, so nothing new
-# is pulled), and how many a target keeps. A target's `snapshot` entry may name others.
-SNAPSHOT_IMAGE = "postgres:16-alpine"
+# is pulled once a host runs 18; pg_dump 18 also dumps a host still on 16, never the reverse), and how many a target
+# keeps. A target's `snapshot` entry may name others.
+SNAPSHOT_IMAGE = "postgres:18-alpine"
 SNAPSHOT_KEEP = 5
 SNAPSHOT_IMAGE_PATTERN = re.compile(r"[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9._-]+)?(@sha256:[a-f0-9]{64})?")
 # A connection value pg_dump receives as one argument: never an option, never a space.

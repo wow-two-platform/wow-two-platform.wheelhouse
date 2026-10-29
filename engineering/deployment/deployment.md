@@ -1036,9 +1036,10 @@ without them deploys as before. Spec: `wow-two-ws/ideas/migrations-analysis-2026
 Before a prod rollout pulls anything, the runner takes a restore point in `snapshots/<job-id>/`: `pg_dump --format
 custom` of each PostgreSQL database a service that `needs: [postgres]` connects to (every Npgsql `ConnectionStrings`
 value in its settings file, once per host and database), and a `tar.gz` of each named volume the release's Compose
-declares that already exists. Both run in `postgres:16-alpine` (the platform's own image; a target's `snapshot` entry
-may name another `image` and `keep`, 1-50): pg_dump on the platform network as the runner's user, with the password
-in `PGPASSWORD` only, and tar as root, handing the archive to the runner's user. The target keeps the newest five.
+declares that already exists. Both run in `postgres:18-alpine` (the platform's own image once a host runs 18; its
+pg_dump also reads a host still on 16; a target's `snapshot` entry may name another `image` and `keep`, 1-50):
+pg_dump on the platform network as the runner's user, with the password in `PGPASSWORD` only, and tar as root, handing
+the archive to the runner's user. The target keeps the newest five.
 A failed snapshot removes what it wrote and fails the rollout before any image is pulled, so the target needs no
 reconcile. The job's `snapshot` names the folder, each file and the restore commands, and the deployment page shows
 them:
@@ -1046,9 +1047,9 @@ them:
 ```sh
 docker stop $(docker ps --quiet --filter label=com.docker.compose.project=<product>-prod)   # volumes only
 export PGPASSWORD=...   # the database user's password, from the service's settings file
-docker run --rm --network <platform> -e PGPASSWORD -v <snapshot>:/snapshot:ro postgres:16-alpine \
+docker run --rm --network <platform> -e PGPASSWORD -v <snapshot>:/snapshot:ro postgres:18-alpine \
   pg_restore --clean --if-exists --no-owner --host <host> --port 5432 --username <user> --dbname <db> /snapshot/<file>.dump
-docker run --rm -v <volume>:/volume -v <snapshot>:/snapshot:ro postgres:16-alpine \
+docker run --rm -v <volume>:/volume -v <snapshot>:/snapshot:ro postgres:18-alpine \
   sh -c 'find /volume -mindepth 1 -delete && tar -xzf /snapshot/<volume>.tar.gz -C /volume'
 ```
 
