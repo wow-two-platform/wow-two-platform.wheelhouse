@@ -217,7 +217,7 @@ host starts.
 - The first release that adds a migration ships only once prod runs v0.7.7 or later: deployed by an older runner it
   refuses to boot on the older database and restores the previous release, nothing applied.
 - Returns: [Rollback](#wheelhouse-deploys-itself) above; the targets keep `rollbackCompatible` forced until neither
-  console keeps a release from before the step (v0.7 track, Iteration 9).
+  console keeps a release from before the step ([backlog](../planning/backlog.md) § Hosting).
 - The local stacks run the same command first: the rig's `console-migrate` and the acceptance stack's `migrate`
   one-shots, each awaited (`service_completed_successfully`).
 
