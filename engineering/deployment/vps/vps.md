@@ -625,6 +625,9 @@ so Refresh kit and a placement stop at their platform step naming this section.
 - The control host's move stops both consoles for a few minutes: run it from an SSH session, never from a console.
 - A failure before the workloads start again removes the new volume, puts 16 back and starts what it stopped; the job
   names the step, and the dump stays in `runs/<job>/` for review. The 16 volume is never removed.
+- Promote prod to `v0.9.0` or later before a move. An older console's runner snapshots with `pg_dump` 16, which refuses
+  an 18 server, so its prod rollouts fail at "Snapshot data" (2026-10-30, prod on `v0.7.8`). `self-deploy.py deploy`
+  recovers: it runs the release's own runner, whose snapshot image is 18's.
 - Rehearsed 2026-10-29 on a local Docker-in-Docker control host: 16 with four databases, a partitioned table, a
   materialized view and an extension moved to 18.6; every row, and each role's password over TCP, held.
 
