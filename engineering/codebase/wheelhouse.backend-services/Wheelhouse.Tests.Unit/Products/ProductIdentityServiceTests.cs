@@ -1,17 +1,19 @@
 using AwesomeAssertions;
-using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Products.Services;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Products.Enums;
 using Wheelhouse.Tests.Unit.Fakes;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
+using WoW.Two.Sdk.Beta.Be.Testing.Integrations;
 
 namespace Wheelhouse.Tests.Unit.Products;
 
 /// <summary>Tests for <see cref="ProductIdentityService"/>: the refresh decisions. The head is compared with the cached
 /// commit; a different head reads the identity <c>deploy.yml</c> declares at it, or, while it declares none, the retired
 /// <c>product/product.json</c> with a notice to move it. A valid identity replaces the row, an invalid one leaves the
-/// previous row with a reason, none in either file drops the row, and an unreadable repository changes nothing.</summary>
-public sealed class ProductIdentityServiceTests
+/// previous row with a reason, none in either file drops the row, and an unreadable repository changes nothing. The
+/// repository is the SDK fake under the real per-commit reader, which keeps a branch head for five minutes.</summary>
+public sealed class ProductIdentityServiceTests : IDisposable
 {
     private const string Repository = "owner/pilot";
     private const string Descriptor = ProductIdentityService.DescriptorFile;
@@ -35,10 +37,14 @@ public sealed class ProductIdentityServiceTests
         """;
 
     private readonly InMemoryProductManifests _store = new();
-    private readonly ScriptedRepositoryFiles _files = new();
+    private readonly FakeGitHubReads _reads = new();
     private readonly ProductIdentityService _service;
 
-    public ProductIdentityServiceTests() => _service = new ProductIdentityService(_store, _files);
+    public ProductIdentityServiceTests() => _service = new ProductIdentityService(_store, _reads.Reader);
+
+    private FakeGitHubClient GitHub => _reads.GitHub;
+
+    public void Dispose() => _reads.Dispose();
 
     /// <summary>A descriptor that declares an identity.</summary>
     private static string Identity(string name, string description = "From the repository.") =>
@@ -71,14 +77,14 @@ public sealed class ProductIdentityServiceTests
     public async Task ResolveAsync_ShouldReturnTheRecordedValues_WhenNeitherFileDeclaresAnIdentity()
     {
         var product = Product();
-        _files.Push(Repository, First, Descriptor, Bare);
+        GitHub.Push(Repository, Descriptor, Bare, commit: First);
 
         var identity = await ResolveAsync(product);
 
         (identity.Name, identity.Description, identity.Homepage).Should().Be(("Recorded name", "Recorded description.", null));
         (identity.Source, identity.Commit, identity.Problem, identity.File, identity.Notice).Should().Be(
             (ProductIdentitySource.Record, null, null, null, null));
-        _files.Reads.Should().Equal($"{Repository}@{First}:{Descriptor}", $"{Repository}@{First}:{Retired}");
+        GitHub.FileReads.Should().Equal($"{Repository}@{First}:{Descriptor}", $"{Repository}@{First}:{Retired}");
         _store.Rows.Should().BeEmpty();
         _store.Saves.Should().Be(0);
     }
@@ -87,7 +93,7 @@ public sealed class ProductIdentityServiceTests
     public async Task ResolveAsync_ShouldReturnTheRecordedValues_WhenTheRepositoryCarriesNeitherFile()
     {
         var product = Product();
-        _files.Push(Repository, First, Descriptor, RepositoryFileStatus.Missing);
+        GitHub.Push(Repository, Descriptor, FileRead.NotFound, commit: First);
 
         var identity = await ResolveAsync(product);
 
@@ -100,7 +106,7 @@ public sealed class ProductIdentityServiceTests
     public async Task ResolveAsync_ShouldStoreAndReturnTheDescriptorIdentity_WhenTheHeadDeclaresAValidOne()
     {
         var product = Product();
-        _files.Push(Repository, First, Descriptor, Identity("Pilot"));
+        GitHub.Push(Repository, Descriptor, Identity("Pilot"), commit: First);
 
         var identity = await ResolveAsync(product);
 
@@ -111,15 +117,15 @@ public sealed class ProductIdentityServiceTests
         var row = _store.Rows.Should().ContainSingle().Which.Value;
         (row.ProductId, row.Repository, row.Branch, row.Commit, row.SourceFile, row.Name).Should().Be(
             (product.Id, Repository, "main", First, Descriptor, "Pilot"));
-        _files.Reads.Should().Equal($"{Repository}@{First}:{Descriptor}");
+        GitHub.FileReads.Should().Equal($"{Repository}@{First}:{Descriptor}");
     }
 
     [Fact]
     public async Task ResolveAsync_ShouldReadTheRetiredFileWithANotice_WhenTheDescriptorDeclaresNoIdentity()
     {
         var product = Product();
-        _files.Push(Repository, First, Descriptor, Bare);
-        _files.Push(Repository, First, Retired, Manifest("Legacy"));
+        GitHub.Push(Repository, Descriptor, Bare, commit: First);
+        GitHub.Push(Repository, Retired, Manifest("Legacy"), commit: First);
 
         var identity = await ResolveAsync(product);
 
@@ -134,7 +140,7 @@ public sealed class ProductIdentityServiceTests
     public async Task ResolveAsync_ShouldReadTheRetiredFile_WhenTheRepositoryHasNoDescriptor()
     {
         var product = Product();
-        _files.Push(Repository, First, Retired, Manifest("Legacy"));
+        GitHub.Push(Repository, Retired, Manifest("Legacy"), commit: First);
 
         var identity = await ResolveAsync(product);
 
@@ -147,49 +153,50 @@ public sealed class ProductIdentityServiceTests
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
         _store.Rows[product.Id].SourceFile = Retired;
-        _files.Push(Repository, First, Retired, Manifest("Changed"));
+        GitHub.Push(Repository, Retired, Manifest("Changed"), commit: First);
 
         var identity = await ResolveAsync(product);
 
         (identity.Name, identity.File, identity.Notice).Should().Be(("Cached name", Retired, ProductIdentityService.RetiredNotice));
-        _files.Reads.Should().BeEmpty();
+        GitHub.FileReads.Should().BeEmpty();
     }
 
     [Fact]
     public async Task ResolveAsync_ShouldIgnoreTheRetiredFile_WhenTheDescriptorDeclaresAnIdentity()
     {
         var product = Product();
-        _files.Push(Repository, First, Descriptor, Identity("Described"));
-        _files.Push(Repository, First, Retired, Manifest("Legacy"));
+        GitHub.Push(Repository, Descriptor, Identity("Described"), commit: First);
+        GitHub.Push(Repository, Retired, Manifest("Legacy"), commit: First);
 
         var identity = await ResolveAsync(product);
 
         (identity.Name, identity.File, identity.Notice).Should().Be(("Described", Descriptor, null));
-        _files.Reads.Should().NotContain(read => read.EndsWith(Retired, StringComparison.Ordinal));
+        GitHub.FileReads.Should().NotContain(read => read.EndsWith(Retired, StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task ResolveAsync_ShouldNotFallBackToTheRetiredFile_WhenTheDescriptorIdentityIsInvalid()
     {
         var product = Product();
-        _files.Push(Repository, First, Descriptor, "descriptor: 2\nproduct: pilot\nname: Pilot\n" + Services);
-        _files.Push(Repository, First, Retired, Manifest("Legacy"));
+        GitHub.Push(Repository, Descriptor, "descriptor: 2\nproduct: pilot\nname: Pilot\n" + Services, commit: First);
+        GitHub.Push(Repository, Retired, Manifest("Legacy"), commit: First);
 
         var identity = await ResolveAsync(product);
 
         (identity.Name, identity.Source).Should().Be(("Recorded name", ProductIdentitySource.Record));
         identity.Problem.Should().Be(
             "The identity in engineering/deployment/deploy.yml is ignored: line 1: description is required beside name.");
-        _files.Reads.Should().NotContain(read => read.EndsWith(Retired, StringComparison.Ordinal));
+        GitHub.FileReads.Should().NotContain(read => read.EndsWith(Retired, StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task ResolveAsync_ShouldMoveTheRowToTheDescriptorAndDropTheNotice_WhenALaterCommitMovesTheIdentity()
     {
         var product = Product();
-        _files.Push(Repository, First, Retired, Manifest("Legacy"));
+        GitHub.Push(Repository, Retired, Manifest("Legacy"), commit: First);
         (await ResolveAsync(product)).Notice.Should().NotBeNull();
-        _files.Push(Repository, Second, Descriptor, Identity("Moved"));
+        GitHub.Push(Repository, Descriptor, Identity("Moved"), commit: Second);
+        await _reads.ExpireHeadAsync(Repository);
 
         var identity = await ResolveAsync(product);
 
@@ -202,12 +209,12 @@ public sealed class ProductIdentityServiceTests
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _files.Push(Repository, First, Descriptor, Identity("Changed"));
+        GitHub.Push(Repository, Descriptor, Identity("Changed"), commit: First);
 
         var identity = await ResolveAsync(product);
 
         (identity.Name, identity.File, identity.Notice).Should().Be(("Cached name", Descriptor, null));
-        _files.Reads.Should().BeEmpty();
+        GitHub.FileReads.Should().BeEmpty();
         _store.Saves.Should().Be(0);
     }
 
@@ -216,23 +223,24 @@ public sealed class ProductIdentityServiceTests
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _files.Push(Repository, Second, Descriptor, Identity("Renamed"));
+        GitHub.Push(Repository, Descriptor, Identity("Renamed"), commit: Second);
 
         var identity = await ResolveAsync(product);
 
         (identity.Name, identity.Commit).Should().Be(("Renamed", Second));
         var row = _store.Rows.Should().ContainSingle().Which.Value;
         (row.Commit, row.Name, row.Homepage).Should().Be((Second, "Renamed", "https://renamed.example"));
-        _files.Reads.Should().Equal($"{Repository}@{Second}:{Descriptor}");
+        GitHub.FileReads.Should().Equal($"{Repository}@{Second}:{Descriptor}");
     }
 
     [Fact]
     public async Task ResolveAsync_ShouldAdvanceTheCommit_WhenTheHeadMovedAndTheIdentityIsUnchanged()
     {
         var product = Product();
-        _files.Push(Repository, First, Descriptor, Identity("Pilot"));
+        GitHub.Push(Repository, Descriptor, Identity("Pilot"), commit: First);
         await ResolveAsync(product);
-        _files.Push(Repository, Second, Descriptor, Identity("Pilot"));
+        GitHub.Push(Repository, Descriptor, Identity("Pilot"), commit: Second);
+        await _reads.ExpireHeadAsync(Repository);
 
         var identity = await ResolveAsync(product);
 
@@ -245,7 +253,7 @@ public sealed class ProductIdentityServiceTests
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _files.Push(Repository, Second, Descriptor, "descriptor: 2\nproduct: pilot\nname: \"\"\ndescription: x\n" + Services);
+        GitHub.Push(Repository, Descriptor, "descriptor: 2\nproduct: pilot\nname: \"\"\ndescription: x\n" + Services, commit: Second);
 
         var identity = await ResolveAsync(product);
 
@@ -260,7 +268,7 @@ public sealed class ProductIdentityServiceTests
     public async Task ResolveAsync_ShouldReturnTheRecordAndReportWhy_WhenTheFirstDescriptorCannotBeParsed()
     {
         var product = Product();
-        _files.Push(Repository, First, Descriptor, "descriptor: [2\n");
+        GitHub.Push(Repository, Descriptor, "descriptor: [2\n", commit: First);
 
         var identity = await ResolveAsync(product);
 
@@ -274,7 +282,7 @@ public sealed class ProductIdentityServiceTests
     public async Task ResolveAsync_ShouldReturnTheRecordAndReportWhy_WhenTheFirstRetiredFileIsInvalid()
     {
         var product = Product();
-        _files.Push(Repository, First, Retired, "{ nope");
+        GitHub.Push(Repository, Retired, "{ nope", commit: First);
 
         var identity = await ResolveAsync(product);
 
@@ -287,11 +295,13 @@ public sealed class ProductIdentityServiceTests
     public async Task ResolveAsync_ShouldClearTheReason_WhenALaterCommitIsValidAgain()
     {
         var product = Product();
-        _files.Push(Repository, First, Descriptor, Identity("Pilot"));
+        GitHub.Push(Repository, Descriptor, Identity("Pilot"), commit: First);
         await ResolveAsync(product);
-        _files.Push(Repository, Second, Descriptor, "descriptor: 2\nproduct: pilot\nhomepage: ftp://pilot.example\n" + Services);
+        GitHub.Push(Repository, Descriptor, "descriptor: 2\nproduct: pilot\nhomepage: ftp://pilot.example\n" + Services, commit: Second);
+        await _reads.ExpireHeadAsync(Repository);
         (await ResolveAsync(product)).Problem.Should().NotBeNull();
-        _files.Push(Repository, Third, Descriptor, Identity("Repiloted"));
+        GitHub.Push(Repository, Descriptor, Identity("Repiloted"), commit: Third);
+        await _reads.ExpireHeadAsync(Repository);
 
         var identity = await ResolveAsync(product);
 
@@ -303,7 +313,7 @@ public sealed class ProductIdentityServiceTests
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _files.Push(Repository, Second, Descriptor, RepositoryFileStatus.TooLarge);
+        GitHub.Push(Repository, Descriptor, FileRead.TooLarge, commit: Second);
 
         var identity = await ResolveAsync(product);
 
@@ -315,7 +325,7 @@ public sealed class ProductIdentityServiceTests
     public async Task ResolveAsync_ShouldReportTheSizeLimit_WhenTheRetiredFileIsTooLarge()
     {
         var product = Product();
-        _files.Push(Repository, First, Retired, RepositoryFileStatus.TooLarge);
+        GitHub.Push(Repository, Retired, FileRead.TooLarge, commit: First);
 
         var identity = await ResolveAsync(product);
 
@@ -328,7 +338,7 @@ public sealed class ProductIdentityServiceTests
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _files.Push(Repository, Second, Descriptor, Bare);
+        GitHub.Push(Repository, Descriptor, Bare, commit: Second);
 
         var identity = await ResolveAsync(product);
 
@@ -346,7 +356,7 @@ public sealed class ProductIdentityServiceTests
 
         (identity.Name, identity.Source, identity.Problem).Should().Be(("Cached name", ProductIdentitySource.Manifest, null));
         _store.Rows.Should().ContainKey(product.Id);
-        _files.Reads.Should().BeEmpty();
+        GitHub.FileReads.Should().BeEmpty();
     }
 
     [Theory]
@@ -357,8 +367,8 @@ public sealed class ProductIdentityServiceTests
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
         if (path == Retired)
-            _files.Push(Repository, Second, Descriptor, Bare);
-        _files.Push(Repository, Second, path, RepositoryFileStatus.Unreadable);
+            GitHub.Push(Repository, Descriptor, Bare, commit: Second);
+        GitHub.Push(Repository, path, FileRead.Failed, commit: Second);
 
         var identity = await ResolveAsync(product);
 
@@ -371,7 +381,7 @@ public sealed class ProductIdentityServiceTests
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _files.Failure = new InvalidOperationException("unexpected");
+        GitHub.Failure = new InvalidOperationException("unexpected");
 
         var identity = await ResolveAsync(product);
 
@@ -382,7 +392,7 @@ public sealed class ProductIdentityServiceTests
     public async Task ResolveAsync_ShouldNotSwallowCancellation_WhenTheCallerCancels()
     {
         var product = Product();
-        _files.Failure = new OperationCanceledException();
+        GitHub.Failure = new OperationCanceledException();
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
 
@@ -413,7 +423,7 @@ public sealed class ProductIdentityServiceTests
         var product = Product(branch: "release");
         _store.Rows[product.Id] = Row(product, First);
         _store.Rows[product.Id].Branch = "main";
-        _files.Push(Repository, Second, Descriptor, Identity("Releasebranch"), branch: "release");
+        GitHub.Push(Repository, Descriptor, Identity("Releasebranch"), branch: "release", commit: Second);
 
         var identity = await ResolveAsync(product);
 
@@ -427,12 +437,12 @@ public sealed class ProductIdentityServiceTests
         var product = Product(repository: "Owner/Pilot");
         _store.Rows[product.Id] = Row(product, First);
         _store.Rows[product.Id].Repository = "owner/pilot";
-        _files.Push("Owner/Pilot", First, Descriptor, Identity("Changed"));
+        GitHub.Push("Owner/Pilot", Descriptor, Identity("Changed"), commit: First);
 
         var identity = await ResolveAsync(product);
 
         identity.Name.Should().Be("Cached name");
-        _files.Reads.Should().BeEmpty();
+        GitHub.FileReads.Should().BeEmpty();
     }
 
     [Fact]
@@ -442,10 +452,10 @@ public sealed class ProductIdentityServiceTests
         var without = Product("beta", "owner/beta");
         var broken = Product("gamma", "owner/gamma");
         var retired = Product("delta", "owner/delta");
-        _files.Push("owner/alpha", First, Descriptor, Identity("Alpha"));
-        _files.Push("owner/beta", Second, Descriptor, Bare);
-        _files.Push("owner/gamma", Third, Retired, "{ nope");
-        _files.Push("owner/delta", First, Retired, Manifest("Delta"));
+        GitHub.Push("owner/alpha", Descriptor, Identity("Alpha"), commit: First);
+        GitHub.Push("owner/beta", Descriptor, Bare, commit: Second);
+        GitHub.Push("owner/gamma", Retired, "{ nope", commit: Third);
+        GitHub.Push("owner/delta", Retired, Manifest("Delta"), commit: First);
 
         var identities = await _service.ResolveAsync([described, without, broken, retired], CancellationToken.None);
 
@@ -462,21 +472,23 @@ public sealed class ProductIdentityServiceTests
     {
         (await _service.ResolveAsync([], CancellationToken.None)).Should().BeEmpty();
 
-        _files.HeadChecks.Should().BeEmpty();
+        GitHub.HeadReads.Should().BeEmpty();
     }
 
     [Fact]
     public async Task ResolveAsync_ShouldLeaveTheHeadToTheSource_WhenAProductIsRead()
     {
         var product = Product();
-        _files.Push(Repository, First, Descriptor, Identity("Pilot"));
+        GitHub.Push(Repository, Descriptor, Identity("Pilot"), commit: First);
 
         await ResolveAsync(product);
-        await ResolveAsync(product);
+        GitHub.Push(Repository, Descriptor, Identity("Moved"), commit: Second);
+        var identity = await ResolveAsync(product);
 
-        _files.HeadChecks.Should().OnlyContain(check => !check.Fresh);
-        _files.HeadChecks.Should().HaveCount(2);
-        _files.Reads.Should().HaveCount(1);
+        // The second read takes the head the source kept, so the branch that moved meanwhile shows only once it expires.
+        (identity.Name, identity.Commit).Should().Be(("Pilot", First));
+        GitHub.HeadReads.Should().Equal($"{Repository}@main");
+        GitHub.FileReads.Should().HaveCount(1);
     }
 
     [Fact]
@@ -484,12 +496,15 @@ public sealed class ProductIdentityServiceTests
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _files.Push(Repository, Second, Descriptor, Identity("Fresh"));
+        GitHub.Push(Repository, Descriptor, Identity("Pilot"), commit: First);
+        await ResolveAsync(product);
+        GitHub.Push(Repository, Descriptor, Identity("Fresh"), commit: Second);
 
         var identity = await _service.RefreshAsync(product, CancellationToken.None);
 
+        // The refresh skips the head the source kept from the read before it.
         (identity!.Name, identity.Commit).Should().Be(("Fresh", Second));
-        _files.HeadChecks.Should().Equal((Repository, "main", true));
+        GitHub.HeadReads.Should().Equal($"{Repository}@main", $"{Repository}@main");
         _store.Rows[product.Id].Commit.Should().Be(Second);
     }
 
@@ -498,12 +513,12 @@ public sealed class ProductIdentityServiceTests
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _files.Push(Repository, First, Descriptor, Identity("Samecommit"));
+        GitHub.Push(Repository, Descriptor, Identity("Samecommit"), commit: First);
 
         var identity = await _service.RefreshAsync(product, CancellationToken.None);
 
         identity!.Name.Should().Be("Cached name");
-        _files.Reads.Should().BeEmpty();
+        GitHub.FileReads.Should().BeEmpty();
     }
 
     [Fact]
@@ -523,7 +538,7 @@ public sealed class ProductIdentityServiceTests
     {
         var product = Product();
         _store.Rows[product.Id] = Row(product, First);
-        _files.Push(Repository, Second, Descriptor, "descriptor: 2\nproduct: pilot\nname: Pilot\n" + Services);
+        GitHub.Push(Repository, Descriptor, "descriptor: 2\nproduct: pilot\nname: Pilot\n" + Services, commit: Second);
 
         var identity = await _service.RefreshAsync(product, CancellationToken.None);
 

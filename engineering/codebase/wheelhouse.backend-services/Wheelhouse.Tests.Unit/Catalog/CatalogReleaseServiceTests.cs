@@ -1,7 +1,7 @@
 using System.Text;
 using AwesomeAssertions;
-using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Catalog.Services;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 
 namespace Wheelhouse.Tests.Unit.Catalog;
 
@@ -87,8 +87,8 @@ public sealed class CatalogReleaseServiceTests
     }
 
     /// <summary>Each listed repository's <c>deploy.yml</c> at one commit; null for a branch without one. An unlisted
-    /// repository's branch cannot be read.</summary>
-    private sealed class Files : Dictionary<string, string?>, IRepositoryFileSource
+    /// repository's branch cannot be read; the service never lists a tree.</summary>
+    private sealed class Files : Dictionary<string, string?>, IGitHubRepositoryReader
     {
         /// <summary>Every head read, as the branch and whether it was asked for now.</summary>
         public List<(string Branch, bool Fresh)> Heads { get; } = [];
@@ -99,9 +99,13 @@ public sealed class CatalogReleaseServiceTests
             return Task.FromResult(ContainsKey(repository) ? new string('a', 40) : null);
         }
 
-        public Task<RepositoryFileRead> ReadAsync(string repository, string commit, string path, int maxBytes, CancellationToken ct) =>
+        public Task<IReadOnlyList<string>?> ListAsync(
+            string repository, string commit, string purpose, Func<string, long?, bool> keep, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<RepositoryFile> ReadAsync(string repository, string commit, string path, int maxBytes, CancellationToken ct) =>
             Task.FromResult(this[repository] is { } text
-                ? new RepositoryFileRead(RepositoryFileStatus.Found, Encoding.UTF8.GetBytes(text))
-                : new RepositoryFileRead(RepositoryFileStatus.Missing));
+                ? new RepositoryFile { Outcome = FileRead.Found, Content = Encoding.UTF8.GetBytes(text) }
+                : RepositoryFile.Missing(FileRead.NotFound));
     }
 }

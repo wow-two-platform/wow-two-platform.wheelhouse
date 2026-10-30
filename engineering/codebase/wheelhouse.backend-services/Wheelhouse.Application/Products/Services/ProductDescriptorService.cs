@@ -1,9 +1,9 @@
-using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Catalog;
 using Wheelhouse.Application.Catalog.Models;
 using Wheelhouse.Application.Catalog.Parsers;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Domain.Products.Entities;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 
 namespace Wheelhouse.Application.Products.Services;
 
@@ -13,7 +13,7 @@ namespace Wheelhouse.Application.Products.Services;
 /// and site once — two repositories naming one is a problem — the primary repository's front door as the product's, and
 /// every repository's extensions once each. The file source keeps a head for a few minutes and each commit's file for good, so a read costs GitHub
 /// little. A descriptor that cannot be read or parsed comes back with the reason and nothing else.</summary>
-public sealed class ProductDescriptorService(IRepositoryFileSource files)
+public sealed class ProductDescriptorService(IGitHubRepositoryReader files)
 {
     /// <summary>Reads the product's descriptor, or its repositories' merged.</summary>
     /// <param name="product">The stored product.</param>
@@ -79,13 +79,13 @@ public sealed class ProductDescriptorService(IRepositoryFileSource files)
             return (null, null, $"{where} could not be read from GitHub.");
 
         var file = await files.ReadAsync(repository, commit, CatalogConstants.DescriptorPath, CatalogConstants.MaxDescriptorBytes, ct);
-        switch (file.Status)
+        switch (file.Outcome)
         {
-            case RepositoryFileStatus.Missing:
+            case FileRead.NotFound:
                 return (null, null, $"{where} has no {CatalogConstants.DescriptorPath}.");
-            case RepositoryFileStatus.TooLarge:
+            case FileRead.TooLarge:
                 return (null, null, $"{CatalogConstants.DescriptorPath} in {where} is too large to read.");
-            case RepositoryFileStatus.Unreadable:
+            case not FileRead.Found:
                 return (null, null, $"{CatalogConstants.DescriptorPath} in {where} could not be read.");
         }
 

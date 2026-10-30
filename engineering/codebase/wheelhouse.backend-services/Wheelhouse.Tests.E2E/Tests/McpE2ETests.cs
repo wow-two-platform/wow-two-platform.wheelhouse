@@ -60,7 +60,7 @@ public sealed class McpE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBas
     [Fact]
     public async Task CatalogKey_ListsTheRepositoryIdentity_WhenADescriptorDeclaresOne()
     {
-        Fixture.RepositoryFiles.Push(
+        Fixture.GitHub.Push(
             "sulton-max/10x-venture-forever-pin",
             "engineering/deployment/deploy.yml",
             "descriptor: 2\nproduct: foreverpin\nname: Forever Pin\ndescription: From the repository.\n" +

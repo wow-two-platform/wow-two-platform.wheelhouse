@@ -1,7 +1,7 @@
-using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Catalog.Models;
 using Wheelhouse.Application.Catalog.Parsers;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 
 namespace Wheelhouse.Application.Catalog.Services;
 
@@ -9,7 +9,7 @@ namespace Wheelhouse.Application.Catalog.Services;
 /// again on every call, so a pushed catalog shows at once; a commit's file stays cached), and merges them in settings
 /// order. A hub that cannot be read, or that repeats a workspace or entry slug an earlier hub holds, keeps its error and
 /// lists nothing; the other hubs still list theirs.</summary>
-public sealed class CatalogReader(IRepositoryFileSource files, CatalogSettings settings)
+public sealed class CatalogReader(IGitHubRepositoryReader files, CatalogSettings settings)
 {
     /// <summary>Reads, parses and merges the hubs.</summary>
     /// <param name="ct">A cancellation token.</param>
@@ -60,14 +60,14 @@ public sealed class CatalogReader(IRepositoryFileSource files, CatalogSettings s
                 $"{hub.Where} could not be read from GitHub; check the sign-in's repository access and try again."));
 
         var file = await files.ReadAsync(hub.Repository, commit, hub.Path, CatalogConstants.MaxCatalogBytes, ct);
-        switch (file.Status)
+        switch (file.Outcome)
         {
-            case RepositoryFileStatus.Missing:
+            case FileRead.NotFound:
                 return (commit, null, AppErrorFactory.FileNotFound($"{hub.Where} has no {hub.Path}."));
-            case RepositoryFileStatus.TooLarge:
+            case FileRead.TooLarge:
                 return (commit, null, AppErrorFactory.BusinessRule(
                     $"{hub.Path} in {hub.Where} is larger than {CatalogConstants.MaxCatalogBytes / 1024} KiB."));
-            case RepositoryFileStatus.Unreadable:
+            case not FileRead.Found:
                 return (commit, null, AppErrorFactory.ExternalUnavailable(
                     $"{hub.Path} in {hub.Where} could not be read from GitHub; try again."));
         }

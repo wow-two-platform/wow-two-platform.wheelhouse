@@ -4,11 +4,11 @@ using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 
 namespace Wheelhouse.Infrastructure.Products;
 
-/// <summary>Reads a product's icon files from its GitHub repository through the shared <see cref="GitHubRepositoryReader"/>,
+/// <summary>Reads a product's icon files from its GitHub repository through the shared SDK <see cref="IGitHubRepositoryReader"/>,
 /// so a pushed icon shows soon after and a commit's files are read once.</summary>
 /// <remarks>Which file is chosen is the icon convention's decision, made by the caller; this source lists the files an
 /// icon can come from and reads the chosen one.</remarks>
-public sealed class GitHubProductIconSource(GitHubRepositoryReader reader) : IProductIconSource
+public sealed class GitHubProductIconSource(IGitHubRepositoryReader reader) : IProductIconSource
 {
     private const string PathsPurpose = "product-icon-paths";
 

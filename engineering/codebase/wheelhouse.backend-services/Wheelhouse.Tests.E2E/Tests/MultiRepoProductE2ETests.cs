@@ -3,9 +3,9 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments.Automation.Services;
 using Wheelhouse.Tests.E2E.Harness;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 using WoW.Two.Sdk.Beta.Be.Testing.Web;
 
 namespace Wheelhouse.Tests.E2E.Tests;
@@ -157,10 +157,10 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
 
     private void PushRepositories(string studio = StudioDescriptor)
     {
-        Fixture.RepositoryFiles.Push(Hub, "catalog.yml", Catalog);
-        Fixture.RepositoryFiles.Push(Platform, "engineering/deployment/deploy.yml", PlatformDescriptor);
-        Fixture.RepositoryFiles.Push(Studio, "engineering/deployment/deploy.yml", studio);
-        Fixture.RepositoryFiles.Push(Assets, "engineering/deployment/deploy.yml", AssetsDescriptor);
+        Fixture.GitHub.Push(Hub, "catalog.yml", Catalog);
+        Fixture.GitHub.Push(Platform, "engineering/deployment/deploy.yml", PlatformDescriptor);
+        Fixture.GitHub.Push(Studio, "engineering/deployment/deploy.yml", studio);
+        Fixture.GitHub.Push(Assets, "engineering/deployment/deploy.yml", AssetsDescriptor);
     }
 
     private static async Task<JsonElement> DataAsync(HttpResponseMessage response) =>
@@ -196,8 +196,8 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
     private async Task ImportWithMarketingAsync()
     {
         PushRepositories();
-        Fixture.RepositoryFiles.Push(Hub, "catalog.yml", Catalog.Replace(Assets + "]", Assets + ", " + Marketing + "]"));
-        Fixture.RepositoryFiles.PushEmpty(Marketing);
+        Fixture.GitHub.Push(Hub, "catalog.yml", Catalog.Replace(Assets + "]", Assets + ", " + Marketing + "]"));
+        Fixture.GitHub.PushEmpty(Marketing);
         (await ActionClient("catalog").PostJsonAsync("api/catalog/import", new { slugs = new[] { "ocharo" } })).EnsureSuccessStatusCode();
     }
 
@@ -316,8 +316,8 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
     public async Task Import_ShouldNoteThatARepositoryWithoutADescriptorAddsNoServicesYet()
     {
         PushRepositories();
-        Fixture.RepositoryFiles.Push(Hub, "catalog.yml", Catalog.Replace(Assets + "]", Assets + ", " + Marketing + "]"));
-        Fixture.RepositoryFiles.PushEmpty(Marketing);
+        Fixture.GitHub.Push(Hub, "catalog.yml", Catalog.Replace(Assets + "]", Assets + ", " + Marketing + "]"));
+        Fixture.GitHub.PushEmpty(Marketing);
 
         var result = await DataAsync(await ActionClient("catalog").PostJsonAsync("api/catalog/import", new { slugs = new[] { "ocharo" } }));
 
@@ -333,7 +333,7 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
     public async Task Import_ShouldNoteThatThePrimaryRepositoryWithoutADescriptorHoldsBackEverySet()
     {
         PushRepositories();
-        Fixture.RepositoryFiles.PushEmpty(Platform);
+        Fixture.GitHub.PushEmpty(Platform);
 
         var result = await DataAsync(await ActionClient("catalog").PostJsonAsync("api/catalog/import", new { slugs = new[] { "ocharo" } }));
 
@@ -345,8 +345,8 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
     public async Task Refresh_ShouldApproveWhatEachRepositorysDeployYmlNamesNow_WithoutAReimport()
     {
         await ImportWithMarketingAsync();
-        Fixture.RepositoryFiles.Push(Platform, Descriptor, PlatformDescriptor + PlatformAdditions);
-        Fixture.RepositoryFiles.Push(Marketing, Descriptor, MarketingDescriptor);
+        Fixture.GitHub.Push(Platform, Descriptor, PlatformDescriptor + PlatformAdditions);
+        Fixture.GitHub.Push(Marketing, Descriptor, MarketingDescriptor);
 
         var response = await RefreshAsync();
 
@@ -373,7 +373,7 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
         // Nothing new reads as no change; a removed service leaves.
         (await RefreshAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
         (await ServiceChangesAsync()).Should().ContainSingle();
-        Fixture.RepositoryFiles.Push(Platform, Descriptor, PlatformDescriptor.Replace("    dependsOn: [desk]", "").Replace("  jobs:\n", "  render:\n"));
+        Fixture.GitHub.Push(Platform, Descriptor, PlatformDescriptor.Replace("    dependsOn: [desk]", "").Replace("  jobs:\n", "  render:\n"));
         (await RefreshAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
         ExportedServices(0).Should().Equal("desk", "render");
         (await ServiceChangesAsync())[0].GetProperty("detail").GetString().Should().Be("platform +render -jobs -brand -catalogue");
@@ -383,12 +383,12 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
     public async Task ReleaseCatalogAndWatcher_ShouldTakeANewServiceBeforeTheRunnerComposesSets()
     {
         await ImportWithMarketingAsync();
-        Fixture.RepositoryFiles.Push(Marketing, Descriptor, MarketingDescriptor);
+        Fixture.GitHub.Push(Marketing, Descriptor, MarketingDescriptor);
 
         (await AdminClient.GetAsync("api/deployments/releases")).StatusCode.Should().Be(HttpStatusCode.OK);
 
         ExportedServices(3).Should().Equal("marketing", "blog");
-        Fixture.RepositoryFiles.Push(Studio, Descriptor, StudioDescriptor.Replace("  studio:\n    build", "  gallery:\n    build"));
+        Fixture.GitHub.Push(Studio, Descriptor, StudioDescriptor.Replace("  studio:\n    build", "  gallery:\n    build"));
         await using (var scope = Fixture.Host.Services.CreateAsyncScope())
             await scope.ServiceProvider.GetRequiredService<DeploymentAutomationService>().RunOnceAsync(CancellationToken.None);
         ExportedServices(1).Should().Equal("gallery");
@@ -400,8 +400,8 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
     public async Task Refresh_ShouldKeepARepositorysServices_WhenItsDescriptorIsUnusableOrTakesAnotherRepositorysService()
     {
         await ImportWithMarketingAsync();
-        Fixture.RepositoryFiles.Push(Studio, Descriptor, RepositoryFileStatus.Unreadable);
-        Fixture.RepositoryFiles.Push(Platform, Descriptor, PlatformDescriptor + PlatformAdditions);
+        Fixture.GitHub.Push(Studio, Descriptor, FileRead.Failed);
+        Fixture.GitHub.Push(Platform, Descriptor, PlatformDescriptor + PlatformAdditions);
 
         (await RefreshAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
 
@@ -410,7 +410,7 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
         ExportedServices(3).Should().BeEmpty();
 
         // Marketing naming Platform's service would put one service in two repositories: the product stays as it was.
-        Fixture.RepositoryFiles.Push(Marketing, Descriptor, MarketingDescriptor.Replace("  blog:", "  brand:"));
+        Fixture.GitHub.Push(Marketing, Descriptor, MarketingDescriptor.Replace("  blog:", "  brand:"));
         (await RefreshAsync()).StatusCode.Should().Be(HttpStatusCode.OK);
         ExportedServices(3).Should().BeEmpty();
         (await ServiceChangesAsync()).Should().ContainSingle();
@@ -447,15 +447,15 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
         descriptor.GetProperty("extensions").GetArrayLength().Should().Be(0);
 
         // Extensions belong to the product's databases: every repository's, once each, in first-seen order.
-        Fixture.RepositoryFiles.Push(Platform, Descriptor,
+        Fixture.GitHub.Push(Platform, Descriptor,
             PlatformDescriptor.Replace("product: ocharo\n", "product: ocharo\nextensions: [postgres_fdw, uuid-ossp]\n"));
-        Fixture.RepositoryFiles.Push(Studio, Descriptor, StudioDescriptor + "\nextensions: [uuid-ossp, pg_trgm]\n");
+        Fixture.GitHub.Push(Studio, Descriptor, StudioDescriptor + "\nextensions: [uuid-ossp, pg_trgm]\n");
         (await DataAsync(await AdminClient.GetAsync("api/products/ocharo/descriptor"))).GetProperty("extensions")
             .EnumerateArray().Select(item => item.GetString()).Should().Equal("postgres_fdw", "uuid-ossp", "pg_trgm");
-        Fixture.RepositoryFiles.Push(Platform, Descriptor, PlatformDescriptor);
+        Fixture.GitHub.Push(Platform, Descriptor, PlatformDescriptor);
 
         // Two repositories naming one site is a problem the placement and environment forms show.
-        Fixture.RepositoryFiles.Push(Studio, "engineering/deployment/deploy.yml", StudioDescriptor.Replace("studio: {}", "desk: {}"));
+        Fixture.GitHub.Push(Studio, "engineering/deployment/deploy.yml", StudioDescriptor.Replace("studio: {}", "desk: {}"));
         (await DataAsync(await AdminClient.GetAsync("api/products/ocharo/descriptor"))).GetProperty("problem").GetString()
             .Should().Be("Site 'desk' is in both ocharo-hq/ocharo-platform and ocharo-hq/ocharo-studio; a site names one host role of the product, so each repository names its own.");
     }

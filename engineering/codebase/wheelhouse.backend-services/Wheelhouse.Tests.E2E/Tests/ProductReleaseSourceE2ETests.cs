@@ -2,8 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AwesomeAssertions;
-using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Tests.E2E.Harness;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 using WoW.Two.Sdk.Beta.Be.Testing.Web;
 
 namespace Wheelhouse.Tests.E2E.Tests;
@@ -67,7 +67,7 @@ public sealed class ProductReleaseSourceE2ETests(WheelhouseAppFixture fixture) :
     [Fact]
     public async Task ReleaseSource_ShouldDeriveTheAssetWorkflowAndImages_FromTheRepository()
     {
-        Fixture.RepositoryFiles.Push(Repository, DescriptorPath, Descriptor);
+        Fixture.GitHub.Push(Repository, DescriptorPath, Descriptor);
 
         var source = await DataAsync(await AdminClient.GetAsync(
             "api/products/release-source?slug=pilot&repository=owner/pilot&branch=main"));
@@ -90,7 +90,7 @@ public sealed class ProductReleaseSourceE2ETests(WheelhouseAppFixture fixture) :
         source.GetProperty("fromDescriptor").GetBoolean().Should().BeFalse();
         source.GetProperty("note").GetString().Should().Contain("owner/missing@main could not be read from GitHub");
 
-        Fixture.RepositoryFiles.PushEmpty("owner/empty");
+        Fixture.GitHub.PushEmpty("owner/empty");
         (await DataAsync(await AdminClient.GetAsync("api/products/release-source?slug=pilot&repository=owner/empty")))
             .GetProperty("note").GetString().Should().Contain("has no engineering/deployment/deploy.yml");
 
@@ -105,7 +105,7 @@ public sealed class ProductReleaseSourceE2ETests(WheelhouseAppFixture fixture) :
     [Fact]
     public async Task CreateProduct_ShouldStoreTheDerivedReleaseSource_WhenItAsksForOneWithNothingTyped()
     {
-        Fixture.RepositoryFiles.Push(Repository, DescriptorPath, Descriptor);
+        Fixture.GitHub.Push(Repository, DescriptorPath, Descriptor);
 
         var created = await DataAsync(await CreateAsync(new { }));
 
@@ -119,7 +119,7 @@ public sealed class ProductReleaseSourceE2ETests(WheelhouseAppFixture fixture) :
     [Fact]
     public async Task CreateProduct_ShouldRefuseATypedValue_ThatDiffersFromWhatTheRepositoryGives()
     {
-        Fixture.RepositoryFiles.Push(Repository, DescriptorPath, Descriptor);
+        Fixture.GitHub.Push(Repository, DescriptorPath, Descriptor);
 
         var asset = await CreateAsync(new { asset = "wheelhouse-release.tar.gz" });
         asset.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -147,17 +147,17 @@ public sealed class ProductReleaseSourceE2ETests(WheelhouseAppFixture fixture) :
     [Fact]
     public async Task UpdateProduct_ShouldFollowTheDescriptor_AndKeepTheImagesItHad_WhileTheDescriptorCannotBeRead()
     {
-        Fixture.RepositoryFiles.Push(Repository, DescriptorPath, Descriptor);
+        Fixture.GitHub.Push(Repository, DescriptorPath, Descriptor);
         (await CreateAsync(new { })).StatusCode.Should().Be(HttpStatusCode.Created);
         var save = new { name = "Pilot", repository = Repository, defaultBranch = "main", release = new { } };
 
         // A service the repository adds joins on the next save.
-        Fixture.RepositoryFiles.Push(Repository, DescriptorPath, Descriptor + "\n  jobs:\n    build: { dockerfile: deployment/jobs.Dockerfile }\n    paths: [codebase/jobs/**]\n");
+        Fixture.GitHub.Push(Repository, DescriptorPath, Descriptor + "\n  jobs:\n    build: { dockerfile: deployment/jobs.Dockerfile }\n    paths: [codebase/jobs/**]\n");
         Images((await DataAsync(await ActionClient("product").PutJsonAsync("api/products/pilot", save))).GetProperty("release"))
             .Select(image => image.Item1).Should().Equal("api", "web", "jobs");
 
         // A descriptor that cannot be read keeps what the product had, as the services sync does.
-        Fixture.RepositoryFiles.Push(Repository, DescriptorPath, RepositoryFileStatus.Unreadable);
+        Fixture.GitHub.Push(Repository, DescriptorPath, FileRead.Failed);
         var kept = (await DataAsync(await ActionClient("product").PutJsonAsync("api/products/pilot", save))).GetProperty("release");
         Images(kept).Select(image => image.Item1).Should().Equal("api", "web", "jobs");
         kept.GetProperty("asset").GetString().Should().Be("pilot-release.tar.gz");

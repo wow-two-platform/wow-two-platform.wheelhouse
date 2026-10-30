@@ -107,7 +107,7 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
     [Fact]
     public async Task Descriptor_ShouldAnswerTheServicesNeedsAndSitesDeployYmlDeclares()
     {
-        var commit = Fixture.RepositoryFiles.Push(Repository, DescriptorPath, Descriptor);
+        var commit = Fixture.GitHub.Push(Repository, DescriptorPath, Descriptor);
 
         var data = await Data(await AdminClient.GetAsync("api/products/foreverpin/descriptor"));
 
@@ -130,7 +130,7 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
     [Fact]
     public async Task Descriptor_ShouldAnswerWhyItCannotBeRead_WhenTheRepositoryHasNone()
     {
-        Fixture.RepositoryFiles.PushEmpty(Repository);
+        Fixture.GitHub.PushEmpty(Repository);
 
         var data = await Data(await AdminClient.GetAsync("api/products/foreverpin/descriptor"));
 
@@ -143,7 +143,7 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
     [Fact]
     public async Task Place_ShouldStartThePlacementForAKnownProductAndServer()
     {
-        Fixture.RepositoryFiles.Push(Repository, DescriptorPath, Descriptor);
+        Fixture.GitHub.Push(Repository, DescriptorPath, Descriptor);
         (await Act("placement").PostAsJsonAsync("api/products/missing/placements", Placement())).StatusCode
             .Should().Be(HttpStatusCode.NotFound);
 
@@ -166,7 +166,7 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
     [InlineData(false, "status", "declares no site 'status'")]
     public async Task Place_ShouldReturn400_WhenASiteIsNotAPrivateSiteOfDeployYml(bool database, string site, string reason)
     {
-        Fixture.RepositoryFiles.Push(Repository, DescriptorPath, Descriptor);
+        Fixture.GitHub.Push(Repository, DescriptorPath, Descriptor);
 
         var response = await Act("placement").PostAsJsonAsync("api/products/foreverpin/placements",
             new { server = "prod-host", database, sites = new[] { new { site, node = "foreverpin-" + site } } });
@@ -179,7 +179,7 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
     [Fact]
     public async Task Place_ShouldReturn400_WhenDatabasesAreAskedForAProductWithoutPostgres()
     {
-        Fixture.RepositoryFiles.Push(Repository, DescriptorPath, Descriptor.Replace("    needs: [postgres]\n", ""));
+        Fixture.GitHub.Push(Repository, DescriptorPath, Descriptor.Replace("    needs: [postgres]\n", ""));
 
         var response = await Act("placement").PostAsJsonAsync("api/products/foreverpin/placements",
             new { server = "prod-host", database = true, sites = Array.Empty<object>() });
@@ -192,7 +192,7 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
     [Fact]
     public async Task Place_ShouldReturn409_WhenDeployYmlCannotBeRead()
     {
-        Fixture.RepositoryFiles.PushEmpty(Repository);
+        Fixture.GitHub.PushEmpty(Repository);
 
         var response = await Act("placement").PostAsJsonAsync("api/products/foreverpin/placements", Placement());
 

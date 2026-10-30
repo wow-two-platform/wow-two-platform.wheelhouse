@@ -1,19 +1,18 @@
 using System.Net;
 using System.Text;
 using AwesomeAssertions;
-using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Catalog;
-using Wheelhouse.Infrastructure.Catalog;
-using Wheelhouse.Infrastructure.Products;
+using Wheelhouse.Infrastructure.GitHub;
 using Wheelhouse.Tests.Unit.Fakes;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 using WoW.Two.Sdk.Beta.Be.Testing.Http;
 
 namespace Wheelhouse.Tests.Unit.Catalog;
 
-/// <summary>Tests for <see cref="GitHubRepositoryFileSource"/> over a scripted GitHub: a file read at a commit, a
+/// <summary>Tests for the SDK <see cref="GitHubRepositoryReader"/> as Wheelhouse composes it, over a scripted GitHub: a file read at a commit, a
 /// commit's verdict kept for good, no verdict retried, and the branch head kept only a few minutes. The descriptor,
 /// which carries a product's identity, is the file read here.</summary>
-public sealed class GitHubRepositoryFileSourceTests : IDisposable
+public sealed class GitHubRepositoryReaderTests : IDisposable
 {
     private const string Repository = "owner/pilot";
     private const string Head = "repos/owner/pilot/commits/main";
@@ -22,13 +21,7 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
 
     private readonly ScriptedGitHubReader _reads = new();
     private const int Limit = CatalogConstants.MaxDescriptorBytes;
-    private readonly GitHubRepositoryFileSource _source;
-
-    public GitHubRepositoryFileSourceTests()
-    {
-        GitHub.Raw[Head] = Encoding.ASCII.GetBytes(First);
-        _source = new GitHubRepositoryFileSource(_reads.Reader);
-    }
+    public GitHubRepositoryReaderTests() => GitHub.Raw[Head] = Encoding.ASCII.GetBytes(First);
 
     private ScriptedHttpMessageHandler GitHub => _reads.GitHub;
 
@@ -36,8 +29,8 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
 
     private static string File(string commit) => $"repos/owner/pilot/contents/engineering/deployment/deploy.yml?ref={commit}";
 
-    private Task<RepositoryFileRead> ReadAsync(string commit) =>
-        _source.ReadAsync(Repository, commit, CatalogConstants.DescriptorPath, Limit, CancellationToken.None);
+    private Task<RepositoryFile> ReadAsync(string commit) =>
+        _reads.Reader.ReadAsync(Repository, commit, CatalogConstants.DescriptorPath, Limit, CancellationToken.None);
 
     [Fact]
     public async Task ReadAsync_ShouldReturnTheFileAtTheCommit_WhenTheCommitCarriesIt()
@@ -46,7 +39,7 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
 
         var file = await ReadAsync(First);
 
-        file.Status.Should().Be(RepositoryFileStatus.Found);
+        file.Outcome.Should().Be(FileRead.Found);
         file.Content.Should().Equal("{ }"u8.ToArray());
         _reads.Requests.Should().Equal(File(First));
     }
@@ -57,7 +50,7 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
         GitHub.Raw[File(First)] = "{ }"u8.ToArray();
 
         await ReadAsync(First);
-        await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
+        await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
 
         GitHub.Requests.Should().OnlyContain(request => request.Authorization == "Bearer token");
     }
@@ -65,7 +58,7 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
     [Fact]
     public async Task ReadAsync_ShouldNameWheelhouseAndThePinnedApiVersion_WhenItCallsGitHub()
     {
-        await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
+        await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
 
         var request = GitHub.Requests.Should().ContainSingle().Subject;
         request.Headers["User-Agent"].Should().Be("Wheelhouse");
@@ -78,9 +71,8 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
     {
         using var anonymous = new ScriptedGitHubReader(token: null);
         anonymous.GitHub.Raw[Head] = Encoding.ASCII.GetBytes(First);
-        var source = new GitHubRepositoryFileSource(anonymous.Reader);
 
-        (await source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None)).Should().Be(First);
+        (await anonymous.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None)).Should().Be(First);
         anonymous.GitHub.Requests.Should().ContainSingle().Which.Authorization.Should().BeNull();
     }
 
@@ -90,7 +82,7 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
         var first = await ReadAsync(First);
         var again = await ReadAsync(First);
 
-        (first.Status, again.Status).Should().Be((RepositoryFileStatus.Missing, RepositoryFileStatus.Missing));
+        (first.Outcome, again.Outcome).Should().Be((FileRead.NotFound, FileRead.NotFound));
         _reads.Requests.Should().ContainSingle();
     }
 
@@ -102,7 +94,7 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
 
         var file = await ReadAsync(Second);
 
-        file.Status.Should().Be(RepositoryFileStatus.Found);
+        file.Outcome.Should().Be(FileRead.Found);
         _reads.Requests.Should().Equal(File(First), File(Second));
     }
 
@@ -114,7 +106,7 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
         var first = await ReadAsync(First);
         await ReadAsync(First);
 
-        first.Status.Should().Be(RepositoryFileStatus.TooLarge);
+        first.Outcome.Should().Be(FileRead.TooLarge);
         first.Content.Should().BeNull();
         _reads.Requests.Should().ContainSingle();
     }
@@ -124,14 +116,14 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
     {
         GitHub.Raw[File(First)] = new byte[Limit];
 
-        (await ReadAsync(First)).Status.Should().Be(RepositoryFileStatus.Found);
+        (await ReadAsync(First)).Outcome.Should().Be(FileRead.Found);
     }
 
     [Theory]
     [InlineData(HttpStatusCode.InternalServerError)]
     [InlineData(HttpStatusCode.Forbidden)]
     [InlineData(HttpStatusCode.TooManyRequests)]
-    public async Task ReadAsync_ShouldReturnUnreadableAndAskAgain_WhenGitHubGivesNoVerdict(HttpStatusCode status)
+    public async Task ReadAsync_ShouldGiveNoVerdictAndAskAgain_WhenGitHubGivesNoVerdict(HttpStatusCode status)
     {
         GitHub.Failures[File(First)] = status;
 
@@ -140,15 +132,16 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
         GitHub.Raw[File(First)] = "{ }"u8.ToArray();
         var again = await ReadAsync(First);
 
-        (first.Status, again.Status).Should().Be((RepositoryFileStatus.Unreadable, RepositoryFileStatus.Found));
+        first.Outcome.Should().BeOneOf(FileRead.Unauthorized, FileRead.Failed);
+        again.Outcome.Should().Be(FileRead.Found);
     }
 
     [Fact]
     public async Task HeadAsync_ShouldAskGitHubOnce_WhenTheBranchIsReadAgainWithinTheWindow()
     {
-        var first = await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
+        var first = await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
         GitHub.Raw[Head] = Encoding.ASCII.GetBytes(Second);
-        var again = await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
+        var again = await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
 
         (first, again).Should().Be((First, First));
         _reads.Requests.Should().Equal(Head);
@@ -157,23 +150,23 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
     [Fact]
     public async Task HeadAsync_ShouldReadTheMovedBranch_WhenTheKeptHeadHasExpired()
     {
-        await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
+        await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
         GitHub.Raw[Head] = Encoding.ASCII.GetBytes(Second);
         // The head entry lives HeadFor (five minutes); removing it stands in for that expiry.
         await _reads.Cache.RemoveAsync(GitHubRepositoryReader.HeadKey(Repository, "main"));
 
-        (await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None)).Should().Be(Second);
-        GitHubRepositoryReader.HeadFor.Should().Be(TimeSpan.FromMinutes(5));
+        (await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None)).Should().Be(Second);
+        GitHubReadSettings.HeadFor.Should().Be(TimeSpan.FromMinutes(5));
     }
 
     [Fact]
     public async Task HeadAsync_ShouldSkipTheKeptHeadAndKeepTheNewOne_WhenAFreshReadIsAsked()
     {
-        await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
+        await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
         GitHub.Raw[Head] = Encoding.ASCII.GetBytes(Second);
 
-        var fresh = await _source.HeadAsync(Repository, "main", fresh: true, CancellationToken.None);
-        var kept = await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
+        var fresh = await _reads.Reader.HeadAsync(Repository, "main", fresh: true, CancellationToken.None);
+        var kept = await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
 
         (fresh, kept).Should().Be((Second, Second));
         _reads.Requests.Should().Equal(Head, Head);
@@ -182,11 +175,11 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
     [Fact]
     public async Task HeadAsync_ShouldLeaveTheKeptHeadAlone_WhenAFreshReadFails()
     {
-        await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
+        await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
         GitHub.Failures[Head] = HttpStatusCode.BadGateway;
 
-        var fresh = await _source.HeadAsync(Repository, "main", fresh: true, CancellationToken.None);
-        var kept = await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
+        var fresh = await _reads.Reader.HeadAsync(Repository, "main", fresh: true, CancellationToken.None);
+        var kept = await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
 
         (fresh, kept).Should().Be((null, First));
     }
@@ -196,8 +189,8 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
     {
         GitHub.Raw.Remove(Head);
 
-        var first = await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
-        var again = await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
+        var first = await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
+        var again = await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None);
 
         (first, again).Should().Be((null, null));
         _reads.Requests.Should().ContainSingle();
@@ -208,7 +201,7 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
     {
         GitHub.Raw[Head] = "<html>rate limited</html>"u8.ToArray();
 
-        (await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None)).Should().BeNull();
+        (await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None)).Should().BeNull();
     }
 
     [Fact]
@@ -216,7 +209,7 @@ public sealed class GitHubRepositoryFileSourceTests : IDisposable
     {
         GitHub.Raw["repos/owner/pilot/commits/feat%2Flogin"] = Encoding.ASCII.GetBytes(Second);
 
-        (await _source.HeadAsync(Repository, "main", fresh: false, CancellationToken.None)).Should().Be(First);
-        (await _source.HeadAsync(Repository, "feat/login", fresh: false, CancellationToken.None)).Should().Be(Second);
+        (await _reads.Reader.HeadAsync(Repository, "main", fresh: false, CancellationToken.None)).Should().Be(First);
+        (await _reads.Reader.HeadAsync(Repository, "feat/login", fresh: false, CancellationToken.None)).Should().Be(Second);
     }
 }

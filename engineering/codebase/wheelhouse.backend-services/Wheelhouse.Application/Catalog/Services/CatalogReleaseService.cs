@@ -1,9 +1,9 @@
 using System.Text.RegularExpressions;
-using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Catalog.Models;
 using Wheelhouse.Application.Catalog.Parsers;
 using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Domain.Products.Models;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 
 namespace Wheelhouse.Application.Catalog.Services;
 
@@ -16,7 +16,7 @@ namespace Wheelhouse.Application.Catalog.Services;
 /// services until it has a usable descriptor and releases, since the product's release sets leave it out until then;
 /// and the primary one, which serves the front door, holds back every release set (decision 70). The same derivation runs
 /// again whenever a product's approved services follow its repositories (<c>ProductReleaseSourcesService</c>).</summary>
-public sealed class CatalogReleaseService(IRepositoryFileSource files)
+public sealed class CatalogReleaseService(IGitHubRepositoryReader files)
 {
     /// <summary>Derives a product's release source.</summary>
     /// <param name="product">The product's slug.</param>
@@ -66,15 +66,15 @@ public sealed class CatalogReleaseService(IRepositoryFileSource files)
             return Imageless(product, $"{where} could not be read from GitHub{Outcome(role, "it can be read")}");
 
         var file = await files.ReadAsync(repository, commit, CatalogConstants.DescriptorPath, CatalogConstants.MaxDescriptorBytes, ct);
-        switch (file.Status)
+        switch (file.Outcome)
         {
-            case RepositoryFileStatus.Missing:
+            case FileRead.NotFound:
                 return Imageless(product, role == Role.Only
                     ? $"{where} has no {CatalogConstants.DescriptorPath}{Outcome(role, "")}"
                     : $"{where} has no {CatalogConstants.DescriptorPath} yet{Outcome(role, "it has one")}");
-            case RepositoryFileStatus.TooLarge:
+            case FileRead.TooLarge:
                 return Imageless(product, $"{CatalogConstants.DescriptorPath} in {where} is too large to read{Outcome(role, "it can be read")}");
-            case RepositoryFileStatus.Unreadable:
+            case not FileRead.Found:
                 return Imageless(product, $"{CatalogConstants.DescriptorPath} in {where} could not be read{Outcome(role, "it can be read")}");
         }
 

@@ -2,8 +2,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Testcontainers.PostgreSql;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 using WoW.Two.Sdk.Beta.Be.Testing;
 using WoW.Two.Sdk.Beta.Be.Testing.Containers.Postgres;
+using WoW.Two.Sdk.Beta.Be.Testing.Integrations;
 
 namespace Wheelhouse.Tests.E2E.Harness;
 
@@ -62,10 +64,11 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     /// <summary>The shared icon stub — add files with <see cref="StubProductIconSource.Add"/> to serve a repository's icons.</summary>
     public StubProductIconSource ProductIcons { get; } = new();
 
-    /// <summary>The shared repository-file stub — push files with <see cref="StubRepositoryFileSource.Push(string, string, string, string)"/>
-    /// to give the catalog repository its catalog and a product repository its <c>deploy.yml</c> (with its identity) or
-    /// a retired <c>product/product.json</c>.</summary>
-    public StubRepositoryFileSource RepositoryFiles { get; } = new();
+    /// <summary>The shared SDK GitHub fake under the real repository reader — push files with
+    /// <see cref="FakeGitHubClient.Push(string, string, string, string, string)"/> to give the catalog repository its catalog
+    /// and a product repository its <c>deploy.yml</c> (with its identity) or a retired <c>product/product.json</c>. A
+    /// repository nobody pushed to cannot be read.</summary>
+    public FakeGitHubClient GitHub { get; } = new FakeGitHubClient().WithPushedOnly();
 
     /// <summary>A fresh anonymous client (no admin header) — protected endpoints return 401.</summary>
     public HttpClient CreateAnonymousClient() => Host.CreateClient();
@@ -114,6 +117,8 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
                 ["Deployment:ApplySeconds"] = "0",
                 // The dev console's own site, as its render names it: the hostname, on dev's port.
                 ["Sites:console:Url"] = "https://" + ConsoleHost + ":8443",
+                // The reader keeps what it read per commit; it reads the head on every call, so each push shows at once.
+                ["Integrations:GitHub:Reader:HeadFor"] = "00:00:00",
             }),
             ConfigureServicesHook = services =>
             {
@@ -129,10 +134,9 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
                 services.RemoveAll<Wheelhouse.Application.Abstractions.IProductIconSource>();
                 services.AddSingleton<Wheelhouse.Application.Abstractions.IProductIconSource>(ProductIcons);
 
-                // The catalog, deploy.yml and identity reads come from the stub as well; a repository nobody pushed to
-                // cannot be read.
-                services.RemoveAll<Wheelhouse.Application.Abstractions.IRepositoryFileSource>();
-                services.AddSingleton<Wheelhouse.Application.Abstractions.IRepositoryFileSource>(RepositoryFiles);
+                // The catalog, deploy.yml and identity reads go through the real reader to the GitHub fake.
+                services.RemoveAll<IGitHubClient>();
+                services.AddSingleton<IGitHubClient>(GitHub);
             },
         };
 
@@ -202,7 +206,7 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
         Vaults.Reset();
         Infra.Clear();
         ProductIcons.Clear();
-        RepositoryFiles.Clear();
+        GitHub.Clear();
     }
 }
 

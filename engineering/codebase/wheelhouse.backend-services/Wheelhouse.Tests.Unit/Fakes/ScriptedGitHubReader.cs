@@ -1,5 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
-using Wheelhouse.Infrastructure.Products;
+using Wheelhouse.Infrastructure.GitHub;
 using WoW.Two.Sdk.Beta.Be.Caching.Core;
 using WoW.Two.Sdk.Beta.Be.Caching.Hybrid;
 using WoW.Two.Sdk.Beta.Be.Integrations;
@@ -9,9 +9,9 @@ using WoW.Two.Sdk.Beta.Be.Testing.Integrations;
 
 namespace Wheelhouse.Tests.Unit.Fakes;
 
-/// <summary>Composes <see cref="GitHubRepositoryReader"/> as the host does — the SDK GitHub client with the reader's
-/// settings, and the SDK cache — over a scripted GitHub that records every request, so a test can tell what was asked
-/// and how often.</summary>
+/// <summary>Composes the SDK <see cref="GitHubRepositoryReader"/> as the host does — the SDK GitHub client with
+/// Wheelhouse's client and reader settings, and the SDK cache — over a scripted GitHub that records every request, so a
+/// test can tell what was asked and how often.</summary>
 public sealed class ScriptedGitHubReader : IDisposable
 {
     private readonly ServiceProvider _services;
@@ -24,12 +24,14 @@ public sealed class ScriptedGitHubReader : IDisposable
         services.AddLogging();
         services.AddHybridCaching();
         services.AddSingleton<IAccessTokenService>(new FixedAccessTokenService(token));
-        services.AddGitHubIntegration(GitHubRepositoryReader.ConfigureClient)
+        services.AddGitHubIntegration(GitHubReadSettings.ConfigureClient)
             .ConfigurePrimaryHttpMessageHandler(() => GitHub);
         _services = services.BuildServiceProvider();
 
         Cache = _services.GetRequiredService<ICacheRepository>();
-        Reader = new GitHubRepositoryReader(_services.GetRequiredService<IGitHubClient>(), Cache);
+        var options = new GitHubRepositoryReaderOptions();
+        GitHubReadSettings.ConfigureReader(options);
+        Reader = new GitHubRepositoryReader(_services.GetRequiredService<IGitHubClient>(), Cache, options);
     }
 
     /// <summary>Gets the scripted GitHub REST API.</summary>

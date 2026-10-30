@@ -3,6 +3,7 @@ using Wheelhouse.Application.Catalog;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Products.Enums;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 
 namespace Wheelhouse.Application.Products.Services;
 
@@ -19,7 +20,7 @@ namespace Wheelhouse.Application.Products.Services;
 /// An invalid or oversized file is ignored with a reason and the previous valid row stays; a repository that cannot be
 /// read changes nothing. An explicit refresh asks for the head again now.
 /// </remarks>
-public sealed class ProductIdentityService(IProductManifestsRepository manifests, IRepositoryFileSource files)
+public sealed class ProductIdentityService(IProductManifestsRepository manifests, IGitHubRepositoryReader files)
 {
     /// <summary>The file a product declares its identity in.</summary>
     public const string DescriptorFile = CatalogConstants.DescriptorPath;
@@ -90,13 +91,13 @@ public sealed class ProductIdentityService(IProductManifestsRepository manifests
 
             var descriptor = await files.ReadAsync(
                 product.Repository, head, DescriptorFile, CatalogConstants.MaxDescriptorBytes, ct);
-            switch (descriptor.Status)
+            switch (descriptor.Outcome)
             {
-                case RepositoryFileStatus.Unreadable:
+                case FileRead.Unauthorized or FileRead.Failed:
                     return outcome with { Reachable = false };
-                case RepositoryFileStatus.TooLarge:
+                case FileRead.TooLarge:
                     return outcome with { Problem = DescriptorIgnored("The file is larger than 256 KiB.") };
-                case RepositoryFileStatus.Found:
+                case FileRead.Found:
                     var verdict = DescriptorIdentityParser.Parse(descriptor.Content ?? []);
                     if (!verdict.IsAbsent)
                         return Judge(outcome, head, DescriptorFile, verdict, DescriptorIgnored);
@@ -105,12 +106,12 @@ public sealed class ProductIdentityService(IProductManifestsRepository manifests
 
             // The descriptor declares no identity: a retired product/product.json still applies, with a notice.
             var retired = await files.ReadAsync(product.Repository, head, RetiredFile, ProductManifestParser.MaxBytes, ct);
-            return retired.Status switch
+            return retired.Outcome switch
             {
-                RepositoryFileStatus.Found => Judge(
+                FileRead.Found => Judge(
                     outcome, head, RetiredFile, ProductManifestParser.Parse(retired.Content ?? []), RetiredIgnored),
-                RepositoryFileStatus.Missing => outcome with { Kept = null },
-                RepositoryFileStatus.TooLarge => outcome with { Problem = RetiredIgnored("The file is larger than 16 KiB.") },
+                FileRead.NotFound => outcome with { Kept = null },
+                FileRead.TooLarge => outcome with { Problem = RetiredIgnored("The file is larger than 16 KiB.") },
                 _ => outcome with { Reachable = false },
             };
         }

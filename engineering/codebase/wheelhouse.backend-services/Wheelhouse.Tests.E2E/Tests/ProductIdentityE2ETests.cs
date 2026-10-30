@@ -7,6 +7,7 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Tests.E2E.Harness;
 using Wheelhouse.Tests.E2E.Support;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 using WoW.Two.Sdk.Beta.Be.Testing.Web;
 
 namespace Wheelhouse.Tests.E2E.Tests;
@@ -54,14 +55,14 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
         "{ \"manifest\": 1, \"name\": \"" + name + "\", \"description\": \"" + description + "\"" + extra + " }";
 
     private string Push(string repository, string descriptor) =>
-        Fixture.RepositoryFiles.Push(repository, DescriptorPath, descriptor);
+        Fixture.GitHub.Push(repository, DescriptorPath, descriptor);
 
     private int DescriptorReads(string repository) =>
-        Fixture.RepositoryFiles.Reads.Count(read => read.StartsWith(repository + "@", StringComparison.OrdinalIgnoreCase)
+        Fixture.GitHub.FileReads.Count(read => read.StartsWith(repository + "@", StringComparison.OrdinalIgnoreCase)
             && read.EndsWith(":" + DescriptorPath, StringComparison.Ordinal));
 
-    private IEnumerable<(string Repository, string Branch, bool Fresh)> HeadChecks(string repository) =>
-        Fixture.RepositoryFiles.HeadChecks.Where(check => string.Equals(check.Repository, repository, StringComparison.OrdinalIgnoreCase));
+    private IEnumerable<string> HeadChecks(string repository) =>
+        Fixture.GitHub.HeadReads.Where(read => read.StartsWith(repository + "@", StringComparison.OrdinalIgnoreCase));
 
     private HttpClient ActionClient(string action)
     {
@@ -122,7 +123,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
     public async Task GetBySlug_ShouldShowTheRetiredFileWithANotice_WhenTheDescriptorDeclaresNoIdentity()
     {
         Push(ForeverPin, Bare);
-        var commit = Fixture.RepositoryFiles.Push(ForeverPin, RetiredPath, Manifest("Legacy Pin", "From the retired file."));
+        var commit = Fixture.GitHub.Push(ForeverPin, RetiredPath, Manifest("Legacy Pin", "From the retired file."));
 
         var product = await GetAsync("foreverpin");
 
@@ -135,10 +136,10 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
     [Fact]
     public async Task GetBySlug_ShouldDropTheNotice_WhenALaterCommitMovesTheIdentityIntoTheDescriptor()
     {
-        Fixture.RepositoryFiles.Push(ForeverPin, RetiredPath, Manifest("Legacy Pin"));
+        Fixture.GitHub.Push(ForeverPin, RetiredPath, Manifest("Legacy Pin"));
         (await GetAsync("foreverpin")).Identity!.Notice.Should().Be(RetiredNotice);
 
-        Fixture.RepositoryFiles.Push(ForeverPin, RetiredPath, RepositoryFileStatus.Missing);
+        Fixture.GitHub.Push(ForeverPin, RetiredPath, FileRead.NotFound);
         var moved = Push(ForeverPin, Identity("Forever Pin"));
         var product = await GetAsync("foreverpin");
 
@@ -150,13 +151,13 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
     [Fact]
     public async Task GetBySlug_ShouldPreferTheDescriptor_WhenBothFilesDeclareAnIdentity()
     {
-        Fixture.RepositoryFiles.Push(ForeverPin, RetiredPath, Manifest("Legacy Pin"));
+        Fixture.GitHub.Push(ForeverPin, RetiredPath, Manifest("Legacy Pin"));
         Push(ForeverPin, Identity("Forever Pin"));
 
         var product = await GetAsync("foreverpin");
 
         (product.Name, product.Identity!.File, product.Identity.Notice).Should().Be(("Forever Pin", DescriptorPath, null));
-        Fixture.RepositoryFiles.Reads.Should().NotContain(read => read.EndsWith(":" + RetiredPath, StringComparison.Ordinal));
+        Fixture.GitHub.FileReads.Should().NotContain(read => read.EndsWith(":" + RetiredPath, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -170,7 +171,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
         await GetAsync("foreverpin");
 
         DescriptorReads(ForeverPin).Should().Be(reads, "a head the cache already holds reads no file");
-        HeadChecks(ForeverPin).Should().NotBeEmpty().And.OnlyContain(check => !check.Fresh);
+        HeadChecks(ForeverPin).Should().NotBeEmpty();
     }
 
     [Fact]
@@ -194,7 +195,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
         Push(ForeverPin, Identity("Forever Pin"));
         await GetAsync("foreverpin");
 
-        var second = Fixture.RepositoryFiles.Push(ForeverPin, "README.md", "Changed.");
+        var second = Fixture.GitHub.Push(ForeverPin, "README.md", "Changed.");
         var product = await GetAsync("foreverpin");
 
         (product.Name, product.Identity!.Commit).Should().Be(("Forever Pin", second));
@@ -231,7 +232,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
     public async Task GetBySlug_ShouldFallBackToTheRecordAndReportWhy_WhenTheFirstIdentityIsInvalid(string head, string reason)
     {
         Push(ForeverPin, head + Services);
-        Fixture.RepositoryFiles.Push(ForeverPin, RetiredPath, Manifest("Legacy Pin"));
+        Fixture.GitHub.Push(ForeverPin, RetiredPath, Manifest("Legacy Pin"));
 
         var product = await GetAsync("foreverpin");
 
@@ -246,7 +247,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
     [InlineData("{ \"manifest\": 1, \"name\": 5, \"description\": \"x\" }", "product/product.json is ignored: 'name' must be text.")]
     public async Task GetBySlug_ShouldFallBackToTheRecordAndReportWhy_WhenTheRetiredFileIsInvalid(string file, string reason)
     {
-        Fixture.RepositoryFiles.Push(ForeverPin, RetiredPath, file);
+        Fixture.GitHub.Push(ForeverPin, RetiredPath, file);
 
         var product = await GetAsync("foreverpin");
 
@@ -288,7 +289,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
         var commit = Push(ForeverPin, Identity("Forever Pin"));
         await GetAsync("foreverpin");
 
-        Fixture.RepositoryFiles.Unreachable(ForeverPin);
+        Fixture.GitHub.Unreachable(ForeverPin);
         var product = await GetAsync("foreverpin");
 
         (product.Name, product.Identity!.Source, product.Identity.Commit, product.Identity.Problem).Should().Be(
@@ -302,7 +303,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
         var commit = Push(ForeverPin, Identity("Forever Pin"));
         await GetAsync("foreverpin");
 
-        Fixture.RepositoryFiles.Push(ForeverPin, DescriptorPath, RepositoryFileStatus.Unreadable);
+        Fixture.GitHub.Push(ForeverPin, DescriptorPath, FileRead.Failed);
         var product = await GetAsync("foreverpin");
 
         (product.Name, product.Identity!.Commit, product.Identity.Problem).Should().Be(("Forever Pin", commit, null));
@@ -329,7 +330,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
     }
 
     [Fact]
-    public async Task RefreshIdentity_ShouldAskForAFreshHeadAndReturnTheProduct_WhenTheOwnerRefreshes()
+    public async Task RefreshIdentity_ShouldReturnTheProductAtTheNewHead_WhenTheOwnerRefreshes()
     {
         Push(ForeverPin, Identity("Forever Pin"));
         await GetAsync("foreverpin");
@@ -340,7 +341,6 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var product = await response.ReadEnvelopeAsync<ProductResponse>();
         (product.Name, product.Identity!.Commit).Should().Be(("Forever Pin Plus", second));
-        HeadChecks(ForeverPin).Last().Fresh.Should().BeTrue();
         (await RowsAsync()).Should().ContainSingle().Which.Commit.Should().Be(second);
     }
 
@@ -364,7 +364,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
     {
         var commit = Push(ForeverPin, Identity("Forever Pin"));
         await GetAsync("foreverpin");
-        Fixture.RepositoryFiles.Unreachable(ForeverPin);
+        Fixture.GitHub.Unreachable(ForeverPin);
 
         var response = await ActionClient("refresh").PostAsync("api/products/foreverpin/identity/refresh", null);
 
@@ -393,7 +393,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
         var response = await AdminClient.PostAsync("api/products/foreverpin/identity/refresh", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        Fixture.RepositoryFiles.HeadChecks.Should().BeEmpty();
+        Fixture.GitHub.HeadReads.Should().BeEmpty();
     }
 
     [Fact]
@@ -535,7 +535,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
     public async Task GetAll_ShouldGiveEveryProductItsOwnIdentity_WhenOnlyOneRepositoryDeclaresAValidOne()
     {
         Push(Wheelhouse, Identity("Wheelhouse Console", "The deploy console.").Replace("product: foreverpin", "product: wheelhouse"));
-        Fixture.RepositoryFiles.Push(ForeverPin, RetiredPath, "{ nope");
+        Fixture.GitHub.Push(ForeverPin, RetiredPath, "{ nope");
 
         var products = await (await AdminClient.GetAsync("api/products")).ReadEnvelopeAsync<IReadOnlyList<ProductResponse>>();
 

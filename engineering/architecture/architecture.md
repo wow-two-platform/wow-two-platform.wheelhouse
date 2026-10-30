@@ -462,8 +462,8 @@ reach the audit trail and are not inventory.
 
 Wheelhouse reads one YAML catalog from each hub in `Catalog:Sources` — a list of `{ Repository, Path, Ref }`, default
 `wow-two/wow-two-ws`, `sulton-max/10x-ventures` and `ocharo-hq/ocharo-ws`, each `catalog.yml` at `main` (an empty
-list reads those three) — validated options, read with the owner's GitHub App token through `GitHubRepositoryReader`
-(`IRepositoryFileSource`). Each read checks every ref's head again, so a pushed catalog shows at once; a commit's file
+list reads those three) — validated options, read with the owner's GitHub App token through the be sdk
+`IGitHubRepositoryReader`. Each read checks every ref's head again, so a pushed catalog shows at once; a commit's file
 stays cached. The format (`catalog: 1`, `hub`, `workspaces`, `entries`) and which hub owns which entries are owned by
 wow-two-ws ([catalog convention](../../../../../conventions/development/repo/catalog/catalog.md)); Wheelhouse reads the
 hub's name and an entry's slug, name, workspace, kind, deploy, purpose and repositories, and ignores `orgs`, `hubs`,

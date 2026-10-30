@@ -222,11 +222,10 @@ public static partial class HostConfigurationExtensions
 
         // The repository reads share the SDK cache.
         builder.Services.AddHttpContextAccessTokenProvider();
-        builder.Services.AddGitHubIntegration(Wheelhouse.Infrastructure.Products.GitHubRepositoryReader.ConfigureClient)
+        builder.Services.AddGitHubIntegration(Wheelhouse.Infrastructure.GitHub.GitHubReadSettings.ConfigureClient)
             .AddHttpMessageHandler<Wheelhouse.Infrastructure.GitHub.GitHubCredentialHandler>();
-        builder.Services.AddScoped<Wheelhouse.Infrastructure.Products.GitHubRepositoryReader>();
+        builder.Services.AddGitHubRepositoryReader(Wheelhouse.Infrastructure.GitHub.GitHubReadSettings.ConfigureReader);
         builder.Services.AddScoped<IProductIconSource, Wheelhouse.Infrastructure.Products.GitHubProductIconSource>();
-        builder.Services.AddScoped<IRepositoryFileSource, Wheelhouse.Infrastructure.Catalog.GitHubRepositoryFileSource>();
 
         // The catalog hubs: one YAML file in each hub repository, bound when first resolved; a malformed setting fails it.
         var configuration = builder.Configuration;

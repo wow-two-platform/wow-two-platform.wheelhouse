@@ -3,9 +3,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AwesomeAssertions;
-using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Tests.E2E.Harness;
 using Wheelhouse.Tests.E2E.Support;
+using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 using WoW.Two.Sdk.Beta.Be.Testing.Web;
 
 namespace Wheelhouse.Tests.E2E.Tests;
@@ -186,7 +186,7 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
         return client;
     }
 
-    private string PushCatalog(string text = Catalog, string repository = Wow2) => Fixture.RepositoryFiles.Push(repository, "catalog.yml", text);
+    private string PushCatalog(string text = Catalog, string repository = Wow2) => Fixture.GitHub.Push(repository, "catalog.yml", text);
 
     /// <summary>Pushes all three hubs' catalogs and returns their commits, in settings order.</summary>
     private (string Wow2, string Ventures, string Ocharo) PushHubs(string ventures = VenturesCatalog, string ocharo = OcharoCatalog) =>
@@ -339,8 +339,8 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     public async Task Get_ShouldShowTheHubsError_WhenItHasNoCatalog_OrItCannotBeRead()
     {
         PushHubs();
-        Fixture.RepositoryFiles.PushEmpty(Ventures);
-        Fixture.RepositoryFiles.Push(Ocharo, "catalog.yml", RepositoryFileStatus.Unreadable);
+        Fixture.GitHub.PushEmpty(Ventures);
+        Fixture.GitHub.Push(Ocharo, "catalog.yml", FileRead.Failed);
 
         var catalog = await CatalogAsync();
 
@@ -431,8 +431,8 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     public async Task Import_ShouldCreateWorkspacesAndProductsAndMoveExistingOnes()
     {
         PushHubs();
-        Fixture.RepositoryFiles.Push("wow-two-platform/wow-two-platform.wheelhouse-canary", "engineering/deployment/deploy.yml", CanaryDescriptor);
-        Fixture.RepositoryFiles.PushEmpty("wow-two-platform/wow-two-platform.secrets-vault");
+        Fixture.GitHub.Push("wow-two-platform/wow-two-platform.wheelhouse-canary", "engineering/deployment/deploy.yml", CanaryDescriptor);
+        Fixture.GitHub.PushEmpty("wow-two-platform/wow-two-platform.secrets-vault");
 
         var response = await ImportClient().PostJsonAsync("api/catalog/import",
             new { slugs = new[] { "foreverpin", "wheelhousecanary", "secrets-vault", "wheelhouse", "notes-app", "pipelines" } });
@@ -520,7 +520,7 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     public async Task Import_ShouldSetEachExistingProductsDeployMode_FromItsEntry()
     {
         PushHubs();
-        Fixture.RepositoryFiles.Push("wow-two-platform/wow-two-platform.wheelhouse-canary", "engineering/deployment/deploy.yml", CanaryDescriptor);
+        Fixture.GitHub.Push("wow-two-platform/wow-two-platform.wheelhouse-canary", "engineering/deployment/deploy.yml", CanaryDescriptor);
         await ProductDeployModes.SetAsync(AdminClient, "wheelhouse", "wheelhouse");
         await CreateProductAsync("pipelines", "wow-two-platform/wow-two-platform.pipelines");
 
@@ -547,7 +547,7 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     {
         PushHubs();
         PushCatalog(Catalog.Replace("deploy: ci", "deploy: wheelhouse"));
-        Fixture.RepositoryFiles.Push("wow-two-platform/wow-two-platform.wheelhouse", "engineering/deployment/deploy.yml",
+        Fixture.GitHub.Push("wow-two-platform/wow-two-platform.wheelhouse", "engineering/deployment/deploy.yml",
             "descriptor: 1\nproduct: wheelhouse\nservices:\n  console:\n    build: { dockerfile: deployment/Dockerfile }\n    health: /api/system/ready\n");
 
         var result = await DataAsync(await ImportClient().PostJsonAsync("api/catalog/import", new { slugs = new[] { "wheelhouse" } }));
@@ -617,9 +617,9 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
     public async Task Import_ShouldNoteADescriptorThatNamesAnotherProduct_OrCannotBeParsed()
     {
         PushHubs();
-        Fixture.RepositoryFiles.Push("wow-two-platform/wow-two-platform.wheelhouse-canary", "engineering/deployment/deploy.yml",
+        Fixture.GitHub.Push("wow-two-platform/wow-two-platform.wheelhouse-canary", "engineering/deployment/deploy.yml",
             CanaryDescriptor.Replace("product: wheelhousecanary", "product: canary"));
-        Fixture.RepositoryFiles.Push("wow-two-platform/wow-two-platform.secrets-vault", "engineering/deployment/deploy.yml",
+        Fixture.GitHub.Push("wow-two-platform/wow-two-platform.secrets-vault", "engineering/deployment/deploy.yml",
             "descriptor: 1\nproduct: secrets-vault\nservices: [api]\n");
 
         var result = await DataAsync(await ImportClient().PostJsonAsync("api/catalog/import", new { slugs = new[] { "wheelhousecanary", "secrets-vault" } }));

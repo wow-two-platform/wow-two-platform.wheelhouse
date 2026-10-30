@@ -21,6 +21,7 @@
         <PackageReference Include="WoW2.Sdk.Beta.Be.Testing"/>
         <!-- MigrateVerbHarness: the console image's migrate verbs, run in process over its own services. -->
         <PackageReference Include="WoW2.Sdk.Beta.Be.Testing.Data"/>
+        <PackageReference Include="WoW2.Sdk.Beta.Be.Testing.Integrations"/>
         <PackageReference Include="Microsoft.NET.Test.Sdk"/>
         <PackageReference Include="xunit.runner.visualstudio"/>
     </ItemGroup>

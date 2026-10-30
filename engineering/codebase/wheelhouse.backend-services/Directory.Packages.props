@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <BackendSdkVersion>10.0.94-beta</BackendSdkVersion>
+    <BackendSdkVersion>10.0.95-beta</BackendSdkVersion>
     <IdentitySdkVersion>10.0.9-beta</IdentitySdkVersion>
   </PropertyGroup>
 

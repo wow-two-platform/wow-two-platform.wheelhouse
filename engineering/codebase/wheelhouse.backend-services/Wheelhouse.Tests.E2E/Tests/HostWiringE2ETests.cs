@@ -118,7 +118,8 @@ public sealed class HostWiringE2ETests(WheelhouseAppFixture fixture) : Wheelhous
         await using var scope = Fixture.Host.Services.CreateAsyncScope();
         var options = scope.ServiceProvider.GetRequiredService<GitHubIntegrationOptions>();
 
-        scope.ServiceProvider.GetRequiredService<GitHubRepositoryReader>().Should().NotBeNull();
+        scope.ServiceProvider.GetRequiredService<IGitHubRepositoryReader>().Should().BeOfType<GitHubRepositoryReader>();
+        scope.ServiceProvider.GetRequiredService<GitHubRepositoryReaderOptions>().CommitFor.Should().Be(TimeSpan.FromDays(1));
         (options.UserAgent, options.ApiVersion, options.Timeout, options.AllowAnonymousCalls)
             .Should().Be(("Wheelhouse", "2022-11-28", TimeSpan.FromSeconds(10), true));
     }
