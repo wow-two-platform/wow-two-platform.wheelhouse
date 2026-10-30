@@ -14,6 +14,11 @@ Transient: deleted when Iteration 3 closes.
 ## How
 
 - Token paging uses the be sdk's `TokenPageDto` / `TokenPageApiRequest`; no SDK change expected
+  - `GET /api/audit?pageSize=&pageToken=&product=` answers `{ items, pageSize, nextPageToken }`, newest first by the
+    unique sequence number (EF `ToTokenPageAsync`, token key `long`); `pageSize` 1-200 (default 50), a malformed token
+    or an out-of-range size answers 400; the API, console and E2E tests send no `before`; no MCP tool reads the list
+  - Activity page and a product's Activity tab: `useAppInfiniteQuery` over the token, one Load older actions button
+    replaces the Newer / Older windows; the area filter still narrows the loaded entries, verification unchanged
 - Add the shared-ref hook to `wow-two-sdk-beta.fe`, release it, re-pin `@wow-two-beta/fe`, then move the preferences;
   read the old raw values once so no owner preference is lost
   - fe `0.0.35` `createPersistentRef(key, initial, { decode })`: one module-scope ref per choice, a decoder each, tab

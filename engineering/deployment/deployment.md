@@ -656,7 +656,7 @@ every settings file and the target's lock state; each failure names the rule or 
 | `POST` / `DELETE /api/deployments/freezes` | `{"product":"…","environment":"prod","reason":"…"}` / `?product=&environment=` with `X-Wheelhouse-Action: freeze` |
 | `GET /api/deployments/{id}` | The target-owned outcome, with each rollout step and any warning |
 | `GET /api/deployments/targets/{id}/services/{service}/logs?tail=200` | One service's last container lines (1-1000), never cached |
-| `GET /api/audit?limit=50&before=` | Operator actions, newest first; `before` pages back from a sequence number |
+| `GET /api/audit?pageSize=50&pageToken=` | Operator actions, newest first, as the SDK's token page `{ items, pageSize, nextPageToken }`; `pageToken` is the previous page's `nextPageToken` (absent on the last page), `pageSize` 1-200, `product` keeps one product's entries |
 | `GET /api/audit/verification` | Whether every stored audit entry and link still verifies |
 | `GET /api/deployments/vitals[?fresh=true]` | Every server's own host load, memory, disks and uptime, and every target's containers, read in parallel; one read serves every tab and the MCP tool for `Deployment:VitalsSeconds` (60), and `fresh=true` (the console's explicit Refresh) reads the hosts now |
 | `GET /api/deployments/stats?days=30` | Outcomes, success rate, median rollout and recovery, deploys per UTC day (1–90 days) |
