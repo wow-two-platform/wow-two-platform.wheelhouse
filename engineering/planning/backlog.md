@@ -108,6 +108,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Fix the console's history missing a break-glass rollout | fix | 2026-10-30: `self-deploy.py` promoted prod to `v0.9.0`, yet Deployments still lists the failed console promotion as unrecovered and offers `v0.7.8` → `v0.9.0` |
 | Fix a database reset inside the post-rollout watch reading as degraded | fix | The reset leaves the services stopped until the next deploy; the watch reads them exited |
 | Ability to back up databases and volumes off-provider on a schedule | feature | |
 | Ability to restore a backup and prove it works | feature | |
