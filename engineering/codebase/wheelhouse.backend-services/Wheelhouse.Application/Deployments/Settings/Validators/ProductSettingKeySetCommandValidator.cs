@@ -1,7 +1,7 @@
 using FluentValidation;
 using Wheelhouse.Application.Deployments.Settings.Commands;
 using Wheelhouse.Application.Deployments.Settings.Services;
-using Wheelhouse.Application.Inventory.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Deployments.Settings.Validators;
 
@@ -12,7 +12,7 @@ public sealed class ProductSettingKeySetCommandValidator : AbstractValidator<Pro
     /// <summary>Configures the rules.</summary>
     public ProductSettingKeySetCommandValidator()
     {
-        RuleFor(x => x.Product).MustBeSlug();
+        RuleFor(x => x.Product).MustBeNameSlug();
         RuleFor(x => x.Key).Must(DeploymentSettingsService.IsKey).WithMessage("A key is a configuration path such as Section:Key.");
         RuleFor(x => x.Key).Must(key => !DeploymentSettingsService.IsDerived(key))
             .WithMessage(x => x.Key + " is derived at each deploy; it takes no value.");

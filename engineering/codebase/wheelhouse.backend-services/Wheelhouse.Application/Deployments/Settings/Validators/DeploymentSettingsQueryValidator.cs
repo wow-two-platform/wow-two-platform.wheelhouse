@@ -1,6 +1,6 @@
 using FluentValidation;
 using Wheelhouse.Application.Deployments.Settings.Queries;
-using Wheelhouse.Application.Inventory.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Deployments.Settings.Validators;
 
@@ -10,7 +10,7 @@ public sealed class DeploymentSettingsQueryValidator : AbstractValidator<Deploym
     /// <summary>Configures the rules.</summary>
     public DeploymentSettingsQueryValidator()
     {
-        RuleFor(x => x.Target).MustBeSlug();
-        RuleFor(x => x.Release!).MustBeSlug().When(x => x.Release is not null);
+        RuleFor(x => x.Target).MustBeNameSlug();
+        RuleFor(x => x.Release!).MustBeNameSlug().When(x => x.Release is not null);
     }
 }

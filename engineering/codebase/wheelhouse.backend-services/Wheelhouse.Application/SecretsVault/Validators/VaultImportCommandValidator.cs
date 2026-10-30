@@ -1,6 +1,6 @@
 using FluentValidation;
-using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Application.SecretsVault.Commands;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.SecretsVault.Validators;
 
@@ -8,5 +8,5 @@ namespace Wheelhouse.Application.SecretsVault.Validators;
 public sealed class VaultImportCommandValidator : AbstractValidator<VaultImportCommand>
 {
     /// <summary>Configures the rules.</summary>
-    public VaultImportCommandValidator() => RuleFor(x => x.Vault).MustBeSlug();
+    public VaultImportCommandValidator() => RuleFor(x => x.Vault).MustBeNameSlug();
 }

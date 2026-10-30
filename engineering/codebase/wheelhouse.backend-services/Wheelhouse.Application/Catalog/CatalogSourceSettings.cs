@@ -1,5 +1,5 @@
 using System.Text.RegularExpressions;
-using Wheelhouse.Application.Inventory.Constants;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Catalog;
 
@@ -17,10 +17,10 @@ public sealed record CatalogSourceSettings
 
     /// <summary>Gets whether the hub has its shape: a repository, a relative path without <c>..</c> and a branch.</summary>
     public bool IsValid =>
-        Regex.IsMatch(Repository ?? "", InventoryPatternConstants.Repository)
+        Regex.IsMatch(Repository ?? "", FormatPatternConstants.GitHubRepository)
         && Regex.IsMatch(Path ?? "", @"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$")
         && !Path!.Split('/').Contains("..")
-        && Regex.IsMatch(Ref ?? "", InventoryPatternConstants.Branch);
+        && Regex.IsMatch(Ref ?? "", FormatPatternConstants.GitBranch);
 
     /// <summary>Gets the hub as messages name it: <c>owner/name@ref</c>.</summary>
     public string Where => $"{Repository}@{Ref}";

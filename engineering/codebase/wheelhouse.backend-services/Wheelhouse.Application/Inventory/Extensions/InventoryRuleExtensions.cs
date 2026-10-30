@@ -1,20 +1,12 @@
 using FluentValidation;
-using Wheelhouse.Application.Inventory.Constants;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Inventory.Extensions;
 
-/// <summary>Extends inventory validation with the rules every product, server, target and vault name shares.</summary>
+/// <summary>Extends inventory validation with the rules the SDK validation vocabulary does not carry; names, addresses and
+/// shapes take the be sdk <c>FormatRuleExtensions</c>.</summary>
 public static class InventoryRuleExtensions
 {
-    /// <summary>Requires an inventory name: a lowercase letter, then lowercase letters, digits or dashes.</summary>
-    /// <param name="rule">The rule builder.</param>
-    /// <typeparam name="T">The validated type.</typeparam>
-    /// <returns>The rule builder for chaining.</returns>
-    public static IRuleBuilderOptions<T, string> MustBeSlug<T>(this IRuleBuilder<T, string> rule) =>
-        rule
-            .Matches(InventoryPatternConstants.Slug)
-            .WithMessage("'{PropertyName}' must start with a lowercase letter and hold only lowercase letters, digits and dashes (48 at most).");
-
     /// <summary>Requires the name a route gives a product: its identifier or its slug.</summary>
     /// <param name="rule">The rule builder.</param>
     /// <typeparam name="T">The validated type.</typeparam>
@@ -22,7 +14,7 @@ public static class InventoryRuleExtensions
     public static IRuleBuilderOptions<T, string> MustBeProductKey<T>(this IRuleBuilder<T, string> rule) =>
         rule
             .Must(key => key is not null
-                && (Guid.TryParse(key, out _) || System.Text.RegularExpressions.Regex.IsMatch(key, InventoryPatternConstants.Slug)))
+                && (Guid.TryParse(key, out _) || System.Text.RegularExpressions.Regex.IsMatch(key, FormatPatternConstants.NameSlug)))
             .WithMessage("'{PropertyName}' must be a product's identifier or its slug.");
 
     /// <summary>Requires a display name of 1–80 characters.</summary>
@@ -42,30 +34,4 @@ public static class InventoryRuleExtensions
         rule
             .Must(ids => ids is not null && ids.Count <= 500 && !ids.Contains(Guid.Empty) && ids.Distinct().Count() == ids.Count)
             .WithMessage("'{PropertyName}' must list each identifier once (500 at most).");
-
-    /// <summary>Requires nothing, or an absolute https address of 2048 characters at most with a host and no user
-    /// information, so a link Wheelhouse renders never carries a credential or opens another scheme.</summary>
-    /// <param name="rule">The rule builder.</param>
-    /// <typeparam name="T">The validated type.</typeparam>
-    /// <returns>The rule builder for chaining.</returns>
-    public static IRuleBuilderOptions<T, string?> MustBeHttpsAddress<T>(this IRuleBuilder<T, string?> rule) =>
-        rule
-            .Must(value => string.IsNullOrWhiteSpace(value)
-                || (value.Trim().Length <= 2048
-                    && Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)
-                    && uri.Scheme == Uri.UriSchemeHttps
-                    && uri.Host.Length > 0
-                    && uri.UserInfo.Length == 0))
-            .WithMessage("'{PropertyName}' must be an https address, such as https://www.ovh.com/manager/.");
-
-    /// <summary>Requires text that matches one of the inventory patterns.</summary>
-    /// <param name="rule">The rule builder.</param>
-    /// <param name="pattern">One of the <see cref="InventoryPatternConstants"/>.</param>
-    /// <param name="shape">How the message names the expected shape.</param>
-    /// <typeparam name="T">The validated type.</typeparam>
-    /// <returns>The rule builder for chaining.</returns>
-    public static IRuleBuilderOptions<T, string> MustMatch<T>(this IRuleBuilder<T, string> rule, string pattern, string shape) =>
-        rule
-            .Must(value => value is not null && System.Text.RegularExpressions.Regex.IsMatch(value, pattern))
-            .WithMessage("'{PropertyName}' must be " + shape + ".");
 }

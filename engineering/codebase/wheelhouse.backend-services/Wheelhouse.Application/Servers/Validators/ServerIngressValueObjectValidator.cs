@@ -1,8 +1,7 @@
 using FluentValidation;
-using Wheelhouse.Application.InfraJobs;
 using Wheelhouse.Application.Inventory.Constants;
-using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Domain.Servers.Models;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Servers.Validators;
 
@@ -28,13 +27,13 @@ public sealed class ServerIngressValueObjectValidator : AbstractValidator<Server
             .WithMessage("'{PropertyName}' must contain {site}, such as {site}-{product}.{environment}.preview.example.")
             .When(x => x.Pattern is not null);
         RuleFor(x => x.Probe!)
-            .MustMatch(InventoryPatternConstants.Endpoint, "an address such as http://ingress:80")
+            .MustMatch(FormatPatternConstants.HttpEndpoint, "an address such as http://ingress:80")
             .When(x => x.Probe is not null);
         RuleFor(x => x.PrivateProbe!)
-            .MustMatch(InventoryPatternConstants.Endpoint, "an address such as http://ingress:80")
+            .MustMatch(FormatPatternConstants.HttpEndpoint, "an address such as http://ingress:80")
             .When(x => x.PrivateProbe is not null);
         RuleFor(x => x.PublicAddress!)
-            .MustMatch(InfraPatterns.PublicAddress, "an IPv4 address such as 203.0.113.10")
+            .MustMatch(FormatPatternConstants.Ipv4Address, "an IPv4 address such as 203.0.113.10")
             .When(x => x.PublicAddress is not null);
     }
 }

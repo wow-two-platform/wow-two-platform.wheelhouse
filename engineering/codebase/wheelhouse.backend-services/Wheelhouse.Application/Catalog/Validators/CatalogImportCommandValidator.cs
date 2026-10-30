@@ -1,6 +1,6 @@
 using FluentValidation;
 using Wheelhouse.Application.Catalog.Commands;
-using Wheelhouse.Application.Inventory.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Catalog.Validators;
 
@@ -14,6 +14,6 @@ public sealed class CatalogImportCommandValidator : AbstractValidator<CatalogImp
             .NotEmpty()
             .Must(slugs => slugs.Count <= 200)
             .WithMessage("'{PropertyName}' must name 1–200 entries.");
-        RuleForEach(x => x.Slugs).MustBeSlug();
+        RuleForEach(x => x.Slugs).MustBeNameSlug();
     }
 }

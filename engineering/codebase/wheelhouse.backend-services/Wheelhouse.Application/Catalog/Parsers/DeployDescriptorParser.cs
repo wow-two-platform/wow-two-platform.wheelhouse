@@ -1,7 +1,7 @@
 using Wheelhouse.Application.Catalog.Models;
-using Wheelhouse.Application.Inventory.Constants;
 using YamlDotNet.RepresentationModel;
 using WoW.Two.Sdk.Beta.Be.Foundation.Serialization.Yaml;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Catalog.Parsers;
 
@@ -27,7 +27,7 @@ public static class DeployDescriptorParser
         {
             var root = YamlReader.Mapping(YamlReader.Load(content, file), "the descriptor");
             var product = YamlReader.Matching(
-                YamlReader.Required(root, "product", "product"), "product", InventoryPatternConstants.Slug, "a lowercase slug");
+                YamlReader.Required(root, "product", "product"), "product", FormatPatternConstants.NameSlug, "a lowercase slug");
             var services = YamlReader.Mapping(YamlReader.Required(root, "services", "services"), "services");
             if (services.Children.Count == 0)
                 throw YamlReader.Refuse(services, "services", "must name at least one service");
@@ -38,7 +38,7 @@ public static class DeployDescriptorParser
             var perService = new SortedDictionary<string, SortedDictionary<string, string>>(StringComparer.Ordinal);
             foreach (var (key, value) in services.Children)
             {
-                var name = YamlReader.Matching(key, "services", InventoryPatternConstants.Slug, "keyed by lowercase slugs");
+                var name = YamlReader.Matching(key, "services", FormatPatternConstants.NameSlug, "keyed by lowercase slugs");
                 var field = "services." + name;
                 var service = value as YamlMappingNode;
                 var image = service is not null && YamlReader.Get(service, "image") is { } imageNode
@@ -50,7 +50,7 @@ public static class DeployDescriptorParser
                     var sites = new SortedDictionary<string, string>(StringComparer.Ordinal);
                     foreach (var (siteKey, siteValue) in YamlReader.Mapping(sitesNode, field + ".sites").Children)
                     {
-                        var site = YamlReader.Matching(siteKey, field + ".sites", InventoryPatternConstants.Slug, "keyed by lowercase slugs");
+                        var site = YamlReader.Matching(siteKey, field + ".sites", FormatPatternConstants.NameSlug, "keyed by lowercase slugs");
                         sites[site] = Exposure(Site(siteValue, field + ".sites." + site), field + ".sites." + site);
                     }
                     perService[name] = sites;
@@ -77,7 +77,7 @@ public static class DeployDescriptorParser
         var sites = new List<DeployDescriptorSite>();
         foreach (var (key, value) in YamlReader.Mapping(node, "sites").Children)
         {
-            var name = YamlReader.Matching(key, "sites", InventoryPatternConstants.Slug, "keyed by lowercase slugs");
+            var name = YamlReader.Matching(key, "sites", FormatPatternConstants.NameSlug, "keyed by lowercase slugs");
             var role = Site(value, "sites." + name);
             var primary = role is not null && YamlReader.Get(role, "primary") is { } flag
                 ? YamlReader.Matching(flag, "sites." + name + ".primary", "^(true|false)$", "true or false") == "true"
@@ -111,7 +111,7 @@ public static class DeployDescriptorParser
         return
         [
             .. YamlReader.Sequence(node, field + ".needs").Children
-                .Select(need => YamlReader.Matching(need, field + ".needs", InventoryPatternConstants.Slug, "lowercase words"))
+                .Select(need => YamlReader.Matching(need, field + ".needs", FormatPatternConstants.NameSlug, "lowercase words"))
                 .Distinct(StringComparer.Ordinal),
         ];
     }

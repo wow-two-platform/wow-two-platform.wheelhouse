@@ -1,10 +1,10 @@
 using System.Text.RegularExpressions;
 using Wheelhouse.Application.Catalog.Models;
-using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Application.Products;
 using Wheelhouse.Domain.Catalog.Enums;
 using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Products.Enums;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Catalog.Services;
 
@@ -42,7 +42,7 @@ public static class CatalogDrift
     /// <returns><c>true</c> when an import may give the product these repositories and their release sources.</returns>
     public static bool OwnsRepositories(CatalogEntryModel entry) =>
         entry.Deploy == CatalogDeploy.Wheelhouse && entry.Repositories.Count > 0
-        && entry.Repositories.All(repository => Regex.IsMatch(repository, InventoryPatternConstants.Repository));
+        && entry.Repositories.All(repository => Regex.IsMatch(repository, FormatPatternConstants.GitHubRepository));
 
     /// <summary>Whether the entry lists other repositories than the product has, or the same ones in another order.</summary>
     /// <param name="product">The stored product.</param>

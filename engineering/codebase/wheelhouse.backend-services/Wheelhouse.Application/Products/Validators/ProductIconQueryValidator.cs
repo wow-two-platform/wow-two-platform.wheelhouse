@@ -1,6 +1,6 @@
 using FluentValidation;
-using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Application.Products.Queries;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Products.Validators;
 
@@ -10,8 +10,8 @@ public sealed class ProductIconQueryValidator : AbstractValidator<ProductIconQue
     /// <summary>Configures the icon request rules.</summary>
     public ProductIconQueryValidator()
     {
-        RuleFor(x => x.Slug).MustBeSlug();
-        RuleFor(x => x.Icon.Service!).MustBeSlug().When(x => x.Icon.Service is not null);
+        RuleFor(x => x.Slug).MustBeNameSlug();
+        RuleFor(x => x.Icon.Service!).MustBeNameSlug().When(x => x.Icon.Service is not null);
         RuleFor(x => x.Icon.Theme).IsInEnum();
         RuleFor(x => x.Icon.Form).IsInEnum();
         RuleFor(x => x.Icon.Color).IsInEnum();

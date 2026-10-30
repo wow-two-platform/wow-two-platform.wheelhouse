@@ -1,5 +1,5 @@
 using FluentValidation;
-using Wheelhouse.Application.Inventory.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Deployments;
 
@@ -22,7 +22,7 @@ public sealed class DeploymentChangelogQueryValidator : AbstractValidator<Deploy
     /// <summary>Configures the rules.</summary>
     public DeploymentChangelogQueryValidator()
     {
-        RuleFor(x => x.Product).MustBeSlug();
+        RuleFor(x => x.Product).MustBeNameSlug();
         RuleFor(x => x.To).NotEmpty().Must(IsRelease).WithMessage("'To' must be a release tag such as v1.2.0, or a release set.");
         RuleFor(x => x.From!).Must(IsRelease).When(x => x.From is not null)
             .WithMessage("'From' must be a release tag such as v1.2.0, or a release set.");

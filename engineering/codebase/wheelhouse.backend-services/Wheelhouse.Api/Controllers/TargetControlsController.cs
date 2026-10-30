@@ -8,6 +8,7 @@ using Wheelhouse.Application.Deployments.Controls.Commands;
 using WoW.Two.Sdk.Beta.Be.Mediator;
 using WoW.Two.Sdk.Beta.Be.Web.Antiforgery;
 using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Api.Controllers;
 
@@ -18,7 +19,7 @@ namespace Wheelhouse.Api.Controllers;
 [Authorize(Policy = AuthConfigurationExtensions.OwnerSessionPolicy)]
 public sealed class TargetControlsController(ISender sender, IActorContext actor) : ControllerBase
 {
-    private const string Slug = Wheelhouse.Application.Inventory.Constants.InventoryPatternConstants.Slug;
+    private const string Slug = FormatPatternConstants.NameSlug;
 
     /// <summary>Queues a stop, start or restart of the release the target runs — one service, or the whole environment
     /// without one — or a reset of its database, as a job in its journal; its outcome reads like a deploy's. Prod needs

@@ -1,6 +1,6 @@
 using FluentValidation;
-using Wheelhouse.Application.InfraJobs;
 using Wheelhouse.Application.Tailnet.Commands;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Tailnet.Validators;
 
@@ -11,6 +11,6 @@ public sealed class TailnetPolicyApplyCommandValidator : AbstractValidator<Tailn
     public TailnetPolicyApplyCommandValidator()
     {
         RuleFor(x => x.Etag).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Digest).Matches(InfraPatterns.Digest).WithMessage("'Digest' must be the reviewed policy's SHA-256.");
+        RuleFor(x => x.Digest).Matches(FormatPatternConstants.Sha256Hex).WithMessage("'Digest' must be the reviewed policy's SHA-256.");
     }
 }

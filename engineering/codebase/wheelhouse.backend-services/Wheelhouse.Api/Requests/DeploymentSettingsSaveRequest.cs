@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Wheelhouse.Application.Deployments.Settings.Models;
 using Wheelhouse.Application.SecretsVault.Models;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Api.Requests;
 
@@ -11,7 +12,7 @@ namespace Wheelhouse.Api.Requests;
 /// target runs.</param>
 public sealed record DeploymentSettingsSaveRequest(
     [Required, MinLength(1), MaxLength(100)] IReadOnlyList<DeploymentSettingValueRequest> Values,
-    [RegularExpression(Wheelhouse.Application.Inventory.Constants.InventoryPatternConstants.Slug)] string? Release = null)
+    [RegularExpression(FormatPatternConstants.NameSlug)] string? Release = null)
 {
     /// <summary>Maps the request to the values the command takes.</summary>
     public IReadOnlyList<DeploySettingValue> ToValues() =>

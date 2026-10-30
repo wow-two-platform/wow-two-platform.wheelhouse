@@ -1,7 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Wheelhouse.Api.Requests;
-using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Application.Servers.Commands;
 using Wheelhouse.Application.Servers.Models;
 using Wheelhouse.Application.Servers.Queries;
@@ -9,6 +8,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator;
 using WoW.Two.Sdk.Beta.Be.Web.Antiforgery;
 using WoW.Two.Sdk.Beta.Be.Web.Contracts;
 using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Api.Controllers;
 
@@ -17,7 +17,7 @@ namespace Wheelhouse.Api.Controllers;
 [Route("api/servers")]
 public sealed class ServersController(ISender sender) : ControllerBase
 {
-    private const string Slug = InventoryPatternConstants.Slug;
+    private const string Slug = FormatPatternConstants.NameSlug;
 
     /// <summary>Gets every server without probing it.</summary>
     [HttpGet]

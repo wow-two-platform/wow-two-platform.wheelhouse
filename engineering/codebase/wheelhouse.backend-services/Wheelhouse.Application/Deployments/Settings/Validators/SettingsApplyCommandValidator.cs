@@ -1,6 +1,6 @@
 using FluentValidation;
 using Wheelhouse.Application.Deployments.Settings.Commands;
-using Wheelhouse.Application.Inventory.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Deployments.Settings.Validators;
 
@@ -10,7 +10,7 @@ public sealed class SettingsApplyCommandValidator : AbstractValidator<SettingsAp
     /// <summary>Configures the rules.</summary>
     public SettingsApplyCommandValidator(TimeProvider time)
     {
-        RuleFor(x => x.Target).MustBeSlug();
+        RuleFor(x => x.Target).MustBeNameSlug();
         RuleFor(x => x.Target).Must((command, target) => command.Confirm is null || command.Confirm == target)
             .WithMessage("Type the target ID to confirm.");
         RuleFor(x => x.At).Must(at => at is null || at <= time.GetUtcNow().AddDays(90))

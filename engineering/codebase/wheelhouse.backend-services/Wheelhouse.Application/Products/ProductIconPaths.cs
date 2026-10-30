@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
-using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Domain.Products.Enums;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Products;
 
@@ -102,7 +102,7 @@ public static partial class ProductIconPaths
 
     private static string Name(Enum value) => value.ToString().ToLowerInvariant();
 
-    [GeneratedRegex(InventoryPatternConstants.Slug)]
+    [GeneratedRegex(FormatPatternConstants.NameSlug)]
     private static partial Regex ServiceName();
 
     [GeneratedRegex(@"^product/brand/icons/(?:services/[a-z][a-z0-9-]{0,47}/)?(?:full|short)-(?:colored|monochrome)-(?:light|dark)\.(?:svg|png)$")]

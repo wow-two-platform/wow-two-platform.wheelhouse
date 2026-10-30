@@ -1,8 +1,8 @@
 using Wheelhouse.Application.Catalog.Models;
-using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Domain.Catalog.Enums;
 using YamlDotNet.RepresentationModel;
 using WoW.Two.Sdk.Beta.Be.Foundation.Serialization.Yaml;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Catalog.Parsers;
 
@@ -35,7 +35,7 @@ public static class CatalogParser
                 var field = $"workspaces[{index}]";
                 var node = YamlReader.Mapping(workspaceNodes.Children[index], field);
                 var slugNode = YamlReader.Required(node, "slug", field + ".slug");
-                var slug = YamlReader.Matching(slugNode, field + ".slug", InventoryPatternConstants.Slug, "a lowercase slug");
+                var slug = YamlReader.Matching(slugNode, field + ".slug", FormatPatternConstants.NameSlug, "a lowercase slug");
                 if (workspaces.Any(workspace => workspace.Slug == slug))
                     throw YamlReader.Refuse(slugNode, field + ".slug", $"repeats the workspace '{slug}'");
                 workspaces.Add(new CatalogWorkspaceModel
@@ -70,7 +70,7 @@ public static class CatalogParser
         var hub = YamlReader.Mapping(node, "hub");
         return new CatalogHubModel
         {
-            Slug = YamlReader.Matching(YamlReader.Required(hub, "slug", "hub.slug"), "hub.slug", InventoryPatternConstants.Slug, "a lowercase slug"),
+            Slug = YamlReader.Matching(YamlReader.Required(hub, "slug", "hub.slug"), "hub.slug", FormatPatternConstants.NameSlug, "a lowercase slug"),
             Name = YamlReader.Text(YamlReader.Required(hub, "name", "hub.name"), "hub.name"),
         };
     }
@@ -79,12 +79,12 @@ public static class CatalogParser
         YamlMappingNode node, string field, IReadOnlyList<CatalogWorkspaceModel> workspaces, IReadOnlyList<CatalogEntryModel> earlier)
     {
         var slugNode = YamlReader.Required(node, "slug", field + ".slug");
-        var slug = YamlReader.Matching(slugNode, field + ".slug", InventoryPatternConstants.Slug, "a lowercase slug");
+        var slug = YamlReader.Matching(slugNode, field + ".slug", FormatPatternConstants.NameSlug, "a lowercase slug");
         if (earlier.Any(entry => entry.Slug == slug))
             throw YamlReader.Refuse(slugNode, field + ".slug", $"repeats the entry '{slug}'");
 
         var workspaceNode = YamlReader.Required(node, "workspace", field + ".workspace");
-        var workspace = YamlReader.Matching(workspaceNode, field + ".workspace", InventoryPatternConstants.Slug, "a lowercase slug");
+        var workspace = YamlReader.Matching(workspaceNode, field + ".workspace", FormatPatternConstants.NameSlug, "a lowercase slug");
         if (workspaces.All(declared => declared.Slug != workspace))
             throw YamlReader.Refuse(workspaceNode, field + ".workspace", $"names '{YamlReader.Short(workspace)}', which workspaces does not declare");
 
@@ -110,7 +110,7 @@ public static class CatalogParser
             for (var index = 0; index < list.Children.Count; index++)
             {
                 var replaced = YamlReader.Matching(
-                    list.Children[index], $"{field}.replaces[{index}]", InventoryPatternConstants.Slug, "a lowercase slug");
+                    list.Children[index], $"{field}.replaces[{index}]", FormatPatternConstants.NameSlug, "a lowercase slug");
                 if (replaced == slug || replaces.Contains(replaced, StringComparer.Ordinal))
                     throw YamlReader.Refuse(list.Children[index], $"{field}.replaces[{index}]", "names the entry itself or repeats a slug");
                 replaces.Add(replaced);

@@ -1,6 +1,6 @@
 using FluentValidation;
 using Wheelhouse.Application.Deployments.Settings.Commands;
-using Wheelhouse.Application.Inventory.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Deployments.Settings.Validators;
 
@@ -8,5 +8,5 @@ namespace Wheelhouse.Application.Deployments.Settings.Validators;
 public sealed class SettingsApplyCancelCommandValidator : AbstractValidator<SettingsApplyCancelCommand>
 {
     /// <summary>Configures the rules.</summary>
-    public SettingsApplyCancelCommandValidator() => RuleFor(x => x.Target).MustBeSlug();
+    public SettingsApplyCancelCommandValidator() => RuleFor(x => x.Target).MustBeNameSlug();
 }

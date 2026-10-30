@@ -4,8 +4,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments.SelfDeploy.Constants;
-using Wheelhouse.Application.Inventory.Constants;
 using WoW.Two.Sdk.Beta.Be.Foundation.Configuration;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Infrastructure.Deployments;
 
@@ -47,5 +47,5 @@ public sealed class ConsoleIdentity(IConfiguration configuration, IHostEnvironme
     }
 
     private static bool IsName(string host) =>
-        Regex.IsMatch(host.ToLowerInvariant(), InventoryPatternConstants.SiteHost) && !IPAddress.TryParse(host, out _);
+        Regex.IsMatch(host.ToLowerInvariant(), FormatPatternConstants.DomainName) && !IPAddress.TryParse(host, out _);
 }

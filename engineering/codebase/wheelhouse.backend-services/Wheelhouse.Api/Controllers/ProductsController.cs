@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Wheelhouse.Api.Auth;
 using Wheelhouse.Api.Requests;
-using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Application.Products.Commands;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Products.Queries;
@@ -11,6 +10,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator;
 using WoW.Two.Sdk.Beta.Be.Web.Antiforgery;
 using WoW.Two.Sdk.Beta.Be.Web.Contracts;
 using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Api.Controllers;
 
@@ -20,7 +20,7 @@ namespace Wheelhouse.Api.Controllers;
 public sealed class ProductsController(ISender sender) : ControllerBase
 {
     // Route regex constraints ignore case; a validated parameter keeps slugs exact.
-    private const string Slug = InventoryPatternConstants.Slug;
+    private const string Slug = FormatPatternConstants.NameSlug;
 
     /// <summary>Gets every product.</summary>
     [HttpGet]

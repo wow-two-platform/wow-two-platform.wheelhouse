@@ -1,7 +1,7 @@
 using FluentValidation;
 using Wheelhouse.Application.Deployments.Settings.Services;
-using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Application.SecretsVault.Commands;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.SecretsVault.Validators;
 
@@ -11,7 +11,7 @@ public sealed class SecretRestoreCommandValidator : AbstractValidator<SecretRest
     /// <summary>Configures the rules.</summary>
     public SecretRestoreCommandValidator()
     {
-        RuleFor(x => x.Target).MustBeSlug();
+        RuleFor(x => x.Target).MustBeNameSlug();
         RuleFor(x => x.Key).Must(DeploymentSettingsService.IsKey).WithMessage("A key is a configuration path such as Section:Key.");
         RuleFor(x => x.Version).GreaterThan(0);
         RuleFor(x => x.Note!).Must(note => note.Length <= 300 && !note.Any(char.IsControl)).When(x => x.Note is not null)

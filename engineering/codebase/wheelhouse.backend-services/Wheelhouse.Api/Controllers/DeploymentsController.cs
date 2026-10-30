@@ -18,6 +18,7 @@ using Microsoft.AspNetCore.Mvc;
 using WoW.Two.Sdk.Beta.Be.Mediator;
 using WoW.Two.Sdk.Beta.Be.Web.Antiforgery;
 using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Api.Controllers;
 
@@ -27,9 +28,9 @@ namespace Wheelhouse.Api.Controllers;
 public sealed class DeploymentsController(ISender sender, IActorContext actor) : ControllerBase
 {
     // Route regex constraints ignore case; a validated parameter keeps catalog ids exact.
-    private const string Slug = Wheelhouse.Application.Inventory.Constants.InventoryPatternConstants.Slug;
+    private const string Slug = FormatPatternConstants.NameSlug;
     private const string Branch = "^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$";
-    private const string Repository = Wheelhouse.Application.Inventory.Constants.InventoryPatternConstants.Repository;
+    private const string Repository = FormatPatternConstants.GitHubRepository;
 
     /// <summary>Lists recent deployments with their last observed outcome.</summary>
     [HttpGet]

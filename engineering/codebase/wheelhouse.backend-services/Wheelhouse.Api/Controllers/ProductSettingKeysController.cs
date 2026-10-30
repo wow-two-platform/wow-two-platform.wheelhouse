@@ -10,6 +10,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator;
 using WoW.Two.Sdk.Beta.Be.Web.Antiforgery;
 using WoW.Two.Sdk.Beta.Be.Web.Contracts;
 using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Api.Controllers;
 
@@ -21,7 +22,7 @@ namespace Wheelhouse.Api.Controllers;
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class ProductSettingKeysController(ISender sender, IActorContext actor) : ControllerBase
 {
-    private const string Slug = Wheelhouse.Application.Inventory.Constants.InventoryPatternConstants.Slug;
+    private const string Slug = FormatPatternConstants.NameSlug;
 
     /// <summary>Adds a key, or changes one the owner added; a key that reads as a secret needs <c>confirmPlain</c> to be
     /// a plain setting.</summary>
@@ -29,7 +30,7 @@ public sealed class ProductSettingKeysController(ISender sender, IActorContext a
     [RequireActionHeader("settings")]
     [ProducesResponseType<ApiResponse<DeploySettingDto>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Set(
-        [RegularExpression(Slug)] string product, [RegularExpression(VaultRules.Key)] string key, ProductSettingKeyRequest request,
+        [RegularExpression(Slug)] string product, [RegularExpression(FormatPatternConstants.ConfigurationKey)] string key, ProductSettingKeyRequest request,
         CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new ProductSettingKeySetCommand(product, key, request.Secret, request.Type,
             request.Format, request.Choices, request.Required, request.Note, request.ConfirmPlain, actor.Actor), ct));
@@ -39,6 +40,6 @@ public sealed class ProductSettingKeysController(ISender sender, IActorContext a
     [RequireActionHeader("settings")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Remove(
-        [RegularExpression(Slug)] string product, [RegularExpression(VaultRules.Key)] string key, CancellationToken ct) =>
+        [RegularExpression(Slug)] string product, [RegularExpression(FormatPatternConstants.ConfigurationKey)] string key, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new ProductSettingKeyRemoveCommand(product, key), ct), _ => NoContent());
 }

@@ -1,7 +1,7 @@
 using FluentValidation;
 using Wheelhouse.Application.Deployments.Settings.Commands;
 using Wheelhouse.Application.Deployments.Settings.Services;
-using Wheelhouse.Application.Inventory.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Deployments.Settings.Validators;
 
@@ -13,8 +13,8 @@ public sealed class DeploymentSettingsSaveCommandValidator : AbstractValidator<D
     /// <summary>Configures the rules.</summary>
     public DeploymentSettingsSaveCommandValidator()
     {
-        RuleFor(x => x.Target).MustBeSlug();
-        RuleFor(x => x.Release!).MustBeSlug().When(x => x.Release is not null);
+        RuleFor(x => x.Target).MustBeNameSlug();
+        RuleFor(x => x.Release!).MustBeNameSlug().When(x => x.Release is not null);
         RuleFor(x => x.Values).NotEmpty().Must(values => values.Count <= 100)
             .WithMessage("Give between 1 and 100 values at once.");
         RuleFor(x => x.Values).Must(values => values.Select(value => value.Key).Distinct(StringComparer.Ordinal).Count() == values.Count)

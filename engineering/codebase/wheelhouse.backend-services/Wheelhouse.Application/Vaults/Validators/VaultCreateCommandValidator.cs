@@ -1,7 +1,7 @@
 using FluentValidation;
-using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Application.Vaults.Commands;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Vaults.Validators;
 
@@ -11,9 +11,9 @@ public sealed class VaultCreateCommandValidator : AbstractValidator<VaultCreateC
     /// <summary>Configures the vault rules.</summary>
     public VaultCreateCommandValidator()
     {
-        RuleFor(x => x.Slug).MustBeSlug();
+        RuleFor(x => x.Slug).MustBeNameSlug();
         RuleFor(x => x.Name).MustBeDisplayName();
-        RuleFor(x => x.Server).MustBeSlug();
-        RuleFor(x => x.Url).MustMatch(InventoryPatternConstants.Endpoint, "an address such as http://vault:8080");
+        RuleFor(x => x.Server).MustBeNameSlug();
+        RuleFor(x => x.Url).MustMatch(FormatPatternConstants.HttpEndpoint, "an address such as http://vault:8080");
     }
 }

@@ -1,6 +1,6 @@
 using FluentValidation;
 using Wheelhouse.Application.Deployments.History.Models;
-using Wheelhouse.Application.Inventory.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Deployments.History.Validators;
 
@@ -16,10 +16,10 @@ public sealed class DeploymentFilterValidator : AbstractValidator<DeploymentFilt
     {
         RuleFor(x => x.Workspaces).Must(items => items.Count <= MaxEntities)
             .WithMessage($"'workspace' may name {MaxEntities} workspaces at most.");
-        RuleForEach(x => x.Workspaces).MustBeSlug().OverridePropertyName("workspace");
+        RuleForEach(x => x.Workspaces).MustBeNameSlug().OverridePropertyName("workspace");
         RuleFor(x => x.Products).Must(items => items.Count <= MaxEntities)
             .WithMessage($"'product' may name {MaxEntities} products at most.");
-        RuleForEach(x => x.Products).MustBeSlug().OverridePropertyName("product");
+        RuleForEach(x => x.Products).MustBeNameSlug().OverridePropertyName("product");
         RuleFor(x => x.Services).Must(items => items.Count <= MaxEntities)
             .WithMessage($"'service' may name {MaxEntities} services at most.");
         RuleForEach(x => x.Services)
@@ -40,6 +40,6 @@ public sealed class DeploymentFilterValidator : AbstractValidator<DeploymentFilt
     {
         var parts = value?.Split('/') ?? [];
         return parts.Length == 2 && parts.All(part =>
-            System.Text.RegularExpressions.Regex.IsMatch(part, Inventory.Constants.InventoryPatternConstants.Slug));
+            System.Text.RegularExpressions.Regex.IsMatch(part, FormatPatternConstants.NameSlug));
     }
 }

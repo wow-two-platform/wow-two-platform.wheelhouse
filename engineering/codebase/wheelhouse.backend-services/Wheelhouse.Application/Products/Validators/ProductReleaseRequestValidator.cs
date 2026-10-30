@@ -1,7 +1,6 @@
 using FluentValidation;
-using Wheelhouse.Application.Inventory.Constants;
-using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Application.Products.Models;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Products.Validators;
 
@@ -12,11 +11,11 @@ public sealed class ProductReleaseRequestValidator : AbstractValidator<ProductRe
     public ProductReleaseRequestValidator()
     {
         RuleFor(x => x.Asset!)
-            .MustMatch(InventoryPatternConstants.Asset, "a release asset's file name")
+            .MustMatch(FormatPatternConstants.FileName, "a release asset's file name")
             .When(x => !string.IsNullOrEmpty(x.Asset));
 
         RuleFor(x => x.Workflow!)
-            .MustMatch(InventoryPatternConstants.Workflow, "a workflow file name ending in .yml or .yaml")
+            .MustMatch(FormatPatternConstants.WorkflowFileName, "a workflow file name ending in .yml or .yaml")
             .When(x => !string.IsNullOrEmpty(x.Workflow));
 
         RuleFor(x => x.Images!)
@@ -27,8 +26,8 @@ public sealed class ProductReleaseRequestValidator : AbstractValidator<ProductRe
         RuleForEach(x => x.Images)
             .ChildRules(image =>
             {
-                image.RuleFor(x => x.Service).MustBeSlug();
-                image.RuleFor(x => x.Image).MustMatch(InventoryPatternConstants.Image, "an image repository such as ghcr.io/owner/product/api");
+                image.RuleFor(x => x.Service).MustBeNameSlug();
+                image.RuleFor(x => x.Image).MustMatch(FormatPatternConstants.ImageRepository, "an image repository such as ghcr.io/owner/product/api");
             });
     }
 }

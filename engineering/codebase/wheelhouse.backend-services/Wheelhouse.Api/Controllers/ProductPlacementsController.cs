@@ -2,13 +2,13 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Wheelhouse.Api.Requests;
 using Wheelhouse.Application.Abstractions;
-using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Application.Products.Commands;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Products.Queries;
 using WoW.Two.Sdk.Beta.Be.Mediator;
 using WoW.Two.Sdk.Beta.Be.Web.Antiforgery;
 using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Api.Controllers;
 
@@ -18,7 +18,7 @@ namespace Wheelhouse.Api.Controllers;
 [Route("api/products/{slug}/placements")]
 public sealed class ProductPlacementsController(ISender sender, IActorContext actor) : ControllerBase
 {
-    private const string Slug = InventoryPatternConstants.Slug;
+    private const string Slug = FormatPatternConstants.NameSlug;
 
     /// <summary>Gets the product's placements, newest first, with their live steps.</summary>
     [HttpGet]

@@ -1,7 +1,7 @@
 using FluentValidation;
 using Wheelhouse.Application.InfraJobs;
-using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Application.Products.Commands;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Products.Validators;
 
@@ -11,14 +11,14 @@ public sealed class ProductPlaceCommandValidator : AbstractValidator<ProductPlac
     /// <summary>Configures the rules.</summary>
     public ProductPlaceCommandValidator()
     {
-        RuleFor(x => x.Product).MustBeSlug();
-        RuleFor(x => x.Server).MustBeSlug();
+        RuleFor(x => x.Product).MustBeNameSlug();
+        RuleFor(x => x.Server).MustBeNameSlug();
         RuleFor(x => x.Sites).NotNull().Must(sites => sites.Count <= 10).WithMessage("'Sites' may hold 10 sites at most.");
         RuleFor(x => x).Must(x => x.Database || x.Sites.Count > 0).OverridePropertyName(nameof(ProductPlaceCommand.Sites))
             .WithMessage("Choose databases, sites or both.");
         RuleForEach(x => x.Sites).ChildRules(site =>
         {
-            site.RuleFor(x => x.Site).MustBeSlug();
+            site.RuleFor(x => x.Site).MustBeNameSlug();
             site.RuleFor(x => x.Node).Matches(InfraPatterns.Node)
                 .WithMessage("'Node' must be a lowercase node name, such as ocharo-desk.")
                 .Must(node => node is not "postgres" and not "ingress").WithMessage("'Node' names a platform service.");

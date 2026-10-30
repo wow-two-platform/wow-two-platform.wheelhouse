@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Api.Requests;
 
@@ -6,4 +7,4 @@ namespace Wheelhouse.Api.Requests;
 /// primary one when omitted); accepts no branch, workflow or input of the caller's choosing.</summary>
 public sealed record DeploymentBuildRequest(
     [Required, RegularExpression("^[a-f0-9]{40}$")] string Commit,
-    [RegularExpression(Wheelhouse.Application.Inventory.Constants.InventoryPatternConstants.Repository)] string? Repository = null);
+    [RegularExpression(FormatPatternConstants.GitHubRepository)] string? Repository = null);

@@ -3,7 +3,6 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Catalog.Commands;
 using Wheelhouse.Application.Catalog.Models;
 using Wheelhouse.Application.Catalog.Services;
-using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Application.Products;
 using Wheelhouse.Domain.Catalog.Enums;
 using Wheelhouse.Domain.Products.Entities;
@@ -12,6 +11,7 @@ using Wheelhouse.Domain.Workspaces.Entities;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Catalog.CommandHandlers;
 
@@ -214,7 +214,7 @@ public sealed class CatalogImportCommandHandler(
             return $"Wheelhouse does not deploy it (deploy: {entry.Deploy.ToString().ToLowerInvariant()}), so no product was created.";
         if (entry.Repositories.Count == 0)
             return "It has no GitHub repository yet, so no product was created.";
-        if (!Regex.IsMatch(entry.Repositories[0], InventoryPatternConstants.Repository))
+        if (!Regex.IsMatch(entry.Repositories[0], FormatPatternConstants.GitHubRepository))
             return "Its repository is not an owner/name the inventory accepts, so no product was created.";
         return null;
     }

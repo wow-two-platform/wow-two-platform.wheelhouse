@@ -5,7 +5,6 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using ModelContextProtocol.Server;
 using Wheelhouse.Application.Deployments;
-using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Application.Operations;
 using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Products.Queries;
@@ -17,6 +16,7 @@ using Wheelhouse.Persistence;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Api.Mcp;
 
@@ -124,6 +124,6 @@ public sealed partial class WheelhouseReadTools(ISender sender, WheelhouseDbCont
             AppErrorFactory.Validation("Target must be an existing lowercase target slug, at most 48 characters.").Throw();
     }
 
-    [GeneratedRegex(InventoryPatternConstants.Slug + "\\z")]
+    [GeneratedRegex(FormatPatternConstants.NameSlug + "\\z")]
     private static partial Regex TargetSlug();
 }

@@ -1,9 +1,9 @@
 using System.Text.RegularExpressions;
 using Wheelhouse.Application.Catalog.Models;
 using Wheelhouse.Application.Catalog.Parsers;
-using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Domain.Products.Models;
 using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Catalog.Services;
 
@@ -90,7 +90,7 @@ public sealed class CatalogReleaseService(IGitHubRepositoryReader files)
                 Service = service.Service, Image = service.Image ?? CatalogConstants.Image(repository, service.Service),
             })
             .ToList();
-        if (images.FirstOrDefault(image => !Regex.IsMatch(image.Image, InventoryPatternConstants.Image)) is { } invalid)
+        if (images.FirstOrDefault(image => !Regex.IsMatch(image.Image, FormatPatternConstants.ImageRepository)) is { } invalid)
             return Imageless(product, $"deploy.yml in {where} gives service '{invalid.Service}' an image Wheelhouse cannot use{Outcome(role, "it is fixed")}");
 
         var note = descriptor.Product == product

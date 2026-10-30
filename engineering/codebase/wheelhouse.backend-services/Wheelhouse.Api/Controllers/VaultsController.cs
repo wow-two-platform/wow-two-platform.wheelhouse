@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using Wheelhouse.Application.Inventory.Constants;
 using Wheelhouse.Api.Requests;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Vaults.Commands;
@@ -13,6 +12,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator;
 using WoW.Two.Sdk.Beta.Be.Web.Antiforgery;
 using WoW.Two.Sdk.Beta.Be.Web.Contracts;
 using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Api.Controllers;
 
@@ -29,25 +29,25 @@ public sealed class VaultsController(ISender sender, IActorContext actor) : Cont
 
     /// <summary>Lists a vault's namespaces.</summary>
     [HttpGet("{vault}/namespaces")]
-    public async Task<IActionResult> Namespaces([RegularExpression(InventoryPatternConstants.Slug)] string vault, CancellationToken ct) =>
+    public async Task<IActionResult> Namespaces([RegularExpression(FormatPatternConstants.NameSlug)] string vault, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new VaultReadQuery(VaultResource.Namespaces, vault), ct));
 
     /// <summary>Summarizes which secrets and product tokens are due for rotation; metadata only.</summary>
     [HttpGet("{vault}/hygiene")]
-    public async Task<IActionResult> Hygiene([RegularExpression(InventoryPatternConstants.Slug)] string vault, CancellationToken ct) =>
+    public async Task<IActionResult> Hygiene([RegularExpression(FormatPatternConstants.NameSlug)] string vault, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new VaultHygieneQuery(vault), ct));
 
     /// <summary>Creates a namespace.</summary>
     [HttpPost("{vault}/namespaces")]
     [RequireActionHeader("vault")]
     public Task<IActionResult> CreateNamespace(
-        [RegularExpression(InventoryPatternConstants.Slug)] string vault, VaultNamespaceCreateRequest request, CancellationToken ct) =>
+        [RegularExpression(FormatPatternConstants.NameSlug)] string vault, VaultNamespaceCreateRequest request, CancellationToken ct) =>
         Change(vault, new NamespaceCreateChange { Namespace = request.Slug, Name = request.Name }, ct);
 
     /// <summary>Lists a namespace's secret metadata; values are never included.</summary>
     [HttpGet("{vault}/secrets")]
     public async Task<IActionResult> Secrets(
-        [RegularExpression(InventoryPatternConstants.Slug)] string vault,
+        [RegularExpression(FormatPatternConstants.NameSlug)] string vault,
         [FromQuery, Required, RegularExpression(VaultRules.Namespace)] string ns, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new VaultReadQuery(VaultResource.Secrets, vault, ns), ct));
 
@@ -55,29 +55,29 @@ public sealed class VaultsController(ISender sender, IActorContext actor) : Cont
     [HttpPut("{vault}/secrets/{ns}/{key}")]
     [RequireActionHeader("vault")]
     public Task<IActionResult> SetSecret(
-        [RegularExpression(InventoryPatternConstants.Slug)] string vault, [RegularExpression(VaultRules.Namespace)] string ns,
-        [RegularExpression(VaultRules.Key)] string key, VaultSecretSetRequest request, CancellationToken ct) =>
+        [RegularExpression(FormatPatternConstants.NameSlug)] string vault, [RegularExpression(VaultRules.Namespace)] string ns,
+        [RegularExpression(FormatPatternConstants.ConfigurationKey)] string key, VaultSecretSetRequest request, CancellationToken ct) =>
         Change(vault, new SecretSetChange { Namespace = ns, Key = key, Value = request.Value, Description = request.Description }, ct);
 
     /// <summary>Disables or re-enables a secret.</summary>
     [HttpPost("{vault}/secrets/{ns}/{key}/state")]
     [RequireActionHeader("vault")]
     public Task<IActionResult> SetSecretState(
-        [RegularExpression(InventoryPatternConstants.Slug)] string vault, [RegularExpression(VaultRules.Namespace)] string ns,
-        [RegularExpression(VaultRules.Key)] string key, VaultSecretStateRequest request, CancellationToken ct) =>
+        [RegularExpression(FormatPatternConstants.NameSlug)] string vault, [RegularExpression(VaultRules.Namespace)] string ns,
+        [RegularExpression(FormatPatternConstants.ConfigurationKey)] string key, VaultSecretStateRequest request, CancellationToken ct) =>
         Change(vault, new SecretStateChange { Namespace = ns, Key = key, Disabled = request.Disabled!.Value }, ct);
 
     /// <summary>Lists a namespace's product tokens.</summary>
     [HttpGet("{vault}/namespaces/{ns}/tokens")]
     public async Task<IActionResult> Tokens(
-        [RegularExpression(InventoryPatternConstants.Slug)] string vault, [RegularExpression(VaultRules.Namespace)] string ns, CancellationToken ct) =>
+        [RegularExpression(FormatPatternConstants.NameSlug)] string vault, [RegularExpression(VaultRules.Namespace)] string ns, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new VaultReadQuery(VaultResource.Tokens, vault, ns), ct));
 
     /// <summary>Mints a product token; the response is the only time the token is shown.</summary>
     [HttpPost("{vault}/namespaces/{ns}/tokens")]
     [RequireActionHeader("vault")]
     public Task<IActionResult> MintToken(
-        [RegularExpression(InventoryPatternConstants.Slug)] string vault, [RegularExpression(VaultRules.Namespace)] string ns,
+        [RegularExpression(FormatPatternConstants.NameSlug)] string vault, [RegularExpression(VaultRules.Namespace)] string ns,
         VaultTokenMintRequest request, CancellationToken ct) =>
         Change(vault, new TokenMintChange { Namespace = ns, Name = request.Name }, ct);
 
@@ -85,7 +85,7 @@ public sealed class VaultsController(ISender sender, IActorContext actor) : Cont
     [HttpPost("{vault}/namespaces/{ns}/tokens/{tokenId:guid}/revoke")]
     [RequireActionHeader("vault")]
     public Task<IActionResult> RevokeToken(
-        [RegularExpression(InventoryPatternConstants.Slug)] string vault, [RegularExpression(VaultRules.Namespace)] string ns,
+        [RegularExpression(FormatPatternConstants.NameSlug)] string vault, [RegularExpression(VaultRules.Namespace)] string ns,
         Guid tokenId, CancellationToken ct) =>
         Change(vault, new TokenRevokeChange { Namespace = ns, TokenId = tokenId }, ct);
 
@@ -110,7 +110,7 @@ public sealed class VaultsController(ISender sender, IActorContext actor) : Cont
     [RequireActionHeader("vault")]
     [ProducesResponseType<ApiResponse<VaultDto>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Update(
-        [RegularExpression(InventoryPatternConstants.Slug)] string vault, UpdateVaultApiRequest request, CancellationToken ct) =>
+        [RegularExpression(FormatPatternConstants.NameSlug)] string vault, UpdateVaultApiRequest request, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new VaultUpdateCommand
         {
             Slug = vault, Name = request.Name, Server = request.Server, Url = request.Url,
@@ -120,7 +120,7 @@ public sealed class VaultsController(ISender sender, IActorContext actor) : Cont
     [HttpDelete("{vault}")]
     [RequireActionHeader("vault")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> Delete([RegularExpression(InventoryPatternConstants.Slug)] string vault, CancellationToken ct) =>
+    public async Task<IActionResult> Delete([RegularExpression(FormatPatternConstants.NameSlug)] string vault, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new VaultDeleteCommand { Slug = vault }, ct), _ => NoContent());
 
     private async Task<IActionResult> Change(string vault, VaultChange change, CancellationToken ct) =>

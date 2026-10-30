@@ -1,6 +1,7 @@
 using FluentValidation;
 using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Application.Products.Commands;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Products.Validators;
 
@@ -11,7 +12,7 @@ public sealed class ServiceStatusUpdateCommandValidator : AbstractValidator<Serv
     public ServiceStatusUpdateCommandValidator()
     {
         RuleFor(x => x.Product).MustBeProductKey();
-        RuleFor(x => x.Service).MustBeSlug();
+        RuleFor(x => x.Service).MustBeNameSlug();
         RuleFor(x => x.Status).IsInEnum();
     }
 }

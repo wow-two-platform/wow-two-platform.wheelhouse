@@ -1,7 +1,6 @@
 using FluentValidation;
-using Wheelhouse.Application.Inventory.Constants;
-using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Application.Products.Queries;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Products.Validators;
 
@@ -11,8 +10,8 @@ public sealed class ProductReleaseSourceQueryValidator : AbstractValidator<Produ
     /// <summary>Configures the release source read rules.</summary>
     public ProductReleaseSourceQueryValidator()
     {
-        RuleFor(x => x.Slug).MustBeSlug();
-        RuleFor(x => x.Repository).MustMatch(InventoryPatternConstants.Repository, "a GitHub repository as owner/name");
-        RuleFor(x => x.Branch).MustMatch(InventoryPatternConstants.Branch, "a branch name");
+        RuleFor(x => x.Slug).MustBeNameSlug();
+        RuleFor(x => x.Repository).MustMatch(FormatPatternConstants.GitHubRepository, "a GitHub repository as owner/name");
+        RuleFor(x => x.Branch).MustMatch(FormatPatternConstants.GitBranch, "a branch name");
     }
 }

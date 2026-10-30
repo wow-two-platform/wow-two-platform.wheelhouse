@@ -13,6 +13,7 @@ using WoW.Two.Sdk.Beta.Be.Mediator;
 using WoW.Two.Sdk.Beta.Be.Web.Antiforgery;
 using WoW.Two.Sdk.Beta.Be.Web.Contracts;
 using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Api.Controllers;
 
@@ -24,7 +25,7 @@ namespace Wheelhouse.Api.Controllers;
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class TargetSettingsController(ISender sender, IActorContext actor) : ControllerBase
 {
-    private const string Slug = Wheelhouse.Application.Inventory.Constants.InventoryPatternConstants.Slug;
+    private const string Slug = FormatPatternConstants.NameSlug;
 
     /// <summary>Applies the environment's edited settings and secrets: now, as a deploy of the release the target runs
     /// (only services whose settings changed restart), or at <c>at</c>, replacing an apply already scheduled.</summary>
@@ -46,7 +47,7 @@ public sealed class TargetSettingsController(ISender sender, IActorContext actor
     [HttpGet("secrets/{key}/versions")]
     [ProducesResponseType<ApiResponse<SecretHistoryDto>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Versions(
-        [RegularExpression(Slug)] string target, [RegularExpression(VaultRules.Key)] string key, CancellationToken ct) =>
+        [RegularExpression(Slug)] string target, [RegularExpression(FormatPatternConstants.ConfigurationKey)] string key, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new SecretHistoryQuery(target, key), ct));
 
     /// <summary>Restores an earlier version of a secret as its newest version.</summary>
@@ -54,7 +55,7 @@ public sealed class TargetSettingsController(ISender sender, IActorContext actor
     [RequireActionHeader("settings")]
     [ProducesResponseType<ApiResponse<SecretWritten>>(StatusCodes.Status200OK)]
     public async Task<IActionResult> Restore(
-        [RegularExpression(Slug)] string target, [RegularExpression(VaultRules.Key)] string key, SecretRestoreRequest request,
+        [RegularExpression(Slug)] string target, [RegularExpression(FormatPatternConstants.ConfigurationKey)] string key, SecretRestoreRequest request,
         CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new SecretRestoreCommand(target, key, request.Version, request.Note, actor.Actor), ct));
 
@@ -63,7 +64,7 @@ public sealed class TargetSettingsController(ISender sender, IActorContext actor
     [RequireActionHeader("settings")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> Expiry(
-        [RegularExpression(Slug)] string target, [RegularExpression(VaultRules.Key)] string key, SecretExpiryRequest request,
+        [RegularExpression(Slug)] string target, [RegularExpression(FormatPatternConstants.ConfigurationKey)] string key, SecretExpiryRequest request,
         CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new SecretExpiryCommand(target, key, request.ExpiresAt), ct), _ => NoContent());
 }

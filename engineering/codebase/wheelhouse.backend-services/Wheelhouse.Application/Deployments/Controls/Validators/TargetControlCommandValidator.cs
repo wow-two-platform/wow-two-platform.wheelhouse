@@ -1,8 +1,8 @@
 using FluentValidation;
 using Wheelhouse.Application.Deployments.Controls.Commands;
 using Wheelhouse.Application.Deployments.Freezes.Validators;
-using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Domain.Deployments.Enums;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Deployments.Controls.Validators;
 
@@ -13,9 +13,9 @@ public sealed class TargetControlCommandValidator : AbstractValidator<TargetCont
     /// <summary>Configures the rules.</summary>
     public TargetControlCommandValidator()
     {
-        RuleFor(x => x.Target).MustBeSlug();
+        RuleFor(x => x.Target).MustBeNameSlug();
         RuleFor(x => x.Operation).IsInEnum();
-        RuleFor(x => x.Service!).MustBeSlug().When(x => x.Service is not null);
+        RuleFor(x => x.Service!).MustBeNameSlug().When(x => x.Service is not null);
         RuleFor(x => x.Service).NotNull().When(x => x.Operation == ControlOperation.Restart)
             .WithMessage("Restart one service at a time.");
         RuleFor(x => x.Service).Null().When(x => x.Operation == ControlOperation.Reset)

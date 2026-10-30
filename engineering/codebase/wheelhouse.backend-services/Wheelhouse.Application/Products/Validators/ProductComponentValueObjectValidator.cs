@@ -1,7 +1,6 @@
 using FluentValidation;
-using Wheelhouse.Application.Inventory.Constants;
-using Wheelhouse.Application.Inventory.Extensions;
 using Wheelhouse.Domain.Products.Models;
+using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Application.Products.Validators;
 
@@ -11,7 +10,7 @@ public sealed class ProductComponentValueObjectValidator : AbstractValidator<Pro
     /// <summary>Configures the further repository rules.</summary>
     public ProductComponentValueObjectValidator()
     {
-        RuleFor(x => x.Repository).MustMatch(InventoryPatternConstants.Repository, "a GitHub repository as owner/name");
+        RuleFor(x => x.Repository).MustMatch(FormatPatternConstants.GitHubRepository, "a GitHub repository as owner/name");
         RuleFor(x => x.Release!).SetValidator(new ProductReleaseValueObjectValidator()).When(x => x.Release is not null);
     }
 }
