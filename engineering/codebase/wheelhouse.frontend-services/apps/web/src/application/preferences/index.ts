@@ -1,4 +1,5 @@
-import { ref, watch, type Ref } from "vue";
+import { computed, type Ref } from "vue";
+import { createPersistentRef, localStorageStorageBroker } from "@wow-two-beta/fe/foundation/storage";
 import { DeploymentEnvironment } from "@/domain/targets";
 
 /** The `localStorage` keys the console's own view choices live under, beside `wheelhouse.theme`. */
@@ -13,65 +14,52 @@ export const PreferenceKeys = {
   dismissedSelfNotices: "wheelhouse.self-deploy-dismissed",
 } as const;
 
-/** Reads a remembered value; storage that is blocked or full reads as nothing remembered. @internal */
-function load(key: string): string | null {
-  try {
-    return globalThis.localStorage?.getItem(key) ?? null;
-  } catch {
-    return null;
-  }
-}
+/** How many dismissed self-rollout notices are remembered, newest kept. @internal */
+const MaxDismissedSelfNotices = 20;
 
-/** Remembers a value; storage that is blocked or full keeps it for this visit only. @internal */
-function save(key: string, value: string): void {
-  try {
-    globalThis.localStorage?.setItem(key, value);
-  } catch {
-    /* The choice still holds until the page reloads. */
-  }
-}
-
-/** One remembered view choice, shared by every component that reads it. @internal */
-function preference<T>(key: string, read: (raw: string | null) => T, write: (value: T) => string): Ref<T> {
-  const value = ref(read(load(key))) as Ref<T>;
-  watch(value, (next) => save(key, write(next)));
-  return value;
-}
-
-const showInactive = preference(
-  PreferenceKeys.showInactive,
-  (raw) => raw === "true",
-  (value) => String(value),
-);
-const sidebarCollapsed = preference(
-  PreferenceKeys.sidebarCollapsed,
-  (raw) => raw === "true",
-  (value) => String(value),
-);
-const environment = preference<DeploymentEnvironment | null>(
-  PreferenceKeys.environment,
-  (raw) => ((Object.values(DeploymentEnvironment) as string[]).includes(raw ?? "") ? (raw as DeploymentEnvironment) : null),
-  (value) => value ?? "",
-);
-
-const collapsedGroups = preference<string[]>(
-  PreferenceKeys.collapsedGroups,
-  (raw) => {
+/**
+ * Re-encodes, once, a choice the console stored as a raw string before v0.10 (`dev`, `rows`, an empty environment):
+ * the SDK broker reads JSON only, so the raw form would read as nothing remembered. A key already holding JSON —
+ * `true`, a list, the last product — is left alone, so this runs on every load and changes nothing after the first.
+ * @internal
+ */
+function adoptRawPreferences(): void {
+  for (const key of Object.values(PreferenceKeys)) {
+    let raw: string | null;
     try {
-      const value: unknown = JSON.parse(raw ?? "[]");
-      return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+      raw = typeof window === "undefined" ? null : window.localStorage.getItem(key);
     } catch {
-      return [];
+      return;
     }
-  },
-  (value) => JSON.stringify(value),
-);
+    if (raw === null) continue;
+    try {
+      JSON.parse(raw);
+    } catch {
+      if (raw === "") localStorageStorageBroker.remove(key);
+      else localStorageStorageBroker.write(key, raw);
+    }
+  }
+}
 
-const showAllAttempts = preference(
-  PreferenceKeys.showAllAttempts,
-  (raw) => raw === "true",
-  (value) => String(value),
-);
+adoptRawPreferences();
+
+/** Accepts a stored boolean. @internal */
+const decodeBoolean = (stored: unknown): boolean | undefined => (typeof stored === "boolean" ? stored : undefined);
+
+/** Accepts a stored list, keeping its strings. @internal */
+const decodeStrings = (stored: unknown): string[] | undefined =>
+  Array.isArray(stored) ? stored.filter((item): item is string => typeof item === "string") : undefined;
+
+const showInactive = createPersistentRef(PreferenceKeys.showInactive, false, { decode: decodeBoolean });
+const sidebarCollapsed = createPersistentRef(PreferenceKeys.sidebarCollapsed, false, { decode: decodeBoolean });
+const showAllAttempts = createPersistentRef(PreferenceKeys.showAllAttempts, false, { decode: decodeBoolean });
+
+const environment = createPersistentRef<DeploymentEnvironment | null>(PreferenceKeys.environment, null, {
+  decode: (stored) =>
+    (Object.values(DeploymentEnvironment) as unknown[]).includes(stored) ? (stored as DeploymentEnvironment) : undefined,
+});
+
+const collapsedGroups = createPersistentRef<string[]>(PreferenceKeys.collapsedGroups, [], { decode: decodeStrings });
 
 /**
  * Whether the deployment views show every attempt — the ones a later deploy replaced that day and the deploys that
@@ -120,11 +108,9 @@ export function useGroupExpansion() {
 export const ProductsView = { Cards: "cards", Rows: "rows" } as const;
 export type ProductsView = (typeof ProductsView)[keyof typeof ProductsView];
 
-const productsView = preference<ProductsView>(
-  PreferenceKeys.productsView,
-  (raw) => (raw === ProductsView.Rows ? ProductsView.Rows : ProductsView.Cards),
-  (value) => value,
-);
+const productsView = createPersistentRef<ProductsView>(PreferenceKeys.productsView, ProductsView.Cards, {
+  decode: (stored) => (stored === ProductsView.Rows || stored === ProductsView.Cards ? stored : undefined),
+});
 
 /** The Products page's Cards or Rows choice, remembered across visits. */
 export function useProductsView(): Ref<ProductsView> {
@@ -137,38 +123,28 @@ export interface LastProduct {
   readonly tab: string | null;
 }
 
-const lastProduct = preference<LastProduct | null>(
-  PreferenceKeys.lastProduct,
-  (raw) => {
-    try {
-      const value: unknown = JSON.parse(raw ?? "null");
-      if (!value || typeof value !== "object") return null;
-      const { slug, tab } = value as Record<string, unknown>;
-      return typeof slug === "string" && slug ? { slug, tab: typeof tab === "string" && tab ? tab : null } : null;
-    } catch {
-      return null;
-    }
+const lastProduct = createPersistentRef<LastProduct | null>(PreferenceKeys.lastProduct, null, {
+  decode: (stored) => {
+    if (!stored || typeof stored !== "object") return undefined;
+    const { slug, tab } = stored as Record<string, unknown>;
+    return typeof slug === "string" && slug ? { slug, tab: typeof tab === "string" && tab ? tab : null } : undefined;
   },
-  (value) => JSON.stringify(value),
-);
+});
 
 /** The product page last opened; null before any, or after it was forgotten. */
 export function useLastProduct(): Ref<LastProduct | null> {
   return lastProduct;
 }
 
-const dismissedSelfNotices = preference<string[]>(
-  PreferenceKeys.dismissedSelfNotices,
-  (raw) => {
-    try {
-      const value: unknown = JSON.parse(raw ?? "[]");
-      return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").slice(-20) : [];
-    } catch {
-      return [];
-    }
+const storedSelfNotices = createPersistentRef<string[]>(PreferenceKeys.dismissedSelfNotices, [], {
+  decode: (stored) => decodeStrings(stored)?.slice(-MaxDismissedSelfNotices),
+});
+const dismissedSelfNotices = computed<string[]>({
+  get: () => storedSelfNotices.value,
+  set: (value) => {
+    storedSelfNotices.value = value.slice(-MaxDismissedSelfNotices);
   },
-  (value) => JSON.stringify(value.slice(-20)),
-);
+});
 
 /** The self-rollouts whose notice the owner dismissed, by deployment id; the twenty newest are kept. */
 export function useDismissedSelfNotices(): Ref<string[]> {

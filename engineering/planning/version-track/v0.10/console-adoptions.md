@@ -16,3 +16,7 @@ Transient: deleted when Iteration 3 closes.
 - Token paging uses the be sdk's `TokenPageDto` / `TokenPageApiRequest`; no SDK change expected
 - Add the shared-ref hook to `wow-two-sdk-beta.fe`, release it, re-pin `@wow-two-beta/fe`, then move the preferences;
   read the old raw values once so no owner preference is lost
+  - fe `0.0.35` `createPersistentRef(key, initial, { decode })`: one module-scope ref per choice, a decoder each, tab
+    sync over `localStorage`
+  - `adoptRawPreferences` re-encodes a non-JSON value (`dev`, `rows`) as JSON at load and drops an empty one; JSON
+    values (`true`, lists, the last product) stay as they were. Removable once the owner's browsers have loaded v0.10
