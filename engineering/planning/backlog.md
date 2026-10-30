@@ -238,20 +238,11 @@ the owner, top to bottom; rows marked *decision* wait on one of them.
 | Decide the platform theme | decision | Wheelhouse's stronger glass values; `AccountMenu` as a bottom sheet on phones |
 | Decide how the log viewer follows the tail | decision | Always jump to the newest line, or follow only at the bottom with pause |
 | Decide which other apps adopt the extracted blocks | decision | e.g. TranscriptForge for the process runner, decoder and MCP guard; each adopts in its own backlog |
-| Extract the per-environment session cookie name → identity sdk | engineering | `SessionCookies.cs`: dev and prod on one host name; SDK `CookieAuthOptions.CookieName` takes a plain name |
-| Extract the commit-keyed GitHub reader cache → be sdk | engineering | `GitHubRepositoryReader.cs`; then remove the `IRepositoryFileSource` and `IProductManifestSource` ports, which remap the SDK's `FileRead` |
-| Adopt SDK token paging in the audit list | engineering | Replaces the audit list's `before`, a wire change with the Activity page |
-| Extract slug, `owner/repo`, image, hostname, SSH and IPv4 rules → SDK validation vocabulary | engineering | `InventoryPatternConstants.cs`, `InventoryRuleExtensions.cs` (with `MustBeHttpsAddress`), `InfraPatterns.cs`, `VaultRules.cs`; the backend half of the shared vocabulary; the slug regex differs from `Guards.NotSlug` |
-| Extract the root-key broker, canary and HMAC fingerprints → be sdk | engineering | `FileVaultKeySource.cs` (stamp, owner-only mode), `SecretsVaultCrypto.cs`, `SecretsVaultKeyCache.cs`, `RootKeyFingerprint.cs`; the SDK `SealService` reads its env-only broker once and never reseals; `AddEnvelopeCryptography` registers it unused |
-| Move persisted preferences onto the fe sdk storage broker | engineering | `application/preferences`: the broker JSON-encodes, so raw stored values read once as null; shared refs with decoders need an SDK hook |
 | Extract typed setting values and the secret-name heuristic → be sdk | engineering | *decision*: `SettingTypes.cs`; the runner and pipelines repeat the same rules |
 | Adopt the fe sdk glass, `AccountMenu` and menu link rows | engineering | *decision*: removes `--wh-glass-*`, `ProfileMenu.vue` and `ProfileSheet.vue` |
 | Extract the audited-command trail → SDK | engineering | *decision*: marker, interceptor, EF chain store with lock, paging and verify; the SDK has the primitives only |
-| Extract OAuth sign-in, me and sign-out endpoints → SDK | engineering | `IdentityController.cs`; registration only when configured |
 | Extract an actor context → SDK | engineering | *decision*: session login or `key:{name}`; SDK `ICurrentUserService` is Guid-only |
 | Extract GitHub App credentials → SDK | engineering | *decision*: `Infrastructure/GitHub/`: App token, per-owner installation tokens, the per-call credential handler; the SDK client takes one token for every owner |
-| Extract a memo whose forced refresh joins a read in flight → be sdk | engineering | `ServerVitalsMemo.cs`, `RunnerServerVitals.cs`; HybridCache has no refresh that joins |
-| Merge the two repository-file fakes onto a multi-repository SDK fake | engineering | `ScriptedRepositoryFiles.cs` (Unit) and `StubRepositoryFileSource.cs` (E2E); SDK `FakeGitHubClient` holds one head and files by path |
 | Replace the local `Stub*` clients with SDK testing fakes | engineering | Waits on the vault and repository-reader extracts shipping fakes; the SDK fakes today cover clients Wheelhouse doesn't call |
 | Extract a log viewer that follows the tail → fe sdk | engineering | *decision*: `ServiceLogsModal.vue` |
 
