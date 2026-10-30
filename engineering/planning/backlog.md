@@ -94,6 +94,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Extract the Secrets Vault back into its own repository and service | engineering | Owner 2026-10-30: merged services can no longer deploy apart, and the vault must stay its own service. A vault container on each host, reached over Tailscale, serves secret operations; Wheelhouse integrates with it, and services stop reading secrets from plain-text host files. Its name follows hub `app-t-008` (`secrets`) |
 | Ability to back up the vault with its keys kept apart, and prove a restore | feature | `vault verify` and the canary exist; waits on Wheelhouse's database backups |
 | Ability to rotate the vault's root key with a transactional rewrap | feature | 2026-10-19 merge analysis: unwrap every product key under the old root key, wrap under the new one, prove the canary, one transaction; the owner swaps the file after |
 | Ability to recover a lost root key with the owner's passkey | feature | User 2026-10-20 (decision 67): the database keeps the root key sealed by a passkey-derived key (WebAuthn PRF); after a lost key file, sign in, touch the passkey and Wheelhouse writes the file back. Waits on Wheelhouse database backups |
