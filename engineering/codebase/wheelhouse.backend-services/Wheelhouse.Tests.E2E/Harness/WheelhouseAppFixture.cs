@@ -1,8 +1,11 @@
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Testcontainers.PostgreSql;
+using WoW.Two.Sdk.Beta.Be.Caching.Memo;
 using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 using WoW.Two.Sdk.Beta.Be.Testing;
 using WoW.Two.Sdk.Beta.Be.Testing.Containers.Postgres;
 using WoW.Two.Sdk.Beta.Be.Testing.Integrations;
@@ -181,7 +184,7 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
         await File.WriteAllTextAsync(VaultKeyFile, VaultKey + "\n");
         ResetStubs();
         // The vitals snapshot is held for every reader; each test starts without one.
-        Host.Services.GetRequiredService<Wheelhouse.Infrastructure.Deployments.ServerVitalsMemo>().Last = null;
+        Host.Services.GetRequiredService<CoalescingMemo<AppResult<JsonElement>>>().Forget();
     }
 
     /// <summary>Restores the shared stubs to their happy-path defaults so each test starts from a known state.</summary>

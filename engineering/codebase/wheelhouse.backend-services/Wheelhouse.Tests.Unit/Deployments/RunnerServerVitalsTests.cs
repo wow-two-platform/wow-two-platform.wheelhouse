@@ -4,6 +4,7 @@ using Microsoft.Extensions.Time.Testing;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Infrastructure.Deployments;
 using Wheelhouse.Infrastructure.Settings;
+using WoW.Two.Sdk.Beta.Be.Caching.Memo;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
@@ -17,10 +18,12 @@ public sealed class RunnerServerVitalsTests
 {
     private readonly VitalsGateway _gateway = new();
     private readonly FakeTimeProvider _time = new(DateTimeOffset.Parse("2026-10-27T10:00:00Z"));
-    private readonly ServerVitalsMemo _memo = new();
+    private readonly CoalescingMemo<AppResult<JsonElement>> _memo;
+
+    public RunnerServerVitalsTests() => _memo = new(_time);
 
     private RunnerServerVitals Vitals(int seconds = 60) =>
-        new(_gateway, _memo, new DeploymentSettings { VitalsSeconds = seconds }, _time);
+        new(_gateway, _memo, new DeploymentSettings { VitalsSeconds = seconds });
 
     [Fact]
     public async Task ReadAsync_ShouldShareOneRunnerRead_WhileItIsYoungerThanTheHoldingTime()

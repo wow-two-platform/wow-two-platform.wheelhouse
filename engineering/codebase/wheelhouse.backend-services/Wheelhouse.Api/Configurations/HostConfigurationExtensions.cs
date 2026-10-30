@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Wheelhouse.Application;
 using Wheelhouse.Application.Abstractions;
@@ -6,6 +7,7 @@ using Wheelhouse.Infrastructure.Settings;
 using Wheelhouse.Persistence;
 using Wheelhouse.Persistence.Repositories;
 using WoW.Two.Sdk.Beta.Be.Caching.Hybrid;
+using WoW.Two.Sdk.Beta.Be.Caching.Memo;
 using WoW.Two.Sdk.Beta.Be.Data;
 using WoW.Two.Sdk.Beta.Be.Data.Migrations.Bespoke;
 using WoW.Two.Sdk.Beta.Be.Data.Sessions;
@@ -21,6 +23,7 @@ using WoW.Two.Sdk.Beta.Be.Integrations;
 using WoW.Two.Sdk.Beta.Be.Integrations.GitHub;
 using WoW.Two.Sdk.Beta.Be.Integrations.Processes;
 using WoW.Two.Sdk.Beta.Be.Mediator;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 using WoW.Two.Sdk.Beta.Be.Mediator.Validation;
 using WoW.Two.Sdk.Beta.Be.Meta;
 using WoW.Two.Sdk.Beta.Be.Observability.HealthChecks;
@@ -149,7 +152,8 @@ public static partial class HostConfigurationExtensions
         // The history projection: one runner read, held in the SDK cache, serves every read for Deployment:HistorySeconds.
         builder.Services.AddScoped<IDeploymentRecords, Wheelhouse.Infrastructure.Deployments.RunnerDeploymentRecords>();
         // The vitals snapshot: one runner read and one SSH read per host serve every tab for Deployment:VitalsSeconds.
-        builder.Services.AddSingleton<Wheelhouse.Infrastructure.Deployments.ServerVitalsMemo>();
+        builder.Services.AddSingleton(services =>
+            new CoalescingMemo<AppResult<JsonElement>>(services.GetRequiredService<TimeProvider>()));
         builder.Services.AddScoped<IServerVitals, Wheelhouse.Infrastructure.Deployments.RunnerServerVitals>();
         builder.Services.AddScoped<Wheelhouse.Application.Operations.VitalsSampling>();
         builder.Services.AddVitalsSamplingJob();
