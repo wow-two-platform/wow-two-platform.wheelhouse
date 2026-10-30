@@ -10,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Npgsql;
 using Wheelhouse.Application.SecretsVault.Services;
 using Wheelhouse.Tests.E2E.Harness;
+using WoW.Two.Sdk.Beta.Be.Foundation.Security;
 using WoW.Two.Sdk.Beta.Be.Jobs.Core.BackgroundServices;
 
 namespace Wheelhouse.Tests.E2E.Tests;
@@ -47,7 +48,7 @@ public sealed class RootKeyChecksE2ETests(WheelhouseAppFixture fixture) : Wheelh
         var expected = Fingerprint(Fixture.VaultKey);
         var copy = (await DataAsync("/api/vault")).GetProperty("offlineCopy");
         copy.GetProperty("fingerprint").GetString().Should().Be(expected);
-        expected.Should().MatchRegex(RootKeyFingerprint.Pattern);
+        expected.Should().MatchRegex(KeyFingerprintHasher.Pattern);
         expected.Replace(" ", "", StringComparison.Ordinal).Should()
             .NotBe(Convert.ToHexStringLower(SHA256.HashData(Convert.FromBase64String(Fixture.VaultKey)))[..20], "the label sets it apart");
         (await DataAsync("/api/vault")).GetProperty("offlineCopy").GetProperty("fingerprint").GetString().Should().Be(expected);

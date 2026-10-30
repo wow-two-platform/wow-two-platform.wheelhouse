@@ -1,9 +1,9 @@
-using Wheelhouse.Application.Abstractions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Security;
 
 namespace Wheelhouse.Tests.Unit.Fakes;
 
 /// <summary>A root key held in memory: set <see cref="Key"/> to null for a missing file.</summary>
-public sealed class FixedVaultKeySource(byte[]? key) : IVaultKeySource
+public sealed class FixedMasterKeyBroker(byte[]? key) : IMasterKeyBroker
 {
     public byte[]? Key { get; set; } = key;
     public string? Problem { get; set; }
@@ -13,9 +13,9 @@ public sealed class FixedVaultKeySource(byte[]? key) : IVaultKeySource
     /// <summary>What the file check finds while a key is present: null passes.</summary>
     public string? FileProblem { get; set; }
 
-    public string? CheckFile() => Key is null ? VaultKeyRead.Missing : FileProblem;
+    public string? CheckAccess() => Key is null ? MasterKeyRead.Missing : FileProblem;
 
-    public VaultKeyRead Read() => Key is null
-        ? new VaultKeyRead(null, Problem ?? VaultKeyRead.Missing, "")
-        : new VaultKeyRead((byte[])Key.Clone(), null, "v" + Version);
+    public MasterKeyRead Read() => Key is null
+        ? new MasterKeyRead { Problem = Problem ?? MasterKeyRead.Missing, Stamp = "" }
+        : new MasterKeyRead { Key = (byte[])Key.Clone(), Stamp = "v" + Version };
 }

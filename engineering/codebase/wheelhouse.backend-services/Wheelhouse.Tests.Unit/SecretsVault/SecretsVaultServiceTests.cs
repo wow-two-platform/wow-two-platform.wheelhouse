@@ -24,16 +24,21 @@ public sealed class SecretsVaultServiceTests
     private static readonly Guid Product = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid Other = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private readonly InMemorySecretsVaultStore _store = new();
-    private readonly FixedVaultKeySource _key = new(RandomNumberGenerator.GetBytes(32));
-    private readonly SecretsVaultKeyCache _cache = new();
+    private readonly FixedMasterKeyBroker _key = new(RandomNumberGenerator.GetBytes(32));
+    private readonly MasterKeyProofTracker _proofs = new();
     private readonly FakeTimeProvider _time = new(DateTimeOffset.Parse("2026-10-19T12:00:00Z"));
 
-    private SecretsVaultService Vault() =>
-        new(_store, _key, _cache, Crypto(), _time, NullLogger<SecretsVaultService>.Instance);
+    private SecretsVaultService Vault() => Vault(_store, _key, _proofs, _time);
+
+    /// <summary>The vault over the SDK's master key types and AES-GCM cipher, as the host registers them.</summary>
+    public static SecretsVaultService Vault(
+        InMemorySecretsVaultStore store, IMasterKeyBroker broker, MasterKeyProofTracker proofs, TimeProvider time) =>
+        new(store, broker, proofs, new MasterKeyUnsealService(broker, proofs), Cipher(), time,
+            NullLogger<SecretsVaultService>.Instance);
 
     /// <summary>The SDK's AES-GCM cipher, as the host registers it.</summary>
-    public static SecretsVaultCrypto Crypto() =>
-        new(new ServiceCollection().AddLogging().AddEnvelopeCryptography().BuildServiceProvider().GetRequiredService<IValueCipher>());
+    public static IValueCipher Cipher() =>
+        new ServiceCollection().AddLogging().AddEnvelopeCryptography().BuildServiceProvider().GetRequiredService<IValueCipher>();
 
     private async Task<IReadOnlyList<SecretWritten>> WriteAsync(SecretsVaultService vault, Guid product, params SecretWrite[] writes)
     {

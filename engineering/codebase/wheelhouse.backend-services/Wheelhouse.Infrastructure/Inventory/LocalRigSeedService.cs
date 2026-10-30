@@ -11,6 +11,7 @@ using Wheelhouse.Domain.Targets.Entities;
 using Wheelhouse.Domain.Vaults.Entities;
 using Wheelhouse.Infrastructure.Inventory.Mappers;
 using Wheelhouse.Infrastructure.Inventory.Models;
+using WoW.Two.Sdk.Beta.Be.Foundation.Security;
 using WoW.Two.Sdk.Beta.Be.Foundation.Serialization;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
@@ -31,7 +32,7 @@ public sealed partial class LocalRigSeedService(
     SecretsVaultService? vault = null,
     ISecretsVaultStore? vaultStore = null,
     SecretsVaultSettings? vaultSettings = null,
-    IVaultKeySource? vaultKey = null)
+    IMasterKeyBroker? vaultKey = null)
 {
     /// <summary>Writes the local server's fixtures into the database.</summary>
     /// <param name="ct">A cancellation token.</param>
@@ -104,7 +105,7 @@ public sealed partial class LocalRigSeedService(
     /// rig's other credentials. Only the rig reaches here; a deployed control plane's key is the owner's to place.</summary>
     private void WriteRigKey()
     {
-        if (vaultKey is null || vaultKey.Read().Problem != VaultKeyRead.Missing || vaultKey.Location.Length == 0)
+        if (vaultKey is null || vaultKey.Read().Problem != MasterKeyRead.Missing || vaultKey.Location.Length == 0)
             return;
         var folder = Path.GetDirectoryName(vaultKey.Location)!;
         if (OperatingSystem.IsWindows())

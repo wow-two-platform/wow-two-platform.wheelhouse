@@ -21,8 +21,8 @@ public sealed class SecretsVaultImporter(
     IProductsRepository products,
     IStandaloneVaultReader reader,
     IVaultGateway gateway,
-    IVaultKeySource keys,
-    SecretsVaultCrypto crypto,
+    IMasterKeyBroker keys,
+    IValueCipher cipher,
     IDataSession session)
 {
     /// <summary>Imports every version from a standalone vault's database, under that vault's master key.</summary>
@@ -68,10 +68,10 @@ public sealed class SecretsVaultImporter(
                                 {
                                     var wrapped = space.DataKeys.GetValueOrDefault(version.DataKeyId)
                                         ?? throw new CryptographicException("The version's data key is missing.");
-                                    dataKeys[version.DataKeyId] = dataKey = crypto.Open(Payload(wrapped), master, "dek:" + space.Slug);
+                                    dataKeys[version.DataKeyId] = dataKey = cipher.Decrypt(Payload(wrapped), master, "dek:" + space.Slug);
                                 }
                                 versions.Add(new ImportedVersion(version.Version,
-                                    crypto.OpenValue(Payload(version.Value), dataKey, space.Slug + "/" + secret.Key),
+                                    cipher.DecryptText(Payload(version.Value), dataKey, space.Slug + "/" + secret.Key),
                                     version.CreatedBy, version.CreatedAt));
                             }
                         }

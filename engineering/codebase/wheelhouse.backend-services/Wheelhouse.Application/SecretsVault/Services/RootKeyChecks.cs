@@ -4,6 +4,7 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.SecretsVault.Models;
 using Wheelhouse.Domain.SecretsVault.Entities;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
+using WoW.Two.Sdk.Beta.Be.Foundation.Security;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.SecretsVault.Services;
@@ -16,8 +17,8 @@ namespace Wheelhouse.Application.SecretsVault.Services;
 public sealed partial class RootKeyChecks(
     SecretsVaultService vault,
     ISecretsVaultStore store,
-    IVaultKeySource source,
-    SecretsVaultKeyCache cache,
+    IMasterKeyBroker broker,
+    MasterKeyProofTracker proofs,
     IVaultRootKeyVerifications verifications,
     RootKeyFileMonitor monitor,
     SecretsVaultSettings settings,
@@ -31,10 +32,10 @@ public sealed partial class RootKeyChecks(
     /// <returns>The check.</returns>
     public async Task<RootKeyFileCheckDto> CheckFileAsync(CancellationToken ct)
     {
-        var problem = source.CheckFile();
-        if (problem is not (VaultKeyRead.Missing or VaultKeyRead.Unreadable))
+        var problem = broker.CheckAccess();
+        if (problem is not (MasterKeyRead.Missing or MasterKeyRead.Unreadable))
         {
-            cache.Forget();
+            proofs.Forget();
             var (root, reason) = await vault.UnsealAsync(ct);
             if (root is not null)
                 CryptographicOperations.ZeroMemory(root);
@@ -113,7 +114,7 @@ public sealed partial class RootKeyChecks(
             return (null, reason);
         try
         {
-            return (RootKeyFingerprint.Compute(root), null);
+            return (SecretsVaultCrypto.RootKeyFingerprint.Hash(root), null);
         }
         finally
         {

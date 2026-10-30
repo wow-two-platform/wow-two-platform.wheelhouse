@@ -20,9 +20,10 @@ namespace Wheelhouse.Application.SecretsVault.Services;
 /// </remarks>
 public sealed partial class SecretsVaultService(
     ISecretsVaultStore store,
-    IVaultKeySource source,
-    SecretsVaultKeyCache cache,
-    SecretsVaultCrypto crypto,
+    IMasterKeyBroker broker,
+    MasterKeyProofTracker proofs,
+    MasterKeyUnsealService unseal,
+    IValueCipher cipher,
     TimeProvider time,
     ILogger<SecretsVaultService> logger)
 {
@@ -33,7 +34,7 @@ public sealed partial class SecretsVaultService(
     public static readonly TimeSpan SecondWarning = TimeSpan.FromDays(7);
 
     /// <summary>Where the root key is read from.</summary>
-    public string KeyFile => source.Location;
+    public string KeyFile => broker.Location;
 
     /// <summary>How close an expiry is at <paramref name="now"/>: <c>expired</c>, <c>7d</c>, <c>30d</c> or null.</summary>
     /// <param name="expiresAt">The expiry, if any.</param>
@@ -46,34 +47,18 @@ public sealed partial class SecretsVaultService(
         : at - now <= FirstWarning ? "30d"
         : null;
 
-    /// <summary>Reads the root key and proves it against the canary (or, before the first canary, a product key).</summary>
+    /// <summary>Reads the root key and proves it against the canary (or, before the first canary, a product key), once
+    /// per key file content, through the SDK <see cref="MasterKeyUnsealService"/>.</summary>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The root key, which the caller clears after use, or why the vault is sealed.</returns>
     public async Task<(byte[]? Root, string? Reason)> UnsealAsync(CancellationToken ct)
     {
-        var read = source.Read();
-        if (read.Key is not { } root)
-            return (null, read.Problem ?? SecretsVaultStates.Missing);
-        if (cache.IsProven(read.Stamp))
+        var read = await unseal.UnsealAsync(ProveAsync, ct);
+        if (read.Key is { } root)
             return (root, null);
-        bool proven;
-        try
-        {
-            proven = await ProveAsync(root, ct);
-        }
-        catch (CryptographicException)
-        {
-            proven = false;
-        }
-        if (proven)
-        {
-            cache.Prove(read.Stamp);
-            return (root, null);
-        }
-        CryptographicOperations.ZeroMemory(root);
-        cache.Forget();
-        LogMismatch(logger);
-        return (null, SecretsVaultStates.Mismatch);
+        if (read.Problem == MasterKeyRead.Mismatch)
+            LogMismatch(logger);
+        return (null, read.Problem ?? SecretsVaultStates.Missing);
     }
 
     /// <summary>Reads the vault's state and what it holds; never a value.</summary>
@@ -139,7 +124,7 @@ public sealed partial class SecretsVaultService(
             if (stored is null)
                 return AppResult<IReadOnlyDictionary<string, RenderedSecret>>.Fail(
                     AppErrorFactory.Unexpected("The product's data key is missing; run the vault check."));
-            dataKey = crypto.Open(Payload(stored.WrappedKey, stored.Nonce, stored.Tag), root, SecretsVaultCrypto.ProductKeyContext(productId));
+            dataKey = cipher.Decrypt(Payload(stored.WrappedKey, stored.Nonce, stored.Tag), root, SecretsVaultCrypto.ProductKeyContext(productId));
             var versions = await store.GetCurrentVersionsAsync(secrets, ct);
             var values = new SortedDictionary<string, RenderedSecret>(StringComparer.Ordinal);
             foreach (var secret in secrets)
@@ -147,7 +132,7 @@ public sealed partial class SecretsVaultService(
                 if (!versions.TryGetValue(secret.Id, out var version))
                     continue;
                 values[secret.Key] = new RenderedSecret(
-                    crypto.OpenValue(Payload(version.CipherText, version.Nonce, version.Tag), dataKey,
+                    cipher.DecryptText(Payload(version.CipherText, version.Nonce, version.Tag), dataKey,
                         SecretsVaultCrypto.ValueContext(productId, environment, secret.Key, version.Version)),
                     version.Version, version.Fingerprint);
             }
@@ -234,7 +219,7 @@ public sealed partial class SecretsVaultService(
         try
         {
             dataKey = await DataKeyAsync(root, productId, ct);
-            var value = crypto.OpenValue(Payload(old.CipherText, old.Nonce, old.Tag), dataKey,
+            var value = cipher.DecryptText(Payload(old.CipherText, old.Nonce, old.Tag), dataKey,
                 SecretsVaultCrypto.ValueContext(productId, environment, key, old.Version));
             return AppResult<SecretWritten>.Ok(await StageVersionAsync(productId, environment, new SecretWrite(key, value, note),
                 dataKey, actor, "restored from v" + old.Version, ct));
@@ -310,7 +295,7 @@ public sealed partial class SecretsVaultService(
     /// <returns>The counts.</returns>
     public async Task<VaultVerificationDto> VerifyAsync(IReadOnlyDictionary<Guid, string> productSlugs, CancellationToken ct)
     {
-        cache.Forget();
+        proofs.Forget();
         var (root, _) = await UnsealAsync(ct);
         if (root is null)
             return new VaultVerificationDto(SecretsVaultStates.Sealed, false, 0, 0, 0, 0, []);
@@ -324,7 +309,7 @@ public sealed partial class SecretsVaultService(
             {
                 try
                 {
-                    dataKeys[stored.ProductId] = crypto.Open(Payload(stored.WrappedKey, stored.Nonce, stored.Tag), root,
+                    dataKeys[stored.ProductId] = cipher.Decrypt(Payload(stored.WrappedKey, stored.Nonce, stored.Tag), root,
                         SecretsVaultCrypto.ProductKeyContext(stored.ProductId));
                 }
                 catch (CryptographicException)
@@ -347,9 +332,9 @@ public sealed partial class SecretsVaultService(
                 }
                 try
                 {
-                    var value = crypto.OpenValue(Payload(version.CipherText, version.Nonce, version.Tag), dataKey,
+                    var value = cipher.DecryptText(Payload(version.CipherText, version.Nonce, version.Tag), dataKey,
                         SecretsVaultCrypto.ValueContext(secret.ProductId, secret.Environment, secret.Key, version.Version));
-                    if (SecretsVaultCrypto.Fingerprint(value, dataKey) == version.Fingerprint)
+                    if (SecretsVaultCrypto.ValueFingerprint.Hash(value, dataKey) == version.Fingerprint)
                         versions++;
                     else
                         failures.Add(name);
@@ -416,8 +401,8 @@ public sealed partial class SecretsVaultService(
                 foreach (var version in imported.Versions)
                 {
                     var context = SecretsVaultCrypto.ValueContext(imported.ProductId, imported.Environment, imported.Key, version.Version);
-                    var sealedValue = crypto.SealValue(version.Value, dataKey, context);
-                    var fingerprint = SecretsVaultCrypto.Fingerprint(version.Value, dataKey);
+                    var sealedValue = cipher.EncryptText(version.Value, dataKey, context);
+                    var fingerprint = SecretsVaultCrypto.ValueFingerprint.Hash(version.Value, dataKey);
                     store.Add(new VaultSecretVersionEntity
                     {
                         Id = Guid.CreateVersion7(), SecretId = secret.Id, Version = version.Version,
@@ -428,7 +413,7 @@ public sealed partial class SecretsVaultService(
                     staged++;
                     try
                     {
-                        if (crypto.OpenValue(sealedValue, dataKey, context) == version.Value)
+                        if (cipher.DecryptText(sealedValue, dataKey, context) == version.Value)
                             verified++;
                         else
                             failures.Add(imported.Key + " v" + version.Version);
@@ -468,67 +453,45 @@ public sealed partial class SecretsVaultService(
         if (keys.Count == 0)
             return true;
         var first = keys[0];
-        var opened = crypto.Open(Payload(first.WrappedKey, first.Nonce, first.Tag), root, SecretsVaultCrypto.ProductKeyContext(first.ProductId));
+        var opened = cipher.Decrypt(Payload(first.WrappedKey, first.Nonce, first.Tag), root, SecretsVaultCrypto.ProductKeyContext(first.ProductId));
         CryptographicOperations.ZeroMemory(opened);
         return true;
     }
 
     /// <summary>Whether the canary decrypts under the root key to its digest.</summary>
-    private bool CheckCanary(VaultCanaryEntity canary, byte[] root)
-    {
-        byte[]? key = null;
-        byte[]? value = null;
-        try
-        {
-            key = crypto.Open(Payload(canary.WrappedKey, canary.KeyNonce, canary.KeyTag), root, SecretsVaultCrypto.CanaryKeyContext);
-            value = crypto.Open(Payload(canary.CipherText, canary.Nonce, canary.Tag), key, SecretsVaultCrypto.CanaryContext);
-            return CryptographicOperations.FixedTimeEquals(SHA256.HashData(value), canary.Digest);
-        }
-        catch (CryptographicException)
-        {
-            return false;
-        }
-        finally
-        {
-            if (key is not null)
-                CryptographicOperations.ZeroMemory(key);
-            if (value is not null)
-                CryptographicOperations.ZeroMemory(value);
-        }
-    }
+    private bool CheckCanary(VaultCanaryEntity canary, byte[] root) =>
+        cipher.VerifyCanary(
+            new KeyCanary
+            {
+                WrappedKey = Payload(canary.WrappedKey, canary.KeyNonce, canary.KeyTag),
+                Value = Payload(canary.CipherText, canary.Nonce, canary.Tag),
+                Digest = canary.Digest,
+            },
+            root,
+            SecretsVaultCrypto.CanaryKeyContext,
+            SecretsVaultCrypto.CanaryContext);
 
     /// <summary>Makes the canary on the vault's first write, so a later root key is proven against it.</summary>
     private async Task EnsureCanaryAsync(byte[] root, CancellationToken ct)
     {
         if (await store.GetCanaryAsync(ct) is not null)
             return;
-        var key = SecretsVaultCrypto.NewKey();
-        var value = SecretsVaultCrypto.NewKey();
-        try
+        var canary = cipher.CreateCanary(root, SecretsVaultCrypto.CanaryKeyContext, SecretsVaultCrypto.CanaryContext);
+        store.Add(new VaultCanaryEntity
         {
-            var wrapped = crypto.Seal(key, root, SecretsVaultCrypto.CanaryKeyContext);
-            var sealedValue = crypto.Seal(value, key, SecretsVaultCrypto.CanaryContext);
-            store.Add(new VaultCanaryEntity
-            {
-                WrappedKey = wrapped.CipherText, KeyNonce = wrapped.Nonce, KeyTag = wrapped.Tag,
-                CipherText = sealedValue.CipherText, Nonce = sealedValue.Nonce, Tag = sealedValue.Tag,
-                Digest = SHA256.HashData(value),
-            });
-        }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(key);
-            CryptographicOperations.ZeroMemory(value);
-        }
+            WrappedKey = canary.WrappedKey.CipherText, KeyNonce = canary.WrappedKey.Nonce, KeyTag = canary.WrappedKey.Tag,
+            CipherText = canary.Value.CipherText, Nonce = canary.Value.Nonce, Tag = canary.Value.Tag,
+            Digest = canary.Digest,
+        });
     }
 
     /// <summary>The product's data key, unwrapped; made and staged when the product has none. The caller clears it.</summary>
     private async Task<byte[]> DataKeyAsync(byte[] root, Guid productId, CancellationToken ct)
     {
         if (await store.GetProductKeyAsync(productId, ct) is { } stored)
-            return crypto.Open(Payload(stored.WrappedKey, stored.Nonce, stored.Tag), root, SecretsVaultCrypto.ProductKeyContext(productId));
+            return cipher.Decrypt(Payload(stored.WrappedKey, stored.Nonce, stored.Tag), root, SecretsVaultCrypto.ProductKeyContext(productId));
         var key = SecretsVaultCrypto.NewKey();
-        var wrapped = crypto.Seal(key, root, SecretsVaultCrypto.ProductKeyContext(productId));
+        var wrapped = cipher.Encrypt(key, root, SecretsVaultCrypto.ProductKeyContext(productId));
         store.Add(new VaultProductKeyEntity { ProductId = productId, WrappedKey = wrapped.CipherText, Nonce = wrapped.Nonce, Tag = wrapped.Tag });
         return key;
     }
@@ -545,8 +508,8 @@ public sealed partial class SecretsVaultService(
             store.Add(secret);
         }
         var version = secret.CurrentVersion + 1;
-        var sealedValue = crypto.SealValue(write.Value, dataKey, SecretsVaultCrypto.ValueContext(productId, environment, write.Key, version));
-        var fingerprint = SecretsVaultCrypto.Fingerprint(write.Value, dataKey);
+        var sealedValue = cipher.EncryptText(write.Value, dataKey, SecretsVaultCrypto.ValueContext(productId, environment, write.Key, version));
+        var fingerprint = SecretsVaultCrypto.ValueFingerprint.Hash(write.Value, dataKey);
         store.Add(new VaultSecretVersionEntity
         {
             Id = Guid.CreateVersion7(),

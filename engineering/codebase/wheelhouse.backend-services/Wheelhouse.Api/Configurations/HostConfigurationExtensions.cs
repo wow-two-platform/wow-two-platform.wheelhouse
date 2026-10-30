@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Wheelhouse.Application;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Infrastructure.Jobs;
@@ -189,18 +190,21 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddSingleton<Wheelhouse.Infrastructure.Vaults.VaultSessionCache>();
         builder.Services.AddScoped<IVaultGateway, Wheelhouse.Infrastructure.Vaults.VaultGateway>();
 
-        // The built-in Secrets Vault: its root key file (Vault:KeyFile, else {Deployment:Root}/vault/root.key), the SDK's
-        // AES-GCM envelope cipher, and the scheduled settings applies every Deployment:ApplySeconds.
+        // The built-in Secrets Vault: its root key file (Vault:KeyFile, else {Deployment:Root}/vault/root.key) as the SDK
+        // master key broker, read on every use and proven once per content, the SDK's AES-GCM envelope cipher, and the
+        // scheduled settings applies every Deployment:ApplySeconds.
         builder.AddSecretsVaultSettings();
         builder.Services.AddEnvelopeCryptography();
-        builder.Services.AddSingleton<IVaultKeySource>(services =>
+        builder.Services.Replace(ServiceDescriptor.Singleton<IMasterKeyBroker>(services =>
         {
             var vault = services.GetRequiredService<Wheelhouse.Application.SecretsVault.SecretsVaultSettings>();
             var deployment = services.GetRequiredService<DeploymentSettings>();
-            return new Wheelhouse.Infrastructure.SecretsVault.FileVaultKeySource(vault.KeyFile.Length > 0
+            return new FileMasterKeyBroker(vault.KeyFile.Length > 0
                 ? vault.KeyFile
                 : Path.Combine(deployment.Root, "vault", "root.key"));
-        });
+        }));
+        builder.Services.AddSingleton<MasterKeyProofTracker>();
+        builder.Services.AddSingleton<MasterKeyUnsealService>();
         builder.Services.AddSettingsApplyJob();
         // The root key file's scheduled check (Vault:KeyCheckMinutes), its last result kept for the status and Issues.
         builder.Services.AddVaultKeyCheckJob();
@@ -268,8 +272,6 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Fleets.Services.FleetRolloutService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Settings.Services.DeploymentSettingsService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Settings.Services.SettingsApplyService>();
-        builder.Services.AddSingleton<Wheelhouse.Application.SecretsVault.Services.SecretsVaultKeyCache>();
-        builder.Services.AddSingleton<Wheelhouse.Application.SecretsVault.Services.SecretsVaultCrypto>();
         builder.Services.AddScoped<Wheelhouse.Application.SecretsVault.Services.SecretsVaultService>();
         builder.Services.AddScoped<Wheelhouse.Application.SecretsVault.Services.SecretsVaultImporter>();
         builder.Services.AddSingleton<Wheelhouse.Application.SecretsVault.Services.RootKeyFileMonitor>();
