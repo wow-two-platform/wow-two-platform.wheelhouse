@@ -56,7 +56,7 @@ public sealed class FleetRolloutE2ETests(WheelhouseAppFixture fixture) : Wheelho
         fleet.GetProperty("completedAt").ValueKind.Should().Be(JsonValueKind.String);
         Fixture.Deployments.Starts.Should().HaveCount(2, "the products after a failure are not started");
 
-        var audit = (await DataAsync("/api/audit")).EnumerateArray().ToList();
+        var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray().ToList();
         var starts = audit.Where(entry => entry.GetProperty("action").GetString() == "deployment.start").ToList();
         starts.Should().HaveCount(2);
         starts.Select(entry => entry.GetProperty("actor").GetString()).Should().AllBe("test-admin",
@@ -114,7 +114,7 @@ public sealed class FleetRolloutE2ETests(WheelhouseAppFixture fixture) : Wheelho
 
         (await SendAsync(HttpMethod.Post, $"/api/deployments/fleets/{started.GetProperty("id").GetString()}/cancel"))
             .StatusCode.Should().Be(HttpStatusCode.Conflict, "an ended fleet cannot be cancelled");
-        (await DataAsync("/api/audit")).EnumerateArray()
+        (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Count(entry => entry.GetProperty("action").GetString() == "deployment.fleet.cancel").Should().Be(2,
                 "the refused second cancel is audited too");
     }

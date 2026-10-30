@@ -6,7 +6,7 @@ export interface AuditEntriesPanelProps {
 }
 </script>
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import {
   Badge,
@@ -31,8 +31,9 @@ import { AuditArea, AuditExtensions, AuditOutcome } from "@/domain/audit";
 import { InfoPopover, Panel } from "@/presentation/common/components";
 
 /**
- * Lists actions newest first, a hundred at a time, with an area filter and paging back. The Activity page
- * shows every entry; a product's Activity tab passes its product and the host keeps the entries about it.
+ * Lists actions newest first, a hundred at a time, with an area filter and a button that loads the older ones after
+ * the last page's token. The Activity page shows every entry; a product's Activity tab passes its product and the host
+ * keeps the entries about it.
  */
 defineOptions({ name: "AuditEntriesPanel" });
 const props = withDefaults(defineProps<AuditEntriesPanelProps>(), {
@@ -41,7 +42,7 @@ const props = withDefaults(defineProps<AuditEntriesPanelProps>(), {
 });
 defineSlots<{}>();
 
-const WindowSize = 100;
+const PageSize = 100;
 const AreaLabels: Record<AuditArea, string> = {
   [AuditArea.All]: "All actions",
   [AuditArea.Deployments]: "Deployments and builds",
@@ -49,33 +50,15 @@ const AreaLabels: Record<AuditArea, string> = {
   [AuditArea.Products]: "Products and environments",
 };
 
-/** The sequence numbers each older window starts below; empty while the newest window shows. */
-const windows = ref<number[]>([]);
-const before = computed(() => windows.value.at(-1) ?? null);
 const area = ref<AuditArea>(AuditArea.All);
-const entries = useAuditEntries(WindowSize, before, () => props.product);
-const visible = computed(() =>
-  (entries.data.value ?? []).filter((entry) => AuditExtensions.inArea(entry.action, area.value)),
-);
-/** The shown entries, or placeholder rows until the first window arrives. */
-const rows = useSkeletonItems(() => (entries.data.value ? visible.value : undefined), 8);
-const oldest = computed(() => entries.data.value?.at(-1)?.sequence ?? null);
-const hasOlder = computed(() => (entries.data.value?.length ?? 0) === WindowSize && (oldest.value ?? 0) > 1);
+/* Another product reads from its newest entries: the query's key holds it. */
+const entries = useAuditEntries(PageSize, () => props.product);
+const visible = computed(() => entries.items.value.filter((entry) => AuditExtensions.inArea(entry.action, area.value)));
+/** The shown entries, or placeholder rows until the first page arrives. */
+const rows = useSkeletonItems(() => (entries.loading.value ? undefined : visible.value), 8);
 
 /** Every action changes the trail, so a visit always reads it fresh. */
 onMounted(() => void entries.refetch());
-/* Another product starts from its newest entries. */
-watch(
-  () => props.product,
-  () => (windows.value = []),
-);
-
-function older(): void {
-  if (oldest.value !== null) windows.value = [...windows.value, oldest.value];
-}
-function newer(): void {
-  windows.value = windows.value.slice(0, -1);
-}
 </script>
 
 <template>
@@ -102,11 +85,10 @@ function newer(): void {
       ></SelectPicker>
     </template>
     <DataRegion
-      :is-first-load="entries.isFirstLoad.value"
-      :is-refreshing="entries.isRefreshing.value"
+      :is-first-load="entries.loading.value"
       :error="entries.error.value"
-      :has-data="Boolean(entries.data.value)"
-      :is-empty="Boolean(entries.data.value) && visible.length === 0"
+      :has-data="!entries.loading.value"
+      :is-empty="!entries.loading.value && visible.length === 0"
       empty-title="No actions recorded"
       :empty-description="
         area !== AuditArea.All
@@ -122,8 +104,7 @@ function newer(): void {
         is-hoverable
         has-sticky-header
         container-class-name="overflow-auto"
-        :class="entries.isPreviousData.value ? 'opacity-60' : undefined"
-        :aria-busy="entries.isRefreshing.value || undefined"
+        :aria-busy="entries.isFetchingNextPage.value || undefined"
       >
         <TableHead>
           <TableRow>
@@ -163,12 +144,15 @@ function newer(): void {
         </TableBody>
       </Table>
     </DataRegion>
-    <div v-if="windows.length || hasOlder" class="mt-4 flex justify-between gap-3">
-      <Button variant="ghost" size="sm" :is-disabled="!windows.length || entries.isPreviousData.value" @click="newer"
-        >Newer</Button
-      >
-      <Button variant="ghost" size="sm" :is-disabled="!hasOlder || entries.isPreviousData.value" @click="older"
-        >Older</Button
+    <div v-if="entries.hasNextPage.value" class="mt-4 flex justify-center">
+      <Button
+        variant="outline"
+        tone="neutral"
+        size="sm"
+        :is-loading="entries.isFetchingNextPage.value"
+        class="max-md:min-h-11"
+        @click="entries.fetchNextPage()"
+        >Load older actions</Button
       >
     </div>
   </Panel>

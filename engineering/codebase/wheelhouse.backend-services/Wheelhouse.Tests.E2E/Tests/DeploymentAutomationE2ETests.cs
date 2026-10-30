@@ -93,7 +93,7 @@ public sealed class DeploymentAutomationE2ETests(WheelhouseAppFixture fixture) :
         data.GetProperty("autoDeployDev").GetBoolean().Should().BeFalse("an omitted choice stays as it is");
         data.GetProperty("autoPromote").GetBoolean().Should().BeTrue();
 
-        var audit = (await DataAsync("/api/audit")).EnumerateArray()
+        var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Where(entry => entry.GetProperty("action").GetString() == "product.automation").ToList();
         audit.Should().HaveCount(2);
         audit.Select(entry => entry.GetProperty("detail").GetString())
@@ -129,7 +129,7 @@ public sealed class DeploymentAutomationE2ETests(WheelhouseAppFixture fixture) :
         pass.Submitted.Should().Be(1);
         Fixture.Deployments.Starts.Should().Equal(("foreverpin-dev", "foreverpin-gh-2", "automation"));
 
-        var entry = (await DataAsync("/api/audit")).EnumerateArray()
+        var entry = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Single(item => item.GetProperty("action").GetString() == "deployment.start");
         entry.GetProperty("actor").GetString().Should().Be("automation");
         entry.GetProperty("subject").GetString().Should().Be("foreverpin-dev");

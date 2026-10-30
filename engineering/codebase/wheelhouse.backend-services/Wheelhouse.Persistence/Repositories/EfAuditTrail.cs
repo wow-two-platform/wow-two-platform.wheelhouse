@@ -3,8 +3,10 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Audit;
 using Wheelhouse.Domain.Audit.Entities;
 using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore.Locks.Extensions;
+using WoW.Two.Sdk.Beta.Be.Data.EntityFrameworkCore.Paging;
 using WoW.Two.Sdk.Beta.Be.Foundation.Audit;
 using WoW.Two.Sdk.Beta.Be.Foundation.Audit.Validators;
+using WoW.Two.Sdk.Beta.Be.Web.Contracts.Paging;
 
 namespace Wheelhouse.Persistence.Repositories;
 
@@ -42,10 +44,10 @@ internal sealed class EfAuditTrail(
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<AuditEntry>> ListAsync(
-        int limit, long? before, AuditProductScope? product = null, CancellationToken ct = default)
+    public async Task<TokenPageDto<AuditEntry>> ListAsync(
+        TokenPageApiRequest page, AuditProductScope? product = null, CancellationToken ct = default)
     {
-        var entries = db.AuditEntries.AsNoTracking().Where(e => before == null || e.Sequence < before);
+        var entries = db.AuditEntries.AsNoTracking();
         if (product is not null)
         {
             // Each action family matches only its own subjects, so a server or vault sharing the product's slug stays out.
@@ -61,7 +63,10 @@ internal sealed class EfAuditTrail(
                 || (e.Action.StartsWith("service.") && e.Subject.StartsWith(services)));
         }
 
-        return await entries.OrderByDescending(e => e.Sequence).Take(limit).ToListAsync(ct);
+        // Newest first by the unique sequence number: a page continues after the last entry it showed, so an append never
+        // shifts a later page.
+        return await entries.ToTokenPageAsync(
+            e => e.Sequence, page, descending: true, maxPageSize: AuditListQuery.MaxPageSize, cancellationToken: ct);
     }
 
     /// <inheritdoc />

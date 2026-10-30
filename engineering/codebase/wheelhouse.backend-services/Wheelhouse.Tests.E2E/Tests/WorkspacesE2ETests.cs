@@ -38,8 +38,7 @@ public sealed class WorkspacesE2ETests(WheelhouseAppFixture fixture) : Wheelhous
 
     private async Task<JsonElement[]> AuditAsync()
     {
-        var document = await AdminClient.GetFromJsonAsync<JsonElement>("api/audit");
-        return [.. document.GetProperty("data").EnumerateArray()];
+        return [.. (await AdminClient.AuditItemsAsync()).EnumerateArray()];
     }
 
     [Fact]

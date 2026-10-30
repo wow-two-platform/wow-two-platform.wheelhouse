@@ -1,19 +1,20 @@
-import type { AuditEntry, AuditVerification } from "@/domain/audit";
+import type { AuditPage, AuditVerification } from "@/domain/audit";
 import { requestData } from "@/integration/common";
-import { AuditEntrySchema, AuditVerificationSchema } from "./schemas";
+import { AuditPageSchema, AuditVerificationSchema } from "./schemas";
 
 /** The append-only audit trail; nothing here changes it. */
 export const auditApi = {
   /**
-   * The newest `limit` entries (1-200), or those before one sequence number to page back; with a product, only the
-   * entries about it — the product, its services, its targets and its vault namespaces.
+   * One page of the newest `pageSize` entries (1-200), or the older ones after the `nextPageToken` a previous page
+   * answered with; with a product, only the entries about it — the product, its services, its targets and its vault
+   * namespaces.
    */
-  list: (limit: number, before?: number | null, product?: string | null, signal?: AbortSignal) =>
-    requestData<AuditEntry[]>(
-      `/api/audit?limit=${limit}` +
-        (before ? `&before=${before}` : "") +
+  list: (pageSize: number, pageToken?: string | null, product?: string | null, signal?: AbortSignal) =>
+    requestData<AuditPage>(
+      `/api/audit?pageSize=${pageSize}` +
+        (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "") +
         (product ? `&product=${encodeURIComponent(product)}` : ""),
-      AuditEntrySchema.array(),
+      AuditPageSchema,
       { signal },
     ),
 

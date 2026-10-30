@@ -53,7 +53,7 @@ public sealed class SelfDeployE2ETests(WheelhouseAppFixture fixture) : Wheelhous
         Fixture.Deployments.Starts.Should().Equal(("wheelhouse-prod", "wheelhouse-v0-5-21", "test-admin"));
         (Fixture.Deployments.LastConfirm, Fixture.Deployments.LastReason).Should().Be(("wheelhouse-prod", "v0.5 trial"));
 
-        var audit = (await DataAsync("/api/audit")).EnumerateArray()
+        var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Where(entry => entry.GetProperty("action").GetString() == "deployment.start").ToList();
         audit.Select(entry => entry.GetProperty("outcome").GetString()).Should().Contain(["succeeded", "failed"]);
         audit.First(entry => entry.GetProperty("outcome").GetString() == "succeeded").GetProperty("detail").GetString()

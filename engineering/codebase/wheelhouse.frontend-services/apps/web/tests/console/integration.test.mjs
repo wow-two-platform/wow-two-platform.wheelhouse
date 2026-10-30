@@ -368,20 +368,27 @@ test("reads one service's logs with a bounded tail and decodes the lines", async
   assert.deepEqual(result.value.lines, ["2026-09-28T10:00:00Z started"]);
 });
 
-test("pages the audit trail and names each action and chain break in words", async () => {
+test("pages the audit trail by token and names each action and chain break in words", async () => {
   const requests = [];
+  const entry = { sequence: 3, occurredAt: "2026-09-28T10:00:00Z", actor: "max", action: "deployment.start",
+    subject: "foreverpin-dev", outcome: "succeeded", detail: "v1", reason: null };
   globalThis.fetch = async (url) => {
     requests.push(url);
     return json({ data: url.includes("verification")
       ? { intact: false, entries: 3, brokenSequence: 2, reason: "HashMismatch" }
-      : [{ sequence: 3, occurredAt: "2026-09-28T10:00:00Z", actor: "max", action: "deployment.start",
-          subject: "foreverpin-dev", outcome: "succeeded", detail: "v1", reason: null }] });
+      : url.includes("pageToken") ? { items: [{ ...entry, sequence: 1 }], pageSize: 100 }
+        : { items: [entry], pageSize: 100, nextPageToken: "WzJd" } });
   };
-  assert.equal((await auditApi.list(100, 4)).value[0].sequence, 3);
+  const newest = (await auditApi.list(100)).value;
+  assert.deepEqual([newest.items[0].sequence, newest.nextPageToken], [3, "WzJd"]);
+  // The last page names no token.
+  const oldest = (await auditApi.list(100, newest.nextPageToken)).value;
+  assert.deepEqual([oldest.items[0].sequence, oldest.nextPageToken], [1, null]);
   assert.equal((await auditApi.verify()).value.brokenSequence, 2);
   await auditApi.list(50, null, "transcript forge");
   assert.deepEqual(requests,
-    ["/api/audit?limit=100&before=4", "/api/audit/verification", "/api/audit?limit=50&product=transcript%20forge"]);
+    ["/api/audit?pageSize=100", "/api/audit?pageSize=100&pageToken=WzJd", "/api/audit/verification",
+      "/api/audit?pageSize=50&product=transcript%20forge"]);
   assert.equal(AuditExtensions.label("service.status"), "Changed a service’s status");
   assert.equal(AuditExtensions.label("vault.secret.set"), "Set a secret");
   assert.equal(AuditExtensions.label("future.action"), "future.action");

@@ -39,7 +39,7 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
         (await ControlAsync("foreverpin-dev", new { operation = "start" })).StatusCode.Should().Be(HttpStatusCode.Accepted);
         Fixture.Deployments.Controls[^1].Should().Be(("foreverpin-dev", "start", (string?)null, "test-admin", (string?)null));
 
-        var audit = (await DataAsync("/api/audit")).EnumerateArray().ToList();
+        var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray().ToList();
         audit.Should().Contain(entry => entry.GetProperty("action").GetString() == "service.stop"
             && entry.GetProperty("subject").GetString() == "foreverpin-dev/management");
         audit.Should().Contain(entry => entry.GetProperty("action").GetString() == "environment.start"
@@ -62,7 +62,7 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
             new { operation = "restart", service = "management", confirm = "foreverpin-prod", reason = " cache stuck " });
         accepted.StatusCode.Should().Be(HttpStatusCode.Accepted, await accepted.Content.ReadAsStringAsync());
         Fixture.Deployments.Controls.Should().Equal(("foreverpin-prod", "restart", "management", "test-admin", "cache stuck"));
-        var audit = (await DataAsync("/api/audit")).EnumerateArray()
+        var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .First(entry => entry.GetProperty("action").GetString() == "service.restart");
         audit.GetProperty("detail").GetString().Should().Be("reason: cache stuck");
     }
@@ -86,7 +86,7 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
             new { operation = "reset", confirm = "foreverpin-prod", reason = "schema drifted" });
         accepted.StatusCode.Should().Be(HttpStatusCode.Accepted, await accepted.Content.ReadAsStringAsync());
         Fixture.Deployments.Controls[^1].Should().Be(("foreverpin-prod", "reset", (string?)null, "test-admin", "schema drifted"));
-        var audit = (await DataAsync("/api/audit")).EnumerateArray()
+        var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Where(entry => entry.GetProperty("action").GetString() == "database.reset").ToList();
         audit.Should().Contain(entry => entry.GetProperty("subject").GetString() == "foreverpin-dev");
         audit.Should().Contain(entry => entry.GetProperty("subject").GetString() == "foreverpin-prod"

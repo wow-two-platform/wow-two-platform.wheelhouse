@@ -188,7 +188,7 @@ public sealed class ProductsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE
         (await client.PutJsonAsync("api/products/foreverpin/status", new { status = "inactive" })).EnsureSuccessStatusCode();
         (await client.PutJsonAsync("api/products/foreverpin/services/redirect/status", new { status = "inactive" })).EnsureSuccessStatusCode();
 
-        var entries = (await AdminClient.GetFromJsonAsync<JsonElement>("api/audit")).GetProperty("data").EnumerateArray()
+        var entries = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Select(entry => (entry.GetProperty("action").GetString(), entry.GetProperty("subject").GetString(), entry.GetProperty("detail").GetString()))
             .Reverse();
         entries.Should().Equal(("product.status", "foreverpin", "Inactive"), ("service.status", "foreverpin/redirect", "Inactive"));

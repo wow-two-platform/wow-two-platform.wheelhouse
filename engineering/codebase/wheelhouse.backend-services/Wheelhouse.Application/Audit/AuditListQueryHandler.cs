@@ -2,23 +2,30 @@ using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Domain.Targets.Enums;
 using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
+using WoW.Two.Sdk.Beta.Be.Web.Contracts.Paging;
 
 namespace Wheelhouse.Application.Audit;
 
 /// <summary>Handles <see cref="AuditListQuery"/>.</summary>
 public sealed class AuditListQueryHandler(
     IAuditTrail trail, IProductsRepository products, ITargetsRepository targets, IVaultsRepository vaults)
-    : IQueryHandler<AuditListQuery, AppResult<IReadOnlyList<AuditEntryDto>>>
+    : IQueryHandler<AuditListQuery, AppResult<TokenPageDto<AuditEntryDto>>>
 {
     /// <inheritdoc />
-    public async ValueTask<AppResult<IReadOnlyList<AuditEntryDto>>> HandleAsync(
+    public async ValueTask<AppResult<TokenPageDto<AuditEntryDto>>> HandleAsync(
         AuditListQuery request, CancellationToken cancellationToken)
     {
         var scope = string.IsNullOrWhiteSpace(request.Product)
             ? null
             : await ScopeOfAsync(request.Product.Trim(), cancellationToken);
-        var entries = await trail.ListAsync(request.Limit, request.Before, scope, cancellationToken);
-        return AppResult<IReadOnlyList<AuditEntryDto>>.Ok([.. entries.Select(AuditEntryDto.From)]);
+        var page = await trail.ListAsync(
+            new TokenPageApiRequest { PageToken = request.PageToken, PageSize = request.PageSize }, scope, cancellationToken);
+        return AppResult<TokenPageDto<AuditEntryDto>>.Ok(new TokenPageDto<AuditEntryDto>
+        {
+            Items = [.. page.Items.Select(AuditEntryDto.From)],
+            PageSize = page.PageSize,
+            NextPageToken = page.NextPageToken
+        });
     }
 
     /// <summary>Names every subject the product's entries carry: its current targets and, so a removed target's history

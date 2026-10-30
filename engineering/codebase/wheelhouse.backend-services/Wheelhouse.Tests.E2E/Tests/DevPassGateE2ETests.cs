@@ -70,7 +70,7 @@ public sealed class DevPassGateE2ETests(WheelhouseAppFixture fixture) : Wheelhou
         Assert.Equal(HttpStatusCode.Conflict, typed.StatusCode);
         Assert.Contains(PastTheGates, await typed.Content.ReadAsStringAsync());
 
-        var entry = (await AdminClient.GetFromJsonAsync<JsonElement>("/api/audit")).GetProperty("data")[0];
+        var entry = (await AdminClient.AuditItemsAsync())[0];
         Assert.Equal(Bundle + ", without a dev pass, reason: dev is down", entry.GetProperty("detail").GetString());
     }
 
@@ -109,7 +109,7 @@ public sealed class DevPassGateE2ETests(WheelhouseAppFixture fixture) : Wheelhou
                 "v0.9.0", null));
         }
 
-        var entries = (await AdminClient.GetFromJsonAsync<JsonElement>("/api/audit")).GetProperty("data").EnumerateArray()
+        var entries = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Select(entry => (entry.GetProperty("action").GetString(), entry.GetProperty("subject").GetString(),
                 entry.GetProperty("detail").GetString()))
             .ToArray();

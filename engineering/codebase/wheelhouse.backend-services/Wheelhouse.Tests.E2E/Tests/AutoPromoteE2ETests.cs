@@ -25,7 +25,7 @@ public sealed class AutoPromoteE2ETests(WheelhouseAppFixture fixture) : Wheelhou
 
         (await PassAsync()).Submitted.Should().Be(1);
         Fixture.Deployments.Starts.Should().Equal(("foreverpin-prod", "foreverpin-gh-2", "automation"));
-        var entry = (await DataAsync("/api/audit")).EnumerateArray()
+        var entry = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .First(item => item.GetProperty("action").GetString() == "deployment.start");
         entry.GetProperty("detail").GetString().Should().Be("foreverpin-gh-2, automatic: promoted after its dev watch");
 
@@ -55,7 +55,7 @@ public sealed class AutoPromoteE2ETests(WheelhouseAppFixture fixture) : Wheelhou
         Seed(watch, TimeSpan.FromMinutes(minutesAgo));
         (await PassAsync()).Submitted.Should().Be(0);
         Fixture.Deployments.Starts.Should().BeEmpty();
-        (await DataAsync("/api/audit")).EnumerateArray()
+        (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Count(item => item.GetProperty("action").GetString() == "deployment.start").Should().Be(0, "nothing is tried, so nothing is refused");
     }
 

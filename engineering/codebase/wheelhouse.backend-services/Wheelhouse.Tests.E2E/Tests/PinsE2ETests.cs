@@ -250,7 +250,6 @@ public sealed class PinsE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBa
         (await ActionClient("pin").PutJsonAsync("api/pins/order", new { ids = new[] { b.Id, a.Id } })).EnsureSuccessStatusCode();
         (await ActionClient("pin").DeleteAsync("api/pins/" + a.Id)).EnsureSuccessStatusCode();
 
-        var audit = await AdminClient.GetFromJsonAsync<JsonElement>("api/audit");
-        audit.GetProperty("data").GetArrayLength().Should().Be(0);
+        (await AdminClient.AuditItemsAsync()).GetArrayLength().Should().Be(0);
     }
 }

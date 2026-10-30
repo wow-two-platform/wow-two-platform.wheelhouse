@@ -678,7 +678,7 @@ public sealed class CatalogE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2
 
         (await ImportClient().PostJsonAsync("api/catalog/import", new { slugs = new[] { "secrets-vault", "wheelhouse" } })).EnsureSuccessStatusCode();
 
-        var entry = (await DataAsync(await AdminClient.GetAsync("api/audit"))).EnumerateArray().Single();
+        var entry = (await AdminClient.AuditItemsAsync()).EnumerateArray().Single();
         (entry.GetProperty("action").GetString(), entry.GetProperty("subject").GetString(), entry.GetProperty("outcome").GetString(),
                 entry.GetProperty("detail").GetString())
             .Should().Be(("catalog.import", "catalog", "succeeded", "secrets-vault, wheelhouse"));

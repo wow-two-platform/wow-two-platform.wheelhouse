@@ -188,7 +188,7 @@ public sealed class MultiRepoProductE2ETests(WheelhouseAppFixture fixture) : Whe
 
     private async Task<JsonElement[]> ServiceChangesAsync() =>
     [
-        .. (await DataAsync(await AdminClient.GetAsync("api/audit"))).EnumerateArray()
+        .. (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Where(entry => entry.GetProperty("action").GetString() == "product.services"),
     ];
 

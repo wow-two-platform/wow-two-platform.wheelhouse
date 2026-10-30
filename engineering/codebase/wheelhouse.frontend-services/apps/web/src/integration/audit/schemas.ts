@@ -11,6 +11,15 @@ export const AuditEntrySchema = z.object({
   detail: z.string().nullable().optional(),
   reason: z.string().nullable().optional(),
 });
+/** A page of the trail; the last page carries no token. */
+export const AuditPageSchema = z.object({
+  items: z.array(AuditEntrySchema),
+  pageSize: z.number().int(),
+  nextPageToken: z
+    .string()
+    .nullish()
+    .transform((value) => value ?? null),
+});
 export const AuditVerificationSchema = z.object({
   intact: z.boolean(),
   entries: z.number().int(),

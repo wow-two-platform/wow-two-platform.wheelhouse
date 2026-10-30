@@ -43,7 +43,7 @@ public sealed class DeployFreezesE2ETests(WheelhouseAppFixture fixture) : Wheelh
             .Select(item => item.GetProperty("covers").GetString()).ToList();
         listed.Should().Equal("every product", "foreverpin", "foreverpin prod");
 
-        var audit = (await DataAsync("/api/audit")).EnumerateArray()
+        var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Where(entry => entry.GetProperty("action").GetString() == "deployment.freeze")
             .Select(entry => (entry.GetProperty("subject").GetString(), entry.GetProperty("detail").GetString())).ToList();
         audit.Should().Contain(("portfolio", "launch day")).And.Contain(("foreverpin/prod", "debugging billing"));
@@ -73,7 +73,7 @@ public sealed class DeployFreezesE2ETests(WheelhouseAppFixture fixture) : Wheelh
             .StatusCode.Should().Be(HttpStatusCode.NoContent, "lifting an unfrozen scope changes nothing");
         (await DataAsync("/api/deployments/freezes")).EnumerateArray()
             .Select(item => item.GetProperty("covers").GetString()).Should().Equal("foreverpin");
-        (await DataAsync("/api/audit")).EnumerateArray()
+        (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Count(entry => entry.GetProperty("action").GetString() == "deployment.unfreeze").Should().Be(2);
     }
 
@@ -97,7 +97,7 @@ public sealed class DeployFreezesE2ETests(WheelhouseAppFixture fixture) : Wheelh
         overridden.StatusCode.Should().Be(HttpStatusCode.Accepted, await overridden.Content.ReadAsStringAsync());
         Fixture.Deployments.LastReason.Should().Be("security fix");
 
-        var details = (await DataAsync("/api/audit")).EnumerateArray()
+        var details = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Where(entry => entry.GetProperty("action").GetString() == "deployment.start")
             .Select(entry => entry.GetProperty("detail").GetString()).ToList();
         details.Should().Contain("foreverpin-gh-1, overriding a freeze, reason: security fix");
@@ -169,7 +169,7 @@ public sealed class DeployFreezesE2ETests(WheelhouseAppFixture fixture) : Wheelh
         var pass = await PassAsync();
         pass.Dropped.Should().Be(1);
         Fixture.Deployments.Starts.Should().BeEmpty();
-        var entry = (await DataAsync("/api/audit")).EnumerateArray()
+        var entry = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Single(item => item.GetProperty("action").GetString() == "deployment.start");
         entry.GetProperty("actor").GetString().Should().Be("automation");
         entry.GetProperty("outcome").GetString().Should().Be("failed");

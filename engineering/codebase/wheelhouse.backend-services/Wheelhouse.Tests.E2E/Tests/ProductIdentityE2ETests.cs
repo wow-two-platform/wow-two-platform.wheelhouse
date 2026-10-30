@@ -325,9 +325,7 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
 
         await AdminClient.GetAsync("api/products");
 
-        var audit = await (await AdminClient.GetAsync("api/audit")).Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(audit);
-        document.RootElement.GetProperty("data").GetArrayLength().Should().Be(0);
+        (await AdminClient.AuditItemsAsync()).GetArrayLength().Should().Be(0);
     }
 
     [Fact]
@@ -382,10 +380,8 @@ public sealed class ProductIdentityE2ETests(WheelhouseAppFixture fixture) : Whee
 
         await ActionClient("refresh").PostAsync("api/products/foreverpin/identity/refresh", null);
 
-        var audit = await (await AdminClient.GetAsync("api/audit")).Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(audit);
         // The refresh also brings the approved services up to deploy.yml, which audits on its own (product.services).
-        var entry = document.RootElement.GetProperty("data").EnumerateArray()
+        var entry = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Where(item => item.GetProperty("action").GetString() == "product.refresh").Should().ContainSingle().Which;
         (entry.GetProperty("subject").GetString(), entry.GetProperty("outcome").GetString())
             .Should().Be(("foreverpin", "succeeded"));

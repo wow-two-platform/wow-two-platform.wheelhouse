@@ -138,7 +138,7 @@ public sealed class SecretsVaultE2ETests(WheelhouseAppFixture fixture) : Wheelho
             .StatusCode.Should().Be(HttpStatusCode.Accepted);
         Fixture.Deployments.LastSettings!.Value.GetProperty("values").GetProperty("Billing:SecretKey").GetString()
             .Should().Be(Secret + "-rotated");
-        (await DataAsync("/api/audit")).EnumerateArray().Select(entry => entry.GetProperty("action").GetString())
+        (await AdminClient.AuditItemsAsync()).EnumerateArray().Select(entry => entry.GetProperty("action").GetString())
             .Should().Contain("settings.secret.restore");
     }
 
@@ -196,7 +196,7 @@ public sealed class SecretsVaultE2ETests(WheelhouseAppFixture fixture) : Wheelho
         Fixture.Deployments.Starts.Last().Should().Be(("foreverpin-dev", "foreverpin-gh-1", "test-admin"));
         Fixture.Deployments.LastReason.Should().Be("Settings apply: rotated the Stripe key");
         Fixture.Deployments.LastSettings!.Value.GetProperty("values").GetProperty("Billing:SecretKey").GetString().Should().Be(Secret + "-2");
-        (await DataAsync("/api/audit")).EnumerateArray().Select(entry => entry.GetProperty("action").GetString())
+        (await AdminClient.AuditItemsAsync()).EnumerateArray().Select(entry => entry.GetProperty("action").GetString())
             .Should().Contain(["settings.apply", "deployment.start"]);
     }
 
@@ -222,7 +222,7 @@ public sealed class SecretsVaultE2ETests(WheelhouseAppFixture fixture) : Wheelho
         Fixture.Deployments.LastReason.Should().Be("Settings apply");
         Fixture.Deployments.LastActor.Should().Be("test-admin", "the apply acts for the owner who scheduled it");
         (await DataAsync("/api/deployments/targets/foreverpin-dev/settings")).GetProperty("pending").ValueKind.Should().Be(JsonValueKind.Null);
-        (await DataAsync("/api/audit")).EnumerateArray()
+        (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Any(entry => entry.GetProperty("action").GetString() == "deployment.start"
                           && entry.GetProperty("detail").GetString()!.Contains("scheduled: applies edited settings")).Should().BeTrue();
 
@@ -278,7 +278,7 @@ public sealed class SecretsVaultE2ETests(WheelhouseAppFixture fixture) : Wheelho
         (data.GetProperty("state").GetString(), data.GetProperty("canary").GetBoolean(), data.GetProperty("products").GetInt32(),
                 data.GetProperty("secrets").GetInt32(), data.GetProperty("versions").GetInt32(), data.GetProperty("failed").GetInt32())
             .Should().Be(("unsealed", true, 1, 2, 3, 0));
-        (await DataAsync("/api/audit")).EnumerateArray().Single(entry => entry.GetProperty("action").GetString() == "vault.verify")
+        (await AdminClient.AuditItemsAsync()).EnumerateArray().Single(entry => entry.GetProperty("action").GetString() == "vault.verify")
             .GetProperty("detail").GetString().Should().Be("unsealed, canary verified, 1 product keys, 2 secrets, 3 versions decrypted, 0 failed");
     }
 
@@ -313,7 +313,7 @@ public sealed class SecretsVaultE2ETests(WheelhouseAppFixture fixture) : Wheelho
         var again = (await (await Owner("vault").PostAsJsonAsync("/api/vault/import", new { vault = "pilot-vault" }))
             .Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data");
         (again.GetProperty("secrets").GetInt32(), again.GetProperty("skipped").GetInt32()).Should().Be((0, 2));
-        (await DataAsync("/api/audit")).EnumerateArray().Count(entry => entry.GetProperty("action").GetString() == "vault.import")
+        (await AdminClient.AuditItemsAsync()).EnumerateArray().Count(entry => entry.GetProperty("action").GetString() == "vault.import")
             .Should().Be(2);
     }
 
@@ -354,7 +354,7 @@ public sealed class SecretsVaultE2ETests(WheelhouseAppFixture fixture) : Wheelho
         Fixture.Deployments.LastSettings!.Value.GetProperty("values").GetProperty("Billing:SecretKey").GetString().Should().Be("dev-v2");
         var verified = (await (await Owner("vault").PostAsync("/api/vault/verify", null)).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data");
         (verified.GetProperty("versions").GetInt32(), verified.GetProperty("failed").GetInt32()).Should().Be((3, 0));
-        (await DataAsync("/api/audit")).EnumerateArray()
+        (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Where(entry => entry.GetProperty("action").GetString() == "vault.import")
             .Should().OnlyContain(entry => entry.GetProperty("actor").GetString() == "cli").And.HaveCount(2);
     }

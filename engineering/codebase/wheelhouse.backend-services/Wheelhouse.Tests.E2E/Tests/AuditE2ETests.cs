@@ -128,14 +128,36 @@ public sealed class AuditE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EB
     }
 
     [Fact]
-    public async Task List_PagesBackNewestFirst()
+    public async Task List_PagesBackNewestFirst_ByTheTokenEachPageAnswersWith()
     {
         foreach (var release in new[] { "v1", "v2", "v3" })
             await Deploy("pilot", release);
 
-        Assert.Equal([3L, 2L], (await Entries("?limit=2")).Select(e => e.GetProperty("sequence").GetInt64()));
-        Assert.Equal([1L], (await Entries("?limit=2&before=2")).Select(e => e.GetProperty("sequence").GetInt64()));
-        Assert.Equal(HttpStatusCode.BadRequest, (await AdminClient.GetAsync("/api/audit?limit=201")).StatusCode);
+        var first = await AdminClient.AuditPageAsync("?pageSize=2");
+        Assert.Equal([3L, 2L], Sequences(first));
+        Assert.Equal(2, first.GetProperty("pageSize").GetInt32());
+        var token = first.GetProperty("nextPageToken").GetString()!;
+
+        // A newer entry lands between the two reads: the older page continues after the last entry shown.
+        await Deploy("pilot", "v4");
+        var last = await AdminClient.AuditPageAsync("?pageSize=2&pageToken=" + Uri.EscapeDataString(token));
+        Assert.Equal([1L], Sequences(last));
+        Assert.False(last.TryGetProperty("nextPageToken", out _), "The last page carries no token.");
+
+        Assert.Equal(50, (await AdminClient.AuditPageAsync()).GetProperty("pageSize").GetInt32());
+    }
+
+    [Theory]
+    [InlineData("?pageSize=201")]
+    [InlineData("?pageSize=0")]
+    [InlineData("?pageToken=not-a-token")]
+    [InlineData("?pageToken=WyJ4Il0")]
+    [InlineData("?pageToken=WzEsMl0")]
+    public async Task List_RefusesAPageSizeOutOfRangeAndATokenNoPageAnsweredWith(string query)
+    {
+        await Deploy("pilot", "v1");
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await AdminClient.GetAsync("/api/audit" + query)).StatusCode);
     }
 
     [Fact]
@@ -156,7 +178,13 @@ public sealed class AuditE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EB
             [("product.status", "foreverpin"), ("vault.secret.set", "pilot-vault/foreverpin-dev"),
                 ("service.status", "foreverpin/management"), ("deployment.start", "foreverpin-dev")],
             subjects);
-        Assert.Equal([4L], (await Entries("?product=foreverpin&limit=1&before=7")).Select(e => e.GetProperty("sequence").GetInt64()));
+        // The product's entries page by the same token: 7, 4, 3 and 1 are its own.
+        var newest = await AdminClient.AuditPageAsync("?product=foreverpin&pageSize=2");
+        Assert.Equal([7L, 4L], Sequences(newest));
+        var older = await AdminClient.AuditPageAsync(
+            "?product=foreverpin&pageSize=2&pageToken=" + Uri.EscapeDataString(newest.GetProperty("nextPageToken").GetString()!));
+        Assert.Equal([3L, 1L], Sequences(older));
+        Assert.False(older.TryGetProperty("nextPageToken", out _), "The last page carries no token.");
         Assert.Equal(["wheelhouse"], (await Entries("?product=wheelhouse")).Select(e => e.GetProperty("subject").GetString()));
         Assert.Empty(await Entries("?product=no-such-product"));
         Assert.Equal(7, (await Entries()).Length);
@@ -240,11 +268,11 @@ public sealed class AuditE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EB
         Assert.Equal(HttpStatusCode.OK, (await send(client)).StatusCode);
     }
 
-    private async Task<JsonElement[]> Entries(string query = "")
-    {
-        var document = await AdminClient.GetFromJsonAsync<JsonElement>("/api/audit" + query);
-        return [.. document.GetProperty("data").EnumerateArray()];
-    }
+    private async Task<JsonElement[]> Entries(string query = "") =>
+        [.. (await AdminClient.AuditItemsAsync(query)).EnumerateArray()];
+
+    private static long[] Sequences(JsonElement page) =>
+        [.. page.GetProperty("items").EnumerateArray().Select(entry => entry.GetProperty("sequence").GetInt64())];
 
     private async Task<JsonElement> Verification() =>
         (await AdminClient.GetFromJsonAsync<JsonElement>("/api/audit/verification")).GetProperty("data");

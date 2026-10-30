@@ -93,7 +93,7 @@ public sealed class RootKeyChecksE2ETests(WheelhouseAppFixture fixture) : Wheelh
             .Should().Be((false, "test-admin", Reason, now, now.AddDays(90)));
         (await DataAsync("/api/vault/issues")).GetProperty("offlineCopy").ValueKind.Should().Be(JsonValueKind.Null);
 
-        var entries = (await DataAsync("/api/audit")).EnumerateArray()
+        var entries = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Where(entry => entry.GetProperty("action").GetString() == "vault.offline-copy.verify").ToList();
         entries.Select(entry => (entry.GetProperty("subject").GetString(), entry.GetProperty("outcome").GetString()))
             .Should().AllSatisfy(item => item.Item1.Should().Be("root-key"));

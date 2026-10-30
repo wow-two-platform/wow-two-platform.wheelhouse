@@ -430,8 +430,7 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
 
     private async Task<List<JsonElement>> Entries()
     {
-        var data = await Data(await AdminClient.GetAsync("api/audit?limit=50"));
-        return [.. data.EnumerateArray()];
+        return [.. (await AdminClient.AuditItemsAsync("?pageSize=50")).EnumerateArray()];
     }
 
     private async Task<(string?, string?, string?)> LastAudit()
