@@ -51,6 +51,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Retire CI's deploy path and its secrets after the burn-in | engineering | After the self-deploy burn-in below; fallback in `deployment.md` § Activation |
 | Close the control host's public SSH | engineering | Once CI's deploy path is retired |
 | Burn in Wheelhouse's self-deploy with three self-promotions | product | Runs to 2026-10-31; the first self-promotion ran 2026-10-24. Fallback in `deployment.md` § Activation |
+| Ability to upgrade a host's PostgreSQL major version from the console | feature | User 2026-10-30: next major in 1–2 years. `postgres-move.py` moves 16 → 18 by hand over SSH today; generalize it to any N → M and run it as a server job on both hosts |
 | Ability to manage the control host's firewall, SSH and updates like a products host | feature | |
 | Ability to rebuild the control host from backups, rehearsed | feature | |
 | Sign in to the local console through a localhost GitHub OAuth app | feature | Local rig sign-in; the `rehearse.py console` check depends on it |
