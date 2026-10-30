@@ -47,6 +47,7 @@ public static class HostConfiguration
         app.UseApiDefaults(useIdentity: pipeline => pipeline.UseWheelhouseAuth());
 
         app.MapControllers();
+        app.MapIdentityEndpoints();
         app.MapWheelhouseMcp();
 
         return app;

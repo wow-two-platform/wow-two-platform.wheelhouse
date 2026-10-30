@@ -7,6 +7,7 @@ using WoW.Two.Sdk.Beta.Be.Identity.ApiKeys;
 using WoW.Two.Sdk.Beta.Be.Identity.Authorization;
 using WoW.Two.Sdk.Beta.Be.Identity.Claims;
 using WoW.Two.Sdk.Beta.Be.Identity.Cookies;
+using WoW.Two.Sdk.Beta.Be.Identity.OAuth.Endpoints;
 using WoW.Two.Sdk.Beta.Be.Identity.OAuth.GitHub;
 
 namespace Wheelhouse.Api.Auth;
@@ -20,8 +21,19 @@ public static class AuthConfigurationExtensions
     /// <summary>The GitHub OAuth challenge scheme.</summary>
     public const string GitHubScheme = "GitHub";
 
+    /// <summary>The route group of the sign-in endpoints: sign-in, me, sign-out and GitHub's callback.</summary>
+    public const string IdentityPath = "/api/identity";
+
     /// <summary>The path GitHub redirects back to after authorization.</summary>
-    public const string CallbackPath = "/api/identity/callback";
+    public const string CallbackPath = IdentityPath + "/callback";
+
+    /// <summary>The session cookie's name for prod and for a local run; any other deployed environment adds its own
+    /// suffix (<c>.wheelhouse.auth.dev</c>), since dev and prod share one host name and cookies ignore the port.</summary>
+    public const string SessionCookie = ".wheelhouse.auth";
+
+    /// <summary>What sign-in answers, as a 503 problem, until the OAuth app is configured.</summary>
+    public const string NotConfiguredDetail =
+        "GitHub sign-in is not configured. Set Identity:GitHub:ClientId and Identity:GitHub:ClientSecret (user-secrets).";
 
     /// <summary>The authorization policy protected endpoints require.</summary>
     public const string AdminPolicy = "WheelhouseAdmin";
@@ -41,9 +53,6 @@ public static class AuthConfigurationExtensions
     public static WebApplicationBuilder AddAuthentication(this WebApplicationBuilder builder)
     {
         // Bind both settings through the SDK loader: section bind + environment-variable overlay (+ required validation).
-        // GitHubOAuthSettings is also registered as IOptions<T> — IdentityController reads it to gate sign-in on IsConfigured.
-        builder.Services.AddEnvironmentOverlaidOptions<GitHubOAuthSettings>(builder.Configuration, "Identity:GitHub");
-
         var gitHub = ConfigurationMapper.Load<GitHubOAuthSettings>(builder.Configuration, "Identity:GitHub");
         var authSettings = ConfigurationMapper.Load<AuthSettings>(builder.Configuration, "Identity");
 
@@ -51,11 +60,13 @@ public static class AuthConfigurationExtensions
         builder.Services.AddCookieAuthentication(o =>
         {
             o.Mode = AuthChallengeMode.Api;
-            o.CookieName = SessionCookies.SessionCookieName(builder.Configuration.GetDeployEnvironment());
+            o.CookieName = SessionCookie;
+            o.Environment = builder.Configuration.GetDeployEnvironment();
             o.ExpireTimeSpan = TimeSpan.FromHours(8);
         });
 
-        // GitHub is the login provider — registered only when configured, so the host boots with empty creds.
+        // GitHub is the login provider — registered only when configured, so the host boots with empty creds and
+        // sign-in answers 503 (MapIdentityEndpoints).
         if (gitHub.IsConfigured)
         {
             builder.Services.AddAuthentication().AddGitHubAuthentication(
@@ -119,6 +130,16 @@ public static class AuthConfigurationExtensions
         if ((app.Environment.IsProduction() || app.Configuration.IsDeployed())
             && !authSettings.AllowedGitHubLogins.Any(login => !string.IsNullOrWhiteSpace(login)))
             throw new InvalidOperationException("A deployed console requires Identity:AllowedGitHubLogins.");
+        return app;
+    }
+
+    /// <summary>Maps the SDK sign-in endpoints under <see cref="IdentityPath"/>: <c>sign-in</c> (a GitHub challenge, 503
+    /// until configured), <c>me</c> and <c>sign-out</c>.</summary>
+    /// <param name="app">The application.</param>
+    /// <returns>The same application for chaining.</returns>
+    public static WebApplication MapIdentityEndpoints(this WebApplication app)
+    {
+        app.MapGroup(IdentityPath).MapOAuthSignInEndpoints(GitHubScheme, o => o.NotConfiguredDetail = NotConfiguredDetail);
         return app;
     }
 

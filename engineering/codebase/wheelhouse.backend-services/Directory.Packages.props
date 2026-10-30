@@ -2,7 +2,7 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <BackendSdkVersion>10.0.94-beta</BackendSdkVersion>
-    <IdentitySdkVersion>10.0.8-beta</IdentitySdkVersion>
+    <IdentitySdkVersion>10.0.9-beta</IdentitySdkVersion>
   </PropertyGroup>
 
   <!-- be sdk: one family, bumped together. -->
