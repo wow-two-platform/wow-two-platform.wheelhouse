@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-10-29*
+*Last updated: 2026-10-30*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -36,6 +36,7 @@ Every unbuilt item; top of each group = next. The active version is the newest f
 | Products hosts | shipped v0.5 | Servers enrolled onto the tailnet from the console; databases and private sites placed; public sites on baseline sslip.io hosts; kit refresh; per-deploy registry sign-in |
 | Self-deploy | shipped v0.5 | Prod deploys each Wheelhouse release to dev and promotes itself; a host-side deploy and rollback when no console answers |
 | Release sets | shipped v0.5 | A product of several repositories; its release is a set of repository releases, promoted together |
+| Database moves | shipped v0.9 | A host's PostgreSQL moved 16 → 18 over SSH by `postgres-move.py`; a product's database reset from the Migrations panel, rebuilt by the next deploy |
 | Domains | planned | Registrar and DNS integrations, expiry tracking; site hosts per target exist |
 | Data | planned | Platform PostgreSQL per host, managed backups and verified restores; a backup runbook exists |
 | Costs and capacity | planned | Provider billing and placement views; a manual host budget exists |
@@ -108,6 +109,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Ability to gate Wheelhouse's own returns without forced compatibility | engineering | Drop the forced `rollbackCompatible` from `self-deploy.py` `gated()` and `fleet.py` once neither console keeps a release from before `v0.7.8`; both still did on 2026-10-30 |
 | Fix the console's history missing a break-glass rollout | fix | 2026-10-30: `self-deploy.py` promoted prod to `v0.9.0`, yet Deployments still lists the failed console promotion as unrecovered and offers `v0.7.8` → `v0.9.0` |
 | Fix a database reset inside the post-rollout watch reading as degraded | fix | The reset leaves the services stopped until the next deploy; the watch reads them exited |
 | Ability to back up databases and volumes off-provider on a schedule | feature | |
