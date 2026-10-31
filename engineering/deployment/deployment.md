@@ -907,6 +907,7 @@ python3 rehearse.py harden                                    # harden-control.s
 python3 rehearse.py products                                  # the products-host kit on a second local host
 python3 rehearse.py networks                                  # fixed platform addresses survive dynamic containers
 python3 rehearse.py enroll                                    # a fresh Ubuntu 26.04 host enrolled, placed, policy applied
+python3 rehearse.py generated                                 # generated and linked keys through the console's API, values kept out
 python3 rehearse.py down --volumes
 ```
 
