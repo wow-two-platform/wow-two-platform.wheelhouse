@@ -161,6 +161,40 @@ class BundleContractTests(unittest.TestCase):
                          (settings["optional"], settings["secrets"]))
         self.assertEqual({"type": "date", "format": "dd.MM.yyyy"}, settings["types"]["Promo:EndsOn"])
 
+    @unittest.skipUnless(release is not None and hasattr(release, "generate_of"),
+                         "the pinned generator predates generated and linked keys")
+    def test_generated_and_linked_keys_reach_the_runners_declarations(self):
+        declared = copy.deepcopy(DESCRIPTOR)
+        signing, client = "Identity:Server:Keys:Signing:0", "Identity:Server:Clients:0:ClientSecret"
+        declared["services"]["api"]["settings"]["keys"] = {
+            signing: {"secret": True, "required": True,
+                      "generate": {"command": ["dotnet", "Pilot.Api.dll", "keys", "generate", "--role", "signing"]}},
+            client: {"secret": True, "required": True, "generate": {"random": 32}},
+            "Identity:Server:Issuer": {"from": "Sites:app:Url"},
+        }
+        declared["services"]["edge"]["settings"] = {"keys": {"Auth:ClientSecret": {"from": client}}}
+        self.descriptor = release.validate(declared)
+        validated = self.bundle("main")
+        # A linked key is never required; the generated ones are, as declared.
+        self.assertEqual({"api": ["Database:Connection", signing, client], "edge": []}, validated["requiredConfiguration"])
+        settings = runner.release_settings(validated)
+        self.assertEqual({signing: {"command": ["dotnet", "Pilot.Api.dll", "keys", "generate", "--role", "signing"],
+                                    "timeoutSeconds": 120},
+                          client: {"random": 32, "encoding": "base64url"}}, settings["api"]["generate"])
+        self.assertEqual(({"Identity:Server:Issuer": "Sites:app:Url"}, {"Auth:ClientSecret": client}),
+                         (settings["api"]["links"], settings["edge"]["links"]))
+        target = {"product": "pilot", "environment": "dev", "root": "/srv/wheelhouse", "render": True,
+                  "ingress": {"scheme": "https", "entryPoints": ["web"], "hosts": {"app": "app.pilot.example"}}}
+        keys = {service["name"]: {item["key"]: item for item in service["keys"]}
+                for service in runner.settings_declarations(target, validated)["services"]}
+        self.assertEqual(({"random": 32, "encoding": "base64url"}, True, True),
+                         (keys["api"][client]["generate"], keys["api"][client]["secret"], keys["api"][client]["required"]))
+        self.assertEqual("signing", keys["api"][signing]["generate"]["command"][-1])
+        self.assertEqual({"key": "Identity:Server:Issuer", "required": False, "secret": False, "from": "Sites:app:Url"},
+                         keys["api"]["Identity:Server:Issuer"])
+        self.assertEqual({"key": "Auth:ClientSecret", "required": False, "secret": True, "from": client},
+                         keys["edge"]["Auth:ClientSecret"])
+
     @unittest.skipUnless(release is not None and hasattr(release, "record_sets"), "the pinned generator predates migrate")
     def test_a_bundle_declaring_migrate_carries_the_items_sets_and_extensions_the_runner_reads(self):
         declared = copy.deepcopy(DESCRIPTOR)

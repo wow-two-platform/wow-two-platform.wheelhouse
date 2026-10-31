@@ -28,11 +28,16 @@ import inventory
 import registry
 import release_sets
 from fleet import rehearsal
-from runner import (OPERATIONS, PROXIES, SLUG, TERMINAL, CommandFailed, Rejected, now, reason, rejection, require,
-                    read_json, write_json, validate_bundle, validate_target, empty_topology, provided_values,
-                    settings_declarations, stopped_refusal)
+from runner import (GENERATE_PULL_TIMEOUT, OPERATIONS, PROXIES, SETTING_KEY, SLUG, TERMINAL, CommandFailed, Rejected,
+                    now, reason, rejection, require, read_json, write_json, validate_bundle, validate_target,
+                    empty_topology, provided_values, release_settings, settings_declarations, stopped_refusal)
 
 RUNNER = Path(__file__).with_name("runner.py")
+# How a remote runner reads its own source and a document from one stdin: the first line counts the source's bytes, the
+# source follows and runs as `python3 -` would run it, and what remains is the document its `--stdin` reads. Nothing is
+# written on the target.
+BOOTSTRAP = ("import sys; size = int(sys.stdin.buffer.readline()); source = sys.stdin.buffer.read(size); "
+             "sys.argv[0] = 'runner.py'; exec(compile(source, 'runner.py', 'exec'), {'__name__': '__main__'})")
 # A site address a rollout recorded: http(s), a host, an optional port and path.
 SITE_URL = re.compile(r"https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[^\s]*)?")
 # A fleet rollout's identifier, as the control plane writes a GUID.
@@ -93,12 +98,18 @@ def encode(value):
     return base64.b64encode(json.dumps(value).encode()).decode()
 
 
-def run_remote(ssh, action, target, *arguments, release=None, timeout=30):
-    # Streams this runner over stdin, so read-only calls leave no files on the target.
+def run_remote(ssh, action, target, *arguments, release=None, timeout=30, document=None):
+    """Streams this runner over stdin, so read-only calls leave no files on the target. A `document` (it may hold a
+    secret, so never an argument) follows the runner on the same stdin, through BOOTSTRAP, for the runner's `--stdin`."""
+    source = RUNNER.read_text()
     command = ["python3", "-", action, "--target-json", encode(target), *arguments]
+    if document is not None:
+        command[1:2] = ["-c", BOOTSTRAP]
+        command.append("--stdin")
+        source = str(len(source.encode())) + "\n" + source + json.dumps(document)
     if release is not None:
         command += ["--release-json", encode(release)]
-    return json.loads(ssh.run(shlex.join(command), RUNNER.read_text(), timeout))
+    return json.loads(ssh.run(shlex.join(command), source, timeout))
 
 
 def ssh_failure(step, result):
@@ -110,6 +121,9 @@ def ssh_failure(step, result):
         remote = None
     if isinstance(remote, dict) and isinstance(remote.get("reason"), str):
         return (Rejected if remote.get("failure") == "Rejected" else CommandFailed)(remote["reason"][:300])
+    # A generate run's own failure line: the command's last standard-error line, never its output.
+    if isinstance(remote, dict) and isinstance(remote.get("error"), str):
+        return CommandFailed(remote["error"][:300])
     known = next((message for marker, message in SSH_FAILURES if marker in result.stderr), step + " failed")
     return CommandFailed(known + " (exit " + str(result.returncode) + "); inspect the target privately")
 
@@ -942,6 +956,32 @@ def check(root, target_id, bundle_id=None, provided=None):
     return result
 
 
+def generate_setting(root, target_id, bundle_id, service, key):
+    """A generated key's value from its command (deploy descriptor § Generated and linked keys): the target's runner
+    runs it in a one-off container from the service's image in the release (`generate-setting`), with no network, no
+    settings file and no secret. A pull the image needs signs in the way a deploy's does, the sign-in on SSH stdin.
+    Returns `{"value": …}` to the caller and writes nothing: no job, history or note holds the value."""
+    config = fleet.resolve_target(root, target_id)
+    manifest = validate_bundle(artifacts.prepare(root, bundle_id, import_bundle))
+    validate_target(config["target"], manifest)
+    require(isinstance(service, str) and service in manifest["images"], "Unknown release service")
+    require(isinstance(key, str) and SETTING_KEY.fullmatch(key), "Invalid setting key")
+    spec = (release_settings(manifest).get(service) or {}).get("generate", {}).get(key)
+    require(spec is not None, service + " declares no generated value for " + key)
+    require("command" in spec, key + " is random bytes, which Wheelhouse makes itself")
+    image = manifest["images"][service]
+    login, attempt = registry.sign_in_for([image])
+    registry.note_packages(root, config["target"]["product"], [image], attempt)
+    unreadable = registry.unreadable_images(attempt)
+    document = {**({"registry": login} if login else {}), **({"unreadable": unreadable} if unreadable else {})}
+    result = run_remote(Ssh(config["ssh"]), "generate-setting", config["target"], "--service", service, "--key", key,
+                        release=manifest, timeout=spec["timeoutSeconds"] + GENERATE_PULL_TIMEOUT + 60,
+                        document=document)
+    if not (isinstance(result, dict) and isinstance(result.get("value"), str) and result["value"]):
+        raise CommandFailed("The target runner answered without a value")
+    return {"value": result["value"]}
+
+
 def reconcile(root, target_id, job_id, actor):
     require(str(uuid.UUID(job_id)) == job_id, "Invalid deployment id")
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
@@ -1106,11 +1146,13 @@ def main():
                                            "status", "jobs", "follow", "state", "check", "reconcile", "vitals", "stats", "topology",
                                            "branches", "commits", "build", "logs", "history", "observation",
                                            "latest", "facts", "changelog", "watch", "builds", "retention", "usage",
-                                           "settings", "registry", "compose", "control", "stops", "migrations"])
+                                           "settings", "registry", "compose", "control", "stops", "migrations",
+                                           "generate-setting"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
     parser.add_argument("--service")
+    parser.add_argument("--key", help="generate-setting: the configuration path of the generated key")
     parser.add_argument("--tail", type=int, default=200, help="logs: lines to read, 1-1000")
     parser.add_argument("--actor", default="operator")
     parser.add_argument("--job")
@@ -1213,12 +1255,19 @@ def main():
             result = stats(root, args.days)
         elif args.action == "logs":
             result = logs(root, args.target, args.service, args.tail)
+        elif args.action == "generate-setting":
+            result = generate_setting(root, args.target, args.bundle, args.service, args.key)
         else:
             result = status(root, args.job)
         print(json.dumps(result))
         return 0
     except Exception as error:
-        print(json.dumps(rejection(error)), file=sys.stderr)
+        failure = rejection(error)
+        if args.action == "generate-setting":
+            # The verb's own failure line names the reason as `error`; the rest keeps the API's runner client reading it.
+            failure = {"error": failure.get("reason") or "The value could not be generated (" + failure["failure"] + ")",
+                       **failure}
+        print(json.dumps(failure), file=sys.stderr)
         return 1
 
 

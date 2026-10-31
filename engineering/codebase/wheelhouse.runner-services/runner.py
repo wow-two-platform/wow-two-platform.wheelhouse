@@ -67,6 +67,20 @@ SETTING_KEY = re.compile(r"[A-Za-z0-9_.-]{1,100}(?::[A-Za-z0-9_.-]{1,100}){0,9}"
 # What a typed key's value must look like (a bundle's `settings.<service>.types`); Wheelhouse checks saved values.
 SETTING_TYPES = ("text", "number", "boolean", "choice", "url", "cron", "date", "email")
 DATE_FORMAT = re.compile(r"(yyyy|MM|dd|HH|mm|ss|[-./: T])+")
+# Generated and linked keys (deploy descriptor § Generated and linked keys). A secret key's `generate` is `random` bytes
+# the control plane makes itself, or a `command` the runner runs from the service's release image in a one-off
+# container: no network, no settings file, no secret, every capability dropped, the image's user, 512 MB. Its bounds,
+# the default timeout, how long the image's pull may take, and the longest value it may print (what a deploy may
+# provide for one key).
+GENERATE_RANDOM_BYTES = (16, 64)
+GENERATE_ENCODINGS = ("base64url", "hex")
+GENERATE_TIMEOUT = 120
+GENERATE_TIMEOUT_LIMITS = (10, 600)
+GENERATE_MEMORY = "512m"
+GENERATE_PULL_TIMEOUT = 600
+GENERATE_VALUE_LIMIT = 65536
+# The derived key a linked key may take besides a declared one: the origin of a site the product publishes here.
+SITE_URL_KEY = re.compile(r"Sites:(" + SLUG.pattern + r"):Url")
 # A key's last part naming a secret: its values belong in the vault, never in the settings store.
 SECRET_KEY = re.compile(r".*(password|passphrase|secret|token|apikey|key|pwd|credentials?|connectionstring|salt)",
                         re.IGNORECASE)
@@ -304,17 +318,43 @@ def dotnet_services(manifest, services):
     return set(declared) & set(services) if isinstance(declared, list) else set()
 
 
+def no_settings():
+    """The declarations of a service that declares nothing beyond its required keys."""
+    return {"optional": {}, "secrets": [], "allowed": {}, "types": {}, "generate": {}, "links": {}}
+
+
+def generated_spec(spec):
+    """A generated key's spec as a bundle carries it, defaults filled in: `{random: N, encoding}` (N bytes, 16-64,
+    `base64url` unless `hex`) or `{command: [program, arguments...], timeoutSeconds}` (10-600 seconds, 120 by default)."""
+    require(isinstance(spec, dict) and ("random" in spec) != ("command" in spec), "Invalid generated setting")
+    if "random" in spec:
+        count, encoding = spec["random"], spec.get("encoding", GENERATE_ENCODINGS[0])
+        require(set(spec) <= {"random", "encoding"} and type(count) is int
+                and GENERATE_RANDOM_BYTES[0] <= count <= GENERATE_RANDOM_BYTES[1] and encoding in GENERATE_ENCODINGS,
+                "Invalid generated setting")
+        return {"random": count, "encoding": encoding}
+    command, timeout = spec["command"], spec.get("timeoutSeconds", GENERATE_TIMEOUT)
+    require(set(spec) <= {"command", "timeoutSeconds"} and isinstance(command, list) and 0 < len(command) <= 32
+            and all(isinstance(part, str) and part and len(part) <= 1000 and "\0" not in part for part in command),
+            "Invalid generate command")
+    require(type(timeout) is int and GENERATE_TIMEOUT_LIMITS[0] <= timeout <= GENERATE_TIMEOUT_LIMITS[1],
+            "The generate timeout must be 10-600 seconds")
+    return {"command": list(command), "timeoutSeconds": timeout}
+
+
 def release_settings(manifest):
     """What a release declares about its services' settings beyond the required keys, by service: `optional` keys with
-    their defaults, the keys that are `secrets`, the `allowed` values of a key, and each typed key's `types` entry (its
-    type, and a date's format). Optional in a bundle; only services that take a settings file may declare them."""
+    their defaults, the keys that are `secrets`, the `allowed` values of a key, each typed key's `types` entry (its
+    type, and a date's format), each generated key's `generate` spec (a secret text key without a default) and each
+    linked key's source (`links`: key -> configuration path). A linked key stands alone: no other part names it, it
+    takes its source's type and secrecy, and its source is no linked key (one hop). Optional in a bundle; only services
+    that take a settings file may declare them."""
     declared = manifest.get("settings", {})
     require(isinstance(declared, dict) and set(declared) <= set(manifest.get("requiredConfiguration") or {}),
             "Settings declarations name a service without a settings file")
     result = {}
     for service, entry in declared.items():
-        require(isinstance(entry, dict) and set(entry) <= {"optional", "secrets", "allowed", "types"},
-                "Invalid settings declaration")
+        require(isinstance(entry, dict) and set(entry) <= set(no_settings()), "Invalid settings declaration")
         types = entry.get("types", {})
         require(isinstance(types, dict) and all(
             SETTING_KEY.fullmatch(key) and isinstance(value, dict) and set(value) <= {"type", "format"}
@@ -332,9 +372,34 @@ def release_settings(manifest):
             SETTING_KEY.fullmatch(key) and isinstance(values, list) and 0 < len(values) <= 50
             and all(isinstance(value, str) and len(value) <= 200 for value in values) for key, values in allowed.items()),
             "Invalid allowed setting values")
+        generate, links = entry.get("generate", {}), entry.get("links", {})
+        require(isinstance(generate, dict) and all(SETTING_KEY.fullmatch(key) for key in generate),
+                "Invalid generated settings")
+        for key in generate:
+            require(key in secrets and key not in optional and types.get(key, {"type": "text"})["type"] == "text",
+                    "A generated setting must be a secret text key without a default: " + key)
+        require(isinstance(links, dict) and all(
+            SETTING_KEY.fullmatch(key) and isinstance(source, str) and SETTING_KEY.fullmatch(source) and source != key
+            for key, source in links.items()), "Invalid linked settings")
+        crowded = sorted(set(links) & (set(optional) | set(secrets) | set(allowed) | set(types)))
+        require(not crowded, "A linked setting stands alone: " + ", ".join(crowded))
         result[service] = {"optional": dict(optional), "secrets": list(secrets), "allowed": dict(allowed),
-                           "types": {key: dict(value) for key, value in types.items()}}
+                           "types": {key: dict(value) for key, value in types.items()},
+                           "generate": {key: generated_spec(spec) for key, spec in generate.items()},
+                           "links": dict(links)}
+    linked = {key for entry in result.values() for key in entry["links"]}
+    for entry in result.values():
+        for key, source in sorted(entry["links"].items()):
+            require(source not in linked, "A linked setting's source is linked itself (one hop only): " + key)
     return result
+
+
+def required_settings(manifest):
+    """Each settings-taking service's required keys without its linked keys: a linked key is never required, whatever
+    the release lists; it waits only on its source."""
+    declared = release_settings(manifest)
+    return {service: [key for key in keys if key not in (declared.get(service) or no_settings())["links"]]
+            for service, keys in (manifest.get("requiredConfiguration") or {}).items()}
 
 
 def release_verification(manifest):
@@ -1260,7 +1325,7 @@ def settings_variable(service):
 
 def environment_for(target, manifest):
     environment = base_environment(target)
-    required = manifest["requiredConfiguration"]
+    required = required_settings(manifest)
     if renders(target):
         # Host files are an optional layer of the render; a service without one renders from Wheelhouse alone.
         require(set(target.get("settings", {})) <= set(required), "Settings name a service without a settings file")
@@ -1366,16 +1431,32 @@ def with_hosts(derived, kept):
     return ";".join(entries + ["localhost"])
 
 
+def linked_secret(source, declared):
+    """Whether a linked key's value is secret: its source's secrecy. A derived site URL is plain; a source some service
+    declares secret is secret, and one a service declares plain (typed or with a default) is plain; else the name
+    guess, as for any untyped key."""
+    if SITE_URL_KEY.fullmatch(source):
+        return False
+    if any(source in entry["secrets"] for entry in declared.values()):
+        return True
+    if any(source in entry["optional"] or source in entry["types"] for entry in declared.values()):
+        return False
+    return is_secret_key(source)
+
+
 def settings_declarations(target, manifest):
     """Every setting a release's services take on this target, without a value that is secret: each required key, each
     optional one with its default, and what the render derives (`hosts`, `proxies`, `sites`, `database`) with the value
-    when the control plane knows it. `secret` is the release's declaration, else a guess from the key's name."""
+    when the control plane knows it. `secret` is the release's declaration, else a guess from the key's name. A
+    generated key carries its `generate` spec as the bundle declares it; a linked key carries its source (`from`) and its
+    source's secrecy, never a type, a default or `required` of its own."""
     _, project = validate_target(target, manifest)
     declared = release_settings(manifest)
     network = target.get("variables", {}).get("PLATFORM_NETWORK")
     services = []
     for service, required in sorted((manifest.get("requiredConfiguration") or {}).items()):
-        entry = declared.get(service, {"optional": {}, "secrets": [], "allowed": {}, "types": {}})
+        entry = declared.get(service) or no_settings()
+        required = [key for key in required if key not in entry["links"]]
         needs = service_needs(manifest, service)
         derived = derived_settings(target, project, manifest, service)
         keys = {}
@@ -1395,6 +1476,8 @@ def settings_declarations(target, manifest):
                 item["type"] = typed["type"]
                 if typed.get("format"):
                     item["format"] = typed["format"]
+            if key in entry["generate"]:
+                item["generate"] = json.loads(json.dumps(entry["generate"][key]))
             keys[key] = item
         for key, value in derived.items():
             keys.setdefault(key, {"key": key, "required": False, "secret": False})
@@ -1405,6 +1488,9 @@ def settings_declarations(target, manifest):
         for key, item in keys.items():
             if "derived" not in item and database_key(key, needs):
                 item["derived"] = "database"
+        # The render sets a linked key last, from its source, so its declaration replaces anything above.
+        for key, source in entry["links"].items():
+            keys[key] = {"key": key, "required": False, "secret": linked_secret(source, declared), "from": source}
         services.append({"name": service, "hostFile": bool(target.get("settings", {}).get(service)),
                          "keys": sorted(keys.values(), key=lambda item: (not item["required"], item["key"]))})
     return {"product": target["product"], "environment": target["environment"], "project": project,
@@ -1451,11 +1537,33 @@ def provided_values(provided):
 
 
 def delivered_to(service, key, required, declared):
-    """Whether a provided value goes to a service: to each service that declares its key, and a key no service declares
-    to every service that takes a settings file."""
+    """Whether a provided value goes to a service: to each service that declares its key (a linked key included, which
+    its source then sets), and a key no service declares to every service that takes a settings file."""
     declaring = {name for name, keys in required.items() if key in keys} | {
-        name for name, entry in declared.items() if key in entry["optional"] or key in entry["secrets"]}
+        name for name, entry in declared.items()
+        if key in entry["optional"] or key in entry["secrets"] or key in entry["links"]}
     return service in declaring or not declaring
+
+
+def declares(service, key, required, declared):
+    """Whether a service declares a key of its own: required, optional, secret, typed or generated; a linked key is its
+    source's, not its own."""
+    entry = declared.get(service) or no_settings()
+    return key not in entry["links"] and (key in required.get(service, []) or any(
+        key in entry[part] for part in ("optional", "secrets", "types", "generate")))
+
+
+def linked_value(source, documents, required, declared, values, derived):
+    """A linked key's value: its source's rendered value in a service that declares the source, else the control
+    plane's provided value, else the derived site URL (`Sites:<site>:Url`); None when none has one."""
+    for service in sorted(documents):
+        if declares(service, source, required, declared):
+            value = configuration_value(documents[service], source)
+            if value not in (None, "", []):
+                return json.loads(json.dumps(value))
+    if values.get(source):
+        return values[source]
+    return derived.get(source) if SITE_URL_KEY.fullmatch(source) else None
 
 
 def ingress_address(docker, network):
@@ -1535,17 +1643,20 @@ def render_settings(target, manifest, project, provided, docker):
     """Renders every settings file a release mounts on this target, in layers: the host file the target names (if any),
     then the control plane's stored settings and vault secrets, then what the render derives — AllowedHosts, site URLs
     and the ingress as Deployment:TrustedProxies — and, for a required connection key no layer sets, the target's own
-    database. Refuses a required key no layer sets, before writing anything. Returns each service's keys by source; no
-    value leaves the target."""
+    database. Once every service's document holds those layers, each linked key takes its source's value
+    (`linked_value`); a linked key is never required. Refuses a required key no layer sets, before writing anything.
+    Returns each service's keys by source; no value leaves the target."""
     required = manifest.get("requiredConfiguration") or {}
     declared = release_settings(manifest)
     values = provided_values(provided)
     folder = settings_folder(target)
     proxy = ingress_address(docker, target.get("variables", {}).get("PLATFORM_NETWORK"))
     database = target_database(folder) if folder.is_dir() else None
-    documents, sources = {}, {}
+    documents, sources, derived_by = {}, {}, {}
+    links = {service: (declared.get(service) or no_settings())["links"] for service in required}
     for service in sorted(required):
-        document, used = {}, {"host": [], "provided": [], "derived": [], "database": []}
+        wanted = [key for key in required[service] if key not in links[service]]
+        document, used = {}, {"host": [], "provided": [], "derived": [], "database": [], "linked": []}
         host = target.get("settings", {}).get(service)
         if host and Path(host) != rendered_path(target, service) and Path(host).exists():
             layer = private_settings(Path(host), service)
@@ -1562,15 +1673,23 @@ def render_settings(target, manifest, project, provided, docker):
         for key, value in derived.items():
             set_value(document, key, value)
             used["derived"].append(key)
+        derived_by[service] = derived
         needs = service_needs(manifest, service)
-        for key in [*required[service], *declared.get(service, {}).get("optional", {})]:
+        for key in [*wanted, *declared.get(service, {}).get("optional", {})]:
             if database and database_key(key, needs) and configuration_value(document, key) in (None, "", []):
                 set_value(document, key, database)
                 used["database"].append(key)
-        for key in required[service]:
+        for key in wanted:
             if configuration_value(document, key) in (None, "", []):
                 raise RenderRefused("Missing required setting: " + service + ":" + key)
         documents[service], sources[service] = document, used
+    # Linked keys last: a source is read from its declaring service's finished document, never from another link.
+    for service in sorted(required):
+        for key, source in sorted(links[service].items()):
+            value = linked_value(source, documents, required, declared, values, derived_by[service])
+            if value is not None:
+                set_value(documents[service], key, value)
+                sources[service]["linked"].append(key)
     if documents:
         private_folder(folder)
     changed = [service for service in sorted(documents) if write_settings(rendered_path(target, service), documents[service])]
@@ -1580,11 +1699,13 @@ def render_settings(target, manifest, project, provided, docker):
 def render_summary(rendered):
     """One line on a render: how many services and keys, by source; never a value."""
     services = rendered["services"]
-    count = {source: sum(len(used[source]) for used in services.values())
-             for source in ("derived", "provided", "host", "database")}
+    count = {source: sum(len(used.get(source, [])) for used in services.values())
+             for source in ("derived", "provided", "host", "database", "linked")}
     parts = [plural(count["derived"], "derived key")]
     if count["provided"]:
         parts.append(str(count["provided"]) + " from Wheelhouse")
+    if count["linked"]:
+        parts.append(str(count["linked"]) + " linked")
     if count["database"]:
         parts.append(str(count["database"]) + " from the target's database")
     if count["host"]:
@@ -1698,8 +1819,7 @@ class Docker:
         signed = None
         # A sign-in that names its repositories covers only those: another owner's public pinned image (M77) pulls
         # anonymously with the rest.
-        private = [image for image in missing if registry and image.startswith(registry["server"] + "/")
-                   and (registry.get("repositories") is None or image_repository(image) in registry["repositories"])]
+        private = [image for image in missing if signs_in(image, registry)]
         if private:
             with registry_session(self, registry) as config:
                 for image in private:
@@ -1707,6 +1827,22 @@ class Docker:
             signed = registry["credential"]
         self.compose(bundle, "pull", "--policy", "missing")
         return {"images": len(images), "fetched": len(missing), "signedIn": signed}
+
+    def fetch(self, image, registry=None, unreadable=(), timeout=1800):
+        """One image a one-off container needs, when the host lacks it: under a one-pull sign-in when `registry` covers
+        it (`signs_in`), else anonymously; an image nothing could read (`unreadable`) fails before any sign-in, as
+        `pull` does. Returns whether it was fetched."""
+        if self.present(image):
+            return False
+        repository = image_repository(image)
+        if repository in set(unreadable):
+            raise CommandFailed("No credential on the control host can read " + repository + ": " + UNREADABLE_HINT)
+        if signs_in(image, registry):
+            with registry_session(self, registry) as config:
+                self.execute(["docker", "--config", config, "pull", "--quiet", image], "docker pull", timeout=timeout)
+        else:
+            self.execute(["docker", "pull", "--quiet", image], "docker pull", timeout=timeout)
+        return True
 
     def present(self, image):
         try:
@@ -1741,6 +1877,21 @@ class Docker:
             return None, ""
         lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
         return result.returncode, lines[-1][:VERIFY_SUMMARY_LIMIT] if lines else ""
+
+    def generate(self, arguments, timeout, container):
+        """Runs a one-off generate container with no stdin and no variable passed into it. Returns its exit code, its
+        standard output as bytes (the value: the caller alone reads it) and its standard error's last nonblank line; a
+        run past `timeout` removes `container` and returns None for the code and nothing else."""
+        try:
+            result = subprocess.run(arguments, env=self.environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(Exception):
+                subprocess.run(["docker", "rm", "--force", container], env=self.environment, capture_output=True,
+                               timeout=60)
+            return None, b"", ""
+        lines = [line.strip() for line in (result.stderr or b"").decode(errors="replace").splitlines() if line.strip()]
+        return result.returncode, result.stdout or b"", lines[-1] if lines else ""
 
     def migrate(self, arguments, variables, timeout, container):
         """Runs a one-off migrate container whose environment also carries `variables` (the migrate key, passed by
@@ -1861,6 +2012,13 @@ def image_repository(image):
     name = str(image).split("@", 1)[0]
     head, _, last = name.rpartition("/")
     return ((head + "/" if head else "") + last.split(":", 1)[0]).lower()
+
+
+def signs_in(image, registry):
+    """Whether a pull of `image` takes the registry sign-in: an image on its server, of its repositories when it names
+    them (another owner's public pinned image pulls anonymously, M77)."""
+    return bool(registry) and image.startswith(registry["server"] + "/") and (
+        registry.get("repositories") is None or image_repository(image) in registry["repositories"])
 
 
 @contextlib.contextmanager
@@ -2197,6 +2355,53 @@ def verify_release(target, manifest, record, verification, docker, project, cloc
     if summary:
         result["summary"] = summary
     return result
+
+
+# ---- Generated keys (deploy descriptor § Generated and linked keys) ----
+
+class GenerateFailed(CommandFailed):
+    """A generate command that gave no value: its message is the command's last standard-error line or a fixed reason,
+    never its standard output."""
+
+
+def generate_setting(target, manifest, service, key, provided=None, docker_factory=None):
+    """A generated key's value from its `command`, run in a one-off container from the declaring service's
+    digest-pinned release image: no network, no settings file, no secret, every capability dropped, as the image's
+    user, 512 MB, the spec's timeout. A missing image is pulled first, under the one-pull sign-in the control plane
+    sent (`provided` `registry`), else anonymously. Exit 0 with output gives `{"value": <stdout without its trailing
+    newline>}`; anything else raises GenerateFailed with the last standard-error line. Writes nothing on the target:
+    no job, journal or history, so the value goes to the caller alone."""
+    _, project = validate_target(target, manifest)
+    images = manifest.get("images") or {}
+    require(isinstance(service, str) and service in images, "Unknown release service")
+    require(IMAGE.fullmatch(str(images[service])), "Services require immutable image digests")
+    require(isinstance(key, str) and SETTING_KEY.fullmatch(key), "Invalid setting key")
+    spec = (release_settings(manifest).get(service) or no_settings())["generate"].get(key)
+    require(spec is not None, service + " declares no generated value for " + key)
+    require("command" in spec, key + " is random bytes, which Wheelhouse makes itself")
+    docker = (docker_factory or Docker)(target, base_environment(target))
+    image, command, timeout = images[service], spec["command"], spec["timeoutSeconds"]
+    docker.fetch(image, registry_login(provided), registry_unreadable(provided), timeout=GENERATE_PULL_TIMEOUT)
+    container = project + "-generate-" + uuid.uuid4().hex[:8]
+    arguments = ["docker", "run", "--rm", "--name", container, "--pull", "never", "--network", "none",
+                 "--security-opt", "no-new-privileges:true", "--cap-drop", "ALL", "--memory", GENERATE_MEMORY,
+                 "--label", "wheelhouse.generate=" + project, "--entrypoint", command[0], image, *command[1:]]
+    code, output, last = docker.generate(arguments, timeout, container)
+    if code is None:
+        raise GenerateFailed("Timed out after " + str(timeout) + "s")
+    if code != 0:
+        raise GenerateFailed(last or "Exited " + str(code))
+    try:
+        value = output.decode()
+    except UnicodeDecodeError:
+        # The decoder's own message quotes a byte of the output.
+        raise GenerateFailed(last or "The command printed something other than UTF-8 text") from None
+    value = value[:-1] if value.endswith("\n") else value
+    if not value:
+        raise GenerateFailed(last or "The command printed nothing")
+    if len(value) > GENERATE_VALUE_LIMIT:
+        raise GenerateFailed("The command printed more than " + str(GENERATE_VALUE_LIMIT) + " characters")
+    return {"value": value}
 
 
 # ---- Migrate step and rollback gate (migrations spec § 3.4) ----
@@ -3442,7 +3647,7 @@ def check(target, manifest=None, docker_factory=None, provided=None):
     probe("Disk", disk)
     probe("Network", network)
     probe("Ingress", ingress)
-    services = manifest["requiredConfiguration"] if manifest else {name: [] for name in target.get("settings", {})}
+    services = required_settings(manifest) if manifest else {name: [] for name in target.get("settings", {})}
     if renders(target):
         keys = set((provided or {}).get("keys") or []) if isinstance(provided, dict) else set()
         require(all(isinstance(key, str) for key in keys), "Invalid provided keys")
@@ -3466,7 +3671,36 @@ def check(target, manifest=None, docker_factory=None, provided=None):
 def render_readiness(target, manifest, project, service, required, provided, proxy):
     """Whether a service's settings would render here: its host file (if named) is valid, and every required key has a
     source — the host file, Wheelhouse (`provided` key names; None when unknown), what the render derives, or the
-    target's database. Reads files only; renders nothing."""
+    target's database. A linked key is never required: it is ready whenever its source is, and a source some service
+    requires and no layer sets is named by that service and its own key. Reads files only; renders nothing."""
+    declared = release_settings(manifest) if manifest else {}
+    links = (declared.get(service) or no_settings())["links"]
+    required = [key for key in required if key not in links]
+    covered, sources = readiness_cover(target, manifest, project, service, required, provided, proxy)
+    if provided is not None:
+        for key in required:
+            require(covers(covered, key), "Missing required setting: " + service + ":" + key)
+        every = (manifest.get("requiredConfiguration") or {}) if manifest else {}
+        for key, source in sorted(links.items()):
+            for name in sorted(every):
+                if source not in every[name] or source in (declared.get(name) or no_settings())["links"]:
+                    continue
+                cover = covered if name == service else readiness_cover(
+                    target, manifest, project, name, [source], provided, proxy)[0]
+                require(covers(cover, source),
+                        "Missing required setting: " + name + ":" + source + ", the source of " + key)
+    return "rendered at deploy from " + ", ".join(["derived keys", *sources]) + (
+        "" if provided is not None else "; required keys are checked at deploy")
+
+
+def covers(covered, key):
+    """Whether a set of configuration paths sets a key: the key itself, or a section beneath it."""
+    return key in covered or any(other.startswith(key + ":") for other in covered)
+
+
+def readiness_cover(target, manifest, project, service, required, provided, proxy):
+    """The keys a service's render would set here, and the layers that set them: its host file, Wheelhouse
+    (`provided`), the derived keys, and the target's database for its `required` connection keys."""
     covered, sources = set(), []
     host = target.get("settings", {}).get(service)
     if host and Path(host).exists():
@@ -3488,12 +3722,7 @@ def render_readiness(target, manifest, project, service, required, provided, pro
     if database:
         covered.update(key for key in required if database_key(key, needs))
         sources.append("its database")
-    if provided is not None:
-        for key in required:
-            require(key in covered or any(other.startswith(key + ":") for other in covered),
-                    "Missing required setting: " + service + ":" + key)
-    return "rendered at deploy from " + ", ".join(["derived keys", *sources]) + (
-        "" if provided is not None else "; required keys are checked at deploy")
+    return covered, sources
 
 
 SIZE_UNITS = {"B": 1, "kB": 1000, "KB": 1000, "MB": 1000 ** 2, "GB": 1000 ** 3, "TB": 1000 ** 4,
@@ -3679,7 +3908,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["validate", "apply", "launch", "status", "acknowledge", "state", "check",
                                            "host", "vitals", "topology", "logs", "watch", "prune", "passed",
-                                           "control-launch", "control", "migrate-check"])
+                                           "control-launch", "control", "migrate-check", "generate-setting"])
     parser.add_argument("--bundle")
     parser.add_argument("--target")
     parser.add_argument("--target-json")
@@ -3687,11 +3916,14 @@ def main():
     parser.add_argument("--release", help="passed: the release label to look for in the target's journal")
     parser.add_argument("--actor", default="operator")
     parser.add_argument("--job")
-    parser.add_argument("--service", help="logs: the service to read; control: the service, or none for the environment")
+    parser.add_argument("--service", help="logs: the service to read; control: the service, or none for the environment; "
+                                          "generate-setting: the service whose release image runs the command")
+    parser.add_argument("--key", help="generate-setting: the configuration path of the generated key")
     parser.add_argument("--operation", choices=OPERATIONS, help="control: stop, start, restart or reset")
     parser.add_argument("--tail", type=int, default=200)
     parser.add_argument("--stdin", action="store_true",
-                        help="launch, apply: read this deploy's settings values and registry sign-in from stdin")
+                        help="launch, apply: read this deploy's settings values and registry sign-in from stdin; "
+                             "generate-setting: the registry sign-in for a pull the image needs")
     parser.add_argument("--provided-json", help="check: the setting keys the control plane provides, base64 JSON")
     args = parser.parse_args()
     try:
@@ -3726,6 +3958,9 @@ def main():
             result = passed(target or read_json(args.target), args.release)
         elif args.action == "migrate-check":
             result = migrate_check(target or read_json(args.target))
+        elif args.action == "generate-setting":
+            manifest = decode(args.release_json) if args.release_json else validate_bundle(args.bundle)
+            result = generate_setting(target or read_json(args.target), manifest, args.service, args.key, provided)
         elif args.action == "control-launch":
             result = control_launch(args.target, args.operation, [args.service] if args.service else [], args.actor)
         elif args.action == "control":
@@ -3736,6 +3971,11 @@ def main():
         print(json.dumps(result))
         return 1 if args.action in ("apply", "control") and result.get("status") != "succeeded" else 0
     except Exception as error:
+        if args.action == "generate-setting":
+            # One line that never holds the command's standard output: a refusal or its last standard-error line.
+            print(json.dumps({"error": reason(error) or "The value could not be generated (" + type(error).__name__ + ")"}),
+                  file=sys.stderr)
+            return 1
         # A launched worker must not leave its own job queued if preflight rejected it.
         if args.action in ("apply", "control") and args.job:
             try:
