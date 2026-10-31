@@ -1,0 +1,51 @@
+# Keysmith, the local rig's product for generated and linked setting keys (`rehearse.py generated`); never a real
+# product. Both services run the image beside this file, which `rehearse.py` builds and the generator publishes to the
+# rig's registry with --image, so `build` and `paths` only satisfy the descriptor's rules.
+# Format: wow-two-ws/conventions/deployment/descriptor/deploy-descriptor.md § Generated and linked keys
+descriptor: 2
+product: keysmith
+name: Keysmith
+description: A rig product whose keys Wheelhouse makes and links itself.
+platform: linux/amd64
+sites:
+  id: {}
+  desk: {}
+services:
+  identity:
+    build:
+      dockerfile: deployment/rehearsal/keysmith/Dockerfile
+      context: deployment/rehearsal/keysmith
+    paths:
+      - deployment/rehearsal/keysmith/**
+    health:
+      command: [python3, /app/keysmith.py, health]
+    memory: 128m
+    settings:
+      keys:
+        Identity:Clients:0:ClientSecret:
+          secret: true
+          required: true
+          generate: { random: 32 }
+        Identity:Signing:Certificate:
+          secret: true
+          required: true
+          generate: { command: [python3, /app/keysmith.py, certificate], timeout: 1m }
+    sites:
+      id: { paths: [/] }
+  desk:
+    build:
+      dockerfile: deployment/rehearsal/keysmith/Dockerfile
+      context: deployment/rehearsal/keysmith
+    paths:
+      - deployment/rehearsal/keysmith/**
+    health:
+      command: [python3, /app/keysmith.py, health]
+    memory: 128m
+    settings:
+      keys:
+        Auth:ClientSecret:
+          from: Identity:Clients:0:ClientSecret
+        Auth:Issuer:
+          from: Sites:id:Url
+    sites:
+      desk: { paths: [/] }

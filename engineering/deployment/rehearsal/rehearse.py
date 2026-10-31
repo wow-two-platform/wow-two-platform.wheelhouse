@@ -37,6 +37,13 @@ then closes public SSH and pins the runner keys, and --public-ssh reopens it.
 the one-time key, the kit, a single-use key minted through the OAuth client, the node and host-key proofs, the seal.
 Then it places ForeverPin's databases and site on it and applies the tailnet policy after its review. Tailscale is the
 one stand-in: a fake API, and a stub CLI and site-node image on the host that spend the minted keys there.
+
+`generated` proves v0.11's generated and linked setting keys through the console's own API, as a real deploy goes: the
+console as it ships, signed in as its owner with a session sealed by its own key ring (session/), adds Keysmith
+(keysmith/: a random key, a certificate command, and a second service linking both a key and a site URL) and deploys
+its release, built by the pipelines generator, with no value given. It checks the rendered files, the certificate's
+expiry, that no answer, log, record or journal outside those files holds a value, Regenerate through to both services,
+and that the command ran with no network; it exits non-zero on any failed check.
 """
 import argparse
 import base64
@@ -123,7 +130,9 @@ def private_file(path, text):
 
 
 def environment():
-    return {**os.environ, "REHEARSAL_STATE": str(STATE), "WHEELHOUSE_REHEARSAL": "1"}
+    # Compose builds through Buildx bake, which refuses the console's Dockerfile outside its context
+    # (`../deployment/Dockerfile`) unless its filesystem entitlement check is off.
+    return {**os.environ, "REHEARSAL_STATE": str(STATE), "WHEELHOUSE_REHEARSAL": "1", "BUILDX_BAKE_ENTITLEMENTS_FS": "0"}
 
 
 def compose(*arguments, capture=True):
@@ -1277,6 +1286,383 @@ def prove_placement_and_policy():
     print("Policy applied after review, then reverted with one call (" + reverted["digest"][:12] + ").")
 
 
+# Keysmith, the rig's product for generated and linked setting keys (`generated`, v0.11): its descriptor, image and app
+# live in keysmith/. Its identity service has Wheelhouse make a random client secret and run a command for a certificate;
+# its desk service links one key to that secret and another to the identity site's origin.
+KEYSMITH = "keysmith"
+KEYSMITH_TARGET = KEYSMITH + "-dev"
+KEYSMITH_FOLDER = HERE / "keysmith"
+KEYSMITH_IMAGE = "keysmith:local"
+KEYSMITH_SERVICES = ("identity", "desk")
+RANDOM_KEY = "Identity:Clients:0:ClientSecret"
+COMMAND_KEY = "Identity:Signing:Certificate"
+LINKED_KEY = "Auth:ClientSecret"
+SITE_KEY = "Auth:Issuer"
+KEYSMITH_SITE = "id"
+# The rig's owner session (session/): built with the SDK the console image builds with, sealed with the console's own
+# Data Protection key ring.
+SESSION_SOURCE = HERE / "session"
+SESSION_STATE = STATE / "session"
+SDK_IMAGE = "mcr.microsoft.com/dotnet/sdk:10.0.302"
+CONSOLE_KEYS = "wheelhouse-rehearsal_console-keys"
+CONSOLE_CONTAINER = "wheelhouse-rehearsal-console-1"
+SESSION_COOKIE = ".wheelhouse.auth"
+
+
+def console_session(minutes=60):
+    """A sign-in cookie for the rig console as its allowlisted owner, so a rig action drives the console's own API the
+    way the operator's browser does, with no GitHub OAuth app. session/Program.cs seals it with the console's key ring
+    (the console-keys volume); only this rig's console opens it."""
+    import hashlib
+    sources = sorted(path for path in SESSION_SOURCE.iterdir() if path.suffix in (".cs", ".csproj"))
+    folder = "bin-" + hashlib.sha256(b"".join(path.name.encode() + path.read_bytes() for path in sources)).hexdigest()[:12]
+    private_dir(SESSION_STATE)
+    if not (SESSION_STATE / folder / "Session.dll").is_file():
+        run("docker", "run", "--rm", "-v", str(SESSION_SOURCE) + ":/src:ro", "-v", str(SESSION_STATE) + ":/out",
+            "-e", "DOTNET_CLI_TELEMETRY_OPTOUT=1", "-e", "DOTNET_NOLOGO=1", SDK_IMAGE, "sh", "-c",
+            "cp -r /src /tmp/session && dotnet publish /tmp/session/Session.csproj -c Release -nologo -v q -o /out/"
+            + folder)
+    allowed = json.loads(CONSOLE_SETTINGS.read_text()).get("Identity", {}).get("AllowedGitHubLogins") or [CONSOLE_ADMIN]
+    return run("docker", "run", "--rm", "-v", CONSOLE_KEYS + ":/data/keys", "-v", str(SESSION_STATE / folder)
+               + ":/session:ro", "--entrypoint", "dotnet", "wheelhouse:local", "/session/Session.dll", "/data/keys",
+               allowed[0], str(minutes)).strip()
+
+
+class ConsoleApi:
+    """The rig console's HTTP API as its signed-in owner. Every answer's text is kept, so a run can show that none of
+    them holds a generated value."""
+
+    def __init__(self, cookie):
+        self.cookie, self.answers = cookie, []
+
+    def call(self, method, path, body=None, action=None, ok=(200, 201, 202, 204)):
+        import urllib.error
+        import urllib.request
+        request = urllib.request.Request(CONSOLE_URL + path, method=method,
+                                         data=None if body is None else json.dumps(body).encode())
+        request.add_header("Cookie", SESSION_COOKIE + "=" + self.cookie)
+        request.add_header("Accept", "application/json")
+        if body is not None:
+            request.add_header("Content-Type", "application/json")
+        if action:
+            request.add_header("X-Wheelhouse-Action", action)
+        try:
+            with urllib.request.urlopen(request, timeout=900) as response:
+                status, text = response.status, response.read().decode()
+        except urllib.error.HTTPError as error:
+            status, text = error.code, error.read().decode()
+        self.answers.append(method + " " + path + "\n" + text)
+        try:
+            document = json.loads(text) if text.strip() else None
+        except ValueError:
+            document = text
+        if ok and status not in ok:
+            detail = document.get("detail") or document.get("title") if isinstance(document, dict) else str(document)
+            sys.exit(method + " " + path + " answered " + str(status) + ": " + str(detail)[:300])
+        return status, document
+
+    def data(self, method, path, body=None, action=None):
+        return (self.call(method, path, body, action)[1] or {}).get("data")
+
+
+def console_ready(timeout=180):
+    import urllib.request
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            with urllib.request.urlopen(CONSOLE_URL + "/api/system/ready", timeout=5) as response:
+                if response.status == 200:
+                    return
+        except OSError:
+            pass
+        if time.monotonic() > deadline:
+            sys.exit("The console never became ready at " + CONSOLE_URL)
+        time.sleep(2)
+
+
+def keysmith_bundle():
+    """Keysmith's release: the pipelines generator builds it from keysmith/deploy.yml with the image beside it, publishes
+    the image to the rig's registry for both services and writes the bundle, which is imported. Its tag carries a digest
+    of the descriptor and the image, so a change makes a new release and a rerun reuses the last one."""
+    import hashlib
+    run("docker", "build", "-q", "-t", KEYSMITH_IMAGE, str(KEYSMITH_FOLDER))
+    image = run("docker", "image", "inspect", "--format", "{{.Id}}", KEYSMITH_IMAGE).strip()
+    descriptor = KEYSMITH_FOLDER / "deploy.yml"
+    tag = "v0.0.1-rig." + hashlib.sha256(descriptor.read_bytes() + image.encode()).hexdigest()[:10]
+    bundle_id = KEYSMITH + "-" + re.sub(r"[^a-z0-9-]+", "-", tag.lower())
+    if (INVENTORY / "bundles" / bundle_id).exists():
+        print("Already imported " + bundle_id)
+        return bundle_id
+    output = private_dir(STATE / "build") / bundle_id
+    archive = STATE / "build" / (bundle_id + ".tar.gz")
+    # The descriptor is read from disk; the checkout only lends the generator a commit to name.
+    commit = run("git", "-C", str(REPOSITORY), "rev-parse", "HEAD").strip()
+    print(run(yaml_python(), str(RELEASE), "build", "--repo", str(REPOSITORY), "--commit", commit,
+              "--descriptor", str(descriptor), "--tag", tag, "--registry", REGISTRY + "/" + KEYSMITH,
+              "--platform", platform(), "--output", str(output), "--archive", str(archive),
+              *[part for service in KEYSMITH_SERVICES for part in ("--image", service + "=" + KEYSMITH_IMAGE)]).strip())
+    transport("import", "--archive", str(archive), "--bundle", bundle_id)
+    print("Imported " + bundle_id)
+    return bundle_id
+
+
+def keysmith_inventory(console):
+    """Keysmith's product and dev target, added through the console as the owner adds them, afresh on every run: a new
+    product row is a new vault namespace, so the first deploy finds an environment that holds no value."""
+    if any(item["slug"] == KEYSMITH_TARGET for item in console.data("GET", "/api/targets?product=" + KEYSMITH) or []):
+        console.call("DELETE", "/api/targets/" + KEYSMITH_TARGET, action="target")
+    if console.call("GET", "/api/products/" + KEYSMITH, ok=None)[0] == 200:
+        console.call("DELETE", "/api/products/" + KEYSMITH, action="product")
+    console.call("POST", "/api/products", {"slug": KEYSMITH, "name": "Keysmith",
+                                           "description": "A rig product whose keys Wheelhouse makes and links itself.",
+                                           "repository": "local-rig/" + KEYSMITH}, action="product")
+    console.call("POST", "/api/targets", {
+        "slug": KEYSMITH_TARGET, "product": KEYSMITH, "server": "local", "environment": "dev",
+        "network": "wheelhouse-rehearsal", "root": "/srv/wheelhouse", "settings": [], "sites": [],
+        "smokeChecks": [{"service": service, "path": "/", "status": 200} for service in KEYSMITH_SERVICES]},
+        action="target")
+    print("Added " + KEYSMITH + " and " + KEYSMITH_TARGET + " through the console")
+
+
+class GeneratedValues:
+    """The generated values a run reads from the rendered settings, kept to look for elsewhere and never printed: each
+    value, each line of a PEM value, and their base64 forms at every alignment (how a value would sit inside an encoded
+    document)."""
+
+    def __init__(self):
+        self.fragments = set()
+
+    def add(self, value):
+        parts = [value] + [line for line in value.splitlines() if len(line) >= 16 and not line.startswith("-----")]
+        for part in parts:
+            self.fragments.add(part)
+            if len(part) >= 24:
+                raw = part.encode()
+                for offset in range(3):
+                    encoded = base64.b64encode(b"\0" * offset + raw).decode()
+                    self.fragments.add(encoded[-(-offset * 4 // 3):(offset + len(raw)) * 8 // 6])
+
+    def found(self, data):
+        text = data.decode("utf-8", "replace") if isinstance(data, bytes) else data
+        return any(fragment in text for fragment in self.fragments)
+
+    def redact(self, text):
+        for fragment in sorted(self.fragments, key=len, reverse=True):
+            text = text.replace(fragment, "[generated value]")
+        return text
+
+
+def rendered(service):
+    """A Keysmith service's settings file as the deploy rendered it on the target."""
+    path = STATE / "settings" / KEYSMITH_TARGET / (service + ".target.json")
+    return json.loads(on_target("cat", str(path)).stdout)
+
+
+def setting(document, key):
+    for part in key.split(":"):
+        document = document.get(part) if isinstance(document, dict) else None
+    return document
+
+
+def console_deploy(console, bundle_id, label, timeout=600):
+    """A deploy as the console's Deploy button submits it; waits for the target's outcome."""
+    job = console.data("POST", "/api/deployments", {"target": KEYSMITH_TARGET, "release": bundle_id}, action="deploy")["id"]
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        time.sleep(3)
+        outcome = console.data("GET", "/api/deployments/" + job)
+        if outcome.get("status") in TERMINAL:
+            print(label + ": " + outcome["status"] + " (" + job + ")")
+            return job, outcome
+    sys.exit("Timed out waiting for " + job)
+
+
+def print_steps(outcome, values):
+    for step in outcome.get("steps", []):
+        print(values.redact("  " + step["status"].ljust(9) + " " + step["name"]
+                            + (" — " + step["detail"] if step.get("detail") else "")))
+
+
+def certificate_end(value):
+    """The first certificate's notAfter in a PEM bundle, read by openssl in Keysmith's own image with no network."""
+    from datetime import datetime, timezone
+    block = value[value.index("-----BEGIN CERTIFICATE-----"):value.index("-----END CERTIFICATE-----") + 25] + "\n"
+    answer = subprocess.run(["docker", "run", "--rm", "-i", "--network", "none", "--entrypoint", "openssl",
+                             KEYSMITH_IMAGE, "x509", "-noout", "-enddate"], input=block, capture_output=True, text=True)
+    if answer.returncode or not answer.stdout.startswith("notAfter="):
+        sys.exit("openssl could not read the generated certificate's end date")
+    stamp = " ".join(answer.stdout.strip()[len("notAfter="):].split())
+    return datetime.strptime(stamp, "%b %d %H:%M:%S %Y GMT").replace(tzinfo=timezone.utc)
+
+
+def instant(text):
+    from datetime import datetime
+    return datetime.fromisoformat(text.replace("Z", "+00:00")) if text else None
+
+
+def prove_generated():
+    """v0.11's generated and linked setting keys end to end, through the console's own API as a real deploy goes:
+    Keysmith's first deploy generates its random and command keys without asking for a value, the render gives each
+    service its values and links, the certificate's end date becomes its version's expiry, no answer, log, journal or
+    record outside the rendered files holds a generated value, Regenerate makes a version the next deploy renders into
+    both services, and the command container had no network. Exits non-zero when any check fails."""
+    from datetime import datetime, timezone
+    up(console=True)
+    console_ready()
+    started = datetime.now(timezone.utc)
+    console = ConsoleApi(console_session())
+    bundle_id = keysmith_bundle()
+    keysmith_inventory(console)
+    values, proofs = GeneratedValues(), {}
+    settings_path = "/api/deployments/targets/" + KEYSMITH_TARGET + "/settings"
+
+    def keys(release=None):
+        plan = console.data("GET", settings_path + ("?release=" + release if release else ""))
+        return {(service["name"], item["key"]): item for service in plan["services"] for item in service["keys"]}
+
+    def versions(key):
+        return console.data("GET", "/api/deployments/targets/" + KEYSMITH_TARGET + "/secrets/" + key + "/versions")
+
+    # 1. The plan names both keys as generated, not missing, and the first deploy makes them with no value given.
+    planned = keys(bundle_id)
+    for key in (RANDOM_KEY, COMMAND_KEY):
+        item = planned.get(("identity", key)) or {}
+        proofs["plan: " + key + " is generated (" + str(item.get("source")) + ")"] = item.get("source") == "generate"
+    for key, source in ((LINKED_KEY, RANDOM_KEY), (SITE_KEY, "Sites:" + KEYSMITH_SITE + ":Url")):
+        item = planned.get(("desk", key)) or {}
+        proofs["plan: desk " + key + " links " + source + " (" + str(item.get("source")) + ")"] = (
+            item.get("from") == source and item.get("source") == "linked")
+    events_file = STATE / "build" / "keysmith-events.jsonl"
+    with open(events_file, "w") as sink:
+        watcher = subprocess.Popen(["docker", "events", "--format", "{{json .}}", "--filter", "type=container",
+                                    "--filter", "type=network"], stdout=sink, stderr=subprocess.DEVNULL)
+        try:
+            first_job, first = console_deploy(console, bundle_id, "First deploy")
+        finally:
+            watcher.terminate()
+            watcher.wait(10)
+    identity, desk = rendered("identity"), rendered("desk")
+    random_value, certificate = setting(identity, RANDOM_KEY), setting(identity, COMMAND_KEY)
+    for value in (random_value, certificate):
+        if isinstance(value, str) and value:
+            values.add(value)
+    print_steps(first, values)
+    proofs["first deploy succeeded with no value given"] = first.get("status") == "succeeded"
+    histories = {key: versions(key) for key in (RANDOM_KEY, COMMAND_KEY)}
+    for key, history in histories.items():
+        made = history["versions"]
+        proofs["vault: " + key + " v1 made by the deploy (" + str(made[0].get("origin") if made else None) + ")"] = (
+            len(made) == 1 and made[0]["version"] == 1 and "generated by the deploy" in str(made[0].get("origin")))
+
+    # 2. The rendered files hold the values; desk's links equal their sources.
+    try:
+        random_bytes = len(base64.urlsafe_b64decode(random_value + "=" * (-len(random_value) % 4)))
+    except (TypeError, ValueError):
+        random_bytes = 0
+    proofs["identity renders " + RANDOM_KEY + ": 32 random bytes, base64url"] = random_bytes == 32
+    proofs["identity renders " + COMMAND_KEY + ": a certificate and its private key"] = (
+        isinstance(certificate, str) and "-----BEGIN CERTIFICATE-----" in certificate and "PRIVATE KEY-----" in certificate)
+    proofs["desk renders " + LINKED_KEY + " equal to identity's " + RANDOM_KEY] = (
+        bool(random_value) and setting(desk, LINKED_KEY) == random_value)
+    state = console.data("GET", "/api/deployments/targets/" + KEYSMITH_TARGET + "/state")
+    site = next((item for item in (state.get("current") or {}).get("sites", []) if item.get("name") == KEYSMITH_SITE), {})
+    parts = re.match(r"(https?://[^/]+)", str(site.get("url")))
+    origin = parts.group(1) if parts else None
+    proofs["desk renders " + SITE_KEY + " = the " + KEYSMITH_SITE + " site's origin (" + str(origin) + ")"] = (
+        origin is not None and setting(desk, SITE_KEY) == origin == setting(desk, "Sites:" + KEYSMITH_SITE + ":Url"))
+
+    # 3. The certificate's end date is its version's expiry.
+    end = certificate_end(certificate) if proofs[
+        "identity renders " + COMMAND_KEY + ": a certificate and its private key"] else None
+    expiry = instant(histories[COMMAND_KEY].get("expiresAt"))
+    proofs["vault: " + COMMAND_KEY + " expires at the certificate's notAfter (" + str(end) + " / " + str(expiry) + ")"] = (
+        end is not None and expiry == end)
+
+    # 6. The command ran in a container on no network: Docker's own events, and a control run of the same command on a
+    # network, which refuses.
+    created, networks = {}, {}
+    for line in events_file.read_text().splitlines():
+        event = json.loads(line)
+        actor = event.get("Actor") or {}
+        attributes = actor.get("Attributes") or {}
+        if event.get("Type") == "container" and event.get("Action") == "create" \
+                and attributes.get("wheelhouse.generate") == KEYSMITH_TARGET:
+            created[actor.get("ID")] = attributes.get("name")
+        elif event.get("Type") == "network" and event.get("Action") == "connect":
+            networks.setdefault(attributes.get("container"), set()).add(attributes.get("name"))
+    joined = sorted({name for container in created for name in networks.get(container, set())})
+    proofs["generate container" + ("s " if len(created) != 1 else " ") + ", ".join(sorted(created.values()))
+           + " joined only network none (" + ", ".join(joined) + ")"] = bool(created) and joined == ["none"]
+    control = subprocess.run(["docker", "run", "--rm", "--network", "wheelhouse-rehearsal", "--cap-drop", "ALL",
+                              "--entrypoint", "python3", KEYSMITH_IMAGE, "/app/keysmith.py", "certificate"],
+                             capture_output=True, text=True)
+    proofs["control: the command on a network refuses (exit " + str(control.returncode) + ")"] = (
+        control.returncode == 3 and not control.stdout and "has a network" in control.stderr)
+
+    # 5. Regenerate makes a new version; the next deploy renders it into both services and keeps the command key.
+    written = console.data("POST", "/api/deployments/targets/" + KEYSMITH_TARGET + "/secrets/" + RANDOM_KEY
+                           + "/regenerate", {"note": "rig: regenerate"}, action="settings")
+    after = versions(RANDOM_KEY)
+    proofs["regenerate: " + RANDOM_KEY + " v" + str(written.get("version")) + ", earlier version kept"] = (
+        written.get("version") == 2 and [item["version"] for item in after["versions"]] == [2, 1]
+        and after["versions"][0].get("current") is True)
+    _, second = console_deploy(console, bundle_id, "Deploy after Regenerate")
+    identity_after, desk_after = rendered("identity"), rendered("desk")
+    regenerated = setting(identity_after, RANDOM_KEY)
+    if isinstance(regenerated, str) and regenerated:
+        values.add(regenerated)
+    print_steps(second, values)
+    proofs["the deploy after Regenerate succeeded"] = second.get("status") == "succeeded"
+    proofs["identity renders the new " + RANDOM_KEY] = bool(regenerated) and regenerated != random_value
+    proofs["desk renders the new value through its link"] = bool(regenerated) and setting(desk_after, LINKED_KEY) == regenerated
+    proofs["the deploy kept the stored " + COMMAND_KEY + " (one version, same value)"] = (
+        setting(identity_after, COMMAND_KEY) == certificate and len(versions(COMMAND_KEY)["versions"]) == 1)
+
+    # The audit names the generation and the regeneration, by key and version.
+    audit = console.data("GET", "/api/audit?pageSize=200") or {}
+    entries = [entry for entry in (audit.get("items") or audit.get("entries") or []) if KEYSMITH in json.dumps(entry)]
+    actions = [entry.get("action") for entry in entries]
+    proofs["audit: settings.generate and the regeneration recorded (" + ", ".join(sorted(set(map(str, actions)))) + ")"] = (
+        "settings.generate" in actions and any("regenerate" in str(action) for action in actions))
+
+    # 4. No generated value outside the rendered files: every console answer, deploy logs and history, the audit, the
+    # console's log and database, and the runner's journals and history on both sides.
+    console.data("GET", "/api/deployments/" + first_job + "/detail")
+    console.call("GET", "/api/deployments/history?limit=50")
+    console.call("GET", settings_path)
+    for service in KEYSMITH_SERVICES:
+        console.call("GET", "/api/deployments/targets/" + KEYSMITH_TARGET + "/services/" + service + "/logs?tail=200")
+    for key in (RANDOM_KEY, COMMAND_KEY):
+        versions(key)
+    sources = {"console API answers (" + str(len(console.answers)) + ")": "\n".join(console.answers)}
+    logs = subprocess.run(["docker", "logs", "--since", started.strftime("%Y-%m-%dT%H:%M:%SZ"), CONSOLE_CONTAINER],
+                          capture_output=True)
+    sources["console log"] = logs.stdout + logs.stderr
+    sources["console database dump"] = compose("--profile", "console", "exec", "-T", "console-db", "pg_dump",
+                                               "-U", "wheelhouse", "wheelhouse")
+    held = [path for path in INVENTORY.rglob("*") if path.is_file()]
+    sources["console runner root (" + str(len(held)) + " files)"] = None
+    sources["target runner root /srv/wheelhouse"] = on_target("tar", "-C", "/srv/wheelhouse", "-cf", "-", ".").stdout
+    leaks = {}
+    for name, data in sources.items():
+        if data is None:
+            hits = [str(path.relative_to(STATE)) for path in held if values.found(path.read_bytes())]
+        else:
+            hits = [name] if values.found(data) else []
+        leaks[name] = hits
+        proofs["no generated value in the " + name + ("" if not hits else ": " + ", ".join(hits[:5]))] = not hits
+    # The search itself finds them where they belong.
+    proofs["control: the search finds the values in the rendered files"] = values.found(
+        json.dumps(identity_after)) and values.found(json.dumps(desk_after))
+
+    for name, ok in proofs.items():
+        print("  " + ("ok" if ok else "FAILED").ljust(9) + " " + values.redact(name))
+    if not all(proofs.values()):
+        sys.exit("Generated and linked keys did not hold on the rig")
+    print("Generated and linked keys proven on the rig through the console: generated at the first deploy, linked, the "
+          "certificate's expiry kept, no value outside the rendered files, regenerated into both services, no network.")
+
+
 def down(volumes):
     profiles = ["--profile", "vault", "--profile", "console", "--profile", "dev", "--profile", "products",
                 "--profile", "enroll"]
@@ -1291,7 +1677,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("action", choices=["up", "console", "dev", "bundle", "settings", "check", "deploy", "state",
                                            "run", "self", "self-deploy", "harden", "products", "networks", "enroll",
-                                           "down"])
+                                           "generated", "down"])
     parser.add_argument("--env", default="dev", help="dev (default) or prod")
     parser.add_argument("--tag", help="bundle: a release tag such as v0.0.1-local.1; without it, a dev candidate")
     parser.add_argument("--bundle", help="the bundle ID to use; defaults to the checkout's candidate")
@@ -1346,6 +1732,8 @@ def main():
         prove_networks()
     elif args.action == "enroll":
         enroll_rig()
+    elif args.action == "generated":
+        prove_generated()
     else:
         down(args.volumes)
 
