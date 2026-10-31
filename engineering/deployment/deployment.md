@@ -667,6 +667,7 @@ every settings file and the target's lock state; each failure names the rule or 
 | `POST`/`DELETE /api/deployments/targets/{target}/settings/apply` | Applies edited values now or at a set time, or cancels the schedule |
 | `GET /api/deployments/targets/{target}/secrets/{key}/versions` | A secret's versions: who, when, fingerprint, note; never a value |
 | `POST …/secrets/{key}/restore` · `PUT …/secrets/{key}/expiry` | Restores a version as the newest; sets or clears the expiry |
+| `POST …/secrets/{key}/regenerate` | A key the release has Wheelhouse `generate`: a new version from its random bytes or its command (action `settings`), audited, applied by the next deploy |
 | `PUT`/`DELETE /api/products/{product}/setting-keys/{key}` | Adds or removes a typed key the owner declares for every environment |
 | `GET /api/vault` · `GET /api/vault/issues` | The built-in vault's state, key file path and counts, the root key's fingerprint and checks; sealed and expiring secrets, a due offline copy check, a failed key file check |
 | `POST /api/vault/verify` · `POST /api/vault/import` | Decrypts everything (counts only); imports a listed standalone vault over its API |
@@ -792,6 +793,14 @@ active secrets older than 90 days, and tokens expired, expiring within 14 days o
 Secrets live in Wheelhouse's built-in Secrets Vault ([architecture](../architecture/architecture.md#secrets-vault)):
 the `vault` schema of its own database, encrypted under a data key per product that one root key file wraps. Products
 get them only from the deploy-time render. Dev Wheelhouse keeps its own vault and key, with test values only.
+
+- Generated keys: a release's `generate` key ([descriptor](../../../../../conventions/deployment/descriptor/deploy-descriptor.md#generated-and-linked-keys))
+  gets its value before the first deploy of each environment, random bytes in the console or the command on the target
+  through the runner's `generate-setting`, stored as a new version; a PEM certificate's end date becomes its expiry.
+  A deploy never replaces a stored value; Regenerate under Secrets makes a new version. The audit
+  (`settings.generate`, `settings.secret.regenerate`) names keys and versions, never a value.
+- Linked keys: a `from` key holds no value of its own; the render copies its source's value, and the console shows it
+  read-only with its source.
 
 ### The root key file (owner, once per console)
 
