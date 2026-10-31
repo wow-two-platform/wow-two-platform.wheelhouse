@@ -1,4 +1,4 @@
-import type { DeploySetting, DeploySettings, DeploySettingSource } from "../deployments/models/DeploySettings";
+import type { DeploySetting, DeploySettings, DeploySettingSource, SettingGenerate } from "../deployments/models/DeploySettings";
 import type { SettingChange } from "./models";
 
 /** One key of an environment as the Settings and Secrets editors list it, once whatever the services that take it. */
@@ -10,7 +10,7 @@ export interface EnvironmentKey extends DeploySetting {
 }
 
 const sourceOrder: Record<DeploySettingSource, number> = {
-  missing: 0, host: 1, stored: 2, vault: 2, default: 3, unset: 4, derived: 5,
+  missing: 0, host: 1, stored: 2, vault: 2, generate: 2, default: 3, linked: 3, unset: 4, derived: 5,
 };
 
 /** Pure rules of an environment's Settings and Secrets editors. */
@@ -28,6 +28,8 @@ export const EnvironmentSettingsRules = {
           known.services.push(service.name);
           known.required ||= key.required;
           known.secret ||= key.secret;
+          known.generate ??= key.generate;
+          known.from ??= key.from;
           if (sourceOrder[key.source] < sourceOrder[known.source]) known.source = key.source;
           continue;
         }
@@ -64,9 +66,30 @@ export const EnvironmentSettingsRules = {
     return key.secret || key.source === "vault";
   },
 
+  /** Whether a key takes another key's value: it is read-only in every editor, and a save to it is refused. */
+  isLinked(key: Pick<DeploySetting, "from">): boolean {
+    return Boolean(key.from);
+  },
+
+  /** Whether Wheelhouse makes the key's value, so the owner regenerates it rather than typing one. */
+  canRegenerate(key: Pick<DeploySetting, "generate" | "from">): boolean {
+    return Boolean(key.generate) && !key.from;
+  },
+
+  /** How Wheelhouse makes a key's value, in a few words: `32 random bytes, base64url` or `command: …`. */
+  generateLabel(generate: SettingGenerate | null | undefined): string | null {
+    if (!generate) return null;
+    if (generate.command?.length) return `command: ${generate.command.join(" ")}`;
+    return `${generate.random ?? "?"} random bytes, ${generate.encoding ?? "base64url"}`;
+  },
+
   /** The words a key's source reads as in the editors. */
-  sourceLabel(key: Pick<DeploySetting, "source" | "default">): string {
+  sourceLabel(key: Pick<DeploySetting, "source" | "default"> & Partial<Pick<DeploySetting, "from">>): string {
     switch (key.source) {
+      case "linked":
+        return `from ${key.from ?? "another key"}`;
+      case "generate":
+        return "generated at the next deploy";
       case "stored":
         return "set";
       case "vault":
@@ -76,7 +99,7 @@ export const EnvironmentSettingsRules = {
       case "host":
         return "host file";
       case "missing":
-        return "missing";
+        return key.from ? `from ${key.from}, not set yet` : "missing";
       case "derived":
         return "derived";
       default:

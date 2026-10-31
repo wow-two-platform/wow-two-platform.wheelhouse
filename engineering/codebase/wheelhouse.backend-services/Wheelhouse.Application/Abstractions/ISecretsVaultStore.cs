@@ -22,7 +22,8 @@ public interface ISecretsVaultStore
     /// <summary>Stages a product's new data key.</summary>
     void Add(VaultProductKeyEntity key);
 
-    /// <summary>Gets an environment's secrets, removed ones included, tracked for change.</summary>
+    /// <summary>Gets an environment's secrets, removed ones included, as stored now: untracked, so a read after another
+    /// scope's write (a deploy's generated keys) never sees an older copy. Change one through <see cref="GetSecretAsync"/>.</summary>
     Task<IReadOnlyList<VaultSecretEntity>> GetSecretsAsync(Guid productId, DeploymentEnvironment environment, CancellationToken ct);
 
     /// <summary>Gets one secret of an environment, tracked for change; staged ones included.</summary>

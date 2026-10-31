@@ -10,8 +10,9 @@ export interface SecretsEditorProps {
 
 <script setup lang="ts">
 import { computed, ref, shallowRef } from "vue";
-import { History, KeyRound, Plus } from "lucide-vue-next";
+import { History, KeyRound, Link2, Plus, RefreshCw } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { ConfirmPopover } from "@wow-two-beta/fe/presentation/overlays";
 import {
   Badge,
   EmptyState,
@@ -23,9 +24,10 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@wow-two-beta/fe/presentation/display";
-import { useSettingKeys, useSettingSaver } from "@/application/settings";
+import { useRegenerateSecret, useSettingKeys, useSettingSaver } from "@/application/settings";
 import { EnvironmentSettingsRules, type EnvironmentKey } from "@/domain/settings";
 import { DeleteConfirm } from "@/presentation/common/components";
+import { failureReason } from "@/integration/common";
 import AddKeyModal from "./AddKeyModal.vue";
 import SecretHistoryModal from "./SecretHistoryModal.vue";
 import SecretValueModal from "./SecretValueModal.vue";
@@ -33,7 +35,8 @@ import SecretValueModal from "./SecretValueModal.vue";
 /**
  * The environment's secrets: each declared or held key with its version, who changed it and when, its fingerprint and
  * expiry — never a value. A new value writes the next version with a note; History shows every version and restores
- * one; Remove stops it rendering and keeps its versions.
+ * one; Remove stops it rendering and keeps its versions. A secret the release has Wheelhouse make offers Regenerate
+ * instead of a typed value: a new version the next deploy applies. A linked secret shows its source, read-only.
  */
 defineOptions({ name: "SecretsEditor" });
 const props = defineProps<SecretsEditorProps>();
@@ -41,7 +44,17 @@ defineSlots<{}>();
 
 const saver = useSettingSaver(() => props.plan.target);
 const keys = useSettingKeys();
+const regenerate = useRegenerateSecret();
 const rows = computed(() => EnvironmentSettingsRules.secrets(props.plan));
+/** Why the last regeneration failed, by key: the runner's error line, never a value. */
+const failures = ref<Record<string, string>>({});
+
+/** Has Wheelhouse make a new version of a generated secret; a failure stays on its row. @internal */
+async function regenerateKey(key: string): Promise<void> {
+  failures.value = Object.fromEntries(Object.entries(failures.value).filter(([known]) => known !== key));
+  const result = await regenerate.mutateAsync({ target: props.plan.target, key });
+  if (!result.ok) failures.value = { ...failures.value, [key]: failureReason(result.failure) || "Not regenerated." };
+}
 const writing = shallowRef<EnvironmentKey | null>(null);
 const viewing = ref<string | null>(null);
 const adding = ref(false);
@@ -76,7 +89,12 @@ const adding = ref(false);
                 <Badge v-if="row.type !== 'text'" variant="neutral">{{ row.type }}</Badge>
                 <Badge v-if="row.adHoc" variant="neutral">added</Badge>
                 <Badge v-if="row.unapplied" variant="info">changed</Badge>
+                <Badge v-if="EnvironmentSettingsRules.canRegenerate(row)" variant="neutral" :title="EnvironmentSettingsRules.generateLabel(row.generate) ?? undefined"
+                  >generated</Badge
+                >
+                <Badge v-if="EnvironmentSettingsRules.isLinked(row)" variant="neutral">linked</Badge>
               </span>
+              <span v-if="failures[row.key]" class="text-xs text-danger" role="alert">{{ failures[row.key] }}</span>
             </span>
           </TableCell>
           <TableCell>
@@ -86,7 +104,11 @@ const adding = ref(false);
                 row.vault.fingerprint.slice(0, 8)
               }}</span>
             </span>
-            <span v-else class="text-xs text-muted-foreground">{{ EnvironmentSettingsRules.sourceLabel(row) }}</span>
+            <span v-else class="flex items-center gap-1 text-xs text-muted-foreground"
+              ><Link2 v-if="EnvironmentSettingsRules.isLinked(row)" :size="12" aria-hidden="true" />{{
+                EnvironmentSettingsRules.sourceLabel(row)
+              }}</span
+            >
           </TableCell>
           <TableCell class="whitespace-nowrap text-xs text-muted-foreground">
             <template v-if="row.vault">{{ row.vault.updatedBy }} · <RelativeTime :value="row.vault.updatedAt" /></template>
@@ -100,8 +122,27 @@ const adding = ref(false);
             <span v-else-if="row.vault?.expiresAt" class="text-xs text-muted-foreground">{{ row.vault.expiresAt.slice(0, 10) }}</span>
           </TableCell>
           <TableCell label="" class="justify-end">
-            <div class="flex justify-end gap-1">
-              <Button variant="ghost" tone="neutral" size="sm" :aria-label="`Set ${row.key}`" title="Write a new version" @click="writing = row">
+            <div v-if="!EnvironmentSettingsRules.isLinked(row)" class="flex justify-end gap-1">
+              <ConfirmPopover
+                v-if="EnvironmentSettingsRules.canRegenerate(row)"
+                :title="`Regenerate ${row.key}?`"
+                :description="`Wheelhouse makes a new value (${EnvironmentSettingsRules.generateLabel(row.generate)}) as the next version; the next deploy applies it.`"
+                confirm-label="Regenerate"
+                :on-confirm="() => regenerateKey(row.key)"
+              >
+                <Button variant="ghost" tone="neutral" size="sm" :aria-label="`Regenerate ${row.key}`" title="Generate a new version">
+                  <RefreshCw :size="14" />
+                </Button>
+              </ConfirmPopover>
+              <Button
+                v-else
+                variant="ghost"
+                tone="neutral"
+                size="sm"
+                :aria-label="`Set ${row.key}`"
+                title="Write a new version"
+                @click="writing = row"
+              >
                 <KeyRound :size="14" />
               </Button>
               <Button

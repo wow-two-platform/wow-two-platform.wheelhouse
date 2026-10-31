@@ -1,5 +1,18 @@
-/** Where a deploy's render takes a setting's value from. */
-export type DeploySettingSource = "derived" | "vault" | "stored" | "default" | "host" | "missing" | "unset";
+/** Where a deploy's render takes a setting's value from: `generate` is a secret Wheelhouse makes at the next deploy, and
+ *  `linked` a key that takes another key's value. */
+export type DeploySettingSource = "derived" | "vault" | "stored" | "default" | "host" | "missing" | "unset" | "generate" | "linked";
+
+/** How Wheelhouse makes a secret key's value, as the release declares it: random bytes, or a command run from the
+ *  declaring service's release image. A declaration, never a value. */
+export interface SettingGenerate {
+  /** How many random bytes; null for the command form. */
+  random: number | null;
+  /** The random bytes' encoding: `base64url` or `hex`. */
+  encoding: string | null;
+  /** The command's argument list; null for the random form. */
+  command: string[] | null;
+  timeoutSeconds: number | null;
+}
 
 /** What a setting's value must look like; Wheelhouse checks a value against it on save. */
 export type SettingType = "text" | "number" | "boolean" | "choice" | "url" | "cron" | "date" | "email";
@@ -41,6 +54,10 @@ export interface DeploySetting {
   looksSecret: boolean;
   /** A vault secret's metadata, never its value. */
   vault: SecretMeta | null;
+  /** How Wheelhouse makes the key's value: a deploy fills a missing one, Regenerate writes a new version. */
+  generate: SettingGenerate | null;
+  /** The key a linked key takes its value from; such a key is read-only. */
+  from: string | null;
 }
 
 /** One service's settings file on a target. */

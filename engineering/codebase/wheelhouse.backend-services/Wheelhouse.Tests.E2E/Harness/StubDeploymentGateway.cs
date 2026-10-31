@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Deployments.Settings.Models;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
@@ -131,6 +132,22 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
 
     /// <summary>What the <c>settings</c> read answers for any target: each service's declared keys; none by default.</summary>
     public object? Declarations { get; set; }
+
+    /// <summary>Every <c>generate-setting</c> call, in order: target, release, service and key.</summary>
+    public List<(string Target, string Release, string Service, string Key)> Generations { get; } = [];
+
+    /// <summary>What a key's <c>generate-setting</c> answers, by key: a value, or the runner's failure. A key without one
+    /// is refused, as a runner without the verb would refuse it.</summary>
+    public Dictionary<string, AppResult<GeneratedSettingValue>> Generated { get; } = [];
+
+    public Task<AppResult<GeneratedSettingValue>> GenerateSettingAsync(
+        string target, string release, string service, string key, TimeSpan timeout, CancellationToken ct)
+    {
+        Generations.Add((target, release, service, key));
+        return Task.FromResult(Generated.TryGetValue(key, out var answer)
+            ? answer
+            : AppResult<GeneratedSettingValue>.Fail(AppErrorFactory.Conflict("Unknown action generate-setting")));
+    }
 
     /// <summary>The settings values the last start carried to the runner, if any.</summary>
     public JsonElement? LastSettings { get; private set; }

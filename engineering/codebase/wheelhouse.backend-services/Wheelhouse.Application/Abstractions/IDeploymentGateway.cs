@@ -33,6 +33,21 @@ public interface IDeploymentGateway
     /// secret, and what the render derives. No target is contacted. A gateway that renders nothing declares none.</summary>
     Task<AppResult<JsonElement>> SettingsAsync(string target, string release, CancellationToken ct) =>
         Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new { services = Array.Empty<object>() })));
+    /// <summary>Runs a secret key's <c>generate</c> command on a target: a one-off container from
+    /// <paramref name="service"/>'s image in <paramref name="release"/>, without network, settings or secrets. Its value
+    /// never leaves the result: no log, record or error carries it; a failure names the runner's last error line only.
+    /// A gateway without generation refuses it.</summary>
+    /// <param name="target">The target's slug.</param>
+    /// <param name="release">The release bundle whose image runs the command.</param>
+    /// <param name="service">The service declaring the key.</param>
+    /// <param name="key">The key.</param>
+    /// <param name="timeout">How long the call may take: the command's own limit and room for the image's pull.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The value, or why none was made.</returns>
+    Task<AppResult<Deployments.Settings.Models.GeneratedSettingValue>> GenerateSettingAsync(
+        string target, string release, string service, string key, TimeSpan timeout, CancellationToken ct) =>
+        Task.FromResult(AppResult<Deployments.Settings.Models.GeneratedSettingValue>.Fail(
+            AppErrorFactory.Unexpected("This runner cannot generate a setting's value.")));
     /// <summary>Records the owner's reconciliation of an interrupted or failed rollout on its target.</summary>
     Task<AppResult<JsonElement>> ReconcileAsync(string target, string job, string actor, CancellationToken ct);
     /// <summary>Submits a control of the release a target runs: <paramref name="operation"/> (<c>stop</c>, <c>start</c>

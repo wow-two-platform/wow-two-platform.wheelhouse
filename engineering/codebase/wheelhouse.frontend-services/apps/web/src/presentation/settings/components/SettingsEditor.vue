@@ -10,7 +10,7 @@ export interface SettingsEditorProps {
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { Plus, Sparkles } from "lucide-vue-next";
+import { Link2, Plus, Sparkles } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge, EmptyState } from "@wow-two-beta/fe/presentation/display";
 import { useSettingKeys, useSettingSaver } from "@/application/settings";
@@ -22,7 +22,8 @@ import SettingField from "./SettingField.vue";
 /**
  * The environment's plain settings, every key once: the ones its release declares, with their type and the services
  * that take them, and the ones the owner added. Each field saves as soon as it is confirmed; a set value can be reset
- * to the release's default, and an added key removed. Secrets live on the Secrets tab.
+ * to the release's default, and an added key removed. A linked key shows its source and the source's value, read-only:
+ * the source is the one to change. Secrets live on the Secrets tab.
  */
 defineOptions({ name: "SettingsEditor" });
 const props = defineProps<SettingsEditorProps>();
@@ -61,7 +62,15 @@ async function save(row: EnvironmentKey, value: string, confirmPlain: boolean): 
     />
     <ul v-else class="flex flex-col divide-y divide-border">
       <li v-for="row in rows" :key="row.key" class="flex flex-col gap-2 py-3 first:pt-0 md:flex-row md:items-start md:gap-4">
-        <div class="min-w-0 flex-1">
+        <div v-if="EnvironmentSettingsRules.isLinked(row)" class="flex min-w-0 flex-1 flex-col gap-1" :aria-label="`${row.key}, linked`">
+          <span class="font-mono text-xs [overflow-wrap:anywhere]">{{ row.key }}</span>
+          <span class="flex items-center gap-1 text-xs text-muted-foreground">
+            <Link2 :size="12" aria-hidden="true" />{{ helper(row) }}
+          </span>
+          <span v-if="row.value !== null" class="truncate font-mono text-sm" :title="row.value">{{ row.value || "empty" }}</span>
+          <span v-else class="text-sm italic text-muted-foreground">the source's value, at each deploy</span>
+        </div>
+        <div v-else class="min-w-0 flex-1">
           <SettingField
             :setting-key="row.key"
             :type="row.type"
@@ -79,10 +88,11 @@ async function save(row: EnvironmentKey, value: string, confirmPlain: boolean): 
         </div>
         <div class="flex shrink-0 flex-wrap items-center gap-2 md:pt-7">
           <Badge v-if="row.source === 'missing'" variant="warning">missing</Badge>
+          <Badge v-if="EnvironmentSettingsRules.isLinked(row)" variant="neutral">linked</Badge>
           <Badge v-if="row.unapplied" variant="info">changed</Badge>
           <Badge v-if="row.adHoc" variant="neutral">added</Badge>
           <DeleteConfirm
-            v-if="row.source === 'stored'"
+            v-if="row.source === 'stored' && !EnvironmentSettingsRules.isLinked(row)"
             size="sm"
             label="Reset"
             :question="`Remove ${row.key}'s value${row.default !== null ? ' and use the default' : ''}?`"

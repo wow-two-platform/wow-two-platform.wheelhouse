@@ -18,7 +18,7 @@ using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 namespace Wheelhouse.Api.Controllers;
 
 /// <summary>Exposes what an environment's settings and secrets do after a save: applying them now or at a set time, and
-/// each secret's versions, restore and expiry. Signed-in owner only; values never travel back.</summary>
+/// each secret's versions, restore, regeneration and expiry. Signed-in owner only; values never travel back.</summary>
 [ApiController]
 [Route("api/deployments/targets/{target}")]
 [Authorize(Policy = AuthConfigurationExtensions.OwnerSessionPolicy)]
@@ -58,6 +58,18 @@ public sealed class TargetSettingsController(ISender sender, IActorContext actor
         [RegularExpression(Slug)] string target, [RegularExpression(FormatPatternConstants.ConfigurationKey)] string key, SecretRestoreRequest request,
         CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new SecretRestoreCommand(target, key, request.Version, request.Note, actor.Actor), ct));
+
+    /// <summary>Generates a new value for a secret the release has Wheelhouse generate, as its newest version; the next
+    /// deploy or apply renders it. The value never travels back: the reply names the version and fingerprint.</summary>
+    [HttpPost("secrets/{key}/regenerate")]
+    [RequireActionHeader("settings")]
+    [ProducesResponseType<ApiResponse<SecretWritten>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> Regenerate(
+        [RegularExpression(Slug)] string target, [RegularExpression(FormatPatternConstants.ConfigurationKey)] string key,
+        [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] SecretRegenerateRequest? request,
+        CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(
+            new SecretRegenerateCommand(target, key, actor.Actor, request?.Note, request?.Release), ct));
 
     /// <summary>Sets or clears a secret's expiry.</summary>
     [HttpPut("secrets/{key}/expiry")]

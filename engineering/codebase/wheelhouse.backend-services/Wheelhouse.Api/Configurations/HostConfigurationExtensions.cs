@@ -272,6 +272,7 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Fleets.Services.FleetRolloutService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Settings.Services.DeploymentSettingsService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Settings.Services.SettingsApplyService>();
+        builder.Services.AddScoped<Wheelhouse.Application.Deployments.Settings.Services.GeneratedSettingsService>();
         builder.Services.AddScoped<Wheelhouse.Application.SecretsVault.Services.SecretsVaultService>();
         builder.Services.AddScoped<Wheelhouse.Application.SecretsVault.Services.SecretsVaultImporter>();
         builder.Services.AddSingleton<Wheelhouse.Application.SecretsVault.Services.RootKeyFileMonitor>();

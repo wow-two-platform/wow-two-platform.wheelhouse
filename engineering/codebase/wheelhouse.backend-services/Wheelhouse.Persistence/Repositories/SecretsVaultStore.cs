@@ -31,7 +31,7 @@ internal sealed class SecretsVaultStore(WheelhouseDbContext db) : ISecretsVaultS
     /// <inheritdoc />
     public async Task<IReadOnlyList<VaultSecretEntity>> GetSecretsAsync(
         Guid productId, DeploymentEnvironment environment, CancellationToken ct) =>
-        await db.VaultSecrets
+        await db.VaultSecrets.AsNoTracking()
             .Where(secret => secret.ProductId == productId && secret.Environment == environment)
             .OrderBy(secret => secret.Key)
             .ToListAsync(ct);

@@ -28,6 +28,12 @@ public interface IEnvironmentSecrets
     Task<AppResult<IReadOnlyList<SecretWritten>>> WriteAsync(
         TargetEntity target, ProductEntity product, IReadOnlyList<SecretWrite> writes, string actor, CancellationToken ct);
 
+    /// <summary>Writes new versions whose values the owner did not type, noting where they came from, such as a value
+    /// Wheelhouse generated. A vault that keeps no origin writes them as <see cref="WriteAsync(TargetEntity, ProductEntity, IReadOnlyList{SecretWrite}, string, CancellationToken)"/>.</summary>
+    Task<AppResult<IReadOnlyList<SecretWritten>>> WriteAsync(
+        TargetEntity target, ProductEntity product, IReadOnlyList<SecretWrite> writes, string actor, string? origin, CancellationToken ct) =>
+        WriteAsync(target, product, writes, actor, ct);
+
     /// <summary>Removes secrets; returns the keys it removed with the version each was on.</summary>
     Task<AppResult<IReadOnlyDictionary<string, int>>> RemoveAsync(
         TargetEntity target, ProductEntity product, IReadOnlyCollection<string> keys, CancellationToken ct);

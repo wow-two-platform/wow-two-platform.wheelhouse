@@ -19,7 +19,7 @@ export interface DeploySettingsPanelProps {
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
 import { pluralize } from "@wow-two-beta/fe/foundation/formatters";
-import { Check, KeyRound, Pencil, Sparkles } from "lucide-vue-next";
+import { Check, KeyRound, Link2, Pencil, Sparkles } from "lucide-vue-next";
 
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge } from "@wow-two-beta/fe/presentation/display";
@@ -84,6 +84,8 @@ watch(
 );
 
 const derived = computed(() => DeploySettingsRules.derived(props.settings));
+const linked = computed(() => DeploySettingsRules.linked(props.settings));
+const generated = computed(() => DeploySettingsRules.generated(props.settings));
 const sections = computed(() => DeploySettingsRules.sections(props.settings, shown.value, entered.value, secrets.value));
 const missing = computed(() => sections.value.missing);
 const held = computed(() => sections.value.held);
@@ -228,6 +230,22 @@ function edit(key: string, event: MouseEvent): void {
           @update:secret="(value: boolean) => setSecret(item.key, value)"
         />
       </div>
+    </details>
+    <p v-if="generated.length" class="text-xs text-muted-foreground">
+      Wheelhouse generates {{ generated.join(", ") }} into the vault before this deploy starts.
+    </p>
+    <details v-if="linked.length" class="text-sm">
+      <summary class="flex cursor-pointer items-center gap-1.5 text-muted-foreground">
+        <Link2 :size="14" aria-hidden="true" />Linked to another key ({{ linked.length }})
+      </summary>
+      <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+        <template v-for="item in linked" :key="item.key">
+          <dt class="font-mono text-xs">{{ item.key }}</dt>
+          <dd class="min-w-0 truncate text-xs text-muted-foreground" :title="item.from">
+            from {{ item.from }}{{ item.value !== null ? ` · ${item.value}` : "" }}
+          </dd>
+        </template>
+      </dl>
     </details>
     <p v-if="hostFiles.length" class="text-xs text-muted-foreground">
       Host files of {{ hostFiles.join(", ") }} stay a layer: Wheelhouse's values and the derived keys go over them.

@@ -1,0 +1,218 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Audit;
+using Wheelhouse.Application.Deployments.Settings.Constants;
+using Wheelhouse.Application.Deployments.Settings.Models;
+using Wheelhouse.Application.SecretsVault.Models;
+using Wheelhouse.Domain.Audit.Enums;
+using Wheelhouse.Domain.Products.Entities;
+using Wheelhouse.Domain.Targets.Entities;
+using WoW.Two.Sdk.Beta.Be.Data.Sessions;
+using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
+
+namespace Wheelhouse.Application.Deployments.Settings.Services;
+
+/// <summary>Makes the values of the secret keys a release has Wheelhouse generate (<c>generate</c>), so no secret passes
+/// through a person: random bytes in process, or a command the runner runs on the target from the declaring service's
+/// image. A deploy fills each such key that holds no value in its environment before it starts, and never replaces a
+/// stored one; Regenerate writes a new version the next deploy applies. Each value goes to the vault as a new version
+/// (a PEM certificate's end date becomes its expiry) and is dropped; the audit names the keys, the versions and the
+/// deploy, never a value.</summary>
+/// <remarks>The values are written in a scope of their own, in one unit: a request scope takes one root transaction, and a
+/// deploy, an apply or a fleet step may already have used its own, while the render that follows must find them stored.
+/// </remarks>
+public sealed partial class GeneratedSettingsService(
+    IDeploymentGateway gateway,
+    IEnvironmentSecrets secrets,
+    IServiceScopeFactory scopes,
+    IAuditTrail audit,
+    ILogger<GeneratedSettingsService> logger)
+{
+    /// <summary>Holds the audit action a deploy's generation records.</summary>
+    public const string AuditAction = "settings.generate";
+
+    private const int ReasonLength = 300;
+
+    /// <summary>The time a command's run adds to its own limit: the runner's SSH, the image's pull (up to 10 minutes on a
+    /// cold target) and the container's start; it outlasts the transport's own margin, so the runner's message wins.</summary>
+    private static readonly TimeSpan CommandMargin = TimeSpan.FromSeconds(720);
+
+    /// <summary>Generates each key of <paramref name="plan"/> that the release has Wheelhouse generate and its environment
+    /// holds no value for, before a deploy of <paramref name="release"/> starts. A command failing stops at that key: the
+    /// keys made before it are stored, so a retry never runs their commands again, and the failure names the runner's
+    /// error line. Nothing is generated while the vault cannot list what it holds, so a stored value is never replaced;
+    /// the deploy's render then refuses on its own.</summary>
+    /// <param name="target">The target.</param>
+    /// <param name="product">The target's product.</param>
+    /// <param name="plan">The release's settings plan on the target.</param>
+    /// <param name="release">The release bundle being deployed; a command runs from its image.</param>
+    /// <param name="actor">Who deploys.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>Each key generated with its version, or why the deploy stops.</returns>
+    public async Task<AppResult<IReadOnlyList<SavedSettingDto>>> FillAsync(
+        TargetEntity target, ProductEntity product, DeploySettingsDto plan, string release, string actor, CancellationToken ct)
+    {
+        var wanted = new SortedDictionary<string, (string Service, SettingGenerateDto Generate)>(StringComparer.Ordinal);
+        foreach (var service in plan.Services)
+            foreach (var key in service.Keys)
+                if (key is { Source: SettingSources.Generate, Generate: { } generate } && !wanted.ContainsKey(key.Key))
+                    wanted[key.Key] = (service.Name, generate);
+        if (wanted.Count == 0 || plan.Vault is not { Reachable: true } || await secrets.ListAsync(target, product, ct) is not { } held)
+            return AppResult<IReadOnlyList<SavedSettingDto>>.Ok([]);
+
+        var deploy = "deploy of " + (plan.Release ?? release);
+        var made = new List<(SecretWrite Write, string Origin, string Kind)>();
+        (string Key, AppError Error)? failed = null;
+        foreach (var (key, (service, generate)) in wanted)
+        {
+            // A deploy only fills a missing value: one saved since the plan was read stays.
+            if (held.ContainsKey(key))
+                continue;
+            var result = await MakeAsync(target, release, service, key, generate, ct);
+            if (result is AppResult<GeneratedSettingValue>.Failure { Error: var error })
+            {
+                failed = (key, error);
+                break;
+            }
+            made.Add((Write(key, ((AppResult<GeneratedSettingValue>.Success)result).Data, null),
+                "generated by the " + deploy + " (" + generate.Kind + ")", generate.Kind));
+        }
+
+        // The keys made before a failure are stored too, so a retry never runs their commands again.
+        var stored = made.Count == 0
+            ? AppResult<IReadOnlyList<SecretWritten>>.Ok([])
+            : await StoreAsync(target, product, [.. made.Select(item => (item.Write, item.Origin))], actor, ct);
+        if (stored is AppResult<IReadOnlyList<SecretWritten>>.Failure { Error: var unstored })
+            failed ??= (made[0].Write.Key, unstored);
+        IReadOnlyList<SecretWritten> versions = stored is AppResult<IReadOnlyList<SecretWritten>>.Success { Data: var list } ? list : [];
+        var described = versions.Select((version, index) => version.Key + " v" + version.Version + " (" + made[index].Kind + ")").ToList();
+        if (failed is { } failure)
+        {
+            // A refusal like any other: the deploy stops before its runner hears of it.
+            var refusal = AppErrorFactory.Conflict("Generating " + failure.Key + " failed: " + failure.Error.Message);
+            await AuditAsync(actor, target.Slug, AuditOutcome.Failed,
+                string.Join(", ", described.Append(failure.Key + " failed")) + "; " + deploy, refusal.Message);
+            return AppResult<IReadOnlyList<SavedSettingDto>>.Fail(refusal);
+        }
+        if (versions.Count > 0)
+            await AuditAsync(actor, target.Slug, AuditOutcome.Succeeded, string.Join(", ", described) + "; " + deploy, null);
+        return AppResult<IReadOnlyList<SavedSettingDto>>.Ok([
+            .. versions.Select(version => new SavedSettingDto(version.Key, true, false, version.Version is > 0 ? version.Version : null,
+                string.IsNullOrEmpty(version.Fingerprint) ? null : version.Fingerprint, true)),
+        ]);
+    }
+
+    /// <summary>Generates a new value for a key the release has Wheelhouse generate, as a new version the next deploy
+    /// applies; earlier versions stay. The caller audits it.</summary>
+    /// <param name="target">The target.</param>
+    /// <param name="product">The target's product.</param>
+    /// <param name="declaration">The key's declaration, with its <c>generate</c> and declaring service.</param>
+    /// <param name="release">The release bundle whose image runs a command; null when the target runs none.</param>
+    /// <param name="note">The owner's note on the new version.</param>
+    /// <param name="actor">Who regenerates it.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The new version, or why none was made.</returns>
+    public async Task<AppResult<SecretWritten>> RegenerateAsync(
+        TargetEntity target, ProductEntity product, KeyDeclaration declaration, string? release, string? note, string actor, CancellationToken ct)
+    {
+        if (declaration.Generate is not { } generate || declaration.From is not null)
+            return AppResult<SecretWritten>.Fail(AppErrorFactory.Conflict(
+                declaration.Key + " is not generated by Wheelhouse here; write a new value instead."));
+        if (generate.IsCommand && (release is null || declaration.Service is null))
+            return AppResult<SecretWritten>.Fail(AppErrorFactory.Conflict(
+                declaration.Key + " is made by a command in its service's release image; deploy a release first."));
+        var made = await MakeAsync(target, release ?? "", declaration.Service ?? "", declaration.Key, generate, ct);
+        if (made is AppResult<GeneratedSettingValue>.Failure { Error: var error })
+            return AppResult<SecretWritten>.Fail(AppErrorFactory.Conflict("Generating " + declaration.Key + " failed: " + error.Message));
+        var value = ((AppResult<GeneratedSettingValue>.Success)made).Data;
+        var stored = await StoreAsync(target, product, [(Write(declaration.Key, value, note), "regenerated (" + generate.Kind + ")")], actor, ct);
+        return stored is AppResult<IReadOnlyList<SecretWritten>>.Success { Data: [var version] }
+            ? AppResult<SecretWritten>.Ok(version)
+            : AppResult<SecretWritten>.Fail(stored is AppResult<IReadOnlyList<SecretWritten>>.Failure { Error: var failure }
+                ? failure
+                : AppErrorFactory.Unexpected("The vault wrote no version of " + declaration.Key + "."));
+    }
+
+    /// <summary>The secret's write: its value, and a certificate's end date as its expiry; a value without one keeps the
+    /// secret's expiry.</summary>
+    /// <param name="key">The key.</param>
+    /// <param name="value">The generated value.</param>
+    /// <param name="note">The owner's note.</param>
+    /// <returns>The write.</returns>
+    public static SecretWrite Write(string key, GeneratedSettingValue value, string? note)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return new SecretWrite(key, value.Value, note,
+            SecretValues.CertificateEnd(value.Value) is { } end ? new ExpiryChange(end) : null);
+    }
+
+    /// <summary>Makes one value: random bytes here, or the command through the runner. @internal</summary>
+    private async Task<AppResult<GeneratedSettingValue>> MakeAsync(
+        TargetEntity target, string release, string service, string key, SettingGenerateDto generate, CancellationToken ct)
+    {
+        if (!generate.IsCommand)
+        {
+            if (generate.Random is not { } bytes || bytes is < SecretValues.MinRandomBytes or > SecretValues.MaxRandomBytes)
+                return AppResult<GeneratedSettingValue>.Fail(AppErrorFactory.Conflict(
+                    "the release asks for " + generate.Random + " random bytes; Wheelhouse makes " + SecretValues.MinRandomBytes
+                    + "-" + SecretValues.MaxRandomBytes + "."));
+            var encoding = generate.Encoding ?? SecretValues.Base64Url;
+            if (!SecretValues.IsFormat(encoding))
+                return AppResult<GeneratedSettingValue>.Fail(AppErrorFactory.Conflict(
+                    "the release asks for a " + encoding + " value; Wheelhouse encodes base64url or hex."));
+            return AppResult<GeneratedSettingValue>.Ok(new GeneratedSettingValue(SecretValues.RandomBytes(bytes, encoding)));
+        }
+        // The command's own limit, plus room for the runner to reach the target and pull the image.
+        var made = await gateway.GenerateSettingAsync(target.Slug, release, service, key, generate.Timeout + CommandMargin, ct);
+        if (made is AppResult<GeneratedSettingValue>.Success { Data.Value: var output })
+        {
+            var value = output.EndsWith("\r\n", StringComparison.Ordinal) ? output[..^2] : output.EndsWith('\n') ? output[..^1] : output;
+            return value.Length == 0
+                ? AppResult<GeneratedSettingValue>.Fail(AppErrorFactory.Conflict("the command printed no value."))
+                : AppResult<GeneratedSettingValue>.Ok(new GeneratedSettingValue(value));
+        }
+        return made;
+    }
+
+    /// <summary>Writes generated values as new versions, each with its origin, in one unit of a scope of its own; any
+    /// failure writes none. @internal</summary>
+    private async Task<AppResult<IReadOnlyList<SecretWritten>>> StoreAsync(
+        TargetEntity target, ProductEntity product, IReadOnlyList<(SecretWrite Write, string Origin)> writes, string actor, CancellationToken ct)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        var session = scope.ServiceProvider.GetRequiredService<IDataSession>();
+        var vault = scope.ServiceProvider.GetRequiredService<IEnvironmentSecrets>();
+        // Completing the unit saves what the vault staged and commits; leaving it without completing keeps nothing.
+        await using var unit = await session.BeginAsync(ct);
+        var written = new List<SecretWritten>(writes.Count);
+        foreach (var (write, origin) in writes)
+        {
+            var result = await vault.WriteAsync(target, product, [write], actor, origin, ct);
+            if (result is AppResult<IReadOnlyList<SecretWritten>>.Failure { Error: var error })
+                return AppResult<IReadOnlyList<SecretWritten>>.Fail(error);
+            written.AddRange(((AppResult<IReadOnlyList<SecretWritten>>.Success)result).Data);
+        }
+        await unit.CompleteAsync(ct);
+        return AppResult<IReadOnlyList<SecretWritten>>.Ok(written);
+    }
+
+    /// <summary>Records a deploy's generation: the keys, their versions and the deploy; never a value. @internal</summary>
+    private async Task AuditAsync(string actor, string target, AuditOutcome outcome, string detail, string? reason)
+    {
+        try
+        {
+            // The values are stored; a caller that disconnects must not cancel their record.
+            await audit.AppendAsync(new AuditRecord(actor, AuditAction, target, outcome, detail,
+                reason is { Length: > ReasonLength } ? reason[..ReasonLength] : reason), CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            LogUnaudited(logger, target, exception.GetType().Name);
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "The audit trail did not record a generation on {Target} ({Error})")]
+    private static partial void LogUnaudited(ILogger logger, string target, string error);
+}

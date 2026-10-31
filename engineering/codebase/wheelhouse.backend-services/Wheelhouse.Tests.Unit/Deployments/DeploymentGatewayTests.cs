@@ -223,6 +223,35 @@ public sealed class DeploymentGatewayTests : IDisposable
         (error.Type, error.Message).Should().Be((AppErrorType.ExternalUnavailable, "Deployment runner is unavailable."));
     }
 
+    [Fact]
+    public async Task GenerateSetting_ShouldNameTheTargetReleaseServiceAndKey_AndReturnOnlyTheValue()
+    {
+        // A stand-in transport that answers the value it was asked for, built from its arguments.
+        File.WriteAllText(_transport,
+            "import json, sys\nargs = sys.argv[1:sys.argv.index('--root')]\nprint(json.dumps({'value': '|'.join(args) + '\\n'}))\n");
+        var gateway = new DeploymentGateway(RunnerProcessClients.Create(), new DeploymentSettings { TransportPath = _transport, Root = _root });
+
+        var result = await gateway.GenerateSettingAsync("ocharo-dev", "ocharo-gh-7", "identity", "Identity:Server:Keys:Signing:0",
+            TimeSpan.FromSeconds(30), CancellationToken.None);
+
+        result.Should().BeOfType<AppResult<Wheelhouse.Application.Deployments.Settings.Models.GeneratedSettingValue>.Success>()
+            .Subject.Data.Value.Should().Be(
+                "generate-setting|--target|ocharo-dev|--bundle|ocharo-gh-7|--service|identity|--key|Identity:Server:Keys:Signing:0\n");
+    }
+
+    [Fact]
+    public async Task GenerateSetting_ShouldShowTheRunnersErrorLine_WhenTheCommandFails()
+    {
+        File.WriteAllText(_transport,
+            "import json, sys\nprint('SECRET_PARTIAL')\nprint(json.dumps({'error': 'keys generate exited 2: unknown role'}))\nsys.exit(1)\n");
+        var gateway = new DeploymentGateway(RunnerProcessClients.Create(), new DeploymentSettings { TransportPath = _transport, Root = _root });
+
+        var error = (await gateway.GenerateSettingAsync("ocharo-dev", "ocharo-gh-7", "identity", "A:B", TimeSpan.FromSeconds(30), CancellationToken.None))
+            .Should().BeOfType<AppResult<Wheelhouse.Application.Deployments.Settings.Models.GeneratedSettingValue>.Failure>().Subject.Error;
+
+        (error.Type, error.Message).Should().Be((AppErrorType.ExternalUnavailable, "keys generate exited 2: unknown role"));
+    }
+
     /// <summary>Runs a stand-in transport that writes <paramref name="standardError"/> and exits 1.</summary>
     private async Task<AppError> FailWith(string standardError)
     {

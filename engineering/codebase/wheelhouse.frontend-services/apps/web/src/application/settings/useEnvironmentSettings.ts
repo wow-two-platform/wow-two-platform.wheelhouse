@@ -58,6 +58,16 @@ export function useRestoreSecret() {
   });
 }
 
+/** Generates a new version of a secret Wheelhouse makes; the next deploy or apply renders it. */
+export function useRegenerateSecret() {
+  return useAppMutation({
+    mutationFn: ({ target, key, note }: { target: string; key: string; note?: string | null }, { signal }) =>
+      deploySettingsApi.regenerate(target, key, note ?? null, signal),
+    invalidates: ({ target }) => [SettingsKeys.of(target), SettingsKeys.vault],
+    meta: { suppressGlobalError: true },
+  });
+}
+
 /** Sets or clears a secret's expiry. */
 export function useSecretExpiry() {
   return useAppMutation({

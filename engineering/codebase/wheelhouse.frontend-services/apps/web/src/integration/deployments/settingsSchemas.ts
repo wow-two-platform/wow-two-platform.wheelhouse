@@ -17,7 +17,7 @@ const DeploySettingSchema = z.object({
   key: z.string(),
   required: z.boolean(),
   secret: z.boolean(),
-  source: z.enum(['derived', 'vault', 'stored', 'default', 'host', 'missing', 'unset']),
+  source: z.enum(['derived', 'vault', 'stored', 'default', 'host', 'missing', 'unset', 'generate', 'linked']),
   value: nullable(z.string()),
   default: nullable(z.string()),
   derived: nullable(z.enum(['hosts', 'proxies', 'sites', 'database'])),
@@ -27,6 +27,15 @@ const DeploySettingSchema = z.object({
   adHoc: z.boolean().default(false),
   looksSecret: z.boolean().default(false),
   vault: nullable(SecretMetaSchema),
+  generate: nullable(
+    z.object({
+      random: nullable(z.number().int()),
+      encoding: nullable(z.string()),
+      command: nullable(z.array(z.string())),
+      timeoutSeconds: nullable(z.number().int()),
+    }),
+  ),
+  from: nullable(z.string()),
 });
 
 /** The settings plan of a release on a target; secret values never travel, so none is decoded. */

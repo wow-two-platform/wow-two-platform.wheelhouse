@@ -90,6 +90,7 @@ public sealed partial class DeploymentSettingsService(
         var services = Services(declared, stored, held ?? new Dictionary<string, SecretMetadataDto>(), adHoc);
         var named = services.SelectMany(service => service.Keys).Select(key => key.Key).ToHashSet(StringComparer.Ordinal);
         var extra = Extra(named, stored, held ?? new Dictionary<string, SecretMetadataDto>(), adHoc);
+        services = Link(services, extra, stored, held ?? new Dictionary<string, SecretMetadataDto>());
         var pending = await applies.GetAsync(target.Id, ct);
         var label = bundle is null ? null : Text(declared, "release") ?? release ?? Label(history, bundle);
         return AppResult<DeploySettingsDto>.Ok(new DeploySettingsDto(
@@ -124,12 +125,20 @@ public sealed partial class DeploymentSettingsService(
         if (bundle is null || await gateway.SettingsAsync(target.Slug, bundle, ct) is not AppResult<JsonElement>.Success { Data: var declared }
             || !declared.TryGetProperty("services", out var services) || services.ValueKind != JsonValueKind.Array)
             return result;
-        foreach (var item in services.EnumerateArray().SelectMany(service =>
-                     service.TryGetProperty("keys", out var keys) && keys.ValueKind == JsonValueKind.Array ? keys.EnumerateArray() : default(JsonElement.ArrayEnumerator)))
+        foreach (var service in services.EnumerateArray())
         {
-            if (Text(item, "key") is not { } key || Text(item, "derived") is not null)
-                continue;
-            result[key] = Declare(item, key);
+            var name = Text(service, "name");
+            foreach (var item in service.TryGetProperty("keys", out var keys) && keys.ValueKind == JsonValueKind.Array
+                         ? keys.EnumerateArray() : default(JsonElement.ArrayEnumerator))
+            {
+                if (Text(item, "key") is not { } key || Text(item, "derived") is not null)
+                    continue;
+                var declaration = Declare(item, key) with { Service = name };
+                // The first service declaring how its value is made keeps it: its image runs a command.
+                if (result.GetValueOrDefault(key) is { AdHoc: false, Generate: not null } earlier)
+                    declaration = declaration with { Generate = earlier.Generate, Service = earlier.Service };
+                result[key] = declaration;
+            }
         }
         return result;
     }
@@ -141,12 +150,23 @@ public sealed partial class DeploymentSettingsService(
     /// <param name="product">The target's product.</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The values and their fingerprints, or why they could not be read.</returns>
-    public async Task<AppResult<RenderValues>> ValuesAsync(TargetEntity target, ProductEntity product, CancellationToken ct)
+    public Task<AppResult<RenderValues>> ValuesAsync(TargetEntity target, ProductEntity product, CancellationToken ct) =>
+        ValuesAsync(target, product, null, ct);
+
+    /// <summary>The values a deploy sends its target, as <see cref="ValuesAsync(TargetEntity, ProductEntity, CancellationToken)"/>,
+    /// leaving out <paramref name="linked"/>: a linked key takes its source's value in the render, never one of its own.</summary>
+    /// <param name="target">The target.</param>
+    /// <param name="product">The target's product.</param>
+    /// <param name="linked">The release's linked keys; null for none.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The values and their fingerprints, or why they could not be read.</returns>
+    public async Task<AppResult<RenderValues>> ValuesAsync(
+        TargetEntity target, ProductEntity product, IReadOnlySet<string>? linked, CancellationToken ct)
     {
         var values = new SortedDictionary<string, string>(StringComparer.Ordinal);
         var keys = new SortedDictionary<string, RenderedKey>(StringComparer.Ordinal);
         foreach (var row in await store.GetAsync(product.Id, target.Environment, ct))
-            if (IsKey(row.Key) && !IsDerived(row.Key))
+            if (IsKey(row.Key) && !IsDerived(row.Key) && linked?.Contains(row.Key) != true)
             {
                 values[row.Key] = row.Value;
                 keys[row.Key] = new RenderedKey("setting", null, SecretsVaultCrypto.Digest(row.Value));
@@ -155,7 +175,7 @@ public sealed partial class DeploymentSettingsService(
         if (held is null)
             return AppResult<RenderValues>.Fail(AppErrorFactory.ExternalUnavailable(
                 $"The vault is unreachable, so {target.Slug} cannot render its secrets; deploy once it answers."));
-        var wanted = held.Keys.Where(key => IsKey(key) && !IsDerived(key)).ToList();
+        var wanted = held.Keys.Where(key => IsKey(key) && !IsDerived(key) && linked?.Contains(key) != true).ToList();
         if (wanted.Count > 0)
         {
             var read = await secrets.ReadAsync(target, product, wanted, "deploy " + target.Slug, ct);
@@ -179,7 +199,17 @@ public sealed partial class DeploymentSettingsService(
     /// <param name="target">The target.</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The keys, or null when unknown.</returns>
-    public async Task<IReadOnlyCollection<string>?> KeysAsync(TargetEntity target, CancellationToken ct)
+    public Task<IReadOnlyCollection<string>?> KeysAsync(TargetEntity target, CancellationToken ct) => KeysAsync(target, null, ct);
+
+    /// <summary>The setting keys Wheelhouse would send a target for <paramref name="release"/>, without values, for its
+    /// readiness check: stored settings and vault secrets, each key the release has Wheelhouse generate (a deploy makes
+    /// it before it starts), and each linked key whose source is among them or derived. Null when the vault cannot say
+    /// which secrets it holds.</summary>
+    /// <param name="target">The target.</param>
+    /// <param name="release">The release bundle; null for the one the target runs.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The keys, or null when unknown.</returns>
+    public async Task<IReadOnlyCollection<string>?> KeysAsync(TargetEntity target, string? release, CancellationToken ct)
     {
         var product = await products.GetByIdAsync(target.ProductId, ct);
         if (product is null)
@@ -188,6 +218,9 @@ public sealed partial class DeploymentSettingsService(
         if (await secrets.ListAsync(target, product, ct) is not { } held)
             return null;
         keys.UnionWith(held.Keys);
+        var declared = await DeclarationsAsync(target, product, release, ct);
+        keys.UnionWith(declared.Values.Where(key => key.Generate is not null && key.From is null).Select(key => key.Key));
+        keys.UnionWith(declared.Values.Where(key => key.From is { } from && (keys.Contains(from) || IsDerived(from))).Select(key => key.Key));
         return [.. keys.Where(IsKey).Order(StringComparer.Ordinal)];
     }
 
@@ -329,16 +362,20 @@ public sealed partial class DeploymentSettingsService(
                 if (Text(item, "key") is not { } key)
                     continue;
                 var required = item.TryGetProperty("required", out var flag) && flag.ValueKind == JsonValueKind.True;
-                var secret = item.TryGetProperty("secret", out var kind) && kind.ValueKind == JsonValueKind.True;
                 var derived = Text(item, "derived");
                 var fallback = Text(item, "default");
                 var declaration = Declare(item, key);
+                // A generated key is a secret whatever its name; a linked one takes its source's secrecy (Link).
+                var secret = declaration.Secret || declaration.Generate is not null;
                 IReadOnlyList<string>? allowed = declaration.Choices;
                 // A derived database string fills only a key no layer sets; every other derived key wins over the layers.
+                // A linked key holds no value of its own; a generated one waits for the next deploy to make it.
                 var (source, value) = derived is not null && (derived != "database" || (!held.ContainsKey(key) && !stored.ContainsKey(key)))
                         ? (SettingSources.Derived, Text(item, "value"))
+                    : declaration.From is not null ? (SettingSources.Linked, null)
                     : held.ContainsKey(key) ? (SettingSources.Vault, null)
                     : stored.TryGetValue(key, out var kept) ? (SettingSources.Stored, secret ? null : kept)
+                    : declaration.Generate is not null ? (SettingSources.Generate, null)
                     : fallback is not null ? (SettingSources.Default, fallback)
                     : required ? (hostFile ? SettingSources.Host : SettingSources.Missing, null)
                     : (SettingSources.Unset, (string?)null);
@@ -346,14 +383,64 @@ public sealed partial class DeploymentSettingsService(
                 {
                     Type = SettingTypes.NameOf(declaration.Type),
                     Format = declaration.Format,
-                    LooksSecret = derived is null && !declaration.Plain && SettingTypes.LooksSecret(key),
-                    Vault = held.GetValueOrDefault(key),
+                    LooksSecret = derived is null && declaration.From is null && !declaration.Plain && SettingTypes.LooksSecret(key),
+                    Vault = declaration.From is null ? held.GetValueOrDefault(key) : null,
+                    Generate = derived is null && declaration.From is null ? declaration.Generate : null,
+                    From = derived is null ? declaration.From : null,
                 });
             }
             result.Add(new DeploySettingsServiceDto(name, hostFile, keys));
         }
         return result;
     }
+
+    /// <summary>Resolves each linked key against its source, in the same environment: it takes the source's type and
+    /// secrecy, and a plain source's known value. It counts as set while its source is (a value, a default, a host file,
+    /// a derived key or a key the next deploy generates); a required one whose source is not is missing, so a deploy
+    /// waits for the source. @internal</summary>
+    private static List<DeploySettingsServiceDto> Link(
+        List<DeploySettingsServiceDto> services, IReadOnlyList<DeploySettingDto> extra,
+        IReadOnlyDictionary<string, string> stored, IReadOnlyDictionary<string, SecretMetadataDto> held)
+    {
+        if (!services.Any(service => service.Keys.Any(key => key.From is not null)))
+            return services;
+        var own = new Dictionary<string, DeploySettingDto>(StringComparer.Ordinal);
+        foreach (var key in services.SelectMany(service => service.Keys).Concat(extra).Where(key => key.From is null))
+            if (!own.TryGetValue(key.Key, out var known) || (!IsSet(known) && IsSet(key)))
+                own[key.Key] = key;
+        return
+        [
+            .. services.Select(service => service with
+            {
+                Keys =
+                [
+                    .. service.Keys.Select(key =>
+                    {
+                        if (key.From is not { } from)
+                            return key;
+                        var origin = own.GetValueOrDefault(from);
+                        var set = origin is not null ? IsSet(origin)
+                            : IsDerived(from) || stored.ContainsKey(from) || held.ContainsKey(from);
+                        var secret = origin?.Secret ?? held.ContainsKey(from);
+                        return key with
+                        {
+                            Secret = secret,
+                            Source = set || !key.Required ? SettingSources.Linked
+                                : service.HostFile ? SettingSources.Host : SettingSources.Missing,
+                            Value = !secret && origin is { Source: SettingSources.Stored or SettingSources.Default or SettingSources.Derived }
+                                ? origin.Value : null,
+                            Type = origin?.Type ?? key.Type,
+                            Format = origin?.Format ?? key.Format,
+                            Allowed = origin?.Allowed ?? key.Allowed,
+                        };
+                    }),
+                ],
+            }),
+        ];
+    }
+
+    /// <summary>Whether a key holds a value, or will by the time a deploy renders it. @internal</summary>
+    private static bool IsSet(DeploySettingDto key) => key.Source is not (SettingSources.Missing or SettingSources.Unset);
 
     /// <summary>The keys no service declares: those the owner added, then stored values and vault secrets for keys no
     /// release names. @internal</summary>
@@ -406,7 +493,29 @@ public sealed partial class DeploymentSettingsService(
         var secret = item.TryGetProperty("secret", out var kind) && kind.ValueKind == JsonValueKind.True;
         var plain = !secret && (Text(item, "type") is not null || Text(item, "default") is not null);
         return new KeyDeclaration(key, type, Text(item, "format") ?? (type == SettingType.Date ? SettingTypes.DefaultDateFormat : null),
-            choices, secret, plain, false);
+            choices, secret, plain, false)
+        {
+            Generate = Generation(item),
+            From = Text(item, "from") is { } from && IsKey(from) ? from : null,
+        };
+    }
+
+    /// <summary>Reads a key item's <c>generate</c>: <c>{random: N, encoding}</c> or <c>{command: [argv], timeoutSeconds}</c>;
+    /// null when it declares none or one Wheelhouse cannot read. @internal</summary>
+    private static SettingGenerateDto? Generation(JsonElement item)
+    {
+        if (!item.TryGetProperty("generate", out var generate) || generate.ValueKind != JsonValueKind.Object)
+            return null;
+        if (generate.TryGetProperty("command", out var argv) && argv.ValueKind == JsonValueKind.Array)
+        {
+            IReadOnlyList<string> command = [.. argv.EnumerateArray().Where(part => part.ValueKind == JsonValueKind.String).Select(part => part.GetString()!)];
+            int? timeout = generate.TryGetProperty("timeoutSeconds", out var seconds) && seconds.ValueKind == JsonValueKind.Number
+                && seconds.TryGetInt32(out var limit) ? limit : null;
+            return command.Count > 0 ? new SettingGenerateDto(Command: command, TimeoutSeconds: timeout) : null;
+        }
+        return generate.TryGetProperty("random", out var random) && random.ValueKind == JsonValueKind.Number && random.TryGetInt32(out var bytes)
+            ? new SettingGenerateDto(bytes, Text(generate, "encoding") ?? SecretValues.Base64Url)
+            : null;
     }
 
     /// <summary>An owner-added key's declaration. @internal</summary>

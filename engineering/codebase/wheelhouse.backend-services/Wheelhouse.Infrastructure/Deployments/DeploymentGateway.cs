@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Deployments.Settings.Models;
 using Wheelhouse.Infrastructure.GitHub;
 using Wheelhouse.Infrastructure.Settings;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
@@ -23,8 +24,14 @@ public sealed class DeploymentGateway(
     private static readonly HashSet<string> GitHubActions = new(StringComparer.Ordinal)
     {
         "releases", "latest", "builds", "usage", "branches", "commits", "changelog", "build", "submit", "facts", "check",
-        "settings",
+        "settings", GenerateSettingAction,
     };
+
+    /// <summary>Holds the runner action that runs a key's <c>generate</c> command on its target.</summary>
+    public const string GenerateSettingAction = "generate-setting";
+
+    /// <summary>Holds every exit code, so a failed generation's own error line is read here, never the generic one.</summary>
+    private static readonly IReadOnlyCollection<int> AnyExit = [.. Enumerable.Range(0, 256)];
 
     /// <inheritdoc />
     public Task<AppResult<JsonElement>> ReadAsync(string resource, string? id, CancellationToken ct) =>
@@ -97,6 +104,23 @@ public sealed class DeploymentGateway(
     }
 
     /// <inheritdoc />
+    public async Task<AppResult<GeneratedSettingValue>> GenerateSettingAsync(
+        string target, string release, string service, string key, TimeSpan timeout, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!File.Exists(settings.TransportPath))
+            return AppResult<GeneratedSettingValue>.Fail(AppErrorFactory.Unexpected("Deployment runner is not installed."));
+        string[] arguments = [GenerateSettingAction, "--target", target, "--bundle", release, "--service", service, "--key", key];
+        // Every exit is read here: the value only from a clean exit's output, the error only from its JSON line.
+        var spec = RunnerProcess.Spec(settings, settings.TransportPath, arguments, await EnvironmentAsync(arguments[0], ct))
+            with { Timeout = timeout, SuccessExitCodes = AnyExit };
+        var run = await runner.RunAsync(spec, ct);
+        return run.Match(
+            output => GeneratedSettingReply.Read(output.ExitCode, output.StandardOutput, output.StandardError),
+            error => AppResult<GeneratedSettingValue>.Fail(RunnerFailureWording.Deployment.Describe(error)));
+    }
+
+    /// <inheritdoc />
     public Task<AppResult<JsonElement>> ReconcileAsync(string target, string job, string actor, CancellationToken ct) =>
         RunAsync(["reconcile", "--target", target, "--job", job, "--actor", actor], ct);
 
@@ -160,18 +184,15 @@ public sealed class DeploymentGateway(
         }
     }
 
-    private async Task<AppResult<JsonElement>> RunAsync(string[] arguments, CancellationToken ct, string? input = null)
+    /// <summary>The variables one runner call sets on top of the allowlist. @internal</summary>
+    private async Task<Dictionary<string, string?>> EnvironmentAsync(string action, CancellationToken ct)
     {
-        ct.ThrowIfCancellationRequested();
-        if (!File.Exists(settings.TransportPath))
-            return AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("Deployment runner is not installed."));
-
         // Only the API names the token files, the access notes and the local rig: nothing ambient passes the allowlist.
         var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["WHEELHOUSE_GITHUB_TOKEN_FILE"] = settings.TokenFile(),
         };
-        if (await GitHubTokensAsync(arguments[0], ct) is { } tokens)
+        if (await GitHubTokensAsync(action, ct) is { } tokens)
             environment["WHEELHOUSE_GITHUB_TOKENS_FILE"] = tokens;
         if (settings.Root.Length > 0)
             environment["WHEELHOUSE_GITHUB_ACCESS_FILE"] = GitHubRunnerFiles.AccessPath(settings.Root);
@@ -179,6 +200,16 @@ public sealed class DeploymentGateway(
             environment["WHEELHOUSE_REHEARSAL"] = settings.Rehearsal == DeploymentSettings.RigNetwork ? "network" : "1";
         if (settings.RehearsalState.Length > 0)
             environment["REHEARSAL_STATE"] = settings.RehearsalState;
+        return environment;
+    }
+
+    private async Task<AppResult<JsonElement>> RunAsync(string[] arguments, CancellationToken ct, string? input = null)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!File.Exists(settings.TransportPath))
+            return AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("Deployment runner is not installed."));
+
+        var environment = await EnvironmentAsync(arguments[0], ct);
 
         // The settings values reach the runner's standard input, never an argument a process listing would show.
         var result = await runner.RunJsonAsync(RunnerProcess.Spec(settings, settings.TransportPath, arguments, environment, input), ct);

@@ -23,11 +23,13 @@ export type {
   DeploySettings,
   DeploySettingsService,
   DeploySettingValue,
+  SettingGenerate,
 } from './models/DeploySettings';
 export {
   DeploySettingsRules,
   type DerivedSetting,
   type HeldSetting,
+  type LinkedSetting,
   type PromptedSetting,
   type SettingsSections,
 } from './DeploySettingsRules';

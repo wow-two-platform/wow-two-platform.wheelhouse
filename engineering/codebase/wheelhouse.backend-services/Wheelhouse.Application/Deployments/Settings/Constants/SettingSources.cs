@@ -23,4 +23,11 @@ public static class SettingSources
 
     /// <summary>An optional key without a value or default: the service's own default applies.</summary>
     public const string Unset = "unset";
+
+    /// <summary>A secret the release has Wheelhouse generate (<c>generate</c>) and no value yet: the next deploy makes
+    /// one before it starts, so it never waits for it.</summary>
+    public const string Generate = "generate";
+
+    /// <summary>A linked key (<c>from</c>): the render gives it its source's value, so it holds none of its own.</summary>
+    public const string Linked = "linked";
 }

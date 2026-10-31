@@ -45,6 +45,11 @@ public sealed class BuiltInEnvironmentSecrets(SecretsVaultService vault) : IEnvi
         vault.StageWritesAsync(product.Id, target.Environment, writes, actor, null, ct);
 
     /// <inheritdoc />
+    public Task<AppResult<IReadOnlyList<SecretWritten>>> WriteAsync(
+        TargetEntity target, ProductEntity product, IReadOnlyList<SecretWrite> writes, string actor, string? origin, CancellationToken ct) =>
+        vault.StageWritesAsync(product.Id, target.Environment, writes, actor, origin, ct);
+
+    /// <inheritdoc />
     public async Task<AppResult<IReadOnlyDictionary<string, int>>> RemoveAsync(
         TargetEntity target, ProductEntity product, IReadOnlyCollection<string> keys, CancellationToken ct)
     {

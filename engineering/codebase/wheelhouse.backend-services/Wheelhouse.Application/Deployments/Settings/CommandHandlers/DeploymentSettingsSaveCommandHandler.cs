@@ -74,9 +74,10 @@ public sealed class DeploymentSettingsSaveCommandHandler(
         return AppResult<DeploySettingsSavedDto>.Ok(new DeploySettingsSavedDto(plain.Count, versions.Count) { Keys = request.Saved.Keys });
     }
 
-    /// <summary>Why the values cannot be saved: a value that does not fit its declared type, a declared or secret-looking
-    /// key given as a plain setting without the owner's confirmation, a generated value for a key typed other than
-    /// text. Never quotes a value.</summary>
+    /// <summary>Why the values cannot be saved: a value for a linked key (<c>from</c>), a value that does not fit its
+    /// declared type, a declared or secret-looking key given as a plain setting without the owner's confirmation, a
+    /// generated value for a key typed other than text. Never quotes a value; a linked key's value may still be removed.
+    /// </summary>
     /// <param name="values">The values.</param>
     /// <param name="declarations">What the release and the owner declare about each key.</param>
     /// <returns>The problems, one sentence each.</returns>
@@ -86,6 +87,12 @@ public sealed class DeploymentSettingsSaveCommandHandler(
         foreach (var value in values.Where(value => !value.Remove))
         {
             var declared = declarations.GetValueOrDefault(value.Key);
+            // A linked key renders its source's value in every environment; it holds none of its own.
+            if (declared?.From is { } source)
+            {
+                problems.Add(value.Key + " takes its value from " + source + "; set " + source + " instead.");
+                continue;
+            }
             if (!value.Secret && !value.ConfirmPlain
                 && (declared?.Secret == true || (declared?.Plain != true && SettingTypes.LooksSecret(value.Key))))
                 problems.Add(value.Key + (declared?.Secret == true ? " is declared a secret" : " reads as a secret")

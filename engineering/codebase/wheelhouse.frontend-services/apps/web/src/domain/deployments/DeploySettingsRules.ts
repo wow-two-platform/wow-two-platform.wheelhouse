@@ -36,6 +36,16 @@ export interface SettingsSections {
   optional: PromptedSetting[];
 }
 
+/** A key that takes another key's value, as the dialog's summary lists it: read-only, never asked for. */
+export interface LinkedSetting {
+  key: string;
+  from: string;
+  secret: boolean;
+  /** A plain source's value, when known; never a secret's. */
+  value: string | null;
+  services: string[];
+}
+
 /** The keys the render derives, named once each, for the dialog's summary. */
 export interface DerivedSetting {
   key: string;
@@ -78,12 +88,36 @@ export const DeploySettingsRules = {
     const prompted = new Map<string, PromptedSetting>();
     for (const service of settings?.services ?? []) {
       for (const key of service.keys) {
+        // A linked key takes its source's value: the source is the one asked for.
+        if (key.from) continue;
         const missing = key.required && key.source === "missing" && !service.hostFile;
         const optional = settings!.firstDeploy && !key.required && (key.source === "default" || key.source === "unset");
         if (missing || optional) merge(prompted, service.name, key);
       }
     }
     return [...prompted.values()].sort(byRequired);
+  },
+
+  /** The linked keys, once each: each takes its source's value at every deploy, so the dialog only names them. */
+  linked(settings: DeploySettings | null | undefined): LinkedSetting[] {
+    const linked = new Map<string, LinkedSetting>();
+    for (const service of settings?.services ?? []) {
+      for (const key of service.keys) {
+        if (!key.from) continue;
+        const known = linked.get(key.key);
+        if (known) known.services.push(service.name);
+        else linked.set(key.key, { key: key.key, from: key.from, secret: key.secret, value: key.secret ? null : key.value, services: [service.name] });
+      }
+    }
+    return [...linked.values()].sort((a, b) => a.key.localeCompare(b.key));
+  },
+
+  /** The secrets this deploy generates before it starts: declared so, with no value yet. */
+  generated(settings: DeploySettings | null | undefined): string[] {
+    const keys = new Set<string>();
+    for (const service of settings?.services ?? [])
+      for (const key of service.keys) if (key.source === "generate" && !key.from) keys.add(key.key);
+    return [...keys].sort((a, b) => a.localeCompare(b));
   },
 
   /** The keys that hold a value on the target: stored in Wheelhouse or in the vault, once each whatever the services

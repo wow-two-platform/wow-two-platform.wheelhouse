@@ -30,4 +30,12 @@ public sealed record DeploySettingDto(
 
     /// <summary>Gets a vault secret's metadata — version, who and when, fingerprint, expiry; never its value.</summary>
     public SecretMetadataDto? Vault { get; init; }
+
+    /// <summary>Gets how Wheelhouse makes the key's value: the release's <c>generate</c> declaration, never a value. A deploy
+    /// fills a missing one; Regenerate writes a new version.</summary>
+    public SettingGenerateDto? Generate { get; init; }
+
+    /// <summary>Gets the configuration path a linked key takes its value from, per environment; null for a key of its
+    /// own. A linked key is read-only: it takes its source's type and secrecy, and a save to it is refused.</summary>
+    public string? From { get; init; }
 }

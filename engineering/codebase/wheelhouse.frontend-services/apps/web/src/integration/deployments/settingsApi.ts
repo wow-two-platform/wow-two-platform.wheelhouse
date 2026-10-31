@@ -60,6 +60,16 @@ export const deploySettingsApi = {
       body: { version, ...(note ? { note } : {}) },
     }),
 
+  /** Has Wheelhouse generate a new value for a secret the release declares it makes, as the newest version; the value
+   *  never travels, the reply names the version. */
+  regenerate: (target: string, key: string, note: string | null, signal?: AbortSignal) =>
+    requestData(`${base(target)}/secrets/${segment(key)}/regenerate`, SecretWrittenSchema, {
+      signal,
+      method: 'POST',
+      action: 'settings',
+      body: note ? { note } : {},
+    }),
+
   /** Sets or clears a secret's expiry. */
   expiry: (target: string, key: string, expiresAt: string | null, signal?: AbortSignal) =>
     requestEmpty(`${base(target)}/secrets/${segment(key)}/expiry`, {

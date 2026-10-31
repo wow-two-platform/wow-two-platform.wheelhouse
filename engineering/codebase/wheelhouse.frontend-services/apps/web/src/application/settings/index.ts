@@ -6,6 +6,7 @@ export {
   useBuiltInVaultIssues,
   useCancelApply,
   useEnvironmentSettings,
+  useRegenerateSecret,
   useRestoreSecret,
   useSecretExpiry,
   useSecretHistory,

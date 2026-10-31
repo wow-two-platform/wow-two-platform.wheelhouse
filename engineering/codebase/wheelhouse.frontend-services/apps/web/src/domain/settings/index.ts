@@ -21,5 +21,6 @@ export type {
   SavedSetting,
   SecretFormat,
   SecretMeta,
+  SettingGenerate,
   SettingType,
 } from "../deployments/models/DeploySettings";

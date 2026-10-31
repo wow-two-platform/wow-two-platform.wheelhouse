@@ -17,15 +17,18 @@ namespace Wheelhouse.Application.Deployments;
 /// unless it overrides the freeze with a reason; the runner's own gates follow. A target the inventory lacks is left to
 /// the runner, which refuses it. A refusal of an inventory target — the freeze, a promotion gate or the runner's
 /// validation — is kept as an intent, so the history lists it as a deploy that changed nothing. Before submitting, a
-/// target's settings are planned: a required key no layer sets, on a service without a host file, refuses the deploy,
-/// and the environment's stored settings and vault secrets go to the runner for the target to render. A submitted deploy
+/// target's settings are planned: each key the release has Wheelhouse generate and the environment holds no value for is
+/// generated into the vault first (a failure refuses the deploy with the runner's error line), a required key no layer
+/// sets, on a service without a host file, refuses the deploy, and the environment's stored settings and vault secrets
+/// (never a linked key's own) go to the runner for the target to render. A submitted deploy
 /// records what it rendered, by fingerprint, and which keys changed, so a failure can point at them. The target's
 /// product's approved services catch up with its repositories' <c>deploy.yml</c> before the runner checks the release
 /// against them. A submission wakes the deployment follower, which then follows it until it finishes.</summary>
 public sealed class DeploymentStartCommandHandler(
     IDeploymentGateway gateway, ITargetsRepository targets, IProductsRepository products, DeployFreezeService freezes,
     IDeploymentAutomationStore intents, TimeProvider time, DeploymentSettingsService settings,
-    Products.Services.ProductReleaseSourcesService releaseSources, DeploymentFollowSchedule following)
+    Products.Services.ProductReleaseSourcesService releaseSources, DeploymentFollowSchedule following,
+    GeneratedSettingsService generated)
     : ICommandHandler<DeploymentStartCommand, AppResult<JsonElement>>
 {
     /// <inheritdoc />
@@ -70,8 +73,9 @@ public sealed class DeploymentStartCommandHandler(
         return result;
     }
 
-    /// <summary>Plans the target's settings for the release and reads the values the target renders: a required key no
-    /// layer sets refuses the deploy, kept as an intent like any refusal. @internal</summary>
+    /// <summary>Plans the target's settings for the release, generates the keys the release has Wheelhouse make and the
+    /// environment lacks, and reads the values the target renders: a generation that fails, or a required key no layer
+    /// sets, refuses the deploy, kept as an intent like any refusal. @internal</summary>
     private async Task<AppResult<Settings.Models.RenderValues>> PrepareAsync(
         DeploymentStartCommand request, TargetEntity target, CancellationToken ct)
     {
@@ -83,9 +87,13 @@ public sealed class DeploymentStartCommandHandler(
             return AppResult<Settings.Models.RenderValues>.Fail(failed.Error);
         }
         var planned = ((AppResult<Settings.Models.DeploySettingsDto>.Success)plan).Data;
+        var product = await products.GetByIdAsync(target.ProductId, ct);
+        if (product is null)
+            return AppResult<Settings.Models.RenderValues>.Fail(AppErrorFactory.NotFound($"Target '{target.Slug}' has no product."));
         var missing = planned.Services
             .Where(service => !service.HostFile)
-            .Select(service => (service.Name, Keys: service.Keys.Where(key => key.Source == SettingSources.Missing).Select(key => key.Key).ToList()))
+            .Select(service => (service.Name, Keys: service.Keys.Where(key => key.Source == SettingSources.Missing)
+                .Select(key => key.From is { } from ? key.Key + " (from " + from + ")" : key.Key).ToList()))
             .Where(service => service.Keys.Count > 0)
             .ToList();
         var extra = planned.Extra.Where(key => key.Source == SettingSources.Missing).Select(key => key.Key).ToList();
@@ -98,10 +106,16 @@ public sealed class DeploymentStartCommandHandler(
             await RecordAsync(request, target, DeploymentRefusal.Validation, message, ct);
             return AppResult<Settings.Models.RenderValues>.Fail(AppErrorFactory.Conflict(message));
         }
-        var product = await products.GetByIdAsync(target.ProductId, ct);
-        if (product is null)
-            return AppResult<Settings.Models.RenderValues>.Fail(AppErrorFactory.NotFound($"Target '{target.Slug}' has no product."));
-        var values = await settings.ValuesAsync(target, product, ct);
+        // A key Wheelhouse generates never counts as missing: it is made here, once the deploy would otherwise go ahead.
+        if (await generated.FillAsync(target, product, planned, request.Release, request.Actor, ct) is
+            AppResult<IReadOnlyList<Settings.Models.SavedSettingDto>>.Failure { Error: var failure })
+        {
+            await RecordAsync(request, target, DeploymentRefusal.Validation, failure.Message, ct);
+            return AppResult<Settings.Models.RenderValues>.Fail(failure);
+        }
+        var linked = planned.Services.SelectMany(service => service.Keys).Where(key => key.From is not null)
+            .Select(key => key.Key).ToHashSet(StringComparer.Ordinal);
+        var values = await settings.ValuesAsync(target, product, linked, ct);
         // A vault that cannot render the environment's secrets holds the deploy, kept as a refusal like any other.
         if (values is AppResult<Settings.Models.RenderValues>.Failure { Error: var error })
             await RecordAsync(request, target, DeploymentRefusal.Validation, error.Message, ct);
