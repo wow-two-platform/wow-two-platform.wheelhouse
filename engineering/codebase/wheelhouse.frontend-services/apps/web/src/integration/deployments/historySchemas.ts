@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Attention, DeployState, ServiceResult } from '@/domain/common';
 import { DeploymentIssueKind, DeploymentOutcome, DeploymentStates, JobStatus, StepStatus } from '@/domain/deployments';
-import { DeploymentOperationSchema, ReleaseComponentSchema } from './schemas';
+import { DeploymentOperationSchema, ReleaseComponentSchema, ServiceRolloutSchema } from './schemas';
 
 const nullableText = z.string().nullable();
 // Site links open in the owner's browser, so only http(s) addresses survive decoding.
@@ -267,27 +267,5 @@ export const DeploymentDetailSchema = z.object({
     })
     .nullable()
     .default(null),
-  serviceRollout: z
-    .object({
-      staged: z.boolean().default(false),
-      waves: z.array(z.array(z.string())).default([]),
-      removed: z.array(z.string()).default([]),
-      services: z
-        .array(
-          z.object({
-            name: z.string(),
-            change: z.string(),
-            outcome: z.string(),
-            dependsOn: z.array(z.string()).default([]),
-            from: nullableText.optional(),
-            to: nullableText.optional(),
-            reason: nullableText.optional(),
-            health: nullableText.optional(),
-            at: nullableText.optional(),
-          }),
-        )
-        .default([]),
-    })
-    .nullable()
-    .default(null),
+  serviceRollout: ServiceRolloutSchema.nullable().default(null),
 });

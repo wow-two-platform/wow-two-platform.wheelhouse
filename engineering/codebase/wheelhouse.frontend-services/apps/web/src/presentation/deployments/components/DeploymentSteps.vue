@@ -12,15 +12,17 @@ export interface DeploymentStepsProps {
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { AlertTriangle, Check, CircleMinus, LoaderCircle, Undo2, X } from "lucide-vue-next";
+import { CircleCheck, CircleDashed, CircleX, LoaderCircle, TriangleAlert, Undo2 } from "lucide-vue-next";
 
 import { Measures } from "@/domain/common";
 import { DeploymentStates, StepKind, StepKinds, StepStatus } from "@/domain/deployments";
 import { StepKindIcons } from "./StepKindIcons";
 
 /**
- * Renders each rollout step with its outcome, a quiet mark of its kind, its detail and duration, so the owner sees what
- * the target did. The kind's mark is decorative; the outcome stays an icon with its word for assistive technology. Sectioned,
+ * Renders each rollout step as a timeline: its outcome as the node on a line joining the steps, then its name led by a
+ * quiet glyph of its kind, its detail one shade dimmer, and its duration, so the owner sees what the target did. The
+ * outcome is the only circle on the line; the kind's glyph sits small in the text and is decorative. A skipped step
+ * says so in words, with a dashed node and its name dimmed: it had nothing to do. Sectioned,
  * the checks before any change come first — a cancel there stops cleanly — then a boundary, "Changes start here",
  * after which a cancel is refused; a roll back reads as its own nested step, as does a rollback gate that follows a
  * failure, part of the same automatic restore; then what follows once the services run.
@@ -40,7 +42,7 @@ const label: Record<StepStatus, string> = {
   [StepStatus.Succeeded]: "done",
   [StepStatus.Failed]: "failed",
   [StepStatus.Warning]: "needs a look",
-  [StepStatus.Skipped]: "skipped",
+  [StepStatus.Skipped]: "skipped, nothing to do",
 };
 
 /** The groups to draw: one untitled group, or the three sections with their titles. @internal */
@@ -83,35 +85,61 @@ const isRollBack = (step: DeploymentStep) =>
       </p>
       <section class="flex flex-col gap-1.5" :aria-label="group.title ?? 'Rollout steps'">
         <h4 v-if="group.title" class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{{ group.title }}</h4>
-        <ol class="flex flex-col gap-1.5">
+        <ol class="flex flex-col">
           <li
             v-for="(step, index) in group.steps"
             :key="index + step.name"
             :class="[
-              'grid grid-cols-[1rem_0.875rem_minmax(0,1fr)_auto] items-start gap-x-2 text-sm',
-              restore.has(step) ? 'ms-4 border-s border-border ps-3' : '',
+              'relative grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-start gap-x-2.5 text-sm',
+              index < group.steps.length - 1 ? 'pb-3' : '',
+              restore.has(step) ? 'ps-6' : '',
             ]"
+            :data-status="step.status"
           >
-            <span :class="['mt-0.5', tone[step.status]]" aria-hidden="true">
-              <LoaderCircle v-if="step.status === StepStatus.Running" :size="16" class="animate-spin" />
-              <Undo2 v-else-if="isRollBack(step) && step.status === StepStatus.Succeeded" :size="16" />
-              <Check v-else-if="step.status === StepStatus.Succeeded" :size="16" />
-              <X v-else-if="step.status === StepStatus.Failed" :size="16" />
-              <AlertTriangle v-else-if="step.status === StepStatus.Warning" :size="16" />
-              <CircleMinus v-else :size="16" />
-            </span>
-            <component
-              :is="StepKindIcons[StepKinds.of(step.name)]"
-              :size="14"
-              class="mt-[3px] text-muted-foreground"
+            <!-- The line to the next step's node; a restore step hangs off it, nested under the failure it answers. -->
+            <span
+              v-if="restore.has(step)"
+              class="absolute start-[calc(0.625rem-0.5px)] top-0 h-2.5 w-3.5 rounded-es-md border-s border-b border-border-strong"
               aria-hidden="true"
             />
-            <span class="min-w-0">
-              <span class="font-medium">{{ step.name }}</span>
-              <span class="sr-only">, {{ label[step.status] }}</span>
-              <span v-if="step.detail" class="block text-muted-foreground">{{ step.detail }}</span>
+            <span
+              v-if="index < group.steps.length - 1"
+              :class="[
+                'absolute start-[calc(0.625rem-0.5px)] bottom-0 w-px bg-border-strong',
+                restore.has(step) ? 'top-0' : 'top-6',
+              ]"
+              aria-hidden="true"
+            />
+            <span :class="['flex size-5 items-center justify-center', tone[step.status]]" aria-hidden="true">
+              <LoaderCircle v-if="step.status === StepStatus.Running" :size="16" class="animate-spin motion-reduce:animate-none" />
+              <Undo2 v-else-if="isRollBack(step) && step.status === StepStatus.Succeeded" :size="16" />
+              <CircleCheck v-else-if="step.status === StepStatus.Succeeded" :size="16" />
+              <CircleX v-else-if="step.status === StepStatus.Failed" :size="16" />
+              <TriangleAlert v-else-if="step.status === StepStatus.Warning" :size="16" />
+              <CircleDashed v-else :size="16" />
             </span>
-            <span v-if="seconds(step) !== null" class="font-mono text-xs text-muted-foreground tabular-nums">
+            <span class="min-w-0">
+              <span class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 leading-5">
+                <component
+                  :is="StepKindIcons[StepKinds.of(step.name)]"
+                  :size="13"
+                  class="shrink-0 text-subtle-foreground"
+                  aria-hidden="true"
+                />
+                <span :class="['font-medium', step.status === StepStatus.Skipped ? 'text-muted-foreground' : '']">{{
+                  step.name
+                }}</span>
+                <span
+                  v-if="step.status === StepStatus.Skipped"
+                  class="rounded-full border border-dashed border-border px-1.5 text-xs leading-4 text-muted-foreground"
+                  aria-hidden="true"
+                  >skipped</span
+                >
+                <span class="sr-only">, {{ label[step.status] }}</span>
+              </span>
+              <span v-if="step.detail" class="mt-0.5 block text-xs text-subtle-foreground">{{ step.detail }}</span>
+            </span>
+            <span v-if="seconds(step) !== null" class="font-mono text-xs leading-5 text-muted-foreground tabular-nums">
               {{ Measures.duration(seconds(step)) }}
             </span>
           </li>

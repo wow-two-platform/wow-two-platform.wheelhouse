@@ -50,6 +50,27 @@ export const ControlSubmittedSchema = z.object({
   release: z.string().nullish(),
   status: jobStatus,
 });
+/** How a rollout treats each service: what the release changes, its dependency waves and how each service fared. */
+export const ServiceRolloutSchema = z.object({
+  staged: z.boolean().default(false),
+  waves: z.array(z.array(z.string())).default([]),
+  removed: z.array(z.string()).default([]),
+  services: z
+    .array(
+      z.object({
+        name: z.string(),
+        change: z.string(),
+        outcome: z.string(),
+        dependsOn: z.array(z.string()).default([]),
+        from: nullableText.optional(),
+        to: nullableText.optional(),
+        reason: nullableText.optional(),
+        health: nullableText.optional(),
+        at: nullableText.optional(),
+      }),
+    )
+    .default([]),
+});
 export const DeploymentJobSchema = z.object({
   id: z.string(),
   status: jobStatus,
@@ -66,6 +87,8 @@ export const DeploymentJobSchema = z.object({
   steps: z.array(DeploymentStepSchema).optional(),
   warnings: z.array(z.string()).optional(),
   sites: z.array(PublishedSiteSchema).optional(),
+  // The runner's record carries it once the rollout is planned; a malformed one never fails the outcome read.
+  serviceRollout: ServiceRolloutSchema.nullish().catch(null),
   operation: DeploymentOperationSchema.nullish().catch(null),
 });
 export const DeploymentTargetSchema = z.object({

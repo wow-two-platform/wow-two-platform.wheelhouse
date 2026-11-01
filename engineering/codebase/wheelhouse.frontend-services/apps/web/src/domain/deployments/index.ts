@@ -2,6 +2,13 @@ export { JobStatus } from './enums/JobStatus';
 export { TargetCondition } from './enums/TargetCondition';
 export { StepStatus } from './enums/StepStatus';
 export { StepKind, StepKinds } from './StepKinds';
+export {
+  RolloutProgress,
+  ServiceMark,
+  ServiceMarkWords,
+  type RolloutServiceRow,
+  type ServiceVersionCell,
+} from './RolloutProgress';
 export type { DeploymentStep } from './models/DeploymentStep';
 export type { DeploymentJob } from './models/DeploymentJob';
 export type { DeploymentTarget } from './models/DeploymentTarget';

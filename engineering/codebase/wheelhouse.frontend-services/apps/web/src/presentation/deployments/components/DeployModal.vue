@@ -66,6 +66,7 @@ import {
   DeployFreezes,
   DeploySettingsRules,
   JobStatus,
+  RolloutProgress,
   SelfDeployRules,
   rollbackRisks,
   type DeploymentTarget,
@@ -78,7 +79,7 @@ import DeploySettingsPanel from "./DeploySettingsPanel.vue";
 import DevCheckPill from "./automation/DevCheckPill.vue";
 import JobStatusBadge from "./JobStatusBadge.vue";
 import DeploymentSteps from "./DeploymentSteps.vue";
-import TargetSites from "./TargetSites.vue";
+import RolloutServicesTable from "./RolloutServicesTable.vue";
 import ReleaseChangelog from "./automation/ReleaseChangelog.vue";
 import { failureReason } from "@/integration/common";
 
@@ -217,12 +218,17 @@ const canDeploy = computed(
     !settingsSaving.value &&
     settingsBlock.value.length === 0,
 );
-const settled = computed(
-  () => outcome.data.value?.status === JobStatus.Succeeded,
+/** Whether the followed rollout still runs: before its first read, and while the target reports it pending. */
+const following = computed(() => !outcome.data.value || outcome.pending.value);
+/** The follow view's title by where the rollout stands; the services table names each version. */
+const followTitle = computed(() =>
+  RolloutProgress.title(outcome.data.value?.status, outcome.data.value?.serviceRollout),
 );
-const deployed = useTargetState(() =>
-  step.value === "follow" && settled.value ? target.value : null,
+/** Each service with its current and next version, from the runner's plan as the rollout moves it on. */
+const serviceRows = computed(() =>
+  RolloutProgress.rows(outcome.data.value?.serviceRollout, outcome.data.value?.status, outcome.data.value?.steps),
 );
+const servicesSummary = computed(() => RolloutProgress.summary(outcome.data.value?.serviceRollout));
 const selectedRelease = computed(() =>
   available.value.find((item) => item.id === release.value),
 );
@@ -289,11 +295,6 @@ watch(
   },
   { immediate: true },
 );
-
-/** Reads the verified release's sites once the rollout succeeds, so the dialog can open them. */
-watch(settled, (value) => {
-  if (value) void deployed.refetch();
-});
 
 /** Formats an actual runner target for the environment picker. */
 function targetLabel(item?: DeploymentTarget): string {
@@ -385,7 +386,8 @@ function close(open: boolean): void {
     :can-dismiss-on-escape="!start.loading.value"
     @update:open="close"
   >
-    <ModalContent class="w-full max-w-xl">
+    <!-- One height across the steps: the frame stays put while services and steps stream in; the body scrolls. -->
+    <ModalContent size="lg" height="fixed">
       <!-- The choose step has no Cancel, and a full-screen phone panel has no outside to click. -->
       <ModalClose />
       <template v-if="step === 'choose'">
@@ -659,23 +661,21 @@ function close(open: boolean): void {
       </template>
       <template v-else-if="step === 'confirm'">
         <ModalHeader class="pr-8">
-          <ModalTitle
-            >Deploy {{ ReleaseSets.text(selectedRelease?.release) }} to {{ target }}?</ModalTitle
-          >
+          <ModalTitle>Deploy to {{ target }}?</ModalTitle>
           <ModalDescription>
-            The target pulls every image, replaces its containers, and waits for
-            health and smoke checks. Replacement includes a short restart
-            window.
+            The target pulls the release's images, replaces only the services
+            it changes, and waits for their health and smoke checks. A replaced
+            service restarts briefly.
           </ModalDescription>
         </ModalHeader>
         <ModalBody class="flex flex-col gap-4">
           <dl
-            class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 rounded-xl border border-border p-4 text-sm"
+            class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-xl border border-border p-4 text-sm"
           >
             <dt class="text-muted-foreground">Environment</dt>
             <dd>{{ targetLabel(selectedTarget) }}</dd>
             <dt class="text-muted-foreground">Release</dt>
-            <dd class="font-mono">{{ releaseLabel(selectedRelease) }}</dd>
+            <dd class="font-mono break-words">{{ releaseLabel(selectedRelease) }}</dd>
             <template v-if="notYet">
               <dt class="text-muted-foreground">Not in it yet</dt>
               <dd>{{ notYet }}; each joins a later set once it releases.</dd>
@@ -808,59 +808,27 @@ function close(open: boolean): void {
       </template>
       <template v-else>
         <ModalHeader class="pr-8">
-          <ModalTitle
-            >{{
-              outcome.pending.value || !outcome.data.value
-                ? "Deploying"
-                : "Deployment settled"
-            }}
-            {{ ReleaseSets.text(selectedRelease?.release) }}</ModalTitle
-          >
-          <ModalDescription
-            >Closing keeps the rollout running. Deployment history records its
-            outcome.</ModalDescription
-          >
+          <ModalTitle>{{ followTitle }}</ModalTitle>
+          <ModalDescription>{{
+            following
+              ? "Closing keeps the rollout running. Deployment history records its outcome."
+              : "Deployment history keeps this outcome."
+          }}</ModalDescription>
         </ModalHeader>
-        <ModalBody class="flex flex-col gap-4">
-          <div
-            role="status"
-            class="flex flex-col gap-3 rounded-xl border border-border p-4"
-          >
-            <div class="flex flex-wrap items-center gap-2 text-sm">
-              <span
-                >Deployment
+        <ModalBody class="flex flex-col gap-5">
+          <div class="flex flex-col gap-1.5">
+            <div role="status" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+              <JobStatusBadge v-if="outcome.data.value" :status="outcome.data.value.status" />
+              <Spinner v-else size="sm" label="Waiting for the runner" />
+              <span class="min-w-0 text-muted-foreground"
+                ><span class="font-mono">{{ target }}</span> · deployment
                 <span class="font-mono">{{ jobId?.slice(0, 8) }}</span></span
               >
-              <JobStatusBadge
-                v-if="outcome.data.value"
-                :status="outcome.data.value.status"
-              />
-              <Spinner v-else size="sm" label="Waiting for the runner" />
             </div>
-            <p
-              v-if="outcome.data.value?.reason"
-              class="text-sm text-muted-foreground"
-            >
+            <p v-if="outcome.data.value?.reason" class="text-sm text-muted-foreground">
               {{ outcome.data.value.reason }}
             </p>
-            <DeploymentSteps :steps="outcome.data.value?.steps" />
           </div>
-          <Alert
-            v-for="warning in outcome.data.value?.warnings ?? []"
-            :key="warning"
-            severity="warning"
-            :description="warning"
-          />
-          <TargetSites
-            v-if="settled"
-            :sites="deployed.data.value?.current?.sites"
-            :versions="deployed.data.value?.current?.versions"
-          />
-          <Alert
-            v-if="lockedFailure"
-            severity="warning"
-            description="The target stays locked until the owner inspects and reconciles it."
-          />
           <Alert
             v-if="outcome.error.value && replacesConsole"
             severity="info"
@@ -883,6 +851,36 @@ function close(open: boolean): void {
               >
             </template>
           </Alert>
+          <Alert
+            v-if="lockedFailure"
+            severity="warning"
+            description="The target stays locked until the owner inspects and reconciles it."
+          />
+          <Alert
+            v-for="warning in outcome.data.value?.warnings ?? []"
+            :key="warning"
+            severity="warning"
+            :description="warning"
+          />
+          <RolloutServicesTable
+            v-if="serviceRows.length"
+            :rows="serviceRows"
+            :summary="servicesSummary"
+          />
+          <p v-else-if="following" class="text-sm text-muted-foreground">
+            The services show once the target plans the rollout.
+          </p>
+          <div class="flex flex-col gap-2">
+            <h3 class="text-sm font-semibold">Steps</h3>
+            <DeploymentSteps v-if="outcome.data.value?.steps?.length" :steps="outcome.data.value.steps" />
+            <p v-else class="text-sm text-muted-foreground">
+              {{
+                following
+                  ? "Waiting for the target to start the rollout."
+                  : "The target recorded no steps."
+              }}
+            </p>
+          </div>
         </ModalBody>
         <ModalFooter
           ><Button variant="outline" tone="neutral" @click="close(false)"

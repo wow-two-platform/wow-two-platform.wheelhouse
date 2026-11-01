@@ -27,9 +27,9 @@ export {
   type DeploymentStepsProps,
 } from "./components/DeploymentSteps.vue";
 export {
-  default as TargetSites,
-  type TargetSitesProps,
-} from "./components/TargetSites.vue";
+  default as RolloutServicesTable,
+  type RolloutServicesTableProps,
+} from "./components/RolloutServicesTable.vue";
 export { useDeployModal } from "./hooks/useDeployModal";
 export {
   default as DeploymentsPanel,
