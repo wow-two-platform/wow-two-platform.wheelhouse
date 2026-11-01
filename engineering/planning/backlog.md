@@ -112,6 +112,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Item | Type | Notes |
 |---|---|---|
 | Ability to run each service's `config check` before any restart | feature | Next, v0.13. Hub `deploy-descriptor.md` § Config check (`ae74bf1`): a `configCheck:` item, after migrate on every release deploy, on every settings-only apply and in the rollback gate; Identity answered the contract 2026-11-01, and its verb is not built yet (the be sdk hosts it) |
+| Offer a drifted set's Reset on the deploy that refused for drift | feature | Owner 2026-11-01: drift resets by one click, never automatically (hub `migrations.md` § Lifecycle). Ocharo prod's refused deploy named the drift, and the owner had to find the Migrations panel's Reset |
 | Ability to record each deployment's settings, diff two deploys and restore them exactly | feature | Identity 2026-11-01: non-secret values plus each secret's vault version, with a hash; the audit records who and when, not values. Feeds the issuer-change warning and an exact restore on rollback |
 | Warn before a deploy changes a product's `Identity:Server:Issuer` | feature | Every token and client registration names the old issuer; needs the per-deploy settings record |
 | Flag a stored setting whose key no release declares any more | feature | A renamed key keeps its stored value under the old name; once Identity refuses unknown `Identity:*` keys, that value would stop the boot. None stored on Ocharo on 2026-11-01 |
