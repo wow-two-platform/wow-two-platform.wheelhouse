@@ -1,6 +1,6 @@
 import { toValue, type MaybeRefOrGetter } from "vue";
 
-import { useAppQueries, useAppQuery } from "@/bootstrap/query";
+import { useAppQueries, useAppQuery, useEndpointQuery } from "@/bootstrap/query";
 import type { DeploymentTarget } from "@/domain/deployments";
 import { deploymentsApi } from "@/integration/deployments";
 
@@ -53,15 +53,18 @@ export function useServiceLogs(
   });
 }
 
-/** What one target runs and whether it accepts a deployment. */
+/** What one target runs and whether it accepts a deployment. Each target's read is bound to that target: the overview,
+ * the deploy dialog's prod confirm step and the deployment pages share it, and any refresh of it — a finished rollout,
+ * a control's follow, Check now — reads that target, whichever view's argument has moved on since. */
 export function useTargetState(target: MaybeRefOrGetter<string | null>) {
-  return useAppQuery({
-    key: () => DeploymentKeys.state(toValue(target) ?? ""),
-    queryFn: ({ signal }) =>
-      deploymentsApi.getTargetState(toValue(target) ?? "", signal),
-    enabled: () => Boolean(toValue(target)),
-    meta: { suppressGlobalError: true },
-  });
+  return useEndpointQuery(
+    () => toValue(target) || null,
+    (id: string) => ({
+      key: DeploymentKeys.state(id),
+      queryFn: ({ signal }) => deploymentsApi.getTargetState(id, signal),
+    }),
+    { suppressGlobalError: true },
+  );
 }
 
 /** A product's branches, for choosing a commit to build or deploy to dev; in a product built from several repositories,
