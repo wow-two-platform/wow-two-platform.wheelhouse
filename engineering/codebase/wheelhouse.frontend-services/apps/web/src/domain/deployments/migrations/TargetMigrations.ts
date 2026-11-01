@@ -14,7 +14,8 @@ export const MigrationSource = {
   Gate: 'gate',
   /** The owner's Check now. */
   Check: 'check',
-  /** A database reset: every set at level 0 until the next deploy's migrate step builds the schema again. */
+  /** A database reset, every set at level 0, or a set reset, that set alone, until the next deploy's migrate step
+   * builds it again. */
   Reset: 'reset',
 } as const;
 export type MigrationSource = (typeof MigrationSource)[keyof typeof MigrationSource];

@@ -33,14 +33,35 @@ public sealed class ServiceControlTests : IDisposable
             [.. result.Should().BeOfType<AppResult<JsonElement>.Success>().Subject.Data.GetProperty("argv").EnumerateArray()
                 .Select(item => item.GetString()!).TakeWhile(item => item != "--root")];
 
-        Args(await gateway.ControlAsync("foreverpin-dev", "stop", null, "max", null, CancellationToken.None))
+        Args(await gateway.ControlAsync("foreverpin-dev", "stop", null, null, "max", null, CancellationToken.None))
             .Should().Equal("control", "--target", "foreverpin-dev", "--operation", "stop", "--actor", "max");
-        Args(await gateway.ControlAsync("foreverpin-prod", "restart", "management", "max", "cache; rm -rf /", CancellationToken.None))
+        Args(await gateway.ControlAsync("foreverpin-prod", "restart", "management", null, "max", "cache; rm -rf /", CancellationToken.None))
             .Should().Equal("control", "--target", "foreverpin-prod", "--operation", "restart", "--actor", "max",
                 "--service", "management", "--reason", "cache; rm -rf /");
-        Args(await gateway.ControlAsync("foreverpin-prod", "reset", null, "max", "schema drifted", CancellationToken.None))
+        Args(await gateway.ControlAsync("foreverpin-prod", "reset", null, null, "max", "schema drifted", CancellationToken.None))
             .Should().Equal("control", "--target", "foreverpin-prod", "--operation", "reset", "--actor", "max",
                 "--reason", "schema drifted");
+        Args(await gateway.ControlAsync("ocharo-prod", "reset", null, "identity", "max", "identity drifted", CancellationToken.None))
+            .Should().Equal("control", "--target", "ocharo-prod", "--operation", "reset", "--actor", "max",
+                "--set", "identity", "--reason", "identity drifted");
+    }
+
+    [Fact]
+    public void SetReset_ShouldNameOneSet_OnlyOnAReset_AndAuditAsAMigrationSetReset()
+    {
+        var validator = new TargetControlCommandValidator();
+        var reset = new TargetControlCommand("ocharo-prod", ControlOperation.Reset, null, "max", "identity drifted", Set: "identity");
+        validator.Validate(reset).IsValid.Should().BeTrue();
+        (reset.OperationName, reset.AuditAction, reset.AuditSubject, reset.AuditDetail)
+            .Should().Be(("reset", "migration-set.reset", "ocharo-prod/identity", "reason: identity drifted"));
+
+        validator.Validate(reset with { Set = "identity_v2-a" }).IsValid.Should().BeTrue("set names take '_' as the runner does");
+        validator.Validate(reset with { Operation = ControlOperation.Stop }).Errors
+            .Should().ContainSingle(error => error.ErrorMessage == "Only a reset names a migration set.");
+        foreach (var name in new[] { "Identity", "identity;rm", "1identity", "", new string('a', 65) })
+            validator.Validate(reset with { Set = name }).IsValid.Should().BeFalse(name);
+        validator.Validate(reset with { Service = "identity" }).Errors
+            .Should().Contain(error => error.ErrorMessage == "A reset takes the environment's database, never one service.");
     }
 
     [Fact]

@@ -50,11 +50,12 @@ public interface IDeploymentGateway
             AppErrorFactory.Unexpected("This runner cannot generate a setting's value.")));
     /// <summary>Records the owner's reconciliation of an interrupted or failed rollout on its target.</summary>
     Task<AppResult<JsonElement>> ReconcileAsync(string target, string job, string actor, CancellationToken ct);
-    /// <summary>Submits a control of the release a target runs: <paramref name="operation"/> (<c>stop</c>, <c>start</c>
-    /// or <c>restart</c>) of <paramref name="service"/>, or of the whole environment without one; the target's worker
-    /// runs it under the deployment lock and its journal keeps it. A gateway without controls refuses it.</summary>
-    Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string actor, string? reason,
-        CancellationToken ct) =>
+    /// <summary>Submits a control of the release a target runs: <paramref name="operation"/> (<c>stop</c>, <c>start</c>,
+    /// <c>restart</c> or <c>reset</c>) of <paramref name="service"/>, or of the whole environment without one, a reset
+    /// of <paramref name="set"/> rolling only that migration set back; the target's worker runs it under the deployment
+    /// lock and its journal keeps it. A gateway without controls refuses it.</summary>
+    Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set, string actor,
+        string? reason, CancellationToken ct) =>
         Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("This runner cannot stop or start services.")));
     /// <summary>Reads a branch's recent commits of a product, each with its build when one exists.</summary>
     Task<AppResult<JsonElement>> CommitsAsync(string product, string branch, CancellationToken ct);

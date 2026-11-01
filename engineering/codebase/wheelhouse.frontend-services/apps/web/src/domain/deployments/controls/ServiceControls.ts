@@ -3,7 +3,9 @@
  * the whole environment for a stop or a start. A stop keeps containers, volumes and routes; every deploy to an
  * environment with something stopped is refused until a start, so an automatic deploy never starts it silently. A reset
  * (v0.9) snapshots the environment's database, drops and creates it again empty, and leaves every service stopped for
- * the next deploy, whose migrate step builds the schema and starts them.
+ * the next deploy, whose migrate step builds the schema and starts them. A set reset rolls one migration set back to 0
+ * with the running release's own scripts instead, and stops only the service hosting it; the next deploy builds the
+ * set again and starts it.
  */
 
 /** What a control does. */
@@ -15,10 +17,12 @@ export const ControlOperation = {
 } as const;
 export type ControlOperation = (typeof ControlOperation)[keyof typeof ControlOperation];
 
-/** A control as the history records it: its kind and the service it named; none for the whole environment. */
+/** A control as the history records it: its kind and the service it named, none for the whole environment; a set
+ * reset also names its migration set. */
 export interface DeploymentOperation {
   kind: ControlOperation;
   services: string[];
+  set?: string | null | undefined;
 }
 
 /** A control the target queued: its submission, which the history and outcome reads follow. */
@@ -45,11 +49,19 @@ export interface ControlTarget {
   readonly product: string;
 }
 
-/** One control the owner asks for: what, on which environment, and which service (none for the environment). */
+/** The migration set a reset rolls back alone, and the service whose image hosts it. */
+export interface ControlSet {
+  readonly name: string;
+  readonly service: string;
+}
+
+/** One control the owner asks for: what, on which environment, and which service (none for the environment); a reset
+ * of one migration set names it. */
 export interface ControlRequest {
   readonly target: ControlTarget;
   readonly operation: ControlOperation;
   readonly service: string | null;
+  readonly set?: ControlSet | null;
 }
 
 /** Pure rules for what a control may do and how it reads. */
@@ -81,15 +93,22 @@ export const ServiceControls = {
   /** Whether a control needs the target ID typed and a reason: prod does. */
   isGuarded: (target: ControlTarget): boolean => target.environment === 'prod',
 
-  /** A control's name: `Stop management`, `Start the environment`, `Reset the database`. */
-  label: (operation: ControlOperation, service: string | null): string =>
+  /** A control's name: `Stop management`, `Start the environment`, `Reset the database`, `Reset the identity
+   * migrations`. */
+  label: (operation: ControlOperation, service: string | null, set?: string | null): string =>
     operation === ControlOperation.Reset
-      ? 'Reset the database'
+      ? set
+        ? `Reset the ${set} migrations`
+        : 'Reset the database'
       : `${ServiceControls.verb(operation)} ${service ?? 'the environment'}`,
 
   /** A recorded control's name, as lists show it. */
   labelOf: (operation: DeploymentOperation): string =>
-    ServiceControls.label(operation.kind, operation.services.length ? operation.services.join(', ') : null),
+    ServiceControls.label(operation.kind, operation.services.length ? operation.services.join(', ') : null, operation.set),
+
+  /** A request's name, as its confirmation titles it. */
+  labelOfRequest: (request: ControlRequest): string =>
+    ServiceControls.label(request.operation, request.service, request.set?.name),
 
   /** An operation's verb, capitalised. */
   verb: (operation: ControlOperation): string =>
@@ -108,6 +127,11 @@ export const ServiceControls = {
   /** What a control does, for its confirmation. */
   consequence: (request: ControlRequest): string => {
     const subject = request.service ?? request.target.id;
+    if (request.operation === ControlOperation.Reset && request.set)
+      return `The ${request.set.name} migration set on ${request.target.id} is rolled back to level 0 by the release it `
+        + `runs, after a snapshot of the database; ${request.set.service} stops until the next deploy's migrate step `
+        + 'builds the set again and starts it. The other services keep running, and the rest of the database keeps its '
+        + 'data.';
     if (request.operation === ControlOperation.Reset)
       return `${subject}'s database is snapshotted, then dropped and created again, empty. Every service stops until the `
         + "next deploy's migrate step builds the schema and starts them; the snapshot stays on the target.";

@@ -30,7 +30,7 @@ public sealed class TargetControlCommandHandler(
         var product = await products.GetByIdAsync(target.ProductId, cancellationToken);
         if (product is not null && SelfTargets.IsSelf(product.Slug))
             return AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(request.Operation == ControlOperation.Reset
-                ? $"{target.Slug} runs Wheelhouse itself; its database is never reset from the console."
+                ? $"{target.Slug} runs Wheelhouse itself; its database and migrations are never reset from the console."
                 : $"{target.Slug} runs Wheelhouse itself; its services are never stopped or restarted from the console."));
 
         var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
@@ -50,7 +50,8 @@ public sealed class TargetControlCommandHandler(
                     $"A fleet rollout is promoting {target.Slug}; wait for it or cancel it first."));
         }
 
-        var result = await gateway.ControlAsync(target.Slug, request.OperationName, request.Service, request.Actor, reason, cancellationToken);
+        var result = await gateway.ControlAsync(
+            target.Slug, request.OperationName, request.Service, request.Set, request.Actor, reason, cancellationToken);
         if (result is not AppResult<JsonElement>.Failure { Error.Type: AppErrorType.Conflict })
             following.Wake();
         return result;

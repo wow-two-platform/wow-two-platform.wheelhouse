@@ -79,17 +79,19 @@ export function useTargetControl() {
         target,
         operation,
         service,
+        set,
         reason,
         confirm,
       }: {
         target: string;
         operation: ControlOperation;
         service?: string | null | undefined;
+        set?: string | null | undefined;
         reason?: string | undefined;
         confirm?: string | undefined;
       },
       { signal },
-    ) => deploymentsApi.control(target, { operation, service, reason, confirm }, signal),
+    ) => deploymentsApi.control(target, { operation, service, set, reason, confirm }, signal),
     invalidates: ({ target }) => refreshed(target),
     meta: { suppressGlobalError: true },
   });

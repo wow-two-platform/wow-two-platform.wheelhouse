@@ -34,10 +34,10 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
     {
         var response = await ControlAsync("foreverpin-dev", new { operation = "stop", service = "management" });
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
-        Fixture.Deployments.Controls.Should().Equal(("foreverpin-dev", "stop", "management", "test-admin", (string?)null));
+        Fixture.Deployments.Controls.Should().Equal(("foreverpin-dev", "stop", "management", "test-admin", (string?)null, (string?)null));
 
         (await ControlAsync("foreverpin-dev", new { operation = "start" })).StatusCode.Should().Be(HttpStatusCode.Accepted);
-        Fixture.Deployments.Controls[^1].Should().Be(("foreverpin-dev", "start", (string?)null, "test-admin", (string?)null));
+        Fixture.Deployments.Controls[^1].Should().Be(("foreverpin-dev", "start", (string?)null, "test-admin", (string?)null, (string?)null));
 
         var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray().ToList();
         audit.Should().Contain(entry => entry.GetProperty("action").GetString() == "service.stop"
@@ -61,7 +61,7 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
         var accepted = await ControlAsync("foreverpin-prod",
             new { operation = "restart", service = "management", confirm = "foreverpin-prod", reason = " cache stuck " });
         accepted.StatusCode.Should().Be(HttpStatusCode.Accepted, await accepted.Content.ReadAsStringAsync());
-        Fixture.Deployments.Controls.Should().Equal(("foreverpin-prod", "restart", "management", "test-admin", "cache stuck"));
+        Fixture.Deployments.Controls.Should().Equal(("foreverpin-prod", "restart", "management", "test-admin", "cache stuck", (string?)null));
         var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .First(entry => entry.GetProperty("action").GetString() == "service.restart");
         audit.GetProperty("detail").GetString().Should().Be("reason: cache stuck");
@@ -72,7 +72,7 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
     {
         var dev = await ControlAsync("foreverpin-dev", new { operation = "reset" });
         dev.StatusCode.Should().Be(HttpStatusCode.Accepted, await dev.Content.ReadAsStringAsync());
-        Fixture.Deployments.Controls.Should().Equal(("foreverpin-dev", "reset", (string?)null, "test-admin", (string?)null));
+        Fixture.Deployments.Controls.Should().Equal(("foreverpin-dev", "reset", (string?)null, "test-admin", (string?)null, (string?)null));
 
         var untyped = await ControlAsync("foreverpin-prod", new { operation = "reset", reason = "schema drifted" });
         untyped.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -85,12 +85,66 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
         var accepted = await ControlAsync("foreverpin-prod",
             new { operation = "reset", confirm = "foreverpin-prod", reason = "schema drifted" });
         accepted.StatusCode.Should().Be(HttpStatusCode.Accepted, await accepted.Content.ReadAsStringAsync());
-        Fixture.Deployments.Controls[^1].Should().Be(("foreverpin-prod", "reset", (string?)null, "test-admin", "schema drifted"));
+        Fixture.Deployments.Controls[^1].Should().Be(("foreverpin-prod", "reset", (string?)null, "test-admin", "schema drifted", (string?)null));
         var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray()
             .Where(entry => entry.GetProperty("action").GetString() == "database.reset").ToList();
         audit.Should().Contain(entry => entry.GetProperty("subject").GetString() == "foreverpin-dev");
         audit.Should().Contain(entry => entry.GetProperty("subject").GetString() == "foreverpin-prod"
             && entry.GetProperty("detail").GetString() == "reason: schema drifted");
+    }
+
+    [Fact]
+    public async Task SetReset_ShouldReachTheRunnerWithItsSet_AndProdNeedsItsTargetIdTypedAndAReason()
+    {
+        var dev = await ControlAsync("foreverpin-dev", new { operation = "reset", set = "identity" });
+        dev.StatusCode.Should().Be(HttpStatusCode.Accepted, await dev.Content.ReadAsStringAsync());
+        Fixture.Deployments.Controls.Should().Equal(("foreverpin-dev", "reset", (string?)null, "test-admin", (string?)null, "identity"));
+        (await dev.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data").GetProperty("operation").GetProperty("set")
+            .GetString().Should().Be("identity");
+
+        var untyped = await ControlAsync("foreverpin-prod", new { operation = "reset", set = "identity", reason = "identity drifted" });
+        untyped.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await untyped.Content.ReadAsStringAsync()).Should().Contain("Type foreverpin-prod to reset prod");
+        var silent = await ControlAsync("foreverpin-prod", new { operation = "reset", set = "identity", confirm = "foreverpin-prod" });
+        silent.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await silent.Content.ReadAsStringAsync()).Should().Contain("Give a reason to reset prod");
+        Fixture.Deployments.Controls.Should().HaveCount(1, "nothing reaches the runner before both are given");
+
+        var accepted = await ControlAsync("foreverpin-prod",
+            new { operation = "reset", set = "identity", confirm = "foreverpin-prod", reason = "identity drifted" });
+        accepted.StatusCode.Should().Be(HttpStatusCode.Accepted, await accepted.Content.ReadAsStringAsync());
+        Fixture.Deployments.Controls[^1].Should().Be(("foreverpin-prod", "reset", (string?)null, "test-admin", "identity drifted", "identity"));
+        var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray()
+            .Where(entry => entry.GetProperty("action").GetString() == "migration-set.reset").ToList();
+        audit.Should().Contain(entry => entry.GetProperty("subject").GetString() == "foreverpin-dev/identity");
+        audit.Should().Contain(entry => entry.GetProperty("subject").GetString() == "foreverpin-prod/identity"
+            && entry.GetProperty("detail").GetString() == "reason: identity drifted");
+    }
+
+    [Fact]
+    public async Task SetReset_ShouldPassTheRunnersRefusalOfAnUnknownSetOn()
+    {
+        Fixture.Deployments.ControlRefusal = "The release v1.0.0 has no migration set nope";
+        var refused = await ControlAsync("foreverpin-dev", new { operation = "reset", set = "nope" });
+        refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await refused.Content.ReadAsStringAsync()).Should().Contain("has no migration set nope");
+    }
+
+    [Fact]
+    public async Task History_ShouldReadASetReset_WithItsSet()
+    {
+        const string id = "00000000-0000-4000-8000-000000000c06";
+        var now = Fixture.Host.Clock.GetUtcNow();
+        Fixture.Deployments.History.Add(new
+        {
+            id, targetId = "foreverpin-dev", release = "v1.0.0", actor = "test-admin", status = "succeeded",
+            deployReason = "identity drifted", operation = new { kind = "reset", services = Array.Empty<string>(), set = "identity" },
+            stopped = (object?)null, submittedAt = Instant(now.AddHours(-1)), completedAt = Instant(now.AddHours(-1).AddSeconds(30)),
+        });
+
+        var operation = (await DataAsync("/api/deployments/history")).GetProperty("items").EnumerateArray()
+            .Single(entry => entry.GetProperty("id").GetString() == id).GetProperty("operation");
+        (operation.GetProperty("kind").GetString(), operation.GetProperty("set").GetString()).Should().Be(("reset", "identity"));
     }
 
     [Fact]
@@ -124,6 +178,8 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
 
     [Theory]
     [InlineData("{\"operation\":\"reset\",\"service\":\"management\"}", "never one service")]
+    [InlineData("{\"operation\":\"stop\",\"set\":\"identity\"}", "Only a reset names a migration set")]
+    [InlineData("{\"operation\":\"reset\",\"set\":\"Identity;rm\"}", "migration set's name")]
     [InlineData("{\"operation\":\"restart\"}", "Restart one service at a time")]
     [InlineData("{\"operation\":\"stop\",\"service\":\"Management;rm\"}", "Service")]
     [InlineData("{\"operation\":\"pause\"}", "operation")]
@@ -161,7 +217,8 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
             });
         }
 
-        foreach (var body in new object[] { new { operation = "stop" }, new { operation = "restart", service = "console" }, new { operation = "reset" } })
+        foreach (var body in new object[] { new { operation = "stop" }, new { operation = "restart", service = "console" }, new { operation = "reset" },
+                     new { operation = "reset", set = "console" } })
         {
             var refused = await ControlAsync("wheelhouse-dev", body);
             refused.StatusCode.Should().Be(HttpStatusCode.Conflict);

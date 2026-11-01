@@ -604,7 +604,7 @@ python3 $R reconcile --root /path/to/inventory --target foreverpin-dev --job <ac
 python3 $R vitals   --root /path/to/inventory [--target foreverpin-dev]
 python3 $R stats    --root /path/to/inventory --days 30
 python3 $R logs     --root /path/to/inventory --target foreverpin-dev --service management --tail 200
-python3 $R control  --root /path/to/inventory --target foreverpin-dev --operation stop|start|restart|reset [--service management] --actor operator [--reason "…"]
+python3 $R control  --root /path/to/inventory --target foreverpin-dev --operation stop|start|restart|reset [--service management | --set identity] --actor operator [--reason "…"]
 python3 $R stops    --root /path/to/inventory
 ```
 
@@ -615,7 +615,8 @@ python3 $R stops    --root /path/to/inventory
 while no rollout or other control does. While anything stays stopped (`stops` lists it), every deploy is refused with
 `<target> is stopped; start it before deploying`: start it first ([architecture](../architecture/architecture.md#service-controls)).
 `--operation reset` takes no `--service`: it snapshots and drops the environment's database and leaves its services for
-the next deploy ([§ Database reset](#database-reset)).
+the next deploy; with `--set <name>` it rolls only that migration set back to 0 and stops only the service hosting it
+([§ Database reset](#database-reset)).
 `submit --confirm <target>` carries the typed confirmation that prod on the local server requires; `submit --fleet <id>`
 keeps the fleet rollout that submitted it on the job (the API sets it).
 
@@ -908,6 +909,7 @@ python3 rehearse.py products                                  # the products-hos
 python3 rehearse.py networks                                  # fixed platform addresses survive dynamic containers
 python3 rehearse.py enroll                                    # a fresh Ubuntu 26.04 host enrolled, placed, policy applied
 python3 rehearse.py generated                                 # generated and linked keys through the console's API, values kept out
+python3 rehearse.py set-reset                                 # one migration set reset on the products host (after `products`; needs identity:local)
 python3 rehearse.py down --volumes
 ```
 
@@ -1005,12 +1007,12 @@ drops the console's database, the vault's data and the target's state.
   active.json
   current.json                  release, service versions and site URLs of the verified rollout
   migrations.json               each migration set's last reading: level, newest label, state, release, source (a
-                                database reset sets every level to 0)
+                                database reset sets every level to 0, a set reset its own)
   stopped.json                  what the owner stopped (the environment or services); deploys refused while present
   jobs/<job-id>.json
   releases/<job-id>/{release,compose}.json
   releases/<job-id>/images-removed    marks an older release whose images were removed
-  snapshots/<job-id>/           prod rollouts and every database reset: <host>-<database>.dump, <volume>.tar.gz,
+  snapshots/<job-id>/           prod rollouts and every database or set reset: <host>-<database>.dump, <volume>.tar.gz,
                                 snapshot.json (newest 5 kept)
 /srv/wheelhouse/ingress/<product>-<environment>.yml   Traefik routes for the verified release's sites
 ```
@@ -1066,6 +1068,33 @@ console, never Wheelhouse's own ([architecture § Service controls](../architect
 
 - The deployment page shows the snapshot and its restore commands, as for a prod rollout.
 - A release without a `migrate` item is refused: nothing would rebuild its database.
+
+#### One migration set
+
+When one set's history no longer matches the release — a library rewrote a migration in place, so the next `migrate`
+refuses on drift — while the database also holds data that must stay (Ocharo's `identity` set beside Desk's data), reset
+only that set:
+
+1. **Products › the product › the environment › Migrations › the set's row › Reset.** The same confirmation as a
+   database reset. The job (`control --operation reset --set <name>`):
+   - takes the database snapshot a database reset takes;
+   - stops only the service whose release image hosts the set; the other services keep running;
+   - runs that service's image of the **running** release, `<migrate command> rollback --to 0 --set <name> --confirm
+     <database>`, in a one-off container built as the migrate step builds its item (the service's environment, settings
+     file and mounts, `Migrations__ConnectionString` from `database.json`): its `Rollback.sql` scripts are the ones the
+     database applied, newest first;
+   - sets only that set's level to 0 in `migrations.json` (`behind`, source `reset`).
+2. **Deploy the environment again** (the next release, or Redeploy release): its migrate step builds the set from 0 and
+   starts the service.
+
+- The rollback confirms the database the set connects to: `database.json`'s for a service that needs PostgreSQL, else
+  the one connection string its settings file names; several are refused.
+- Refused before anything stops: a set the running release does not carry (its `migrationSets`, else what
+  `migrations.json` last read), a set two services carry, a set whose service has no `migrate` item, Wheelhouse's own.
+- A rollback that ran no script (refused, busy, or never started) starts the service again; one that may have rolled
+  some back leaves it stopped, records the level it reported and names the snapshot.
+- What the owner had stopped stays stopped, except the set's service, which the next deploy starts: a stopped
+  environment stays stopped as each of its other services.
 
 Before a prod rollout pulls anything, the runner takes a restore point in `snapshots/<job-id>/`: `pg_dump --format
 custom` of each PostgreSQL database a service that `needs: [postgres]` connects to (every Npgsql `ConnectionStrings`

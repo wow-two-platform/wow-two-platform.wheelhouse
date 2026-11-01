@@ -2,6 +2,7 @@ export {
   ControlOperation,
   ServiceControls,
   type ControlRequest,
+  type ControlSet,
   type ControlTarget,
   type DeploymentOperation,
   type QueuedControl,

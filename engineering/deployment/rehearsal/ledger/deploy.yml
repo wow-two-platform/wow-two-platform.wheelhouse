@@ -1,0 +1,36 @@
+# Ledger, the local rig's product for a set reset (`rehearse.py set-reset`); never a real product. As in Ocharo, its
+# identity service hosts the `identity` migration set in the product's own database, beside the desk's data. identity
+# runs the image beside this file (WoW2's Identity, so its migrate verbs are real) and desk runs Keysmith's; rehearse.py
+# builds both and the generator publishes them to the rig's registry with --image, so `build` and `paths` only satisfy
+# the descriptor's rules.
+# Format: wow-two-ws/conventions/deployment/descriptor/deploy-descriptor.md
+descriptor: 2
+product: ledger
+name: Ledger
+description: A rig product whose identity migration set Wheelhouse resets alone.
+platform: linux/amd64
+migrate:
+  - service: identity
+    command: [dotnet, Identity.Api.dll, migrate]
+    timeout: 5m
+services:
+  identity:
+    build:
+      dockerfile: deployment/rehearsal/ledger/Dockerfile
+      context: deployment/rehearsal/ledger
+    paths:
+      - deployment/rehearsal/ledger/**
+    health:
+      command: [sh, -c, "kill -0 1"]
+    memory: 256m
+    needs: [postgres]
+  desk:
+    build:
+      dockerfile: deployment/rehearsal/keysmith/Dockerfile
+      context: deployment/rehearsal/keysmith
+    paths:
+      - deployment/rehearsal/keysmith/**
+    health:
+      command: [python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=2)"]
+    memory: 128m
+    needs: [postgres]

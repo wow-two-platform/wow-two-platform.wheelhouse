@@ -44,6 +44,14 @@ console as it ships, signed in as its owner with a session sealed by its own key
 its release, built by the pipelines generator, with no value given. It checks the rendered files, the certificate's
 expiry, that no answer, log, record or journal outside those files holds a value, Regenerate through to both services,
 and that the command ran with no network; it exits non-zero on any failed check.
+
+`set-reset` proves a reset of one migration set on the products host, the rig's VPS (its own Docker daemon, platform
+PostgreSQL and database placement; `products` first): Ledger (ledger/), whose identity service carries WoW2's Identity
+image and its real `identity` set beside the desk's data in one database, deploys; 001's checksum is rewritten as an
+in-place migration rewrite leaves it, so Check now and the next deploy refuse on drift; the set reset, through the
+transport as the console submits it, snapshots the database, stops only identity, rolls the set back to 0 with the
+running image and sets its level to 0; the desk keeps running and its data stays; the next deploy builds the set again.
+It exits non-zero on any failed check.
 """
 import argparse
 import base64
@@ -1663,6 +1671,218 @@ def prove_generated():
           "certificate's expiry kept, no value outside the rendered files, regenerated into both services, no network.")
 
 
+# Ledger, the rig's product for a set reset (`set-reset`): its descriptor and identity image live in ledger/. Its
+# identity service hosts WoW2 Identity's `identity` migration set in Ledger's database on the products host; its desk
+# runs Keysmith's image, and the proof keeps a table of the desk's in the same database.
+LEDGER = "ledger"
+LEDGER_TARGET = LEDGER + "-dev"
+LEDGER_FOLDER = HERE / "ledger"
+LEDGER_SET = "identity"
+LEDGER_IMAGES = {"identity": "ledger-identity:local", "desk": KEYSMITH_IMAGE}
+LEDGER_DATABASE = LEDGER + "_dev"
+# WoW2's Identity image, built by its own repository (wow-two-sdk-beta.identity, deployment.md § Local run).
+IDENTITY_IMAGE = "identity:local"
+PRODUCTS_PLATFORM = "cd " + PRODUCTS_ROOT + "/platform && docker compose --env-file host.env -f compose.yml "
+
+
+def ledger_bundle():
+    """Ledger's release: the pipelines generator builds it from ledger/deploy.yml with both images, publishes them to the
+    rig's registry, records the identity image's sets offline as CI does, and the products host's runner root imports
+    it. Its tag carries a digest of the descriptor and the images, so a rerun reuses the last one."""
+    import hashlib
+    if subprocess.run(["docker", "image", "inspect", IDENTITY_IMAGE], capture_output=True).returncode:
+        sys.exit("Build WoW2's Identity image first as " + IDENTITY_IMAGE + ": wow-two-sdk-beta.identity, "
+                 "engineering/deployment/deployment.md § Local run")
+    run("docker", "build", "-q", "-t", KEYSMITH_IMAGE, str(KEYSMITH_FOLDER))
+    run("docker", "build", "-q", "-t", LEDGER_IMAGES["identity"], str(LEDGER_FOLDER))
+    ids = [run("docker", "image", "inspect", "--format", "{{.Id}}", image).strip()
+           for image in sorted(set(LEDGER_IMAGES.values()))]
+    descriptor = LEDGER_FOLDER / "deploy.yml"
+    tag = "v0.0.1-rig." + hashlib.sha256(descriptor.read_bytes() + "".join(ids).encode()).hexdigest()[:10]
+    bundle_id = LEDGER + "-" + re.sub(r"[^a-z0-9-]+", "-", tag.lower())
+    if (PRODUCTS_INVENTORY / "bundles" / bundle_id).exists():
+        print("Already imported " + bundle_id)
+        return bundle_id
+    output = private_dir(STATE / "build") / bundle_id
+    archive = STATE / "build" / (bundle_id + ".tar.gz")
+    commit = run("git", "-C", str(REPOSITORY), "rev-parse", "HEAD").strip()
+    print(run(yaml_python(), str(RELEASE), "build", "--repo", str(REPOSITORY), "--commit", commit,
+              "--descriptor", str(descriptor), "--tag", tag, "--registry", REGISTRY + "/" + LEDGER,
+              "--platform", platform(), "--output", str(output), "--archive", str(archive),
+              *[part for service, image in LEDGER_IMAGES.items() for part in ("--image", service + "=" + image)]).strip())
+    record_sets(output, archive)
+    transport("import", "--archive", str(archive), "--bundle", bundle_id, root=PRODUCTS_INVENTORY)
+    print("Imported " + bundle_id)
+    return bundle_id
+
+
+def ledger_inventory():
+    """Ledger and its dev target beside ForeverPin's in the products host's inventory, as a prod console would export
+    them: no release source (its bundles are imported), and no settings files, sites or smoke checks; its database is
+    the one placement wrote."""
+    path = PRODUCTS_INVENTORY / "inventory.json"
+    if not path.is_file():
+        sys.exit("Prove the products host first: rehearse.py products")
+    inventory = json.loads(path.read_text())
+    inventory["products"] = [item for item in inventory["products"] if item["slug"] != LEDGER] + [{
+        "slug": LEDGER, "name": "Ledger", "description": "A rig product whose identity migration set Wheelhouse resets "
+        "alone.", "repository": "local-rig/" + LEDGER, "defaultBranch": "main", "release": None}]
+    inventory["targets"] = [item for item in inventory["targets"] if item["id"] != LEDGER_TARGET] + [{
+        "id": LEDGER_TARGET, "serverId": PRODUCTS_SERVER, "product": LEDGER, "environment": "dev", "network": "platform",
+        "root": PRODUCTS_ROOT, "settings": [], "smoke": [], "sites": []}]
+    private_file(path, json.dumps(inventory, indent=2) + "\n")
+
+
+def ledger_database():
+    """Ledger's dev database on the products host, placed as `prepare.py --database` places one: its own role owning only
+    it, and the owner-only database.json the runner fills the migrate key from. By hand, so a products host still on
+    PostgreSQL 16, which prepare.py refuses until its move, takes it too. An existing placement stays."""
+    path = PRODUCTS_ROOT + "/config/" + LEDGER_TARGET + "/database.json"
+    if as_deploy("test -e " + path, check=False).returncode == 0:
+        return
+    password = secrets.token_hex(32)
+    as_deploy(PRODUCTS_PLATFORM + "exec -T postgres psql -U postgres -v ON_ERROR_STOP=1 -q",
+              stdin="CREATE ROLE " + LEDGER_DATABASE + " LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '" + password
+              + "';\nCREATE DATABASE " + LEDGER_DATABASE + " OWNER " + LEDGER_DATABASE + ";\n")
+    connection = ("Host=wheelhouse-postgres;Port=5432;Database=" + LEDGER_DATABASE + ";Username=" + LEDGER_DATABASE
+                  + ";Password=" + password)
+    as_deploy("umask 077; mkdir -p " + PRODUCTS_ROOT + "/config/" + LEDGER_TARGET + " && cat > " + path,
+              stdin=json.dumps({"Host": "wheelhouse-postgres", "Port": 5432, "Database": LEDGER_DATABASE,
+                                "Username": LEDGER_DATABASE, "Password": password, "ConnectionString": connection},
+                               indent=2) + "\n")
+    print("Placed " + LEDGER_DATABASE + " on the products host")
+
+
+def ledger_sql(sql, role=None):
+    """SQL in Ledger's dev database through the products host's platform PostgreSQL, as its superuser or as `role`: the
+    rows, one a line."""
+    script = ("SET ROLE " + role + ";\n" if role else "") + sql
+    return as_deploy(PRODUCTS_PLATFORM + "exec -T postgres psql -U postgres -d " + LEDGER_DATABASE
+                     + " -X -q -A -t -v ON_ERROR_STOP=1", stdin=script).stdout.split()
+
+
+def ledger_level():
+    """The identity set's level and source as the target last read them."""
+    sets = (transport("state", "--target", LEDGER_TARGET, root=PRODUCTS_INVENTORY).get("migrations") or {}).get("sets", [])
+    found = next((item for item in sets if item.get("name") == LEDGER_SET), {})
+    return found.get("level"), found.get("source"), found.get("state")
+
+
+def container_state(service):
+    state = on_products("docker", "inspect", "--format", "{{.State.Status}}", LEDGER_TARGET + "-" + service + "-1",
+                        check=False)
+    return state.stdout.strip() if state.returncode == 0 else "missing"
+
+
+def follow_job(job, timeout=600):
+    """A submitted job's outcome on the products host, its steps printed."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        time.sleep(3)
+        outcome = transport("status", "--job", job, root=PRODUCTS_INVENTORY)
+        if outcome.get("status") in TERMINAL:
+            for step in outcome.get("steps", []):
+                print("  " + step["status"].ljust(9) + " " + step["name"]
+                      + (" — " + step["detail"] if step.get("detail") else ""))
+            return outcome
+    sys.exit("Timed out waiting for " + job)
+
+
+def prove_set_reset():
+    """A reset of one migration set on the products host, as Ocharo's identity set needs after Identity rewrote 001 in
+    place: the first deploy migrates Ledger's identity set; a rewritten checksum makes Check now and a deploy refuse on
+    drift; an unknown set is refused before any job; the set reset snapshots the database, stops only identity, rolls
+    the set back to 0 with the running image's own scripts and sets its level to 0, while the desk keeps running and
+    its table keeps its rows; the next deploy builds the set again and starts identity. Exits non-zero on any failed
+    check."""
+    if not (PRODUCTS_INVENTORY / "ssh" / PRODUCTS_SERVER / "identity").exists():
+        sys.exit("Prove the products host first: rehearse.py products")
+    proofs = {}
+    compose("--profile", "products", "up", "-d", "--wait", "products", capture=False)
+    as_deploy(PRODUCTS_PLATFORM + "up -d --wait postgres")
+    ledger_database()
+    ledger_inventory()
+    bundle_id = ledger_bundle()
+
+    # 1. Ledger deploys: the migrate step applies the identity set; the desk keeps a table in the same database.
+    first = deploy(bundle_id, "dev", target=LEDGER_TARGET, root=PRODUCTS_INVENTORY, timeout=600)
+    level = ledger_level()
+    proofs["first deploy succeeded, identity at level " + str(level[0])] = (
+        first.get("status") == "succeeded" and level[0] == 3)
+    marker = "kept " + secrets.token_hex(4)
+    ledger_sql("CREATE TABLE IF NOT EXISTS public.desk_notes (id serial PRIMARY KEY, body text NOT NULL);\n"
+               "INSERT INTO public.desk_notes (body) VALUES ('" + marker + "');\n", role=LEDGER_DATABASE)
+
+    # 2. 001-accounts no longer matches what the database applied, as after an in-place rewrite.
+    history = "identity.identity_migration_history"
+    original = ledger_sql("SELECT checksum FROM " + history + " WHERE ordinal = 1;\n")[0]
+    ledger_sql("UPDATE " + history + " SET checksum = repeat('0', 64) WHERE ordinal = 1;\n")
+    try:
+        check = transport("migrations", "--target", LEDGER_TARGET, root=PRODUCTS_INVENTORY)
+        item = next(iter(check.get("items") or []), {})
+        states = [entry.get("state") for entry in item.get("sets", [])]
+        proofs["Check now: identity " + str(item.get("status")) + ", " + ", ".join(map(str, states))] = (
+            item.get("status") == "refused" and states == ["drifted"])
+        blocked = deploy(bundle_id, "dev", target=LEDGER_TARGET, root=PRODUCTS_INVENTORY, timeout=600)
+        proofs["the next deploy stops at its migrate step, identity still serving"] = (
+            blocked.get("status") == "failed" and str(blocked.get("reason")).startswith("Migrate identity: Refused")
+            and container_state("identity") == "running")
+
+        # 3. Refused before any job: a set Ledger does not carry, and a set on another control.
+        message = refused("control", "--target", LEDGER_TARGET, "--operation", "reset", "--set", "nope", "--actor",
+                          "local-server", root=PRODUCTS_INVENTORY)
+        proofs["an unknown set is refused (" + message[-60:] + ")"] = "has no migration set nope" in message
+        message = refused("control", "--target", LEDGER_TARGET, "--operation", "stop", "--set", LEDGER_SET, "--actor",
+                          "local-server", root=PRODUCTS_INVENTORY)
+        proofs["only a reset names a set"] = "Only a reset names a migration set" in message
+
+        # 4. The set reset, submitted as the console submits it.
+        submitted = transport("control", "--target", LEDGER_TARGET, "--operation", "reset", "--set", LEDGER_SET,
+                              "--actor", "local-server", "--reason", "identity 001 rewritten in place",
+                              root=PRODUCTS_INVENTORY)
+        proofs["the job names its set"] = submitted.get("operation") == {"kind": "reset", "services": [],
+                                                                         "set": LEDGER_SET}
+        reset = follow_job(submitted["id"])
+    finally:
+        # A run cut short leaves the checksum as it found it; after the reset no row is left to restore.
+        ledger_sql("UPDATE " + history + " SET checksum = '" + original + "' WHERE ordinal = 1 AND checksum = "
+                   "repeat('0', 64);\n")
+    detail = transport("observation", "--job", submitted["id"], root=PRODUCTS_INVENTORY)
+    record = detail if isinstance(detail, dict) and detail.get("steps") else reset
+    names = [step["name"] for step in record.get("steps", [])]
+    proofs["the set reset succeeded: " + ", ".join(names)] = reset.get("status") == "succeeded" and names == [
+        "Snapshot the database", "Stop identity", "Reset identity to level 0", "Migration level to 0"]
+    snapshot = (record.get("snapshot") or {}).get("path")
+    dumped = as_deploy("ls -l " + str(snapshot), check=False).stdout if snapshot else ""
+    proofs["snapshot of " + LEDGER_DATABASE + " in " + str(snapshot)] = (
+        bool(snapshot) and "-" + LEDGER_DATABASE + ".dump" in dumped)
+    proofs["identity stopped (" + container_state("identity") + "), desk running (" + container_state("desk") + ")"] = (
+        container_state("identity") == "exited" and container_state("desk") == "running")
+    rows = ledger_sql("SELECT count(*) FROM " + history + ";\n")
+    proofs["identity's history is empty (" + " ".join(rows) + " rows)"] = rows == ["0"]
+    proofs["the desk's row is still there"] = ledger_sql(
+        "SELECT count(*) FROM public.desk_notes WHERE body = '" + marker + "';\n") == ["1"]
+    level = ledger_level()
+    proofs["migrations.json: identity at " + str(level[0]) + ", " + str(level[2]) + ", from " + str(level[1])] = (
+        level == (0, "reset", "behind"))
+
+    # 5. The next deploy builds the set again and starts identity.
+    rebuilt = deploy(bundle_id, "dev", target=LEDGER_TARGET, root=PRODUCTS_INVENTORY, timeout=600)
+    level = ledger_level()
+    proofs["the next deploy migrated identity back to level " + str(level[0])] = (
+        rebuilt.get("status") == "succeeded" and level[:2] == (3, "migrate"))
+    proofs["identity running again (" + container_state("identity") + ")"] = container_state("identity") == "running"
+    proofs["the desk's row survived the rebuild"] = ledger_sql(
+        "SELECT count(*) FROM public.desk_notes WHERE body = '" + marker + "';\n") == ["1"]
+
+    for name, ok in proofs.items():
+        print("  " + ("ok" if ok else "FAILED").ljust(9) + " " + name)
+    if not all(proofs.values()):
+        sys.exit("The set reset did not hold on the products host")
+    print("Set reset proven on the products host: drift refused, the identity set rolled back to 0 by its running "
+          "image with only identity stopped and the desk's data kept, then rebuilt by the next deploy.")
+
+
 def down(volumes):
     profiles = ["--profile", "vault", "--profile", "console", "--profile", "dev", "--profile", "products",
                 "--profile", "enroll"]
@@ -1677,7 +1897,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("action", choices=["up", "console", "dev", "bundle", "settings", "check", "deploy", "state",
                                            "run", "self", "self-deploy", "harden", "products", "networks", "enroll",
-                                           "generated", "down"])
+                                           "generated", "set-reset", "down"])
     parser.add_argument("--env", default="dev", help="dev (default) or prod")
     parser.add_argument("--tag", help="bundle: a release tag such as v0.0.1-local.1; without it, a dev candidate")
     parser.add_argument("--bundle", help="the bundle ID to use; defaults to the checkout's candidate")
@@ -1734,6 +1954,8 @@ def main():
         enroll_rig()
     elif args.action == "generated":
         prove_generated()
+    elif args.action == "set-reset":
+        prove_set_reset()
     else:
         down(args.volumes)
 

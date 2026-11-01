@@ -28,9 +28,10 @@ import inventory
 import registry
 import release_sets
 from fleet import rehearsal
-from runner import (GENERATE_PULL_TIMEOUT, OPERATIONS, PROXIES, SETTING_KEY, SLUG, TERMINAL, CommandFailed, Rejected,
-                    now, reason, rejection, require, read_json, write_json, validate_bundle, validate_target,
-                    empty_topology, provided_values, release_settings, settings_declarations, stopped_refusal)
+from runner import (GENERATE_PULL_TIMEOUT, OPERATIONS, PROXIES, SET_NAME, SETTING_KEY, SLUG, TERMINAL, CommandFailed,
+                    Rejected, control_operation, now, reason, rejection, require, read_json, write_json, validate_bundle,
+                    validate_target, empty_topology, provided_values, release_settings, settings_declarations,
+                    stopped_refusal)
 
 RUNNER = Path(__file__).with_name("runner.py")
 # How a remote runner reads its own source and a document from one stdin: the first line counts the source's bytes, the
@@ -401,17 +402,20 @@ def launched(root, request_id, launch):
         raise
 
 
-def control(root, target_id, operation, service, actor, reason=None):
+def control(root, target_id, operation, service, actor, reason=None, set_name=None):
     """Stops, starts or restarts the release a target runs (decision 45): one service, or the whole environment
     without one; a restart takes one service. A reset (v0.9) drops and recreates the environment's database for the
-    next deploy's migrate step to rebuild. Submitted like a deploy — the runner and the target uploaded, the target's
-    worker detached, the job recorded here and followed — and refused while a rollout or another control runs.
+    next deploy's migrate step to rebuild; with `set_name` it rolls only that migration set back to 0, with the running
+    release's own scripts, and stops only its service. Submitted like a deploy — the runner and the target uploaded, the
+    target's worker detached, the job recorded here and followed — and refused while a rollout or another control runs.
     Wheelhouse's own targets are never controlled from here: the console would stop itself, or lose its data."""
     reason = deploy_reason(reason)
     require(operation in OPERATIONS, "Unknown control: " + str(operation))
     require(service is None or (isinstance(service, str) and SLUG.fullmatch(service)), "Invalid service")
     require(operation != "restart" or service, "Restart one service at a time")
     require(operation != "reset" or service is None, "A reset takes the environment's database, never one service")
+    require(set_name is None or operation == "reset", "Only a reset names a migration set")
+    require(set_name is None or (isinstance(set_name, str) and SET_NAME.fullmatch(set_name)), "Invalid migration set")
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
     config = fleet.resolve_target(root, target_id)
     require(not config.get("self"), "Wheelhouse's own environments are never stopped, restarted or reset from the "
@@ -428,13 +432,14 @@ def control(root, target_id, operation, service, actor, reason=None):
         ssh.copy([Path(__file__).with_name("runner.py"), target_path], remote)
     services = [service] if service else []
     record = {"id": request_id, "targetId": target_id, "environment": config["target"]["environment"],
-              "operation": {"kind": operation, "services": services}, "remote": remote, "actor": actor,
+              "operation": control_operation(operation, services, set_name), "remote": remote, "actor": actor,
               "status": "submitting", "submittedAt": now(), "ssh": config["ssh"], "serverId": config["serverId"]}
     if reason:
         record["deployReason"] = reason
     write_json(root / "jobs" / (request_id + ".json"), record)
     command = shlex.join(["python3", remote + "/runner.py", "control-launch", "--target", remote + "/target.json",
-                          "--operation", operation, "--actor", actor, *(["--service", service] if service else [])])
+                          "--operation", operation, "--actor", actor, *(["--service", service] if service else []),
+                          *(["--set", set_name] if set_name else [])])
     remote_job = launched(root, request_id, lambda: json.loads(ssh.run(command)))
     record.update(status=remote_job["status"], remoteJobId=remote_job["id"], release=remote_job.get("release"))
     write_json(root / "jobs" / (request_id + ".json"), record)
@@ -1169,6 +1174,7 @@ def main():
     parser.add_argument("--reason", help="submit, control: the owner's one-line why, kept on the job")
     parser.add_argument("--operation", help="control: stop, start, restart or reset; --service names one, none the "
                                             "environment")
+    parser.add_argument("--set", dest="set_name", help="control: the migration set a reset rolls back to 0, alone")
     parser.add_argument("--fleet", help="submit: the fleet rollout the submission belongs to, kept on the job")
     parser.add_argument("--from", dest="start", help="changelog: the release the target runs now")
     parser.add_argument("--to", dest="end", help="changelog: the release to promote")
@@ -1228,7 +1234,7 @@ def main():
         elif args.action == "build":
             result = artifacts.request_build(args.product, args.commit, args.repository)
         elif args.action == "control":
-            result = control(root, args.target, args.operation, args.service, args.actor, args.reason)
+            result = control(root, args.target, args.operation, args.service, args.actor, args.reason, args.set_name)
         elif args.action == "stops":
             result = stops(root)
         elif args.action == "jobs":

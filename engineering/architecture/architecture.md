@@ -206,6 +206,14 @@ promotion replace them), as is a target a running fleet has yet to promote (409)
   `--no-recreate`. A failure before the drop starts the environment again (unless the owner had stopped something); after
   it, the environment stays stopped and the reason names the snapshot. The console offers Reset database on the
   environment's Migrations panel.
+- **Set reset.** `reset --set <name>` rolls one migration set back to 0 and keeps the rest of the database: audited as
+  `migration-set.reset` with subject `{target}/{set}`, the same prod guard. The set's service comes from the running
+  release's `migrationSets` (else `migrations.json`) and must have a `migrate` item; the database is the migrate key's
+  (`database.json`), else the one connection string the service's settings name. Steps: the same snapshot; only that
+  service stopped; the running release's image `rollback --to 0 --set <name> --confirm <database>` in a one-off
+  container built as the migrate step builds its item; that set alone at level 0 in `migrations.json`. The next deploy's
+  migrate step builds it and starts the service. Each set's row on the Migrations panel offers it
+  ([deployment § One migration set](../deployment/deployment.md#one-migration-set)).
 
 ## Settings at deploy
 

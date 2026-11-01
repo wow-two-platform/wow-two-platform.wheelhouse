@@ -36,10 +36,11 @@ export const TargetStopSchema = z.object({
   at: z.string().nullish(),
   actor: z.string().nullish(),
 });
-/** A control — a stop, start or restart — as its record names it. */
+/** A control — a stop, start, restart or reset — as its record names it; a set reset names its migration set. */
 export const DeploymentOperationSchema = z.object({
   kind: z.enum(ControlOperation),
   services: z.array(z.string()).default([]),
+  set: z.string().nullish(),
 });
 /** What a control queued: its submission and the release it acts on. */
 export const ControlSubmittedSchema = z.object({

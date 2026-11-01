@@ -63,6 +63,27 @@ test("a database reset takes the whole environment and says what it drops and wh
   assert.equal(queued.operation.kind, "reset");
 });
 
+test("a set reset names its set, rolls only it back and says which service stops", () => {
+  const request = { target: prod, operation: ControlOperation.Reset, service: null,
+    set: { name: "identity", service: "identity-api" } };
+  assert.equal(ServiceControls.labelOfRequest(request), "Reset the identity migrations");
+  assert.equal(ServiceControls.labelOfRequest({ ...request, set: null }), "Reset the database");
+  assert.equal(ServiceControls.labelOf({ kind: "reset", services: [], set: "identity" }), "Reset the identity migrations");
+  const consequence = ServiceControls.consequence(request);
+  assert.match(consequence, /^The identity migration set on foreverpin-prod is rolled back to level 0 by the release it runs/);
+  assert.match(consequence, /identity-api stops until the next deploy's migrate step builds the set again/);
+  assert.match(consequence, /rest of the database keeps its data/);
+  assert.doesNotMatch(consequence, /dropped/);
+  const queued = ControlSubmittedSchema.parse({ id: "r2", targetId: "foreverpin-dev", status: "queued",
+    operation: { kind: "reset", services: [], set: "identity" }, release: "v1.0.0" });
+  assert.equal(queued.operation.set, "identity");
+  const item = DeploymentItemSchema.parse({ id: "r2", status: "succeeded", outcome: "succeeded", state: "succeeded",
+    attention: "none", submittedAt: "2026-11-01T10:00:00Z", operation: { kind: "reset", services: [], set: "identity" } });
+  assert.equal(ServiceControls.labelOf(item.operation), "Reset the identity migrations");
+  assert.equal(ControlSubmittedSchema.parse({ ...queued, operation: { kind: "reset", services: [], set: null } }).operation.set,
+    null, "a whole-database reset names no set");
+});
+
 test("a stopped environment's pill reads stopped, never failed", () => {
   const summary = { environment: "dev", lastDeploy: null, running: null, weekly: [], lastAttempt: null,
     stopped: { environment: true, services: [] } };

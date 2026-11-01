@@ -2,6 +2,7 @@
 created again through the platform PostgreSQL, the migration levels at 0, and the next deploy's migrate step building
 the schema again. The migrate rig's fake database stands in for PostgreSQL; the platform's container answers `docker ps`
 and `docker inspect` the way Docker does."""
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -252,3 +253,221 @@ class TransportResetTests(unittest.TestCase):
             submitted = transport.control(self.root, "pilot-dev", "reset", None, "max", reason="schema drifted")
         self.assertEqual({"kind": "reset", "services": []}, submitted["operation"])
         self.assertIn("--operation reset", commands[-1])
+
+
+def rollback_line(outcome, state, before, after, removed=(), message=None):
+    """The be sdk's `migrate-result` line for `rollback --to N` on the default set: the labels it removed, newest first."""
+    entry = {"name": "default", "schema": "public", "status": outcome, "state": state, "levelBefore": before,
+             "levelAfter": after, "applied": [], "removed": [{"label": label, "kind": kind} for label, kind in removed],
+             "rollbackFloor": None, "background": [], "lockWaitMs": 0}
+    if message:
+        entry["message"] = message
+    return "migrate-result " + json.dumps({"verb": "rollback", "outcome": outcome, "sets": [entry]})
+
+
+class SetResetDocker(ResetDocker):
+    """The reset rig's Docker, whose images also answer `rollback --to 0 --set <set> --confirm <database>` the way the
+    be sdk's verb tree does: each applied migration's Rollback.sql, newest first, and its history row gone."""
+
+    def migrate(self, arguments, variables, timeout, container):
+        if "rollback" not in arguments:
+            return super().migrate(arguments, variables, timeout, container)
+        image = arguments[arguments.index("--entrypoint") + 2]
+        Rig.calls.append({"arguments": arguments, "variables": variables, "timeout": timeout, "container": container})
+        self.events.append("rollback:" + Rig.labels[image])
+        if Rig.forced:
+            return Rig.forced.pop(0)
+        before = max((ordinal for ordinal, _, _ in Rig.history), default=0)
+        removed = [(label, kind) for _, label, kind in sorted(Rig.history, reverse=True)]
+        Rig.history = []
+        return 0, rollback_line("done" if removed else "current", "behind", before, 0, removed)
+
+
+class SetResetTests(unittest.TestCase):
+    """A set reset: the snapshot a reset takes, only the service hosting the set stopped, the running release's own
+    image rolling the set back to 0 in a one-off container built as the migrate step builds its item, that set's level
+    at 0, and the next deploy's migrate step building it again."""
+    setUp_rig = ResetTests.setUp_rig
+    setUp = ResetTests.setUp
+    tearDown = ResetTests.tearDown
+    base = ResetTests.base
+    release = ResetTests.release
+    apply = ResetTests.apply
+    flow = ResetTests.flow
+    known = ResetTests.known
+    running = ResetTests.running
+
+    def reset_set(self, name="default", job="11111111-1111-4111-8111-111111111191"):
+        return runner.control(self.target, "reset", [], "max", job, docker_factory=SetResetDocker, set_name=name)
+
+    def rewritten(self, **changes):
+        """The running release's manifest with `changes`, a None removing its key, in the bundle and its kept folder."""
+        current = runner.read_json(self.base / "current.json")["id"]
+        for path in (self.bundle / "release.json", self.base / "releases" / current / "release.json"):
+            manifest = runner.read_json(path)
+            for key, value in changes.items():
+                manifest.pop(key, None) if value is None else manifest.update({key: value})
+            path.write_text(json.dumps(manifest))
+        return runner.validate_bundle(self.bundle)
+
+    def with_web(self):
+        """The running release with a second service, web, that hosts no migration set."""
+        image = "ghcr.io/owner/web@sha256:" + "9" * 64
+        self.compose["services"]["web"] = {"image": image, "platform": "linux/amd64",
+                                           "healthcheck": {"test": ["CMD", "true"]}}
+        self.manifest["images"]["web"] = image
+        compose = json.dumps(self.compose).encode()
+        (self.bundle / "compose.json").write_bytes(compose)
+        self.manifest["composeSha256"] = hashlib.sha256(compose).hexdigest()
+        (self.bundle / "release.json").write_text(json.dumps(self.manifest))
+        current = runner.read_json(self.base / "current.json")["id"]
+        for name in ("release.json", "compose.json"):
+            (self.base / "releases" / current / name).write_bytes((self.bundle / name).read_bytes())
+
+    def test_a_set_reset_stops_only_its_service_rolls_the_set_back_and_the_next_deploy_rebuilds_it(self):
+        self.with_web()
+        FakeDocker.health = {"api": "unhealthy", "web": "healthy"}
+        record = self.reset_set()
+        self.assertEqual("succeeded", record["status"], record.get("reason"))
+        self.assertEqual({"kind": "reset", "services": [], "set": "default"}, record["operation"])
+        self.assertEqual(["Snapshot the database", "Stop api", "Reset default to level 0", "Migration level to 0"],
+                         [step["name"] for step in record["steps"]])
+        # Snapshot, then only api stops, then its own image rolls the set back; nothing is dropped through PostgreSQL.
+        flow = [event for event in FakeDocker.events if event.startswith(("pg_dump", "stop", "start", "rollback", "drop"))]
+        self.assertEqual(["pg_dump pilot_dev", "stop:api", "rollback:v1"], flow)
+        self.assertEqual([], ResetDocker.psql_calls)
+        call = Rig.calls[-1]
+        self.assertEqual(test_migrate.COMMAND + ["rollback", "--to", "0", "--set", "default", "--confirm", "pilot_dev"],
+                         call["arguments"][call["arguments"].index("--entrypoint") + 1:][:1]
+                         + call["arguments"][call["arguments"].index("--entrypoint") + 3:])
+        self.assertEqual("pilot-dev-reset-api-11111111", call["container"])
+        self.assertIn(str(self.settings) + ":/app/appsettings.Target.json:ro", call["arguments"],
+                      "the rollback runs with the service's own settings, as the migrate step does")
+        self.assertEqual({"set": "default", "service": "api", "databases": ["pilot_dev"]}, record["reset"])
+        self.assertEqual(["pilot_dev"], [database["database"] for database in record["snapshot"]["databases"]])
+        [entry] = record["migrations"]
+        self.assertEqual(("rollback", "reset", "rolled back", 0), (entry["verb"], entry["purpose"], entry["status"],
+                                                                   entry["exitCode"]))
+        self.assertEqual("default 2 → 0: 2 migrations rolled back in 0s", record["steps"][2]["detail"])
+        self.assertEqual([("default", 0, "behind", "reset", 2, None, record["snapshot"]["path"])],
+                         [(item["name"], item["level"], item["state"], item["source"], item["resetFrom"],
+                           item["newestLabel"], item["snapshot"]) for item in self.known()])
+        self.assertNotIn("appliedBy", self.known()[0])
+        # web kept running and reports its health; api, stopped for the next deploy, reports none.
+        self.assertIsNone(record["stopped"])
+        self.assertEqual({"web": "healthy"}, record["health"])
+        self.assertNotIn("DO_NOT_LOG", json.dumps(record))
+        # The next deploy migrates the set forward from 0 and starts api without recreating anything.
+        FakeDocker.events, FakeDocker.modes = [], []
+        result = self.apply(SetResetDocker)
+        self.assertEqual("succeeded", result["status"], result.get("reason"))
+        self.assertEqual(["pull", "migrate:v1", "up:v1", "verify:v1"], self.flow())
+        self.assertEqual(["never"], FakeDocker.modes)
+        self.assertEqual([1, 2], [ordinal for ordinal, _, _ in Rig.history])
+        self.assertEqual([("default", 2, "migrate")], [(item["name"], item["level"], item["source"])
+                                                        for item in self.known()])
+
+    def test_the_migrate_key_names_the_database_the_rollback_confirms(self):
+        folder = self.root / "state" / "config" / "pilot-dev"
+        folder.mkdir(parents=True, mode=0o700)
+        (folder / "database.json").write_text(json.dumps({"ConnectionString": CANARY.replace("pilot_dev", "pilot_app")}))
+        self.running(needs={"api": ["postgres"]})
+        record = self.reset_set()
+        self.assertEqual("succeeded", record["status"], record.get("reason"))
+        call = Rig.calls[-1]
+        self.assertEqual(["--confirm", "pilot_app"], call["arguments"][-2:])
+        self.assertEqual({runner.MIGRATE_KEY: CANARY.replace("pilot_dev", "pilot_app")}, call["variables"])
+        self.assertNotIn(CANARY.replace("pilot_dev", "pilot_app"), " ".join(call["arguments"]))
+        self.assertEqual(["pilot_app"], record["reset"]["databases"])
+
+    def test_an_unknown_set_a_set_without_a_migrate_item_and_wheelhouse_are_refused_before_anything_runs(self):
+        with self.assertRaisesRegex(ValueError, "The release v1 has no migration set nope"):
+            self.reset_set("nope")
+        self.assertFalse(any(event.startswith(("stop", "pg_dump", "rollback")) for event in FakeDocker.events))
+        for services, name, operation, message in (([], "Bad Set", "reset", "Invalid migration set"),
+                                                   (["api"], "default", "reset", "never one service"),
+                                                   ([], "default", "stop", "Only a reset names a migration set")):
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                runner.control_plan(self.base, operation, services, name)
+        # A release that describes no sets: the target's migrations.json names the service that hosts it.
+        self.assertEqual("api", runner.set_item(self.base, self.rewritten(migrationSets=None), "default")["service"])
+        self.rewritten(migrationSets={"api": [{"name": "default", "level": 2}]}, migrate=None)
+        with self.assertRaisesRegex(ValueError, "The release v1 has no migrate item for api, which hosts default"):
+            runner.control_plan(self.base, "reset", [], "default")
+        self.with_web()
+        self.rewritten(migrationSets={"api": [{"name": "default"}], "web": [{"name": "default"}]})
+        with self.assertRaisesRegex(ValueError, "default is in the images of api, web"):
+            runner.control_plan(self.base, "reset", [], "default")
+        self.rewritten(product="wheelhouse")
+        with self.assertRaisesRegex(ValueError, "Wheelhouse's own databases are never reset"):
+            runner.control_plan(self.base, "reset", [], "default")
+
+    def test_a_refused_rollback_starts_the_service_again_and_keeps_the_level(self):
+        Rig.forced = [(1, rollback_line("refused", "current", 2, 2,
+                                        message="--confirm 'pilot_dev' does not name the database; Password=DO_NOT_LOG"))]
+        record = self.reset_set()
+        self.assertEqual("failed", record["status"])
+        self.assertIn("Reset default: Refused (exit 1): --confirm 'pilot_dev' does not name the database", record["reason"])
+        self.assertTrue(record["reason"].endswith("; nothing was rolled back, and api started again"), record["reason"])
+        self.assertEqual(["stop:api", "start:api"], [event for event in FakeDocker.events
+                                                     if event.startswith(("stop", "start"))])
+        self.assertEqual([("default", 2, "migrate")], [(item["name"], item["level"], item["source"])
+                                                        for item in self.known()])
+        self.assertNotIn("DO_NOT_LOG", json.dumps(record))
+
+    def test_a_failed_rollback_leaves_the_service_stopped_and_names_the_snapshot(self):
+        Rig.forced = [(2, rollback_line("failed", "behind", 2, 1, [("002-notes", "expand")],
+                                        message="Rollback of 001-pings failed"))]
+        record = self.reset_set()
+        self.assertEqual("failed", record["status"])
+        self.assertIn("Reset default: Failed (exit 2): Rollback of 001-pings failed", record["reason"])
+        self.assertIn("; api stays stopped; the data is in " + record["snapshot"]["path"], record["reason"])
+        self.assertFalse(any(event.startswith("start") for event in FakeDocker.events))
+        self.assertEqual([("default", 1, "behind", "reset")], [(item["name"], item["level"], item["state"], item["source"])
+                                                               for item in self.known()])
+
+    def test_a_set_reset_keeps_what_the_owner_stopped_but_its_own_service(self):
+        self.with_web()
+        for index, (stopped, kept) in enumerate((({"environment": True, "services": []}, ["web"]),
+                                                 ({"environment": False, "services": ["api", "web"]}, ["web"]),
+                                                 ({"environment": False, "services": ["api"]}, None))):
+            with self.subTest(stopped=stopped):
+                runner.write_stopped(self.base, stopped, "max")
+                Rig.history = [(1, "001-pings", "expand")]
+                record = self.reset_set(job="11111111-1111-4111-8111-11111111120" + str(index))
+                self.assertEqual("succeeded", record["status"], record.get("reason"))
+                self.assertEqual(kept, (runner.stopped_of(self.base) or {}).get("services"))
+
+    def test_a_set_reset_launches_like_any_control(self):
+        target_path = self.root / "target.json"
+        runner.write_json(target_path, self.target)
+        with patch.object(runner.subprocess, "Popen") as popen:
+            queued = runner.control_launch(target_path, "reset", [], "max", "default")
+        self.assertEqual(["control", "--target", str(target_path.resolve()), "--operation", "reset", "--actor", "max",
+                          "--job", queued["id"], "--set", "default"], popen.call_args.args[0][2:])
+        self.assertEqual({"kind": "reset", "services": [], "set": "default"},
+                         runner.read_json(self.base / "jobs" / (queued["id"] + ".json"))["operation"])
+        with patch.object(runner.subprocess, "Popen") as popen, self.assertRaisesRegex(ValueError, "no migration set"):
+            runner.control_launch(target_path, "reset", [], "max", "nope")
+        popen.assert_not_called()
+
+
+class TransportSetResetTests(unittest.TestCase):
+    setUp = test_controls.TransportControlTests.setUp
+    tearDown = test_controls.TransportControlTests.tearDown
+    fake_ssh = test_controls.TransportControlTests.fake_ssh
+
+    def test_a_set_reset_names_its_set_and_only_a_reset_names_one(self):
+        for operation, name, message in (("stop", "identity", "Only a reset names a migration set"),
+                                         ("reset", "Identity;rm", "Invalid migration set")):
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                transport.control(self.root, "pilot-dev", operation, None, "max", set_name=name)
+        fake, commands = self.fake_ssh()
+        with patch.object(transport.fleet, "resolve_target", return_value=self.config), \
+                patch.object(transport, "Ssh", fake):
+            submitted = transport.control(self.root, "pilot-dev", "reset", None, "max", reason="identity drifted",
+                                          set_name="identity")
+        self.assertEqual({"kind": "reset", "services": [], "set": "identity"}, submitted["operation"])
+        self.assertTrue(commands[-1].endswith("--operation reset --actor max --set identity"), commands[-1])
+        self.assertEqual({"kind": "reset", "services": [], "set": "identity"},
+                         transport.jobs(self.root, controls=True)[0]["operation"])

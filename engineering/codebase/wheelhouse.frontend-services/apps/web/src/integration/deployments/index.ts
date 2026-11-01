@@ -150,13 +150,15 @@ export const deploymentsApi = {
       { signal, method: "POST", action: "build", body: { commit, ...(repository ? { repository } : {}) } },
     ),
 
-  /** Stops, starts or restarts the release a target runs: `service`, or the whole environment without one. Prod needs
-   *  `confirm`, its target ID typed, and a `reason`. */
+  /** Stops, starts or restarts the release a target runs: `service`, or the whole environment without one; a reset
+   *  takes its database, or only the migration set `set` names. Prod needs `confirm`, its target ID typed, and a
+   *  `reason`. */
   control: (
     target: string,
     body: {
       readonly operation: ControlOperation;
       readonly service?: string | null | undefined;
+      readonly set?: string | null | undefined;
       readonly reason?: string | undefined;
       readonly confirm?: string | undefined;
     },
@@ -169,6 +171,7 @@ export const deploymentsApi = {
       body: {
         operation: body.operation,
         ...(body.service ? { service: body.service } : {}),
+        ...(body.set ? { set: body.set } : {}),
         ...(body.reason?.trim() ? { reason: body.reason.trim() } : {}),
         ...(body.confirm ? { confirm: body.confirm } : {}),
       },

@@ -15,6 +15,7 @@ public enum ControlOperation
 
     /// <summary>Snapshots the environment's database, stops every service, drops and recreates the database through the
     /// platform PostgreSQL and sets its migration levels to 0; the next deploy's migrate step rebuilds the schema and
-    /// starts the services (v0.9).</summary>
+    /// starts the services (v0.9). Naming a migration set instead rolls only that set back to 0 with the running release's
+    /// own scripts and stops only the service hosting it; the rest of the database keeps its data.</summary>
     Reset = 3,
 }

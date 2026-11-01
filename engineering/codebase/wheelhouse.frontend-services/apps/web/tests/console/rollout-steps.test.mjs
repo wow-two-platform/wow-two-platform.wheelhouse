@@ -15,18 +15,23 @@ test("each runner step name reads as its kind, and a name the runner adds later 
     "Start containers", "Verify services", "Publish sites", "Probe sites", "Verify end to end", "Remove unused images",
     "Remove old files", "Roll back to v0.8.4", "Restore the previous release", "Drain traffic", "Wait for health",
     "Stop api", "Restart api", "Migrate api", "Rollback gate api", "Snapshot the database", "Stop the environment",
-    "Reset ocharo_dev", "Migration levels to 0", "Something new",
+    "Reset ocharo_dev", "Migration levels to 0", "Reset identity to level 0", "Migration level to 0", "Something new",
   ];
   assert.deepEqual(names.map(StepKinds.of), [
     StepKind.RenderSettings, StepKind.CheckTarget, StepKind.Snapshot, StepKind.Pull, StepKind.Migrations, StepKind.Start,
     StepKind.Start, StepKind.Verify, StepKind.PublishSites, StepKind.ProbeSites, StepKind.VerifyEndToEnd,
     StepKind.RemoveImages, StepKind.RemoveFiles, StepKind.RollBack, StepKind.Restore, StepKind.Drain, StepKind.Wait,
     StepKind.Stop, StepKind.Restart, StepKind.Migrations, StepKind.RollbackGate, StepKind.Snapshot, StepKind.Stop,
-    StepKind.Reset, StepKind.Migrations, StepKind.Other,
+    StepKind.Reset, StepKind.Migrations, StepKind.Reset, StepKind.Migrations, StepKind.Other,
   ]);
 });
 
 const step = (name, status = "succeeded") => ({ name, status });
+
+test("a set reset's steps never read as an automatic restore", () => {
+  const failed = [step("Snapshot the database"), step("Stop identity"), step("Reset identity to level 0", "failed")];
+  assert.deepEqual([...StepKinds.restoreSteps(failed)], []);
+});
 
 test("a rollback gate after a failure belongs to the automatic restore; one before any failure stands alone", () => {
   const restoring = [

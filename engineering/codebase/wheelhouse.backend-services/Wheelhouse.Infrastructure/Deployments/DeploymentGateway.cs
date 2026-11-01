@@ -126,11 +126,13 @@ public sealed class DeploymentGateway(
 
     /// <inheritdoc />
     public Task<AppResult<JsonElement>> ControlAsync(
-        string target, string operation, string? service, string actor, string? reason, CancellationToken ct)
+        string target, string operation, string? service, string? set, string actor, string? reason, CancellationToken ct)
     {
         List<string> arguments = ["control", "--target", target, "--operation", operation, "--actor", actor];
         if (service is not null)
             arguments.AddRange(["--service", service]);
+        if (set is not null)
+            arguments.AddRange(["--set", set]);
         // An argument list, never a shell: the reason reaches the runner as one value.
         if (reason is not null)
             arguments.AddRange(["--reason", reason]);

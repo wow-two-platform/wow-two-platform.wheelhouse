@@ -25,7 +25,8 @@ export const StepKind = {
   RemoveFiles: 'remove_files',
   RollBack: 'roll_back',
   Restore: 'restore',
-  /** A database reset dropping and creating one database again (`Reset ocharo_dev`). */
+  /** A database reset dropping and creating one database again (`Reset ocharo_dev`), or a set reset rolling one
+   * migration set back (`Reset identity to level 0`). */
   Reset: 'reset',
   /** A step this console does not know yet; it still shows, with a neutral mark. */
   Other: 'other',
@@ -39,6 +40,7 @@ const NAMED: Readonly<Record<string, StepKind>> = {
   'Snapshot data': StepKind.Snapshot,
   'Snapshot the database': StepKind.Snapshot,
   'Migration levels to 0': StepKind.Migrations,
+  'Migration level to 0': StepKind.Migrations,
   'Pull images': StepKind.Pull,
   'Dry-run migrations': StepKind.Migrations,
   'Start containers': StepKind.Start,

@@ -129,7 +129,9 @@ VERIFY_SUMMARY_LIMIT = 300
 # Service controls (decision 45): what the owner may do to the release a target runs. A stop keeps containers, volumes
 # and routes and leaves `stopped.json`, which every deploy refuses until a start removes it; a start brings back the
 # same release, never pulling or recreating; a restart is one service's stop and start. A reset (v0.9) drops and
-# recreates the environment's database and leaves its services stopped for the next deploy's migrate step to rebuild.
+# recreates the environment's database and leaves its services stopped for the next deploy's migrate step to rebuild;
+# a set reset (`--set`) rolls one migration set back to 0 with the running release's own scripts instead, and stops only
+# the service that hosts it.
 OPERATIONS = ("stop", "start", "restart", "reset")
 STOPPED = "stopped.json"
 # A database and its owner the reset names in SQL: plain lowercase identifiers only, so quoting can never break.
@@ -2535,8 +2537,9 @@ def migration_labels(value):
 
 def migrate_result(line, secret=None):
     """What the job keeps of a `migrate-result` line (M37): the verb, its outcome, a scrubbed message and per set its
-    status, state, levels before and after, the labels it applied with their kind, the rollback floor, background
-    migrations and lock wait. None when the line is missing or malformed: the exit code alone decides then."""
+    status, state, levels before and after, the labels it applied with their kind (and those a rollback removed), the
+    rollback floor, background migrations and lock wait. None when the line is missing or malformed: the exit code alone
+    decides then."""
     if not isinstance(line, str) or not line.startswith(MIGRATE_RESULT):
         return None
     try:
@@ -2554,6 +2557,7 @@ def migrate_result(line, secret=None):
                      "status": short(item.get("status"), 20), "state": short(item.get("state"), 30),
                      "levelBefore": count(item.get("levelBefore")), "levelAfter": count(item.get("levelAfter")),
                      "applied": migration_labels(item.get("applied")),
+                     "removed": migration_labels(item.get("removed")),
                      "rollbackFloor": short(item.get("rollbackFloor"), 64),
                      "background": [name[:100] for name in background if isinstance(name, str)][:20],
                      "lockWaitMs": count(item.get("lockWaitMs"))})
@@ -2566,19 +2570,27 @@ def migrate_result(line, secret=None):
     return result
 
 
-def migrate_status(code, run):
-    """An item's status from its exit (M37): `0` applied (some set applied a migration) or current, `1` refused, `3`
-    busy (after its retry), None (past its timeout) timed out, and anything else — `2`, a crash, Docker unable to start
-    it — failed."""
+def migrate_status(code, run, verb="migrate"):
+    """An item's status from its exit (M37): `0` applied (some set applied a migration), rolled back (a rollback removed
+    one) or current, `1` refused, `3` busy (after its retry), None (past its timeout) timed out, and anything else — `2`,
+    a crash, Docker unable to start it — failed."""
     if code is None:
         return "timed out"
     if code == 0:
+        if verb == "rollback":
+            return "rolled back" if run and any(item.get("removed") for item in run["sets"]) else "current"
         return "applied" if run and any(item["applied"] for item in run["sets"]) else "current"
     return {1: "refused", 3: "busy"}.get(code, "failed")
 
 
 def set_summary(item):
-    """One set's line: `default 2 → 3: 1 applied (003-notes, expand)`, or `default at 3, current`."""
+    """One set's line: `default 2 → 3: 1 applied (003-notes, expand)`, `identity 3 → 0: 3 migrations rolled back`, or
+    `default at 3, current`."""
+    removed = item.get("removed") or []
+    if removed:
+        levels = (" " + str(item["levelBefore"]) + " → " + str(item["levelAfter"])
+                  if item["levelBefore"] is not None and item["levelAfter"] is not None else "")
+        return item["name"] + levels + ": " + plural(len(removed), "migration") + " rolled back"
     applied = item["applied"]
     if applied:
         newest = applied[-1]
@@ -2600,7 +2612,7 @@ def migrate_detail(entry, timeout, problem=None):
         return "It could not run: " + problem
     if status == "timed out":
         return "Timed out after " + str(timeout) + "s; the container was stopped"
-    if status in ("applied", "current"):
+    if status in ("applied", "current", "rolled back"):
         return (sets or "Exit 0, no migrate-result line") + took
     if code in (125, 126, 127):
         return "Docker could not start it (exit " + str(code) + ")"
@@ -2611,13 +2623,14 @@ def migrate_detail(entry, timeout, problem=None):
 
 
 def run_migrate_item(target, manifest, compose, project, item, environment, docker, container, verb="migrate",
-                     timeout=None, clock=time.monotonic):
-    """Runs one migrate item in its one-off container: its command (`migrate`), or the same command's `check --json`
-    for a rollback gate or a check now. An exit 3 retries once. Never raises for what the container did; returns the
-    item's record entry — status, exit code, seconds, attempts, an operator-safe detail and each set its result line
-    reported."""
+                     timeout=None, clock=time.monotonic, arguments=None):
+    """Runs one migrate item in its one-off container: its command (`migrate`), the same command's `check --json` for a
+    rollback gate or a check now, or the verb `arguments` name (a set reset's `rollback --to 0 --set <set> --confirm
+    <database>`). An exit 3 retries once. Never raises for what the container did; returns the item's record entry —
+    status, exit code, seconds, attempts, an operator-safe detail and each set its result line reported."""
     service = item["service"]
-    command = item["command"] + (["check", "--json"] if verb == "check" else [])
+    command = item["command"] + (list(arguments) if arguments is not None else
+                                 ["check", "--json"] if verb == "check" else [])
     timeout = timeout or item["timeoutSeconds"]
     started, begun = now(), clock()
     code, line, attempts, problem, key = -1, None, 0, None, None
@@ -2637,7 +2650,7 @@ def run_migrate_item(target, manifest, compose, project, item, environment, dock
         code, problem = -1, type(error).__name__
     run = migrate_result(line, key)
     entry = {"service": service, "verb": verb, "release": manifest["release"],
-             "status": "failed" if problem else migrate_status(code, run),
+             "status": "failed" if problem else migrate_status(code, run, verb),
              "exitCode": code if type(code) is int and code >= 0 else None, "seconds": int(clock() - begun),
              "attempts": attempts, "startedAt": started, "completedAt": now(), "reported": run is not None,
              "migrateKey": key is not None, "sets": run["sets"] if run else []}
@@ -2995,24 +3008,26 @@ def write_stopped(base, stopped, actor):
     return value
 
 
-def control_label(operation, services):
+def control_label(operation, services, set_name=None):
     """A control's one-line name, as its step and history read it: `Stop management`, `Start the environment`,
-    `Reset the database`."""
+    `Reset the database`, `Reset the identity migrations`."""
     if operation == "reset":
-        return "Reset the database"
+        return "Reset the " + set_name + " migrations" if set_name else "Reset the database"
     return operation.capitalize() + " " + (", ".join(services) if services else "the environment")
 
 
-def control_plan(base, operation, services):
+def control_plan(base, operation, services, set_name=None):
     """Checks one control against the target as it is and returns the release it acts on (`current.json`), its bundle
     folder and manifest, and what stays stopped afterwards. A control needs a release to act on; a service must be one
     of the release's; the whole environment only stops and starts, a service also restarts; a stopped environment
-    starts whole, and a stopped service starts rather than restarts."""
+    starts whole, and a stopped service starts rather than restarts. Only a reset names a migration set."""
     require(operation in OPERATIONS, "Unknown control: " + str(operation))
     require(isinstance(services, list) and len(services) <= 1
             and all(isinstance(name, str) and SLUG.fullmatch(name) for name in services),
             "A control names one service, or none for the whole environment")
     require(operation != "restart" or services, "Restart one service at a time")
+    require(set_name is None or operation == "reset", "Only a reset names a migration set")
+    require(set_name is None or (isinstance(set_name, str) and SET_NAME.fullmatch(set_name)), "Invalid migration set")
     current_path = base / "current.json"
     require(current_path.is_file(), base.name + " runs no release yet; there is nothing to stop or start")
     current = read_json(current_path)
@@ -3028,6 +3043,12 @@ def control_plan(base, operation, services):
         # The whole environment's database, whatever was stopped: the next deploy rebuilds it and starts everything.
         require(not services, "A reset takes the environment's database, never one service")
         require(manifest["product"] != SELF_PRODUCT, "Wheelhouse's own databases are never reset; they keep their data")
+        if set_name is not None:
+            # One set: only the service hosting it stops, unmarked, for the next deploy to migrate and start; whatever
+            # else the owner stopped stays stopped, a whole stopped environment as each of its other services.
+            service = set_item(base, manifest, set_name)["service"]
+            kept = sorted((set(manifest["images"]) if whole else set(stopped["services"])) - {service})
+            return current, bundle, manifest, {"environment": False, "services": kept} if kept else None
         require(release_migrate(manifest), "The release " + manifest["release"] + " declares no migrate item, so no "
                                            "deploy would rebuild a reset database; deploy one that does first")
         return current, bundle, manifest, None
@@ -3151,6 +3172,69 @@ def reset_levels(base, job_id, release, snapshot):
     return len(sets)
 
 
+def set_item(base, manifest, name):
+    """The migrate item hosting migration set `name` in the release a target runs: the service whose image the
+    release's `migrationSets` say carries it, else (a release that describes none) the one the target's migrations.json
+    last read it from. Refuses a set the release does not carry, one two services carry, and one whose service has no
+    migrate item, since nothing would roll it back or build it again."""
+    require(isinstance(name, str) and SET_NAME.fullmatch(name), "Invalid migration set")
+    described = release_migration_sets(manifest)
+    if described:
+        hosts = sorted(service for service, sets in described.items() if any(entry["name"] == name for entry in sets))
+    else:
+        hosts = sorted({item["service"] for item in (known_migrations(base) or {}).get("sets", [])
+                        if isinstance(item, dict) and item.get("name") == name and isinstance(item.get("service"), str)})
+    require(hosts, "The release " + manifest["release"] + " has no migration set " + name)
+    require(len(hosts) == 1, name + " is in the images of " + ", ".join(hosts) + "; a set reset takes a set one service "
+                             "hosts")
+    item = next((item for item in release_migrate(manifest) if item["service"] == hosts[0]), None)
+    require(item is not None, "The release " + manifest["release"] + " has no migrate item for " + hosts[0] + ", which "
+                              "hosts " + name + ": nothing would roll it back or build it again")
+    return item
+
+
+def set_database(target, manifest, bundle, item):
+    """The database a set reset snapshots and names in the rollback's `--confirm`: the migrate key's (the target's
+    database.json) for an item whose service takes one, as its migrate container connects; else the one PostgreSQL
+    connection string the service's mounted settings name. Never one of the cluster's own or Wheelhouse's."""
+    service = item["service"]
+    key = migrate_key(target, manifest, service)
+    if key is not None:
+        found = [connection_of(key)]
+    else:
+        path = mounted_settings(target, manifest, bundle).get(service)
+        settings = private_settings(path, service) if path is not None else {}
+        found = [connection_of(configuration_value(settings, name)) for name in flat_keys(settings) if connection_key(name)]
+    databases = {(entry["host"], entry["port"], entry["database"]): entry for entry in found if entry is not None}
+    require(databases, "No database to reset: " + service + " takes no migrate key, and its settings name no PostgreSQL "
+                       "connection string")
+    require(len(databases) == 1, service + "'s settings name " + str(len(databases)) + " databases; a set reset needs the "
+                                 "one its sets connect to (database.json)")
+    database = next(iter(databases.values()))
+    require(database["database"] not in PROTECTED_DATABASES, database["database"] + " is never reset")
+    return {**database, "service": service}
+
+
+def reset_set_level(base, job_id, release, snapshot, name, service, reported=None):
+    """One set's reading after a set reset, the others left as they were: level 0, read as `behind` from source
+    `reset`, once its rollback ran to the end (`reported` None); else the level and state the rollback reported
+    (`reported`, its result line's set). Its newest label, rollback floor and the snapshot of the rollout that applied
+    it go, since the history above that level is gone; this reset's snapshot stays with it."""
+    known = known_migrations(base) or {"updatedAt": None, "sets": []}
+    sets = {item["name"]: item for item in known["sets"] if isinstance(item, dict) and isinstance(item.get("name"), str)}
+    prior = sets.get(name, {})
+    at = now()
+    item = {key: value for key, value in prior.items() if key != "appliedBy"}
+    level = 0 if reported is None else reported["levelAfter"]
+    item.update(name=name, schema=(reported or {}).get("schema") or prior.get("schema"),
+                service=prior.get("service") or service, level=level, newestLabel=None, newestKind=None,
+                state="behind" if reported is None else reported["state"], rollbackFloor=None, release=release,
+                job=job_id, source="reset", at=at, resetFrom=prior.get("level"), snapshot=snapshot)
+    sets[name] = item
+    write_json(Path(base) / MIGRATIONS_FILE, {"updatedAt": at, "sets": [sets[key] for key in sorted(sets)]})
+    return item
+
+
 def control_ready(base):
     """Refuses a control while a rollout or another control runs, or one stopped mid-way waits for reconciliation."""
     require(not lock_held(base), "A rollout or another control is running on " + base.name)
@@ -3160,7 +3244,7 @@ def control_ready(base):
             "Failed mutation requires reconciliation")
 
 
-def control_launch(target_path, operation, services, actor):
+def control_launch(target_path, operation, services, actor, set_name=None):
     """Queues a control of the release a target runs and starts its worker detached, as a deploy's launch does; every
     rule is checked here first, so a refusal reaches the owner before any job exists."""
     target = read_json(target_path)
@@ -3168,23 +3252,30 @@ def control_launch(target_path, operation, services, actor):
     base = root / project
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
     control_ready(base)
-    current, bundle, manifest, _ = control_plan(base, operation, services)
+    current, bundle, manifest, _ = control_plan(base, operation, services, set_name)
     control_environment(target, manifest, bundle)
     job_id = str(uuid.uuid4())
     jobs = base / "jobs"
     jobs.mkdir(parents=True, exist_ok=True, mode=0o700)
     write_json(jobs / (job_id + ".json"), {"id": job_id, "status": "queued", "actor": actor, "queuedAt": now(),
-                                           "operation": {"kind": operation, "services": services},
+                                           "operation": control_operation(operation, services, set_name),
                                            "release": current.get("release")})
     subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "control", "--target",
                       str(Path(target_path).resolve()), "--operation", operation, "--actor", actor,
-                      "--job", job_id, *[argument for name in services for argument in ("--service", name)]],
+                      "--job", job_id, *[argument for name in services for argument in ("--service", name)],
+                      *(["--set", set_name] if set_name else [])],
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True, close_fds=True)
     return {"id": job_id, "status": "queued", "release": current.get("release")}
 
 
-def control(target, operation, services, actor, job_id, docker_factory=Docker):
+def control_operation(operation, services, set_name=None):
+    """A control as its job names it: the kind, the service it named (none for the environment) and, for a set reset,
+    the migration set."""
+    return {"kind": operation, "services": list(services), **({"set": set_name} if set_name else {})}
+
+
+def control(target, operation, services, actor, job_id, docker_factory=Docker, set_name=None):
     """Stops, starts or restarts the release a target runs, under the deployment lock, as a job in the target's journal
     and its durable intent (`active.json`) like a rollout. A stop marks what it stops before stopping it; a start
     clears its mark only once its services are healthy, so a control cut short leaves the target refusing deploys and a
@@ -3199,8 +3290,8 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker):
         require(not active or active["status"] in TERMINAL, "Interrupted deployment requires reconciliation")
         require(not active or not (active.get("mutationStarted") and active["status"] in ("failed", "rollback_failed")),
                 "Failed mutation requires reconciliation")
-        current, bundle, manifest, after = control_plan(base, operation, services)
-        record = {"id": job_id, "project": project, "operation": {"kind": operation, "services": services},
+        current, bundle, manifest, after = control_plan(base, operation, services, set_name)
+        record = {"id": job_id, "project": project, "operation": control_operation(operation, services, set_name),
                   "release": current.get("release"), "sourceCommit": current.get("sourceCommit"),
                   "kind": current.get("kind", "release"), "actor": actor, "status": "running", "startedAt": now(),
                   "previous": current["id"]}
@@ -3214,10 +3305,16 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker):
         names = services or sorted(manifest["images"])
         prior = stopped_of(base)
         progress = {"stopped": False, "dropped": False}
+        resting = set()
         try:
-            docker = docker_factory(target, control_environment(target, manifest, bundle))
+            environment = control_environment(target, manifest, bundle)
+            docker = docker_factory(target, environment)
             environment_override(bundle, target["environment"])
-            if operation == "reset":
+            if operation == "reset" and set_name:
+                resting.add(set_item(base, manifest, set_name)["service"])
+                reset_set(base, target, manifest, bundle, project, environment, docker, steps, record, job_id, actor,
+                          set_name, after, progress)
+            elif operation == "reset":
                 reset(base, target, manifest, bundle, project, docker, steps, record, job_id, actor, names, progress)
             elif operation == "stop":
                 # Marked first: a stop cut short still keeps deploys from starting what it reached.
@@ -3241,7 +3338,10 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker):
             record["failure"] = type(error).__name__
             if reason(error):
                 record["reason"] = reason(error)
-            if operation == "reset":
+            if operation == "reset" and set_name:
+                record["reason"] = reset_set_failed(record.get("reason"), docker, bundle, prior, progress, record,
+                                                    resting)
+            elif operation == "reset":
                 record["reason"] = reset_failed(record.get("reason"), docker, bundle, prior, progress, record)
             elif docker is not None and operation != "stop" and isinstance(error, CommandFailed):
                 with contextlib.suppress(Exception):
@@ -3249,12 +3349,12 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker):
                     if states:
                         record["reason"] = record.get("reason", "The control failed") + "; not healthy: " + ", ".join(states)
         record["stopped"] = stopped_of(base)
-        if docker is not None and operation != "reset":
+        if docker is not None and (operation != "reset" or set_name):
             # A service the owner keeps stopped has no health to report; a reset leaves every service stopped for the
-            # next deploy, so it reports none either.
+            # next deploy, so it reports none either, and a set reset none for the service it leaves stopped.
             with contextlib.suppress(Exception):
                 record["health"] = {name: value for name, value in docker.service_health(bundle).items()
-                                    if value in HEALTH and not (record["stopped"] and (
+                                    if value in HEALTH and name not in resting and not (record["stopped"] and (
                                         record["stopped"]["environment"] or name in record["stopped"]["services"]))}
         record["completedAt"] = now()
         save()
@@ -3307,6 +3407,70 @@ def reset_failed(why, docker, bundle, prior, progress, record):
         except Exception:
             return (why + "; nothing was dropped, but the environment did not start again: start it")[:600]
     return (why + "; nothing was dropped")[:600]
+
+
+def reset_set(base, target, manifest, bundle, project, environment, docker, steps, record, job_id, actor, name, after,
+              progress):
+    """A set reset's steps: the database snapshot, as a reset takes it; the service hosting the set stopped, and only
+    it; the running release's own image rolling the set back to 0 in a one-off container built as the migrate step
+    builds its item (`rollback --to 0 --set <set> --confirm <database>`), so its rollback scripts are the ones the
+    database applied; the set's level at 0. The other services keep running and the rest of the database keeps its
+    data; the next deploy's migrate step builds the set again and starts its service."""
+    item = set_item(base, manifest, name)
+    service = item["service"]
+    database = set_database(target, manifest, bundle, item)
+    record["reset"] = {"set": name, "service": service, "databases": [database["database"]]}
+    with steps.run("Snapshot the database") as step:
+        taken = take_snapshot(base, job_id, target, manifest, read_json(Path(bundle) / "compose.json"), project, docker,
+                              sources=([database], []))
+        record["snapshot"] = taken
+        step["detail"] = plural(len(taken["databases"]), "database") + " in " + taken["path"]
+    with steps.run("Stop " + service) as step:
+        progress["stopped"] = True
+        docker.stop(bundle, [service])
+        step["detail"] = service + " stopped until the next deploy; the other services keep running"
+    with steps.run("Reset " + name + " to level 0") as step:
+        progress["rollback"] = True
+        entry = run_migrate_item(target, manifest, read_json(Path(bundle) / "compose.json"), project, item, environment,
+                                 docker, project + "-reset-" + service + "-" + job_id[:8], verb="rollback",
+                                 arguments=["rollback", "--to", "0", "--set", name, "--confirm", database["database"]])
+        entry["purpose"] = "reset"
+        record.setdefault("migrations", []).append(entry)
+        reported = next((each for each in entry["sets"] if each["name"] == name), None)
+        if entry["status"] not in ("rolled back", "current"):
+            # A container that never started, a refusal or a busy lock ran no script; anything else may have rolled some
+            # back, as its line says.
+            progress["rollback"] = not (entry["attempts"] == 0 or entry["exitCode"] in (125, 126, 127) or (
+                entry["status"] in ("refused", "busy") and not (reported or {}).get("removed")))
+            if progress["rollback"] and reported is not None and reported["levelAfter"] is not None:
+                with contextlib.suppress(Exception):
+                    reset_set_level(base, job_id, manifest["release"], taken["path"], name, service, reported)
+            raise MigrateFailed("Reset " + name + ": " + entry["detail"])
+        step["detail"] = entry["detail"]
+    with steps.run("Migration level to 0") as step:
+        reset_set_level(base, job_id, manifest["release"], taken["path"], name, service)
+        step["detail"] = (name + " at level 0; the next deploy's migrate step builds it again and starts " + service)
+    write_stopped(base, after, actor)
+
+
+def reset_set_failed(why, docker, bundle, prior, progress, record, resting):
+    """What a failed set reset left, appended to its reason: before its rollback ran any script, the service it stopped
+    starts again on its database (unless the owner had stopped it); after, it stays stopped and the snapshot holds the
+    data. `resting` loses a service that started again."""
+    why = why or "The reset failed"
+    snapshot = (record.get("snapshot") or {}).get("path")
+    service = next(iter(resting), None)
+    if progress.get("rollback"):
+        return (why + "; " + str(service) + " stays stopped" + ("; the data is in " + snapshot if snapshot else ""))[:600]
+    kept = prior is not None and (prior["environment"] or service in prior["services"])
+    if progress["stopped"] and not kept and docker is not None and service is not None:
+        try:
+            docker.start(bundle, [service])
+            resting.discard(service)
+            return (why + "; nothing was rolled back, and " + service + " started again")[:600]
+        except Exception:
+            return (why + "; nothing was rolled back, but " + service + " did not start again: start it")[:600]
+    return (why + "; nothing was rolled back")[:600]
 
 
 def passed(target, release):
@@ -3920,6 +4084,7 @@ def main():
                                           "generate-setting: the service whose release image runs the command")
     parser.add_argument("--key", help="generate-setting: the configuration path of the generated key")
     parser.add_argument("--operation", choices=OPERATIONS, help="control: stop, start, restart or reset")
+    parser.add_argument("--set", dest="set_name", help="control: the migration set a reset rolls back to 0, alone")
     parser.add_argument("--tail", type=int, default=200)
     parser.add_argument("--stdin", action="store_true",
                         help="launch, apply: read this deploy's settings values and registry sign-in from stdin; "
@@ -3962,10 +4127,11 @@ def main():
             manifest = decode(args.release_json) if args.release_json else validate_bundle(args.bundle)
             result = generate_setting(target or read_json(args.target), manifest, args.service, args.key, provided)
         elif args.action == "control-launch":
-            result = control_launch(args.target, args.operation, [args.service] if args.service else [], args.actor)
+            result = control_launch(args.target, args.operation, [args.service] if args.service else [], args.actor,
+                                    args.set_name)
         elif args.action == "control":
             result = control(read_json(args.target), args.operation, [args.service] if args.service else [],
-                             args.actor, args.job)
+                             args.actor, args.job, set_name=args.set_name)
         else:
             result = apply(args.bundle, read_json(args.target), args.actor, args.job, provided=provided)
         print(json.dumps(result))
@@ -3984,8 +4150,8 @@ def main():
                 failed_step = {"name": getattr(error, "step", "Check target"), "status": "failed", "completedAt": now()}
                 if refused.get("reason"):
                     failed_step["detail"] = refused["reason"]
-                kept = {"operation": {"kind": args.operation, "services": [args.service] if args.service else []}} \
-                    if args.action == "control" else {}
+                kept = {"operation": control_operation(args.operation, [args.service] if args.service else [],
+                                                       args.set_name)} if args.action == "control" else {}
                 write_json(root / project / "jobs" / (args.job + ".json"),
                            {"id": args.job, **kept, **refused, "completedAt": now(), "steps": [failed_step]})
             except Exception:
