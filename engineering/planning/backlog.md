@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-10-30*
+*Last updated: 2026-11-01*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -94,6 +94,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Warn before a signing certificate expires, and guide a staged rotation | feature | Identity 2026-11-01: the owner runs `keys generate --role signing --not-before <time>` into `Signing:1`; JWKS lists both; when the old one retires, move the newer into `:0` and clear `:1`. Versions already carry `notAfter`; Ocharo dev expires 2027-02-28, prod about 2027-03-01 |
 | Extract the Secrets Vault back into its own repository and service | engineering | Owner 2026-10-30: merged services can no longer deploy apart, and the vault must stay its own service. A vault container on each host, reached over Tailscale, serves secret operations; Wheelhouse integrates with it, and services stop reading secrets from plain-text host files. Its name follows hub `app-t-008` (`secrets`) |
 | Ability to back up the vault with its keys kept apart, and prove a restore | feature | `vault verify` and the canary exist; waits on Wheelhouse's database backups |
 | Ability to rotate the vault's root key with a transactional rewrap | feature | 2026-10-19 merge analysis: unwrap every product key under the old root key, wrap under the new one, prove the canary, one transaction; the owner swaps the file after |
@@ -110,6 +111,10 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Ability to run each service's `config check` before any restart | feature | Next, v0.13. Hub `deploy-descriptor.md` § Config check (`ae74bf1`): a `configCheck:` item, after migrate on every release deploy, on every settings-only apply and in the rollback gate; Identity answered the contract 2026-11-01, and its verb is not built yet (the be sdk hosts it) |
+| Ability to record each deployment's settings, diff two deploys and restore them exactly | feature | Identity 2026-11-01: non-secret values plus each secret's vault version, with a hash; the audit records who and when, not values. Feeds the issuer-change warning and an exact restore on rollback |
+| Warn before a deploy changes a product's `Identity:Server:Issuer` | feature | Every token and client registration names the old issuer; needs the per-deploy settings record |
+| Flag a stored setting whose key no release declares any more | feature | A renamed key keeps its stored value under the old name; once Identity refuses unknown `Identity:*` keys, that value would stop the boot. None stored on Ocharo on 2026-11-01 |
 | Ability to back up databases and volumes on their own host on a schedule | feature | Owner 2026-10-30: the same VPS first, guarding against bad migrations and mistakes, not host loss; PostgreSQL base backups and a WAL archive (hub `irreversible-changes.md` IR7) |
 | Ability to restore a backup and prove it works | feature | |
 | Ability to copy backups off the host to another VPS or storage | feature | Owner 2026-10-30: after the same-host backups; the provider and its bill are the owner's pick |
@@ -203,6 +208,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Ability to open a product's Identity console from Wheelhouse | feature | Identity proposal 2026-11-01, its build step 6: run `admin create --email <address> --role admin` or `admin sign-in-link --email <address>` on demand in a one-off container; the last line `admin-result` carries a 15-minute link with the token in the fragment. No standing management key |
 | Audit every MCP tool call | feature | [MCP review](../research/mcp-review.md): key, tool, target, outcome and duration; required before any write tool |
 | Limit MCP concurrency and rate per key | feature | Each runner tool spawns Python and SSH for up to 110 s; cap 2–4 concurrent calls |
 | Ability to expire integration keys and see them near expiry | feature | Keys live until revoked today; default 90 days |
