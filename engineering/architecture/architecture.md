@@ -241,9 +241,12 @@ own targets keep their hand-placed files), into `<root>/config/<product>-<enviro
 | Wheelhouse | The environment's stored settings (`environment_settings`) and its built-in vault secrets, read at deploy |
 | Derived | `AllowedHosts` (the hosts of the sites the service serves, its platform name `<product>-<environment>-<service>`, any other host its host file listed, `localhost`), `Sites:<site>:Url` (the origin of every site the product publishes there), `Deployment:TrustedProxies` (the address of the host kit's `ingress` on the target's network). A public site's host is the target's, else the server's pattern, else its baseline host on the server's public address (`<product>[-<site>][-dev].<ip-with-dashes>.sslip.io`, decision 68), so both keys name it |
 | Database | A required connection key (`ConnectionStrings:<name>`, `<Section>:ConnectionString`) no other layer sets, from `config/<product>-<environment>/database.json` (`prepare.py --database`), for a service that needs PostgreSQL |
+| Default | An optional key's `default` from the release (descriptor § Typed keys), for each key the service declares that no other layer sets (v0.13); a rendered value of `""` counts as unset. Before v0.13.3 the render skipped this layer while the console already named it as the source |
 
 - A value goes to every service that declares its key (required, or a release's optional or secret declaration), and a
-  key no service declares to every service that takes a settings file.
+  key no service declares to every service that takes a settings file. So a value stored ahead of the release that will
+  declare it reaches every service of the running release at its next deploy, apply or automatic rollback (Ocharo dev
+  2026-11-02: an older Identity got the newer client keys and refused to boot).
 - The control plane sends the Wheelhouse layer on the submission's SSH stdin; the runner hands it to its worker over a
   pipe and writes it nowhere but the rendered files. Job records keep key names by source (`settings`), never a value;
   the render is the rollout's first step, `Render settings`.

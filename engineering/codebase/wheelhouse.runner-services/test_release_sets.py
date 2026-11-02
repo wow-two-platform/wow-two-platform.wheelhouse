@@ -235,6 +235,21 @@ class ComposeTests(unittest.TestCase):
         self.assertFalse({'migrate', 'migrationSets', 'extensions'} & set(release_sets.compose(
             'pilot', 'pilot-set-0123456789ab', self.parts())[0]))
 
+    def test_config_check_items_carry_into_the_set_in_repository_order(self):
+        parts = self.parts()
+        parts[0][2]['configCheck'] = [{'service': 'api', 'command': ['dotnet', 'App.dll', 'config', 'check'],
+                                       'timeoutSeconds': 60}]
+        parts[1][2]['configCheck'] = [{'service': 'studio', 'command': ['dotnet', 'Studio.dll', 'config', 'check']}]
+        manifest, compose_bytes = release_sets.compose('pilot', 'pilot-set-0123456789ab', parts)
+        self.assertEqual([('api', 60), ('studio', runner.CONFIG_CHECK_TIMEOUT)],
+                         [(item['service'], item['timeoutSeconds']) for item in manifest['configCheck']])
+        with tempfile.TemporaryDirectory() as folder:
+            release_sets.write(folder, manifest, compose_bytes)
+            self.assertEqual(['api', 'studio'],
+                             [item['service'] for item in runner.release_config_check(runner.validate_bundle(folder))])
+        # A set whose repositories declare none has no key, as before.
+        self.assertNotIn('configCheck', release_sets.compose('pilot', 'pilot-set-0123456789ab', self.parts())[0])
+
     def test_a_volume_two_repositories_name_is_refused_rather_than_renamed(self):
         with self.assertRaisesRegex(ValueError, 'Volume data is in both owner/pilot-app and owner/pilot-studio'):
             release_sets.compose('pilot', 'pilot-set-0123456789ab', self.parts(volume='data'))

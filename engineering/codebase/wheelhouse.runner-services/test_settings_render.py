@@ -167,6 +167,24 @@ class RenderTests(unittest.TestCase):
             self.assertNotIn(secret, record)
             self.assertNotIn(secret, json.dumps(json.loads((self.root / "srv/pilot-dev/active.json").read_text())))
 
+    def test_an_optional_keys_default_renders_only_when_no_layer_sets_it(self):
+        self.database()
+        self.manifest["settings"] = {"api": {"optional": {"Feature:Flag": "false", "Clients:0:ClientId": "desk",
+                                                          "Feature:Stored": "default", "Logging:Level": "Debug",
+                                                          "Feature:Empty": ""}}}
+        self.save()
+        result = self.apply(values={"Billing:SecretKey": "VAULT_SECRET", "Feature:Stored": "kept"})
+        self.assertEqual("succeeded", result["status"], result.get("reason"))
+        api = self.rendered("api")
+        # Defaults fill what no layer set; a stored value and the host file's value win over them.
+        self.assertEqual(("false", "desk"), (api["Feature"]["Flag"], api["Clients"]["0"]["ClientId"]))
+        self.assertEqual("kept", api["Feature"]["Stored"])
+        self.assertEqual("Information", api["Logging"]["Level"])
+        self.assertNotIn("Empty", api["Feature"])
+        self.assertEqual(["Clients:0:ClientId", "Feature:Flag"], result["settings"]["api"]["default"])
+        self.assertIn("2 defaults", result["steps"][0]["detail"])
+        self.assertNotIn("Clients", self.rendered("worker"), "a default stays with the service that declares it")
+
     def test_a_missing_required_key_refuses_the_deploy_before_any_file_changes(self):
         with self.assertRaisesRegex(runner.RenderRefused, "Missing required setting: worker:ConnectionStrings:Database"):
             self.apply()

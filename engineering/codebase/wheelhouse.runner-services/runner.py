@@ -1714,9 +1714,10 @@ def render_settings(target, manifest, project, provided, docker):
     """Renders every settings file a release mounts on this target, in layers: the host file the target names (if any),
     then the control plane's stored settings and vault secrets, then what the render derives — AllowedHosts, site URLs
     and the ingress as Deployment:TrustedProxies — and, for a required connection key no layer sets, the target's own
-    database. Once every service's document holds those layers, each linked key takes its source's value
-    (`linked_value`); a linked key is never required. Refuses a required key no layer sets, before writing anything.
-    Returns each service's keys by source; no value leaves the target."""
+    database; last, each optional key the service declares with a default takes that default when no layer set it
+    (deploy descriptor § Typed keys). Once every service's document holds those layers, each linked key takes its
+    source's value (`linked_value`); a linked key is never required. Refuses a required key no layer sets, before
+    writing anything. Returns each service's keys by source; no value leaves the target."""
     required = manifest.get("requiredConfiguration") or {}
     declared = release_settings(manifest)
     values = provided_values(provided)
@@ -1727,7 +1728,7 @@ def render_settings(target, manifest, project, provided, docker):
     links = {service: (declared.get(service) or no_settings())["links"] for service in required}
     for service in sorted(required):
         wanted = [key for key in required[service] if key not in links[service]]
-        document, used = {}, {"host": [], "provided": [], "derived": [], "database": [], "linked": []}
+        document, used = {}, {"host": [], "provided": [], "derived": [], "database": [], "default": [], "linked": []}
         host = target.get("settings", {}).get(service)
         if host and Path(host) != rendered_path(target, service) and Path(host).exists():
             layer = private_settings(Path(host), service)
@@ -1750,6 +1751,10 @@ def render_settings(target, manifest, project, provided, docker):
             if database and database_key(key, needs) and configuration_value(document, key) in (None, "", []):
                 set_value(document, key, database)
                 used["database"].append(key)
+        for key, value in sorted((declared.get(service) or no_settings())["optional"].items()):
+            if value != "" and key not in links[service] and configuration_value(document, key) in (None, "", []):
+                set_value(document, key, value)
+                used["default"].append(key)
         for key in wanted:
             if configuration_value(document, key) in (None, "", []):
                 raise RenderRefused("Missing required setting: " + service + ":" + key)
@@ -1771,7 +1776,7 @@ def render_summary(rendered):
     """One line on a render: how many services and keys, by source; never a value."""
     services = rendered["services"]
     count = {source: sum(len(used.get(source, [])) for used in services.values())
-             for source in ("derived", "provided", "host", "database", "linked")}
+             for source in ("derived", "provided", "host", "database", "default", "linked")}
     parts = [plural(count["derived"], "derived key")]
     if count["provided"]:
         parts.append(str(count["provided"]) + " from Wheelhouse")
@@ -1779,6 +1784,8 @@ def render_summary(rendered):
         parts.append(str(count["linked"]) + " linked")
     if count["database"]:
         parts.append(str(count["database"]) + " from the target's database")
+    if count["default"]:
+        parts.append(plural(count["default"], "default"))
     if count["host"]:
         parts.append(str(count["host"]) + " from host files")
     changed = len(rendered["changed"])

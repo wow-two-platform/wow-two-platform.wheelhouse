@@ -17,15 +17,15 @@ later sets take it; the primary repository serves the front door, so no set exis
 - The set bundle is schema 2: the product's sites and each service's routes. Rollback compatibility holds only when
   every component in the set declares it (a repository not in it yet declares nothing); .NET environments stay with the
   services whose repository opted in. Migrate items run in repository order, an item after the items hosting the sets
-  its sets depend on; migration sets and extensions are every repository's.
+  its sets depend on; migration sets, extensions and config check items are every repository's, in repository order.
 """
 from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
 import re
-from runner import (RELEASE, SHA, SLUG, dependency_waves, read_json, release_extensions, release_migrate,
-                    release_migration_sets, require, service_dependencies, write_json)
+from runner import (RELEASE, SHA, SLUG, dependency_waves, read_json, release_config_check, release_extensions,
+                    release_migrate, release_migration_sets, require, service_dependencies, write_json)
 
 SET_ID = re.compile(r"[a-z][a-z0-9-]*-set-([0-9a-f]{12})")
 DIGEST = 12
@@ -144,7 +144,7 @@ def compose(product, set_id, parts):
     holders = {}
     images, required, settings, versions, ports, needs, dotnet = {}, {}, {}, {}, {}, {}, []
     components, migrations, verify = [], [], None
-    migrate, migration_sets, extensions = [], {}, []
+    migrate, migration_sets, extensions, config_check = [], {}, [], []
     for short, repository, manifest, document in parts:
         require(manifest["product"] == product,
                 repository + " releases product " + str(manifest["product"]) + ", not " + product)
@@ -179,6 +179,7 @@ def compose(product, set_id, parts):
             dotnet += list(manifest["dotnetEnvironment"])
         migrations.append(manifest.get("migrations"))
         migrate += release_migrate(manifest)
+        config_check += release_config_check(manifest)
         migration_sets.update(release_migration_sets(manifest))
         extensions += [name for name in release_extensions(manifest) if name not in extensions]
         if verify is None and isinstance(manifest.get("verify"), dict):
@@ -216,6 +217,8 @@ def compose(product, set_id, parts):
         result["migrate"] = migrate_order(migrate, migration_sets)
     if migration_sets:
         result["migrationSets"] = migration_sets
+    if config_check:
+        result["configCheck"] = config_check
     if extensions:
         result["extensions"] = extensions
     if all(type(value) is bool for value in migrations):
