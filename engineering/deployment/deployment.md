@@ -1141,8 +1141,8 @@ A service's recent container output is readable on request through `logs`; Docke
 
 ### One-off command
 
-A command a product's service runs once against its environment — a first owner's `admin create`, an `admin invite`
-— runs from the console in that service's running release image
+A command a product's service runs once against its environment — a first owner's `admin create` — runs from the
+console in that service's running release image
 ([architecture § Service controls](../architecture/architecture.md#service-controls)):
 
 1. **Products › the product › the environment › the service's menu › Run a command…** Type the command as one line
@@ -1156,7 +1156,7 @@ A command a product's service runs once against its environment — a first owne
 - The job, history and audit name the command by its label (`admin create --slug … --phone …`); the arguments are kept
   nowhere. During the run they sit in the `docker run` process on the target, which `--rm` removes.
 - The last line is scrubbed of phone numbers, addresses, URL queries and fragments and tokens. When the scrub cut
-  something — `admin invite`'s invitation link — the dialog offers **Show the full line once** for 15 minutes: the
+  something — a single-use link, say — the dialog offers **Show the full line once** for 15 minutes: the
   target deletes the line with that read, so copy it then.
 - Exit 0 succeeds; anything else fails the job with the exit and the last line. It reads as not applied (command
   failed): the environment still runs what it ran, and nothing needs reconciling.
