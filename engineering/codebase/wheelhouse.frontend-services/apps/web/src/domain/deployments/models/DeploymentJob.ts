@@ -1,7 +1,7 @@
 import type { JobStatus } from '../enums/JobStatus';
 import type { DeploymentStep } from './DeploymentStep';
 import type { PublishedSite } from './PublishedSite';
-import type { DeploymentOperation } from '../controls/ServiceControls';
+import type { ControlRun, DeploymentOperation } from '../controls/ServiceControls';
 import type { ServiceRollout } from '../history/ServiceRollout';
 
 /** One submitted deployment with its last observed outcome; reasons never carry values. */
@@ -26,6 +26,8 @@ export interface DeploymentJob {
   /** How the rollout treats each service so far: what it changes, its versions from and to, and how each fared;
    *  present once the target runner planned the rollout. */
   serviceRollout?: ServiceRollout | null;
-  /** Set when the submission is a control — a stop, start or restart of the release the target runs. */
+  /** Set when the submission is a control — a stop, start, restart, reset or run of the release the target runs. */
   operation?: DeploymentOperation | null;
+  /** How a run's command ended; set once a run finished, null for every other job. */
+  run?: ControlRun | null;
 }

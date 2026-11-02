@@ -57,6 +57,14 @@ public interface IDeploymentGateway
     Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set, string actor,
         string? reason, CancellationToken ct) =>
         Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("This runner cannot stop or start services.")));
+    /// <summary>Submits a control as <see cref="ControlAsync(string, string, string?, string?, string, string?, CancellationToken)"/>
+    /// does, a run (v0.13) with its <paramref name="command"/>, which reaches the runner on its standard input, never as an
+    /// argument. A gateway without runs refuses one.</summary>
+    Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set, string actor,
+        string? reason, IReadOnlyList<string>? command, CancellationToken ct) =>
+        command is null
+            ? ControlAsync(target, operation, service, set, actor, reason, ct)
+            : Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("This runner cannot run a command.")));
     /// <summary>Reads a branch's recent commits of a product, each with its build when one exists.</summary>
     Task<AppResult<JsonElement>> CommitsAsync(string product, string branch, CancellationToken ct);
     /// <summary>Reads the release bodies and compare commits between what a target runs and the release to promote.</summary>

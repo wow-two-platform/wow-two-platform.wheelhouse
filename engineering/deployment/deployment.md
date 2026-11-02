@@ -1139,6 +1139,26 @@ A `reason` names the refused rule, missing setting key, failed step or unhealthy
 The API returns it as ProblemDetails `detail`: `409` for a refused precondition, `503` for a failed step.
 A service's recent container output is readable on request through `logs`; Docker rotates it on the target.
 
+### One-off command
+
+A command a product's service runs once against its environment — a first owner's `admin create`, an `admin invite`
+— runs from the console in that service's running release image
+([architecture § Service controls](../architecture/architecture.md#service-controls)):
+
+1. **Products › the product › the environment › the service's menu › Run a command…** Type the command as one line
+   (`dotnet Identity.Api.dll admin create --slug ocharo --name Ocharo --display-name "…" --phone …`): whitespace
+   separates arguments, single or double quotes group them, nothing expands. Dev confirms once; prod asks for its
+   target ID typed and a reason.
+2. The job (`control --operation run --service <service>`, the command on stdin) runs it in a one-off container with the
+   service's rendered settings and mounts on the platform network, then the dialog shows the exit code and the last
+   output line.
+
+- The job, history and audit name the command by its label (`admin create --slug … --phone …`); the arguments are kept
+  nowhere. During the run they sit in the `docker run` process on the target, which `--rm` removes.
+- The last line is scrubbed of phone numbers, addresses, URL queries and fragments and tokens; a command whose result is
+  a secret link needs another path.
+- Exit 0 succeeds; anything else fails the job with the exit and the last line, and nothing needs reconciling.
+
 ## VPS wiring checklist
 
 1. Verify provider account, host architecture, capacity and cost in the wiring session.

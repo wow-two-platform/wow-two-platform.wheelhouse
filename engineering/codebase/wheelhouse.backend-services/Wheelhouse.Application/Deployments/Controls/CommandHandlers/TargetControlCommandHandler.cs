@@ -29,9 +29,12 @@ public sealed class TargetControlCommandHandler(
             return AppResult<JsonElement>.Fail(AppErrorFactory.NotFound($"Target '{request.Target}' was not found."));
         var product = await products.GetByIdAsync(target.ProductId, cancellationToken);
         if (product is not null && SelfTargets.IsSelf(product.Slug))
-            return AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(request.Operation == ControlOperation.Reset
-                ? $"{target.Slug} runs Wheelhouse itself; its database and migrations are never reset from the console."
-                : $"{target.Slug} runs Wheelhouse itself; its services are never stopped or restarted from the console."));
+            return AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(request.Operation switch
+            {
+                ControlOperation.Reset => $"{target.Slug} runs Wheelhouse itself; its database and migrations are never reset from the console.",
+                ControlOperation.Run => $"{target.Slug} runs Wheelhouse itself; its services never run a one-off from the console.",
+                _ => $"{target.Slug} runs Wheelhouse itself; its services are never stopped or restarted from the console.",
+            }));
 
         var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
         if (target.Environment == DeploymentEnvironment.Prod)
@@ -51,7 +54,8 @@ public sealed class TargetControlCommandHandler(
         }
 
         var result = await gateway.ControlAsync(
-            target.Slug, request.OperationName, request.Service, request.Set, request.Actor, reason, cancellationToken);
+            target.Slug, request.OperationName, request.Service, request.Set, request.Actor, reason, request.Command,
+            cancellationToken);
         if (result is not AppResult<JsonElement>.Failure { Error.Type: AppErrorType.Conflict })
             following.Wake();
         return result;

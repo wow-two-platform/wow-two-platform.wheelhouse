@@ -16,7 +16,7 @@ export interface ServiceActionsProps {
 </script>
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { Eye, EyeOff, Ellipsis, Pause, Play, RotateCw } from "lucide-vue-next";
+import { Eye, EyeOff, Ellipsis, Pause, Play, RotateCw, SquareTerminal } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, MenuItem } from "@wow-two-beta/fe/presentation/nav";
 import { useProducts } from "@/application/products";
@@ -26,20 +26,19 @@ import { ProductStatus, ProductStatusRules } from "@/domain/products";
 import ControlConfirmModal from "@/presentation/deployments/components/ControlConfirmModal.vue";
 
 /**
- * A service's menu: stop, start or restart it in the environment shown (never on Wheelhouse itself), and mark it
- * inactive, which hides it until "Show inactive" is on, or active again. A control asks for confirmation first; the
- * status change shows at once and rolls back if the host refuses it. Services are not pinned; their product is.
+ * A service's menu: stop, start or restart it in the environment shown, or run a one-off command in a container of its
+ * running release, stopped or not (never on Wheelhouse itself), and mark it inactive, which hides it until "Show
+ * inactive" is on, or active again. A control asks for confirmation first; the status change shows at once and rolls
+ * back if the host refuses it. Services are not pinned; their product is.
  */
 defineOptions({ name: "ServiceActions" });
 const props = defineProps<ServiceActionsProps>();
 defineSlots<{}>();
 const products = useProducts();
 const active = computed(() => ProductStatusRules.isServiceActive(props.product, props.service));
-const controls = computed(() =>
-  props.target && ServiceControls.offers(props.target.product, SelfProduct)
-    ? ServiceControls.forService(props.stopped, props.service)
-    : [],
-);
+/** Whether the environment shown takes controls on its services. */
+const offered = computed(() => ServiceControls.offers(props.target?.product, SelfProduct));
+const controls = computed(() => (offered.value ? ServiceControls.forService(props.stopped, props.service) : []));
 const request = ref<ControlRequest | null>(null);
 const confirming = ref(false);
 
@@ -75,6 +74,9 @@ function ask(operation: ControlOperation): void {
           ><Play v-if="operation === ControlOperation.Start" :size="15" /><RotateCw
             v-else-if="operation === ControlOperation.Restart"
             :size="15" /><Pause v-else :size="15" />{{ ServiceControls.verb(operation) }}</MenuItem
+        >
+        <MenuItem v-if="offered" @select="ask(ControlOperation.Run)"
+          ><SquareTerminal :size="15" />Run a command…</MenuItem
         >
         <MenuItem v-if="active" @select="setActive(false)"><EyeOff :size="15" />Mark inactive</MenuItem>
         <MenuItem v-else @select="setActive(true)"><Eye :size="15" />Mark active</MenuItem>

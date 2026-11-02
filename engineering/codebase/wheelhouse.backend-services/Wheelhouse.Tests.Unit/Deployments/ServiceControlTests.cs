@@ -47,6 +47,45 @@ public sealed class ServiceControlTests : IDisposable
     }
 
     [Fact]
+    public async Task ControlAsync_ShouldSendARunsCommandOnStdin_NeverAsAnArgument()
+    {
+        var transport = Path.Combine(_root, "transport.py");
+        File.WriteAllText(transport, "import json, sys\nprint(json.dumps({'argv': sys.argv[1:], 'stdin': sys.stdin.read()}))\n");
+        var gateway = new DeploymentGateway(RunnerProcessClients.Create(), new DeploymentSettings() with { TransportPath = transport, Root = _root });
+        string[] command = ["dotnet", "Identity.Api.dll", "admin", "create", "--phone", "+998901234567"];
+
+        var data = (await gateway.ControlAsync("ocharo-dev", "run", "identity", null, "max", null, command, CancellationToken.None))
+            .Should().BeOfType<AppResult<JsonElement>.Success>().Subject.Data;
+
+        data.GetProperty("argv").EnumerateArray().Select(item => item.GetString()!).TakeWhile(item => item != "--root")
+            .Should().Equal("control", "--target", "ocharo-dev", "--operation", "run", "--actor", "max", "--service", "identity",
+                "--stdin");
+        JsonDocument.Parse(data.GetProperty("stdin").GetString()!).RootElement.GetProperty("command").EnumerateArray()
+            .Select(item => item.GetString()).Should().Equal(command);
+    }
+
+    [Fact]
+    public void Run_ShouldNameOneServiceAndACommand_AndAuditOnlyItsLabel()
+    {
+        var validator = new TargetControlCommandValidator();
+        string[] command = ["dotnet", "Identity.Api.dll", "admin", "create", "--slug", "ocharo", "--display-name", "Lola Karimova",
+            "--phone=+998901234567"];
+        var run = new TargetControlCommand("ocharo-prod", ControlOperation.Run, "identity", "max", "first owner", Command: command);
+        validator.Validate(run).IsValid.Should().BeTrue();
+        (run.OperationName, run.AuditAction, run.AuditSubject, run.AuditDetail).Should().Be(("run", "service.run",
+            "ocharo-prod/identity",
+            "command: dotnet Identity.Api.dll admin create --slug … --display-name … --phone=…; reason: first owner"));
+        (run with { Reason = null }).AuditDetail.Should().Be("command: dotnet Identity.Api.dll admin create --slug … --display-name … --phone=…");
+
+        validator.Validate(run with { Service = null }).Errors.Should().ContainSingle(error => error.ErrorMessage == "Run a command in one service.");
+        foreach (var bad in new IReadOnlyList<string>?[] { null, [], ["a\nb"], [new string('x', 501)], [.. Enumerable.Repeat("x", 41)] })
+            validator.Validate(run with { Command = bad }).Errors.Should().ContainSingle(error => error.ErrorMessage.StartsWith("A run takes its command")
+                && !error.ErrorMessage.Contains("+998"));
+        validator.Validate(new TargetControlCommand("ocharo-dev", ControlOperation.Restart, "identity", "max", Command: command)).Errors
+            .Should().ContainSingle(error => error.ErrorMessage == "Only a run takes a command.");
+    }
+
+    [Fact]
     public void SetReset_ShouldNameOneSet_OnlyOnAReset_AndAuditAsAMigrationSetReset()
     {
         var validator = new TargetControlCommandValidator();

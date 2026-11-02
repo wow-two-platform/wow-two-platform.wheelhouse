@@ -54,11 +54,22 @@ export const TargetStopSchema = z.object({
   at: z.string().nullish(),
   actor: z.string().nullish(),
 });
-/** A control — a stop, start, restart or reset — as its record names it; a set reset names its migration set. */
+/** A control — a stop, start, restart, reset or run — as its record names it; a set reset names its migration set, and
+ * a run its command as a masked label. */
 export const DeploymentOperationSchema = z.object({
   kind: z.enum(ControlOperation),
   services: z.array(z.string()).default([]),
   set: z.string().nullish(),
+  command: z.string().nullish(),
+});
+/** What a run kept on its job: how its command ended, with the exit code and the last output line. */
+export const ControlRunSchema = z.object({
+  service: z.string(),
+  command: z.string(),
+  status: z.enum(["succeeded", "failed", "timed out"]),
+  exitCode: z.number().int().nullable(),
+  seconds: z.number(),
+  lastLine: z.string().nullable(),
 });
 /** What a control queued: its submission and the release it acts on. */
 export const ControlSubmittedSchema = z.object({
@@ -108,6 +119,8 @@ export const DeploymentJobSchema = z.object({
   // The runner's record carries it once the rollout is planned; a malformed one never fails the outcome read.
   serviceRollout: ServiceRolloutSchema.nullish().catch(null),
   operation: DeploymentOperationSchema.nullish().catch(null),
+  // A run's job carries how its command ended; a malformed one never fails the outcome read.
+  run: ControlRunSchema.nullish().catch(null),
 });
 export const DeploymentTargetSchema = z.object({
   id: z.string(),

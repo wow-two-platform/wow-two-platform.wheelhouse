@@ -208,7 +208,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Ability to open a product's Identity console from Wheelhouse | feature | Needed before Ocharo's Desk cutover (Ocharo 2026-11-01, after Identity v0.4): run `admin create` once per environment like `migrate`, creating the first owner with preset ids (org `ocharo` with Desk's organization uuid, the owner's `sub` set to Desk's user id); Ocharo sends the ids. Identity proposal 2026-11-01, its build step 6: run `admin create --email <address> --role admin` or `admin sign-in-link --email <address>` on demand in a one-off container; the last line `admin-result` carries a 15-minute link with the token in the fragment. No standing management key |
+| Ability to open a product's Identity console from Wheelhouse | feature | Identity proposal 2026-11-01, its build step 6: `admin sign-in-link --email <address>` in a one-off container, whose last line carries a 15-minute link with the token in the fragment. v0.13's one-off runs it, but its job keeps the line scrubbed, so the link needs a reveal-once read; waits on the cutover's OQ-1 (admin sign-in). No standing management key. `admin create` for a first owner ships with v0.13 |
 | Audit every MCP tool call | feature | [MCP review](../research/mcp-review.md): key, tool, target, outcome and duration; required before any write tool |
 | Limit MCP concurrency and rate per key | feature | Each runner tool spawns Python and SSH for up to 110 s; cap 2–4 concurrent calls |
 | Ability to expire integration keys and see them near expiry | feature | Keys live until revoked today; default 90 days |

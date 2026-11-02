@@ -7,7 +7,7 @@ PENDING = {"submitting", "queued", "running"}
 # One observation's fields the detail page shows; SSH details and remote paths never leave the control host.
 OBSERVED = ("status", "reason", "failure", "startedAt", "completedAt", "mutationStarted", "steps", "sites",
             "warnings", "versions", "reconciledBy", "snapshot", "serviceRollout", "verification", "migrations",
-            "configChecks")
+            "configChecks", "run")
 
 
 def bundle_facts(root, bundle_id):

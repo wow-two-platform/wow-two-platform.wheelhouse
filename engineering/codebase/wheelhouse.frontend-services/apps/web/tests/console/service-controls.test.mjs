@@ -8,14 +8,15 @@ import { container, target } from "./LoadModule.mjs";
 const {
   ControlOperation, ServiceControls, EnvironmentPillRules, PillState, EnvironmentHealth, EnvironmentHealthRules,
   AttentionRules, describeServiceObservation, TargetStateSchema, DeploymentItemSchema, PortfolioSummarySchema,
-  ControlSubmittedSchema,
+  ControlSubmittedSchema, DeploymentJobSchema, CommandLine, deploymentsApi,
 } = await bundleModule(`
-  export { ControlOperation, ServiceControls } from './src/domain/deployments/controls';
+  export { CommandLine, ControlOperation, ServiceControls } from './src/domain/deployments/controls';
+  export { deploymentsApi } from './src/integration/deployments';
   export { EnvironmentPillRules, PillState } from './src/domain/portfolio/EnvironmentPill';
   export { EnvironmentHealth, EnvironmentHealthRules } from './src/domain/overview/EnvironmentHealth';
   export { AttentionRules } from './src/domain/overview/AttentionRules';
   export { describeServiceObservation } from './src/presentation/product/serviceMap/ServiceObservation';
-  export { ControlSubmittedSchema, TargetStateSchema } from './src/integration/deployments/schemas';
+  export { ControlSubmittedSchema, DeploymentJobSchema, TargetStateSchema } from './src/integration/deployments/schemas';
   export { DeploymentItemSchema } from './src/integration/deployments/historySchemas';
   export { PortfolioSummarySchema } from './src/integration/portfolio/schemas';
 `);
@@ -130,4 +131,128 @@ test("a queued control reads back as the job its dialog follows to the end", () 
   const queued = ControlSubmittedSchema.parse({ id: "c1", targetId: "wheelhousecanary-dev", status: "queued",
     operation: { kind: "restart", services: ["canary"] }, release: "v1.0.0" });
   assert.deepEqual([queued.id, queued.status, queued.operation.services], ["c1", "queued", ["canary"]]);
+});
+
+const identity = { id: "ocharo-dev", environment: "dev", product: "ocharo" };
+const masked = "dotnet Identity.Api.dll admin create --slug … --name …";
+
+test("a run reads by the words of its masked command, never by its arguments", () => {
+  assert.equal(ControlOperation.Run, "run");
+  assert.equal(ServiceControls.verb(ControlOperation.Run), "Run");
+  assert.equal(ServiceControls.commandWords(masked), "admin create");
+  assert.equal(ServiceControls.commandWords("python manage.py migrate"), "python manage.py migrate");
+  assert.equal(ServiceControls.commandWords("sh -c …"), "sh");
+  assert.equal(ServiceControls.commandWords("dotnet Identity.Api.dll --version"), "a command");
+  assert.equal(ServiceControls.commandWords("--slug …"), "a command");
+  assert.equal(ServiceControls.commandWords(null), "a command");
+  assert.equal(ServiceControls.commandWords(""), "a command");
+  assert.equal(ServiceControls.label(ControlOperation.Run, "identity", null, masked), "Run admin create on identity");
+  assert.equal(ServiceControls.labelOf({ kind: "run", services: ["identity"], command: masked }), "Run admin create on identity");
+  assert.equal(ServiceControls.labelOf({ kind: "run", services: ["identity"] }), "Run a command on identity");
+  assert.equal(ServiceControls.labelOf({ kind: "run", services: ["identity"], command: null }), "Run a command on identity");
+  // The confirmation has only the typed arguments, which never name it.
+  const request = { target: identity, operation: ControlOperation.Run, service: "identity",
+    command: ["dotnet", "Identity.Api.dll", "admin", "create", "--slug", "secret-slug"] };
+  assert.equal(ServiceControls.labelOfRequest(request), "Run a command on identity");
+  assert.equal(ServiceControls.titleOf(request), "Run a command in identity on ocharo-dev?");
+  assert.equal(ServiceControls.titleOf({ target: dev, operation: ControlOperation.Stop, service: "management" }),
+    "Stop management on foreverpin-dev?");
+});
+
+test("a run says where it runs, what stays running and what the job keeps", () => {
+  const consequence = ServiceControls.consequence({ target: identity, operation: ControlOperation.Run, service: "identity" });
+  assert.match(consequence, /^The command runs once in a one-off container of identity's running release/);
+  assert.match(consequence, /settings and database network on ocharo-dev/);
+  assert.match(consequence, /services keep running and nothing stopped changes/);
+  assert.match(consequence, /exit code and the last output line stay on the job; the arguments do not/);
+  assert.equal(ServiceControls.isGuarded({ ...identity, environment: "prod" }), true, "prod's run asks for its target ID and a reason");
+  assert.deepEqual(ServiceControls.forService({ environment: false, services: ["identity"] }, "identity"), [ControlOperation.Start],
+    "the service menu adds the run beside these, never inside them");
+});
+
+test("a finished run reads in one line", () => {
+  const run = { service: "identity", command: masked, status: "succeeded", exitCode: 0, seconds: 3.4, lastLine: "Created ocharo" };
+  assert.equal(ServiceControls.runResult(run), "Exited with code 0 in 3s");
+  assert.equal(ServiceControls.runResult({ ...run, status: "failed", exitCode: 2, seconds: 125 }), "Exited with code 2 in 2m 5s");
+  assert.equal(ServiceControls.runResult({ ...run, status: "timed out", exitCode: null, seconds: 120 }), "Timed out after 2m");
+  assert.equal(ServiceControls.runResult({ ...run, status: "failed", exitCode: null, seconds: 1 }), "Ended without an exit code in 1s");
+});
+
+test("a typed command line splits into arguments the way a shell would, without expanding anything", () => {
+  const args = (text) => {
+    const split = CommandLine.split(text);
+    assert.equal(split.ok, true, text);
+    return split.args;
+  };
+  const error = (text) => {
+    const split = CommandLine.split(text);
+    assert.equal(split.ok, false, text);
+    return split.error;
+  };
+  assert.deepEqual(args("dotnet Identity.Api.dll admin create --slug ocharo"),
+    ["dotnet", "Identity.Api.dll", "admin", "create", "--slug", "ocharo"]);
+  assert.deepEqual(args("  a \t b\t\tc  "), ["a", "b", "c"], "any whitespace separates, and the ends are free");
+  assert.deepEqual(args(`create --name "Ocharo Studio" --note 'it is "fine"'`),
+    ["create", "--name", "Ocharo Studio", "--note", 'it is "fine"']);
+  assert.deepEqual(args(`--name="Ocharo Studio"`), ["--name=Ocharo Studio"], "quoted and bare parts join into one argument");
+  assert.deepEqual(args(`a"b c"d 'e f'g`), ["ab cd", "e fg"]);
+  assert.deepEqual(args("echo $HOME ~ * ${X} `id` \\n"), ["echo", "$HOME", "~", "*", "${X}", "`id`", "\\n"],
+    "no variables, globs or escapes: a backslash is an ordinary character");
+  assert.deepEqual(args("'  ' x"), ["  ", "x"], "a quoted space is an argument of its own");
+  assert.deepEqual(args(""), []);
+  assert.deepEqual(args("   "), []);
+  assert.match(error(`create --name "Ocharo`), /The " quote is never closed/);
+  assert.match(error("create --name 'Ocharo"), /The ' quote is never closed/);
+  assert.match(error(`a "" b`), /cannot be empty/);
+  assert.match(error('a "x\ny"'), /line break/);
+  assert.deepEqual(args("a\nb"), ["a", "b"], "a line break outside quotes only separates");
+  assert.equal(args(Array.from({ length: 40 }, (_, index) => `a${index}`).join(" ")).length, 40);
+  assert.match(error(Array.from({ length: 41 }, (_, index) => `a${index}`).join(" ")), /at most 40 arguments; this has 41/);
+  assert.equal(args("x".repeat(500)).length, 1);
+  assert.match(error("x".repeat(501)), /longer than 500 characters/);
+});
+
+test("the wire carries a run's command label and how it ended, and tolerates a run it cannot read", () => {
+  const queued = ControlSubmittedSchema.parse({ id: "r9", targetId: "ocharo-dev", status: "queued",
+    operation: { kind: "run", services: ["identity"], command: masked }, release: "v1.0.0" });
+  assert.deepEqual([queued.operation.kind, queued.operation.command], ["run", masked]);
+  assert.equal(ControlSubmittedSchema.parse({ ...queued, operation: { kind: "stop", services: [] } }).operation.command, undefined);
+  const item = DeploymentItemSchema.parse({ id: "r9", status: "succeeded", outcome: "succeeded", state: "succeeded",
+    attention: "none", submittedAt: "2026-11-02T10:00:00Z", operation: { kind: "run", services: ["identity"], command: masked } });
+  assert.equal(ServiceControls.labelOf(item.operation), "Run admin create on identity");
+  const run = { service: "identity", command: masked, status: "timed out", exitCode: null, seconds: 120.5, lastLine: null };
+  const job = DeploymentJobSchema.parse({ id: "r9", status: "failed", operation: queued.operation, run });
+  assert.deepEqual(job.run, run);
+  assert.equal(DeploymentJobSchema.parse({ id: "d1", status: "succeeded" }).run, undefined, "a deploy has no run");
+  assert.equal(DeploymentJobSchema.parse({ id: "r9", status: "succeeded", run: { status: "exploded" } }).run, null,
+    "a run this console cannot read never fails the outcome read");
+  assert.equal(DeploymentJobSchema.parse({ id: "r9", status: "succeeded", run: null }).run, null);
+});
+
+test("a run sends its split command, and no other control does", async () => {
+  const bodies = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    bodies.push([url, options.headers.get("X-Wheelhouse-Action"), JSON.parse(options.body)]);
+    return new Response(JSON.stringify({ data: { id: "r9", targetId: "ocharo-prod", status: "queued",
+      operation: { kind: "run", services: ["identity"], command: masked } } }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const command = ["dotnet", "Identity.Api.dll", "admin", "create", "--name", "Ocharo Studio"];
+    const run = await deploymentsApi.control("ocharo-prod", { operation: "run", service: "identity", command,
+      reason: " first admin ", confirm: "ocharo-prod" });
+    assert.equal(run.ok, true);
+    await deploymentsApi.control("ocharo-dev", { operation: "restart", service: "identity", command: [] });
+    await deploymentsApi.control("ocharo-dev", { operation: "stop", service: "identity", command: null });
+    assert.deepEqual(bodies.map(([url, action]) => [url, action]), [
+      ["/api/deployments/targets/ocharo-prod/controls", "control"],
+      ["/api/deployments/targets/ocharo-dev/controls", "control"],
+      ["/api/deployments/targets/ocharo-dev/controls", "control"],
+    ]);
+    assert.deepEqual(bodies[0][2], { operation: "run", service: "identity", command, reason: "first admin", confirm: "ocharo-prod" });
+    assert.deepEqual(bodies[1][2], { operation: "restart", service: "identity" });
+    assert.deepEqual(bodies[2][2], { operation: "stop", service: "identity" });
+  } finally {
+    globalThis.fetch = original;
+  }
 });

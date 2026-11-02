@@ -18,4 +18,9 @@ public enum ControlOperation
     /// starts the services (v0.9). Naming a migration set instead rolls only that set back to 0 with the running release's
     /// own scripts and stops only the service hosting it; the rest of the database keeps its data.</summary>
     Reset = 3,
+
+    /// <summary>Runs the owner's command once in a one-off container of one service's running release image, with the
+    /// service's settings, mounts and the platform network (v0.13), such as a first owner's <c>admin create</c>; nothing
+    /// stops, and the job keeps the exit code and the last output line, never the arguments.</summary>
+    Run = 4,
 }

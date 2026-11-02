@@ -214,6 +214,17 @@ promotion replace them), as is a target a running fleet has yet to promote (409)
   container built as the migrate step builds its item; that set alone at level 0 in `migrations.json`. The next deploy's
   migrate step builds it and starts the service. Each set's row on the Migrations panel offers it
   ([deployment § One migration set](../deployment/deployment.md#one-migration-set)).
+- **Run (v0.13).** `run` executes the owner's command once in a one-off container of one service's running release
+  image, built as a migrate item's (`--pull never`, the command's first word as entrypoint, the service's environment,
+  rendered settings file and mounts as declared, its memory, the platform network, every capability dropped, the
+  image's user, never the migrate key). The command (1-40 arguments, each one line of at most 500 characters) travels
+  API → transport → target worker on stdin only. The job, history and audit (`service.run`, subject
+  `{target}/{service}`, the same prod guard) keep its label — leading words and option names, every value `…` — never an
+  argument. The job's `run` keeps the exit code, seconds and the last stdout line with phone numbers, long digit runs,
+  addresses' local parts, URL queries and fragments, token-like runs and password pairs cut out; uuids stay. Exit 0
+  succeeds; any other exit, a timeout (600 s) or a container Docker cannot start fails it. Nothing stops, nothing
+  stopped changes, and it runs whatever is stopped; never on Wheelhouse's own
+  ([deployment § One-off command](../deployment/deployment.md#one-off-command)).
 
 ## Settings at deploy
 

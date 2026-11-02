@@ -5,8 +5,12 @@
  * (v0.9) snapshots the environment's database, drops and creates it again empty, and leaves every service stopped for
  * the next deploy, whose migrate step builds the schema and starts them. A set reset rolls one migration set back to 0
  * with the running release's own scripts instead, and stops only the service hosting it; the next deploy builds the
- * set again and starts it.
+ * set again and starts it. A run executes one command once in a one-off container of a service's running release, with
+ * the service's settings and database network; every service keeps running and nothing stopped changes. Its job keeps
+ * the command as a masked label, the exit code and the last output line, never the arguments.
  */
+
+import { Measures } from '@/domain/common/Measures';
 
 /** What a control does. */
 export const ControlOperation = {
@@ -14,15 +18,32 @@ export const ControlOperation = {
   Start: 'start',
   Restart: 'restart',
   Reset: 'reset',
+  Run: 'run',
 } as const;
 export type ControlOperation = (typeof ControlOperation)[keyof typeof ControlOperation];
 
 /** A control as the history records it: its kind and the service it named, none for the whole environment; a set
- * reset also names its migration set. */
+ * reset also names its migration set, and a run its command as a masked label (`dotnet Identity.Api.dll admin create
+ * --slug …`) — the arguments never come back. */
 export interface DeploymentOperation {
   kind: ControlOperation;
   services: string[];
   set?: string | null | undefined;
+  command?: string | null | undefined;
+}
+
+/** How a run's command ended: it exited 0, it exited otherwise or never started, or it outran its time limit. */
+export type ControlRunStatus = 'succeeded' | 'failed' | 'timed out';
+
+/** What a run kept on its job: the service it ran in, its command as a masked label, how it ended, its exit code (none
+ * when it never exited), how many seconds it took and its last output line, already scrubbed by the target. */
+export interface ControlRun {
+  service: string;
+  command: string;
+  status: ControlRunStatus;
+  exitCode: number | null;
+  seconds: number;
+  lastLine: string | null;
 }
 
 /** A control the target queued: its submission, which the history and outcome reads follow. */
@@ -56,12 +77,13 @@ export interface ControlSet {
 }
 
 /** One control the owner asks for: what, on which environment, and which service (none for the environment); a reset
- * of one migration set names it. */
+ * of one migration set names it, and a run carries the arguments of its command, already split. */
 export interface ControlRequest {
   readonly target: ControlTarget;
   readonly operation: ControlOperation;
   readonly service: string | null;
   readonly set?: ControlSet | null;
+  readonly command?: readonly string[] | null;
 }
 
 /** Pure rules for what a control may do and how it reads. */
@@ -94,21 +116,53 @@ export const ServiceControls = {
   isGuarded: (target: ControlTarget): boolean => target.environment === 'prod',
 
   /** A control's name: `Stop management`, `Start the environment`, `Reset the database`, `Reset the identity
-   * migrations`. */
-  label: (operation: ControlOperation, service: string | null, set?: string | null): string =>
+   * migrations`, `Run admin create on identity`; a run without its label reads `Run a command on identity`. */
+  label: (operation: ControlOperation, service: string | null, set?: string | null, command?: string | null): string =>
     operation === ControlOperation.Reset
       ? set
         ? `Reset the ${set} migrations`
         : 'Reset the database'
-      : `${ServiceControls.verb(operation)} ${service ?? 'the environment'}`,
+      : operation === ControlOperation.Run
+        ? `Run ${ServiceControls.commandWords(command)} on ${service ?? 'a service'}`
+        : `${ServiceControls.verb(operation)} ${service ?? 'the environment'}`,
 
   /** A recorded control's name, as lists show it. */
   labelOf: (operation: DeploymentOperation): string =>
-    ServiceControls.label(operation.kind, operation.services.length ? operation.services.join(', ') : null, operation.set),
+    ServiceControls.label(
+      operation.kind,
+      operation.services.length ? operation.services.join(', ') : null,
+      operation.set,
+      operation.command,
+    ),
 
-  /** A request's name, as its confirmation titles it. */
+  /** A request's name; a run's arguments never name it, only its recorded label does. */
   labelOfRequest: (request: ControlRequest): string =>
     ServiceControls.label(request.operation, request.service, request.set?.name),
+
+  /** A request's confirmation question: `Stop management on foreverpin-dev?`, `Run a command in identity on
+   * ocharo-prod?`. */
+  titleOf: (request: ControlRequest): string =>
+    request.operation === ControlOperation.Run
+      ? `Run a command in ${request.service ?? 'a service'} on ${request.target.id}?`
+      : `${ServiceControls.labelOfRequest(request)} on ${request.target.id}?`,
+
+  /** The words a masked command label names its run by: what it runs before its first option, without the `dotnet
+   * X.dll` launcher — `dotnet Identity.Api.dll admin create --slug …` reads `admin create`; none reads `a command`. */
+  commandWords: (command: string | null | undefined): string => {
+    const words = (command ?? '').split(/\s+/).filter(Boolean);
+    const option = words.findIndex((word) => word.startsWith('-'));
+    const lead = option < 0 ? words : words.slice(0, option);
+    const named = lead[0] === 'dotnet' && lead[1]?.toLowerCase().endsWith('.dll') ? lead.slice(2) : lead;
+    return named.join(' ') || 'a command';
+  },
+
+  /** How a run ended, in one line: `Exited with code 0 in 3s`, `Timed out after 2m 0s`. */
+  runResult: (run: ControlRun): string =>
+    run.status === 'timed out'
+      ? `Timed out after ${Measures.duration(run.seconds)}`
+      : run.exitCode === null
+        ? `Ended without an exit code in ${Measures.duration(run.seconds)}`
+        : `Exited with code ${run.exitCode} in ${Measures.duration(run.seconds)}`,
 
   /** An operation's verb, capitalised. */
   verb: (operation: ControlOperation): string =>
@@ -118,7 +172,9 @@ export const ServiceControls = {
         ? 'Start'
         : operation === ControlOperation.Reset
           ? 'Reset'
-          : 'Restart',
+          : operation === ControlOperation.Run
+            ? 'Run'
+            : 'Restart',
 
   /** What a stopped environment's state reads: `Stopped`, or `management stopped`. */
   stateLabel: (stop: TargetStop): string =>
@@ -135,6 +191,10 @@ export const ServiceControls = {
     if (request.operation === ControlOperation.Reset)
       return `${subject}'s database is snapshotted, then dropped and created again, empty. Every service stops until the `
         + "next deploy's migrate step builds the schema and starts them; the snapshot stays on the target.";
+    if (request.operation === ControlOperation.Run)
+      return `The command runs once in a one-off container of ${subject}'s running release, with its settings and `
+        + `database network on ${request.target.id}. The services keep running and nothing stopped changes. The exit `
+        + 'code and the last output line stay on the job; the arguments do not.';
     if (request.operation === ControlOperation.Restart)
       return `${subject} stops and starts again on the release it runs.`;
     if (request.operation === ControlOperation.Start)

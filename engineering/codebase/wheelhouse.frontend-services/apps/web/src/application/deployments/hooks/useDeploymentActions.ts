@@ -69,8 +69,9 @@ export function useStartDeployment() {
   });
 }
 
-/** Stops, starts or restarts the release a target runs — `service`, or the whole environment without one; the job is
- * followed like a deploy. Prod needs `confirm` (its target ID, typed) and a `reason`. */
+/** Stops, starts or restarts the release a target runs — `service`, or the whole environment without one; a run
+ * executes `command`, its split arguments, once in a one-off container of `service`'s release. The job is followed like
+ * a deploy. Prod needs `confirm` (its target ID, typed) and a `reason`. */
 export function useTargetControl() {
   const invalidate = useInvalidate();
   const mutation = useAppMutation({
@@ -80,6 +81,7 @@ export function useTargetControl() {
         operation,
         service,
         set,
+        command,
         reason,
         confirm,
       }: {
@@ -87,11 +89,12 @@ export function useTargetControl() {
         operation: ControlOperation;
         service?: string | null | undefined;
         set?: string | null | undefined;
+        command?: readonly string[] | null | undefined;
         reason?: string | undefined;
         confirm?: string | undefined;
       },
       { signal },
-    ) => deploymentsApi.control(target, { operation, service, set, reason, confirm }, signal),
+    ) => deploymentsApi.control(target, { operation, service, set, command, reason, confirm }, signal),
     invalidates: ({ target }) => refreshed(target),
     meta: { suppressGlobalError: true },
   });

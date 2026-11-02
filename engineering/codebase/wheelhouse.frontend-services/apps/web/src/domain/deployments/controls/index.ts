@@ -1,7 +1,10 @@
+export { CommandLine, type CommandSplit } from './CommandLine';
 export {
   ControlOperation,
   ServiceControls,
   type ControlRequest,
+  type ControlRun,
+  type ControlRunStatus,
   type ControlSet,
   type ControlTarget,
   type DeploymentOperation,

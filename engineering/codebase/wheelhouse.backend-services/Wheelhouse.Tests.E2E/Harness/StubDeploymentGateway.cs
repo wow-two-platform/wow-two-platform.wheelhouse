@@ -277,12 +277,21 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
     /// <summary>When set, the next controls fail with this runner refusal, as a target whose state forbids it would.</summary>
     public string? ControlRefusal { get; set; }
 
+    /// <summary>Every run's command, in submission order.</summary>
+    public List<IReadOnlyList<string>> Commands { get; } = [];
+
     public Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set, string actor,
-        string? reason, CancellationToken ct)
+        string? reason, CancellationToken ct) =>
+        ControlAsync(target, operation, service, set, actor, reason, null, ct);
+
+    public Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set, string actor,
+        string? reason, IReadOnlyList<string>? command, CancellationToken ct)
     {
         Controls.Add((target, operation, service, actor, reason, set));
+        if (command is not null)
+            Commands.Add(command);
         if (Runner is not null)
-            return Runner.ControlAsync(target, operation, service, set, actor, reason, ct);
+            return Runner.ControlAsync(target, operation, service, set, actor, reason, command, ct);
         if (ControlRefusal is not null)
             return Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(ControlRefusal)));
         return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new

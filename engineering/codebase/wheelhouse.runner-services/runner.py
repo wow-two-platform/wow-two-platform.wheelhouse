@@ -131,8 +131,9 @@ VERIFY_SUMMARY_LIMIT = 300
 # same release, never pulling or recreating; a restart is one service's stop and start. A reset (v0.9) drops and
 # recreates the environment's database and leaves its services stopped for the next deploy's migrate step to rebuild;
 # a set reset (`--set`) rolls one migration set back to 0 with the running release's own scripts instead, and stops only
-# the service that hosts it.
-OPERATIONS = ("stop", "start", "restart", "reset")
+# the service that hosts it. A run (v0.13) runs the owner's command once in a one-off container of one service's running
+# release image; nothing stops and nothing stopped changes.
+OPERATIONS = ("stop", "start", "restart", "reset", "run")
 STOPPED = "stopped.json"
 # A database and its owner the reset names in SQL: plain lowercase identifiers only, so quoting can never break.
 IDENTIFIER = re.compile(r"[a-z_][a-z0-9_]{0,62}")
@@ -182,6 +183,24 @@ FINDINGS_LIMIT = 50
 # What a reset left stopped until the next deploy, beside current.json: never `stopped.json`, which would refuse that
 # deploy, so a look after a rollout reads these services as resting rather than exited.
 RESTING = "resting.json"
+# One-off commands (v0.13): the owner's command, run once in a container of a service's running release image built as
+# a migrate item's, with the service's settings, mounts and the platform network (a first owner's `admin create`). The
+# longest it may run, how many arguments it takes and how long each, and how much of its last stdout line the job keeps.
+RUN_TIMEOUT = 600
+RUN_ARGUMENTS_LIMIT = 40
+RUN_ARGUMENT_LENGTH = 500
+RUN_LINE_LIMIT = 500
+# A one-off command's label keeps its leading words that read as a program, a file or a verb, and each option's name;
+# every value, and every word after the first that reads as none of these, reads as `…`.
+RUN_WORD = re.compile(r"[A-Za-z][A-Za-z0-9._/-]{0,63}")
+RUN_OPTION = re.compile(r"--?[A-Za-z][A-Za-z0-9-]{0,63}")
+# What a one-off's last line never keeps: an identifier (uuid) stays; a phone number or another long run of digits, an
+# email address's local part, a URL's query and fragment and a token-like run of characters are cut out.
+RUN_UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+RUN_PHONE = re.compile(r"\+\d[\d ()-]{5,}\d|\d{8,}")
+RUN_EMAIL = re.compile(r"[^\s\"'<>@,;:()\[\]]+@(?=[A-Za-z0-9-]+\.)")
+RUN_URL_TAIL = re.compile(r"(https?://[^\s\"'?#]*)[?#][^\s\"']*")
+RUN_TOKEN = re.compile(r"[A-Za-z0-9_+/=-]{32,}")
 
 
 class Rejected(ValueError):
@@ -1953,9 +1972,16 @@ class Docker:
         discarded unread: a note there may quote what a setting holds."""
         return self.result_run(arguments, {}, timeout, container, CONFIG_RESULT)
 
+    def one_off(self, arguments, timeout, container):
+        """Runs the owner's one-off container with no variable passed into it. Returns its exit code and its last nonblank
+        stdout line (None when it printed none), unscrubbed: the caller scrubs it before anything keeps it; a run past
+        `timeout` stops and removes `container` and returns None for the code. stderr is discarded unread."""
+        return self.result_run(arguments, {}, timeout, container, None)
+
     def result_run(self, arguments, variables, timeout, container, prefix):
         """A one-off container whose verb prints its result line last: its exit code and the last stdout line that
-        starts with `prefix`, or None for the code past `timeout`, when the container is stopped and removed."""
+        starts with `prefix` (with no prefix, the last nonblank one), or None for the code past `timeout`, when the
+        container is stopped and removed."""
         try:
             result = subprocess.run(arguments, env={**self.environment, **variables}, stdout=subprocess.PIPE,
                                     stderr=subprocess.DEVNULL, text=True, errors="replace", timeout=timeout)
@@ -1965,7 +1991,8 @@ class Docker:
                     subprocess.run(command, env=self.environment, capture_output=True, timeout=60)
             return None, None
         output = (result.stdout or "")[-MIGRATE_OUTPUT_LIMIT:]
-        line = next((line.strip() for line in reversed(output.splitlines()) if line.startswith(prefix)), None)
+        line = next((line.strip() for line in reversed(output.splitlines())
+                     if (line.startswith(prefix) if prefix is not None else line.strip())), None)
         return result.returncode, line
 
     def health_timeout(self):
@@ -3298,9 +3325,11 @@ def write_resting(base, services, job_id=None):
     return sorted(set(services))
 
 
-def control_label(operation, services, set_name=None):
+def control_label(operation, services, set_name=None, command=None):
     """A control's one-line name, as its step and history read it: `Stop management`, `Start the environment`,
-    `Reset the database`, `Reset the identity migrations`."""
+    `Reset the database`, `Reset the identity migrations`, `Run admin create on identity`."""
+    if operation == "run":
+        return "Run " + (run_verb(command) or "a command") + " on " + ", ".join(services)
     if operation == "reset":
         return "Reset the " + set_name + " migrations" if set_name else "Reset the database"
     return operation.capitalize() + " " + (", ".join(services) if services else "the environment")
@@ -3310,12 +3339,14 @@ def control_plan(base, operation, services, set_name=None):
     """Checks one control against the target as it is and returns the release it acts on (`current.json`), its bundle
     folder and manifest, and what stays stopped afterwards. A control needs a release to act on; a service must be one
     of the release's; the whole environment only stops and starts, a service also restarts; a stopped environment
-    starts whole, and a stopped service starts rather than restarts. Only a reset names a migration set."""
+    starts whole, and a stopped service starts rather than restarts. Only a reset names a migration set. A run names
+    one service, whatever is stopped, and changes nothing stopped."""
     require(operation in OPERATIONS, "Unknown control: " + str(operation))
     require(isinstance(services, list) and len(services) <= 1
             and all(isinstance(name, str) and SLUG.fullmatch(name) for name in services),
             "A control names one service, or none for the whole environment")
     require(operation != "restart" or services, "Restart one service at a time")
+    require(operation != "run" or services, "Run a command in one service")
     require(set_name is None or operation == "reset", "Only a reset names a migration set")
     require(set_name is None or (isinstance(set_name, str) and SET_NAME.fullmatch(set_name)), "Invalid migration set")
     current_path = base / "current.json"
@@ -3329,6 +3360,9 @@ def control_plan(base, operation, services, set_name=None):
         require(name in manifest["images"], "The release " + manifest["release"] + " has no service " + name)
     stopped = stopped_of(base) or {"environment": False, "services": []}
     whole = stopped["environment"]
+    if operation == "run":
+        require(manifest["product"] != SELF_PRODUCT, "Wheelhouse's own services never run a one-off from the console")
+        return current, bundle, manifest, stopped_of(base)
     if operation == "reset":
         # The whole environment's database, whatever was stopped: the next deploy rebuilds it and starts everything.
         require(not services, "A reset takes the environment's database, never one service")
@@ -3534,13 +3568,15 @@ def control_ready(base):
             "Failed mutation requires reconciliation")
 
 
-def control_launch(target_path, operation, services, actor, set_name=None):
+def control_launch(target_path, operation, services, actor, set_name=None, command=None):
     """Queues a control of the release a target runs and starts its worker detached, as a deploy's launch does; every
-    rule is checked here first, so a refusal reaches the owner before any job exists."""
+    rule is checked here first, so a refusal reaches the owner before any job exists. A run's command reaches its worker
+    on the worker's stdin, never as an argument or a file."""
     target = read_json(target_path)
     root, project = validate_target(target)
     base = root / project
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
+    command = control_command(operation, command)
     control_ready(base)
     current, bundle, manifest, _ = control_plan(base, operation, services, set_name)
     control_environment(target, manifest, bundle)
@@ -3548,32 +3584,108 @@ def control_launch(target_path, operation, services, actor, set_name=None):
     jobs = base / "jobs"
     jobs.mkdir(parents=True, exist_ok=True, mode=0o700)
     write_json(jobs / (job_id + ".json"), {"id": job_id, "status": "queued", "actor": actor, "queuedAt": now(),
-                                           "operation": control_operation(operation, services, set_name),
+                                           "operation": control_operation(operation, services, set_name, command),
                                            "release": current.get("release")})
-    subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "control", "--target",
-                      str(Path(target_path).resolve()), "--operation", operation, "--actor", actor,
-                      "--job", job_id, *[argument for name in services for argument in ("--service", name)],
-                      *(["--set", set_name] if set_name else [])],
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     start_new_session=True, close_fds=True)
+    worker = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "control", "--target",
+                               str(Path(target_path).resolve()), "--operation", operation, "--actor", actor,
+                               "--job", job_id, *[argument for name in services for argument in ("--service", name)],
+                               *(["--set", set_name] if set_name else []), *(["--stdin"] if command else [])],
+                              stdin=subprocess.PIPE if command else subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+    if command:
+        # A worker that died before reading fails its own job; the command never lands anywhere else.
+        with contextlib.suppress(OSError), worker.stdin:
+            worker.stdin.write(json.dumps({"command": command}).encode())
     return {"id": job_id, "status": "queued", "release": current.get("release")}
 
 
-def control_operation(operation, services, set_name=None):
+def control_operation(operation, services, set_name=None, command=None):
     """A control as its job names it: the kind, the service it named (none for the environment) and, for a set reset,
-    the migration set."""
-    return {"kind": operation, "services": list(services), **({"set": set_name} if set_name else {})}
+    the migration set; for a run, its command's label, never its arguments."""
+    return {"kind": operation, "services": list(services), **({"set": set_name} if set_name else {}),
+            **({"command": run_label(command)} if command else {})}
 
 
-def control(target, operation, services, actor, job_id, docker_factory=Docker, set_name=None):
+def control_command(operation, command):
+    """A run's command, checked: 1 to RUN_ARGUMENTS_LIMIT arguments, each one line of at most RUN_ARGUMENT_LENGTH
+    characters; only a run takes one, and a run needs one. Its values never reach a message."""
+    if operation != "run":
+        require(command is None, "Only a run takes a command")
+        return None
+    require(isinstance(command, list) and 0 < len(command) <= RUN_ARGUMENTS_LIMIT
+            and all(isinstance(argument, str) and 0 < len(argument) <= RUN_ARGUMENT_LENGTH
+                    and not set("\0\r\n") & set(argument) for argument in command),
+            "A run takes its command as 1 to " + str(RUN_ARGUMENTS_LIMIT) + " arguments, each one line of at most "
+            + str(RUN_ARGUMENT_LENGTH) + " characters")
+    return list(command)
+
+
+def run_label(command):
+    """A one-off command as its job, history and steps name it, never with a value: its leading words that read as a
+    program, a file or a verb, then each option by name with `…` for its value — `dotnet Identity.Api.dll admin create
+    --slug … --phone …`; `--name=value` reads `--name=…`."""
+    words, leading = [], True
+    for argument in command or []:
+        if not isinstance(argument, str):
+            continue
+        if leading and RUN_WORD.fullmatch(argument):
+            words.append(argument)
+            continue
+        leading = False
+        name, assigned, _ = argument.partition("=")
+        if RUN_OPTION.fullmatch(name):
+            words.append(name + ("=…" if assigned else ""))
+        elif words[-1:] != ["…"]:
+            words.append("…")
+    return " ".join(words)[:200]
+
+
+def run_verb(command):
+    """A one-off command's leading words without a `dotnet X.dll` launcher, as its step's name and the console read
+    them: `dotnet Identity.Api.dll admin create --slug …` reads `admin create`."""
+    words = []
+    for word in run_label(command).split(" "):
+        if not RUN_WORD.fullmatch(word):
+            break
+        words.append(word)
+    if words[:1] == ["dotnet"] and words[1:2] and words[1].lower().endswith(".dll"):
+        words = words[2:]
+    return " ".join(words)
+
+
+def run_line(line):
+    """What a job keeps of a one-off's last stdout line: an identifier (uuid) as printed; phone numbers and other long
+    digit runs, an email address's local part, a URL's query and fragment, token-like runs and password pairs cut out;
+    one line of at most RUN_LINE_LIMIT characters. None when there is no line."""
+    if not isinstance(line, str) or not line.strip():
+        return None
+    parts, last = [], 0
+    for match in RUN_UUID.finditer(line):
+        parts += [run_scrub(line[last:match.start()]), match.group(0)]
+        last = match.end()
+    parts.append(run_scrub(line[last:]))
+    return " ".join("".join(parts).split())[:RUN_LINE_LIMIT]
+
+
+def run_scrub(text):
+    text = RUN_URL_TAIL.sub(lambda match: match.group(1) + "…", text)
+    text = RUN_EMAIL.sub("…@", text)
+    text = RUN_TOKEN.sub("…", text)
+    text = RUN_PHONE.sub("…", text)
+    return PASSWORD_PAIR.sub(lambda match: match.group(1) + "=***", text)
+
+
+def control(target, operation, services, actor, job_id, docker_factory=Docker, set_name=None, command=None):
     """Stops, starts or restarts the release a target runs, under the deployment lock, as a job in the target's journal
     and its durable intent (`active.json`) like a rollout. A stop marks what it stops before stopping it; a start
     clears its mark only once its services are healthy, so a control cut short leaves the target refusing deploys and a
-    second start finishes it. The release, its containers, volumes and routes never change."""
+    second start finishes it. The release, its containers, volumes and routes never change. A run's command comes as
+    `command` and its job keeps only its label (run_one_off)."""
     root, project = validate_target(target)
     base = root / project
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
     require(str(uuid.UUID(job_id)) == job_id, "Invalid deployment id")
+    command = control_command(operation, command)
     with deployment_lock(base):
         active_path = base / "active.json"
         active = read_json(active_path) if active_path.exists() else None
@@ -3581,7 +3693,8 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker, s
         require(not active or not (active.get("mutationStarted") and active["status"] in ("failed", "rollback_failed")),
                 "Failed mutation requires reconciliation")
         current, bundle, manifest, after = control_plan(base, operation, services, set_name)
-        record = {"id": job_id, "project": project, "operation": control_operation(operation, services, set_name),
+        record = {"id": job_id, "project": project,
+                  "operation": control_operation(operation, services, set_name, command),
                   "release": current.get("release"), "sourceCommit": current.get("sourceCommit"),
                   "kind": current.get("kind", "release"), "actor": actor, "status": "running", "startedAt": now(),
                   "previous": current["id"]}
@@ -3606,6 +3719,9 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker, s
                           set_name, after, progress)
             elif operation == "reset":
                 reset(base, target, manifest, bundle, project, docker, steps, record, job_id, actor, names, progress)
+            elif operation == "run":
+                run_one_off(target, manifest, bundle, project, environment, docker, steps, record, job_id, services[0],
+                            command)
             elif operation == "stop":
                 # Marked first: a stop cut short still keeps deploys from starting what it reached.
                 write_stopped(base, after, actor)
@@ -3643,7 +3759,7 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker, s
                 if progress["dropped"]:
                     with contextlib.suppress(Exception):
                         write_resting(base, names, job_id)
-            elif docker is not None and operation != "stop" and isinstance(error, CommandFailed):
+            elif docker is not None and operation not in ("stop", "run") and isinstance(error, CommandFailed):
                 with contextlib.suppress(Exception):
                     states = docker.unhealthy(bundle)
                     if states:
@@ -3659,6 +3775,47 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker, s
         record["completedAt"] = now()
         save()
         return record
+
+
+class RunFailed(CommandFailed):
+    """A one-off command that did not exit 0, timed out or never started; its message names the exit and the scrubbed
+    last line, never an argument."""
+
+
+def run_detail(entry):
+    """A one-off's operator-safe line: `Exit 0 in 3s: admin-result {…}`, a timeout, or Docker unable to start it."""
+    code, line = entry.get("exitCode"), entry.get("lastLine")
+    if entry.get("status") == "timed out":
+        return "Timed out after " + str(RUN_TIMEOUT) + "s; the container was stopped"
+    if code in (125, 126, 127):
+        return "Docker could not start it (exit " + str(code) + ")"
+    return "Exit " + str(code) + " in " + str(entry.get("seconds", 0)) + "s" + (": " + line if line else "; no output")
+
+
+def run_one_off(target, manifest, bundle, project, environment, docker, steps, record, job_id, service, command,
+                clock=time.monotonic):
+    """A run's one step (v0.13): `command` once in a one-off container of `service`'s running release image, built as a
+    migrate item's (migrate_arguments): `--pull never`, the command's first word as the entrypoint, the service's
+    environment, its rendered settings file and other mounts as the service declares them, its memory, the platform
+    network, every capability dropped, the image's user; never the migrate key. The job keeps the command's label, the
+    exit code, how long it took and the last stdout line scrubbed (`run`), never an argument; anything but exit 0 fails
+    it. The services keep running."""
+    label = run_label(command)
+    entry = {"service": service, "command": label, "release": manifest["release"], "status": "failed",
+             "exitCode": None, "seconds": 0, "lastLine": None}
+    record["run"] = entry
+    container = project + "-run-" + service + "-" + job_id[:8]
+    with steps.run(control_label("run", [service], command=command)) as step:
+        started, begun = now(), clock()
+        arguments = migrate_arguments(target, read_json(Path(bundle) / "compose.json"), manifest, project, service,
+                                      command, None, environment, docker, container, label="wheelhouse.run")
+        code, line = docker.one_off(arguments, RUN_TIMEOUT, container)
+        entry.update(status="succeeded" if code == 0 else "timed out" if code is None else "failed",
+                     exitCode=code if type(code) is int else None, seconds=int(clock() - begun),
+                     lastLine=run_line(line), startedAt=started, completedAt=now())
+        entry["detail"] = step["detail"] = run_detail(entry)
+        if code != 0:
+            raise RunFailed(entry["detail"])
 
 
 def reset(base, target, manifest, bundle, project, docker, steps, record, job_id, actor, names, progress):
@@ -4386,14 +4543,16 @@ def main():
     parser.add_argument("--service", help="logs: the service to read; control: the service, or none for the environment; "
                                           "generate-setting: the service whose release image runs the command")
     parser.add_argument("--key", help="generate-setting: the configuration path of the generated key")
-    parser.add_argument("--operation", choices=OPERATIONS, help="control: stop, start, restart or reset")
+    parser.add_argument("--operation", choices=OPERATIONS, help="control: stop, start, restart, reset or run")
     parser.add_argument("--set", dest="set_name", help="control: the migration set a reset rolls back to 0, alone")
     parser.add_argument("--tail", type=int, default=200)
     parser.add_argument("--stdin", action="store_true",
                         help="launch, apply: read this deploy's settings values and registry sign-in from stdin; "
-                             "generate-setting: the registry sign-in for a pull the image needs")
+                             "generate-setting: the registry sign-in for a pull the image needs; control-launch, "
+                             "control: a run's command ({\"command\": [...]})")
     parser.add_argument("--provided-json", help="check: the setting keys the control plane provides, base64 JSON")
     args = parser.parse_args()
+    provided = None
     try:
         target = decode(args.target_json) if args.target_json else None
         provided = read_provided(sys.stdin) if args.stdin else None
@@ -4431,10 +4590,10 @@ def main():
             result = generate_setting(target or read_json(args.target), manifest, args.service, args.key, provided)
         elif args.action == "control-launch":
             result = control_launch(args.target, args.operation, [args.service] if args.service else [], args.actor,
-                                    args.set_name)
+                                    args.set_name, (provided or {}).get("command"))
         elif args.action == "control":
             result = control(read_json(args.target), args.operation, [args.service] if args.service else [],
-                             args.actor, args.job, set_name=args.set_name)
+                             args.actor, args.job, set_name=args.set_name, command=(provided or {}).get("command"))
         else:
             result = apply(args.bundle, read_json(args.target), args.actor, args.job, provided=provided)
         print(json.dumps(result))
@@ -4453,8 +4612,10 @@ def main():
                 failed_step = {"name": getattr(error, "step", "Check target"), "status": "failed", "completedAt": now()}
                 if refused.get("reason"):
                     failed_step["detail"] = refused["reason"]
+                command = (provided or {}).get("command")
                 kept = {"operation": control_operation(args.operation, [args.service] if args.service else [],
-                                                       args.set_name)} if args.action == "control" else {}
+                                                       args.set_name, command if isinstance(command, list) else None)
+                        } if args.action == "control" else {}
                 write_json(root / project / "jobs" / (args.job + ".json"),
                            {"id": args.job, **kept, **refused, "completedAt": now(), "steps": [failed_step]})
             except Exception:

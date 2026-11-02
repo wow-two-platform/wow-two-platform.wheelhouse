@@ -122,6 +122,39 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
     }
 
     [Fact]
+    public async Task Run_ShouldReachTheRunnerWithItsCommand_ProdNeedsItsTargetIdTypedAndAReason_AndTheAuditKeepsNoValue()
+    {
+        string[] command = ["dotnet", "Identity.Api.dll", "admin", "create", "--slug", "ocharo", "--phone", "+998901234567"];
+        var dev = await ControlAsync("foreverpin-dev", new { operation = "run", service = "management", command });
+        dev.StatusCode.Should().Be(HttpStatusCode.Accepted, await dev.Content.ReadAsStringAsync());
+        Fixture.Deployments.Controls.Should().Equal(("foreverpin-dev", "run", "management", "test-admin", (string?)null, (string?)null));
+        Fixture.Deployments.Commands.Should().ContainSingle().Which.Should().Equal(command);
+
+        var untyped = await ControlAsync("foreverpin-prod", new { operation = "run", service = "management", command, reason = "first owner" });
+        untyped.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await untyped.Content.ReadAsStringAsync()).Should().Contain("Type foreverpin-prod to run prod");
+        var silent = await ControlAsync("foreverpin-prod", new { operation = "run", service = "management", command, confirm = "foreverpin-prod" });
+        silent.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await silent.Content.ReadAsStringAsync()).Should().Contain("Give a reason to run prod");
+        var unnamed = await ControlAsync("foreverpin-dev", new { operation = "run", command });
+        unnamed.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var bare = await ControlAsync("foreverpin-dev", new { operation = "run", service = "management" });
+        bare.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await bare.Content.ReadAsStringAsync()).Should().Contain("A run takes its command");
+        Fixture.Deployments.Controls.Should().HaveCount(1, "nothing reaches the runner before the rules hold");
+
+        var accepted = await ControlAsync("foreverpin-prod",
+            new { operation = "run", service = "management", command, confirm = "foreverpin-prod", reason = "first owner" });
+        accepted.StatusCode.Should().Be(HttpStatusCode.Accepted, await accepted.Content.ReadAsStringAsync());
+        Fixture.Deployments.Controls[^1].Should().Be(("foreverpin-prod", "run", "management", "test-admin", "first owner", (string?)null));
+        var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray()
+            .Where(entry => entry.GetProperty("action").GetString() == "service.run").ToList();
+        audit.Should().Contain(entry => entry.GetProperty("subject").GetString() == "foreverpin-prod/management"
+            && entry.GetProperty("detail").GetString() == "command: dotnet Identity.Api.dll admin create --slug … --phone …; reason: first owner");
+        audit.Select(entry => entry.GetRawText()).Should().NotContain(text => text.Contains("+998") || text.Contains("ocharo\""));
+    }
+
+    [Fact]
     public async Task SetReset_ShouldPassTheRunnersRefusalOfAnUnknownSetOn()
     {
         Fixture.Deployments.ControlRefusal = "The release v1.0.0 has no migration set nope";
@@ -218,7 +251,8 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
         }
 
         foreach (var body in new object[] { new { operation = "stop" }, new { operation = "restart", service = "console" }, new { operation = "reset" },
-                     new { operation = "reset", set = "console" } })
+                     new { operation = "reset", set = "console" },
+                     new { operation = "run", service = "console", command = new[] { "dotnet", "Wheelhouse.Api.dll", "migrate" } } })
         {
             var refused = await ControlAsync("wheelhouse-dev", body);
             refused.StatusCode.Should().Be(HttpStatusCode.Conflict);

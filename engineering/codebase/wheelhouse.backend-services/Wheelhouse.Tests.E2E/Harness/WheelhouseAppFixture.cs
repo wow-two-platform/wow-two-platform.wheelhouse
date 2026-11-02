@@ -203,6 +203,7 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
         Deployments.Builds.Clear();
         Deployments.Starts.Clear();
         Deployments.Controls.Clear();
+        Deployments.Commands.Clear();
         Deployments.ControlRefusal = null;
         Deployments.Observations.Clear();
         Deployments.Declarations = null;
