@@ -143,6 +143,22 @@ public sealed class ServiceControlTests : IDisposable
     }
 
     [Fact]
+    public void Of_ShouldReadAFailedRunAsNotApplied_SinceNothingTheEnvironmentRunsChanged()
+    {
+        var run = Control("r1", "failed", null) with
+        {
+            Operation = new DeploymentOperationDto("run", ["identity"], Command: "dotnet Identity.Api.dll admin create --slug …"),
+            Reason = "Exit 1 in 2s: admin-result {\"status\":\"refused\"}",
+        };
+        var reading = DeploymentStateRules.Of(run, null, null);
+        (reading.State, reading.Substate, reading.Attention).Should().Be((DeploymentState.NotApplied, "command_failed", DeploymentAttention.Look));
+        reading.Cause!.Message.Should().Be("Exit 1 in 2s: admin-result {\"status\":\"refused\"}");
+        DeploymentStateRules.Of(run with { Status = "succeeded" }, null, null).State.Should().Be(DeploymentState.Succeeded);
+        JsonSerializer.Deserialize<DeploymentOperationDto>("""{"kind":"run","services":["identity"],"command":"admin create --slug …"}""",
+            JsonSerializerOptions.Web)!.Command.Should().Be("admin create --slug …", "the history keeps the runner's label");
+    }
+
+    [Fact]
     public void StopsOf_ShouldTakeEachTargetsNewestControlThatRanToAnEnd()
     {
         var stopped = new TargetStopDto(true, [], null, "max");

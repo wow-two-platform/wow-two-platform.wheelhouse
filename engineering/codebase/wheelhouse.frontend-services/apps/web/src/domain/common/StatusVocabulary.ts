@@ -169,6 +169,7 @@ export const SubstateWords: Readonly<Record<string, string>> = {
   expired: 'expired',
   aborted: 'aborted',
   check_failed: 'check failed',
+  command_failed: 'command failed',
   no_receipt: 'no receipt',
   unreadable: 'unreadable',
 };

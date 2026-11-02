@@ -1157,7 +1157,8 @@ A command a product's service runs once against its environment — a first owne
   nowhere. During the run they sit in the `docker run` process on the target, which `--rm` removes.
 - The last line is scrubbed of phone numbers, addresses, URL queries and fragments and tokens; a command whose result is
   a secret link needs another path.
-- Exit 0 succeeds; anything else fails the job with the exit and the last line, and nothing needs reconciling.
+- Exit 0 succeeds; anything else fails the job with the exit and the last line. It reads as not applied (command
+  failed): the environment still runs what it ran, and nothing needs reconciling.
 
 ## VPS wiring checklist
 
