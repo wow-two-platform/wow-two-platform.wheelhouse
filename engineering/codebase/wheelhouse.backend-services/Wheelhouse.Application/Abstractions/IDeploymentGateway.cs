@@ -65,6 +65,10 @@ public interface IDeploymentGateway
         command is null
             ? ControlAsync(target, operation, service, set, actor, reason, ct)
             : Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("This runner cannot run a command.")));
+    /// <summary>Reads a run's last line as its command printed it, once: <c>{ line }</c> from the line the target kept
+    /// when the job's scrub cut something (an invitation link), removed by this read. A gateway without runs refuses.</summary>
+    Task<AppResult<JsonElement>> RevealRunAsync(string target, string job, CancellationToken ct) =>
+        Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("This runner cannot run a command.")));
     /// <summary>Reads a branch's recent commits of a product, each with its build when one exists.</summary>
     Task<AppResult<JsonElement>> CommitsAsync(string product, string branch, CancellationToken ct);
     /// <summary>Reads the release bodies and compare commits between what a target runs and the release to promote.</summary>

@@ -14,6 +14,7 @@ export interface ControlConfirmModalProps {
 import { computed, ref, watch } from "vue";
 import { Eraser, Pause, Play, RotateCw, SquareTerminal } from "lucide-vue-next";
 
+import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 import { Field, TextInput } from "@wow-two-beta/fe/presentation/forms";
 import { TypedConfirmModal } from "@wow-two-beta/fe/presentation/overlays";
@@ -47,6 +48,12 @@ const outcome = ref<string | null>(null);
 const finished = ref<ControlRun | null>(null);
 /** While the control is queued and followed: nothing typed changes it any more. */
 const submitting = ref(false);
+/** A finished run whose last line the target kept as printed, for one read: its target and job. */
+const revealable = ref<{ target: string; job: string } | null>(null);
+/** The run's last line as printed, once read; it lives in this dialog only. */
+const revealed = ref<string | null>(null);
+/** Why the one read was refused. */
+const revealProblem = ref<string | null>(null);
 const label = computed(() => (props.request ? ServiceControls.labelOfRequest(props.request) : ""));
 const title = computed(() => (props.request ? ServiceControls.titleOf(props.request) : ""));
 const isRun = computed(() => props.request?.operation === ControlOperation.Run);
@@ -90,6 +97,9 @@ watch(
     progress.value = null;
     outcome.value = null;
     finished.value = null;
+    revealable.value = null;
+    revealed.value = null;
+    revealProblem.value = null;
     control.reset();
   },
 );
@@ -115,6 +125,7 @@ async function submit(typed: string) {
     progress.value = `${label.value}…`;
     const ended = await control.follow(result.value.id, request.target.id);
     progress.value = null;
+    if (ended?.run?.reveal) revealable.value = { target: request.target.id, job: result.value.id };
     if (ended && ended.status !== JobStatus.Succeeded) {
       outcome.value =
         ended.reason || (ended.run ? ServiceControls.runResult(ended.run) : `The target could not ${request.operation} it (${ended.status}).`);
@@ -130,6 +141,17 @@ async function submit(typed: string) {
   } finally {
     submitting.value = false;
   }
+}
+
+/** Reads the run's last line as printed, once: the target removes it with this read. @internal */
+async function reveal() {
+  const job = revealable.value;
+  if (!job) return;
+  revealProblem.value = null;
+  const read = await control.reveal(job.target, job.job);
+  revealable.value = null;
+  if (read.ok) revealed.value = read.value.line;
+  else revealProblem.value = failureReason(read.failure) || "The line could not be read.";
 }
 </script>
 
@@ -166,5 +188,14 @@ async function submit(typed: string) {
       <p v-if="finished.lastLine" class="break-all font-mono text-xs">{{ finished.lastLine }}</p>
       <p v-else class="text-xs">The command printed no output.</p>
     </Alert>
+    <div v-if="revealable" class="flex flex-wrap items-center gap-2">
+      <Button size="sm" variant="outline" @click="reveal">Show the full line once</Button>
+      <span class="text-xs text-muted-foreground">It holds something the job keeps cut, such as an invitation link.</span>
+    </div>
+    <Alert v-if="revealed" severity="warning" title="Shown once: copy it now">
+      <p class="select-all break-all font-mono text-xs">{{ revealed }}</p>
+      <p class="text-xs">Wheelhouse keeps no copy; it is gone once this dialog closes.</p>
+    </Alert>
+    <Alert v-if="revealProblem" severity="danger" :title="revealProblem" />
   </TypedConfirmModal>
 </template>

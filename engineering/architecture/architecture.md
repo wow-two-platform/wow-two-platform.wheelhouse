@@ -222,8 +222,11 @@ promotion replace them), as is a target a running fleet has yet to promote (409)
   `{target}/{service}`, the same prod guard) keep its label — leading words and option names, every value `…` — never an
   argument. The job's `run` keeps the exit code, seconds and the last stdout line with phone numbers, long digit runs,
   addresses' local parts, URL queries and fragments, token-like runs and password pairs cut out; uuids stay. Exit 0
-  succeeds; any other exit, a timeout (600 s) or a container Docker cannot start fails it. Nothing stops, nothing
-  stopped changes, and it runs whatever is stopped; never on Wheelhouse's own
+  succeeds; any other exit, a timeout (600 s) or a container Docker cannot start fails it. A line the scrub cut (an
+  invitation link) is kept as printed in `<root>/<product>-<env>/reveals/<job>.json` (0600) with `run.reveal.expiresAt`
+  15 minutes on; `POST …/controls/{job}/reveal` (owner only, `no-store`, audited `service.run.reveal` without the line)
+  returns it once and the target deletes it, as the next run and the daily retention delete expired ones. Nothing
+  stops, nothing stopped changes, and it runs whatever is stopped; never on Wheelhouse's own
   ([deployment § One-off command](../deployment/deployment.md#one-off-command)).
 
 ## Settings at deploy

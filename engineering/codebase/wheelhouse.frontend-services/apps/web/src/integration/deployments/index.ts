@@ -23,6 +23,7 @@ import {
   DeploymentTargetSchema,
   MigrationCheckSchema,
   ReleaseArtifactSchema,
+  RunRevealSchema,
   SelfDeploymentSchema,
   ServiceLogsSchema,
   TargetCheckSchema,
@@ -178,6 +179,15 @@ export const deploymentsApi = {
         ...(body.confirm ? { confirm: body.confirm } : {}),
       },
     }),
+
+  /** Reads a run's last line as its command printed it, once: the target removes it with this read, so a second read
+   *  or one past its time is refused. The caller shows it and keeps no copy. */
+  revealRun: (target: string, job: string, signal?: AbortSignal) =>
+    requestData<{ line: string }>(
+      `/api/deployments/targets/${encodeURIComponent(target)}/controls/${encodeURIComponent(job)}/reveal`,
+      RunRevealSchema,
+      { signal, method: "POST", action: "control" },
+    ),
 
   reconcile: (target: string, job: string, signal?: AbortSignal) =>
     requestData<DeploymentJob>(

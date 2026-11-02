@@ -70,7 +70,10 @@ export const ControlRunSchema = z.object({
   exitCode: z.number().int().nullable(),
   seconds: z.number(),
   lastLine: z.string().nullable(),
+  reveal: z.object({ expiresAt: z.string() }).nullish().catch(null),
 });
+/** A run's last line as its command printed it, read once. */
+export const RunRevealSchema = z.object({ line: z.string() });
 /** What a control queued: its submission and the release it acts on. */
 export const ControlSubmittedSchema = z.object({
   id: z.string(),

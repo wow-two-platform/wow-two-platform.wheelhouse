@@ -36,7 +36,9 @@ export interface DeploymentOperation {
 export type ControlRunStatus = 'succeeded' | 'failed' | 'timed out';
 
 /** What a run kept on its job: the service it ran in, its command as a masked label, how it ended, its exit code (none
- * when it never exited), how many seconds it took and its last output line, already scrubbed by the target. */
+ * when it never exited), how many seconds it took and its last output line, already scrubbed by the target. When the
+ * scrub cut something from that line (an invitation link), `reveal` says until when the line as printed can be read,
+ * once. */
 export interface ControlRun {
   service: string;
   command: string;
@@ -44,6 +46,7 @@ export interface ControlRun {
   exitCode: number | null;
   seconds: number;
   lastLine: string | null;
+  reveal?: { expiresAt: string } | null;
 }
 
 /** A control the target queued: its submission, which the history and outcome reads follow. */

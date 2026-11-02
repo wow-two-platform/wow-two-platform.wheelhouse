@@ -117,7 +117,10 @@ export function useTargetControl() {
     return null;
   }
 
-  return { ...mutation, follow };
+  /** Reads a finished run's last line as its command printed it, once; nothing caches or stores it. */
+  const reveal = (target: string, job: string) => deploymentsApi.revealRun(target, job);
+
+  return { ...mutation, follow, reveal };
 }
 
 /** How often a queued control is read back, and for how long: past the longest health wait a start may take. */

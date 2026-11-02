@@ -201,6 +201,12 @@ RUN_PHONE = re.compile(r"\+\d[\d ()-]{5,}\d|\d{8,}")
 RUN_EMAIL = re.compile(r"[^\s\"'<>@,;:()\[\]]+@(?=[A-Za-z0-9-]+\.)")
 RUN_URL_TAIL = re.compile(r"(https?://[^\s\"'?#]*)[?#][^\s\"']*")
 RUN_TOKEN = re.compile(r"[A-Za-z0-9_+/=-]{32,}")
+# A last line the scrub cut (an invitation link, a sign-in link) is kept as printed for the owner to read once: in a
+# private file per job beside the journal, removed by that read, past RUN_REVEAL_SECONDS or by the daily retention, and
+# never in a job, history or audit record. How much of the line it keeps.
+RUN_REVEALS = "reveals"
+RUN_REVEAL_SECONDS = 900
+RUN_REVEAL_LIMIT = 4000
 
 
 class Rejected(ValueError):
@@ -1294,7 +1300,7 @@ def prune(target):
     try:
         with deployment_lock(base):
             return {"project": project, "releases": prune_releases(base, kept_releases(base)),
-                    "incoming": prune_incoming(root, project)}
+                    "incoming": prune_incoming(root, project), "reveals": prune_reveals(base / RUN_REVEALS)}
     except Rejected:
         return {"project": project, "busy": True}
 
@@ -3721,7 +3727,7 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker, s
                 reset(base, target, manifest, bundle, project, docker, steps, record, job_id, actor, names, progress)
             elif operation == "run":
                 run_one_off(target, manifest, bundle, project, environment, docker, steps, record, job_id, services[0],
-                            command)
+                            command, base=base)
             elif operation == "stop":
                 # Marked first: a stop cut short still keeps deploys from starting what it reached.
                 write_stopped(base, after, actor)
@@ -3793,13 +3799,13 @@ def run_detail(entry):
 
 
 def run_one_off(target, manifest, bundle, project, environment, docker, steps, record, job_id, service, command,
-                clock=time.monotonic):
+                clock=time.monotonic, base=None):
     """A run's one step (v0.13): `command` once in a one-off container of `service`'s running release image, built as a
     migrate item's (migrate_arguments): `--pull never`, the command's first word as the entrypoint, the service's
     environment, its rendered settings file and other mounts as the service declares them, its memory, the platform
     network, every capability dropped, the image's user; never the migrate key. The job keeps the command's label, the
     exit code, how long it took and the last stdout line scrubbed (`run`), never an argument; anything but exit 0 fails
-    it. The services keep running."""
+    it. A line the scrub cut is also kept as printed for one read (`base`, keep_reveal). The services keep running."""
     label = run_label(command)
     entry = {"service": service, "command": label, "release": manifest["release"], "status": "failed",
              "exitCode": None, "seconds": 0, "lastLine": None}
@@ -3813,9 +3819,63 @@ def run_one_off(target, manifest, bundle, project, environment, docker, steps, r
         entry.update(status="succeeded" if code == 0 else "timed out" if code is None else "failed",
                      exitCode=code if type(code) is int else None, seconds=int(clock() - begun),
                      lastLine=run_line(line), startedAt=started, completedAt=now())
+        if base is not None:
+            expires = keep_reveal(base, job_id, line, entry["lastLine"])
+            if expires:
+                entry["reveal"] = {"expiresAt": expires}
         entry["detail"] = step["detail"] = run_detail(entry)
         if code != 0:
             raise RunFailed(entry["detail"])
+
+
+def keep_reveal(base, job_id, line, kept, clock=time.time):
+    """Keeps a one-off's last line as printed when the scrub cut something from it (`kept` differs), for one read within
+    RUN_REVEAL_SECONDS (reveal): `reveals/<job>.json`, mode 0600 in a 0700 folder. Removes reveals past their time
+    first. Returns when it expires, or None when there is nothing to keep."""
+    folder = Path(base) / RUN_REVEALS
+    prune_reveals(folder, clock)
+    if not isinstance(line, str) or not line.strip() or kept == " ".join(line.split())[:RUN_LINE_LIMIT]:
+        return None
+    expires = datetime.datetime.fromtimestamp(clock() + RUN_REVEAL_SECONDS, datetime.timezone.utc).isoformat()
+    write_json(folder / (job_id + ".json"), {"line": line.strip()[:RUN_REVEAL_LIMIT], "expiresAt": expires})
+    return expires
+
+
+def prune_reveals(folder, clock=time.time):
+    """Removes every kept line past its time, or unreadable; returns how many went."""
+    removed = 0
+    for path in Path(folder).glob("*.json") if Path(folder).is_dir() else []:
+        try:
+            expires = datetime.datetime.fromisoformat(read_json(path)["expiresAt"]).timestamp()
+        except (OSError, ValueError, KeyError, TypeError):
+            expires = 0
+        if expires <= clock():
+            path.unlink(missing_ok=True)
+            removed += 1
+    return removed
+
+
+def reveal(target, job_id, clock=time.time):
+    """A one-off's last line as it printed it, once (v0.13): read from the file the run kept when its scrub cut something
+    and removed by this very read. Refused when the run kept none, it was read already or its time passed. The caller
+    shows it and writes it nowhere."""
+    root, project = validate_target(target)
+    require(isinstance(job_id, str) and str(uuid.UUID(job_id)) == job_id, "Invalid deployment id")
+    path = root / project / RUN_REVEALS / (job_id + ".json")
+    try:
+        value = read_json(path)
+    except (OSError, ValueError):
+        value = None
+    finally:
+        path.unlink(missing_ok=True)
+    gone = "Nothing to show: the run kept no line, or it was shown once already or expired"
+    require(isinstance(value, dict) and isinstance(value.get("line"), str), gone)
+    try:
+        expires = datetime.datetime.fromisoformat(value["expiresAt"]).timestamp()
+    except (ValueError, KeyError, TypeError):
+        expires = 0
+    require(expires > clock(), gone)
+    return {"line": value["line"]}
 
 
 def reset(base, target, manifest, bundle, project, docker, steps, record, job_id, actor, names, progress):
@@ -4532,7 +4592,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["validate", "apply", "launch", "status", "acknowledge", "state", "check",
                                            "host", "vitals", "topology", "logs", "watch", "prune", "passed",
-                                           "control-launch", "control", "migrate-check", "generate-setting"])
+                                           "control-launch", "control", "migrate-check", "generate-setting",
+                                           "reveal"])
     parser.add_argument("--bundle")
     parser.add_argument("--target")
     parser.add_argument("--target-json")
@@ -4585,6 +4646,8 @@ def main():
             result = passed(target or read_json(args.target), args.release)
         elif args.action == "migrate-check":
             result = migrate_check(target or read_json(args.target))
+        elif args.action == "reveal":
+            result = reveal(target or read_json(args.target), args.job)
         elif args.action == "generate-setting":
             manifest = decode(args.release_json) if args.release_json else validate_bundle(args.bundle)
             result = generate_setting(target or read_json(args.target), manifest, args.service, args.key, provided)

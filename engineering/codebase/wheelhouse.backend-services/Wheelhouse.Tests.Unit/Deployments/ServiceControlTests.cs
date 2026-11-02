@@ -65,6 +65,19 @@ public sealed class ServiceControlTests : IDisposable
     }
 
     [Fact]
+    public async Task RevealRunAsync_ShouldNameTheTargetAndJob()
+    {
+        var transport = Path.Combine(_root, "transport.py");
+        File.WriteAllText(transport, "import json, sys\nprint(json.dumps({'argv': sys.argv[1:]}))\n");
+        var gateway = new DeploymentGateway(RunnerProcessClients.Create(), new DeploymentSettings() with { TransportPath = transport, Root = _root });
+
+        (await gateway.RevealRunAsync("ocharo-dev", "33333333-3333-4333-8333-333333333333", CancellationToken.None))
+            .Should().BeOfType<AppResult<JsonElement>.Success>().Subject.Data.GetProperty("argv").EnumerateArray()
+            .Select(item => item.GetString()!).TakeWhile(item => item != "--root")
+            .Should().Equal("reveal", "--target", "ocharo-dev", "--job", "33333333-3333-4333-8333-333333333333");
+    }
+
+    [Fact]
     public void Run_ShouldNameOneServiceAndACommand_AndAuditOnlyItsLabel()
     {
         var validator = new TargetControlCommandValidator();

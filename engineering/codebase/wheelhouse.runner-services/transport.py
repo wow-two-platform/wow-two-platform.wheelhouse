@@ -453,6 +453,23 @@ def control(root, target_id, operation, service, actor, reason=None, set_name=No
             "status": record["status"]}
 
 
+def reveal(root, target_id, job_id):
+    """A run's last line as it printed it, once (v0.13): the target's runner reads the line its run kept when the scrub cut
+    something (an invitation link) and removes it in the same call. Only the caller gets it; nothing here writes it."""
+    require(isinstance(job_id, str) and str(uuid.UUID(job_id)) == job_id, "Invalid deployment id")
+    path = root / "jobs" / (job_id + ".json")
+    record = read_json(path) if path.is_file() else {}
+    operation = record.get("operation")
+    require(record.get("targetId") == target_id and isinstance(operation, dict) and operation.get("kind") == "run"
+            and isinstance(record.get("remoteJobId"), str), "No run of " + str(target_id) + " has that id")
+    config = fleet.resolve_target(root, target_id)
+    validate_target(config["target"])
+    result = run_remote(Ssh(config["ssh"]), "reveal", config["target"], "--job", record["remoteJobId"])
+    if not (isinstance(result, dict) and isinstance(result.get("line"), str)):
+        raise CommandFailed("The target runner answered without a line")
+    return {"line": result["line"]}
+
+
 def recorded_stop(root, target_id):
     """What the owner keeps stopped on a target, from the newest finished control this control plane recorded there;
     None when nothing is. The target's own mark decides; this answers without contacting it."""
@@ -1160,7 +1177,7 @@ def main():
                                            "branches", "commits", "build", "logs", "history", "observation",
                                            "latest", "facts", "changelog", "watch", "builds", "retention", "usage",
                                            "settings", "registry", "compose", "control", "stops", "migrations",
-                                           "generate-setting"])
+                                           "generate-setting", "reveal"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
@@ -1263,6 +1280,8 @@ def main():
             result = target_migrations(root, args.target)
         elif args.action == "check":
             result = check(root, args.target, args.bundle, provided)
+        elif args.action == "reveal":
+            result = reveal(root, args.target, args.job)
         elif args.action == "reconcile":
             result = reconcile(root, args.target, args.job, args.actor)
         elif args.action == "vitals":

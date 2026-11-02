@@ -148,6 +148,10 @@ public sealed class DeploymentGateway(
     }
 
     /// <inheritdoc />
+    public Task<AppResult<JsonElement>> RevealRunAsync(string target, string job, CancellationToken ct) =>
+        RunAsync(["reveal", "--target", target, "--job", job], ct);
+
+    /// <inheritdoc />
     public Task<AppResult<JsonElement>> CommitsAsync(string product, string branch, CancellationToken ct) =>
         RunAsync(["commits", "--product", product, "--branch", branch], ct);
 

@@ -256,3 +256,26 @@ test("a run sends its split command, and no other control does", async () => {
     globalThis.fetch = original;
   }
 });
+
+test("a run whose line was cut offers one read, which posts to its job and parses the line", async () => {
+  const run = { service: "identity", command: masked, status: "succeeded", exitCode: 0, seconds: 2,
+    lastLine: "admin-result {\"link\":\"https://id.test/sign-up…\"}", reveal: { expiresAt: "2026-11-02T15:15:00Z" } };
+  assert.deepEqual(DeploymentJobSchema.parse({ id: "r9", status: "succeeded", run }).run.reveal, run.reveal);
+  assert.equal(DeploymentJobSchema.parse({ id: "r9", status: "succeeded", run: { ...run, reveal: 3 } }).run.reveal, null,
+    "an unreadable reveal never fails the run");
+  const calls = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options.method, options.headers.get("X-Wheelhouse-Action")]);
+    return new Response(JSON.stringify({ data: { line: "admin-result {\"link\":\"https://id.test/sign-up?invitation=T\"}" } }),
+      { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const read = await deploymentsApi.revealRun("ocharo-dev", "33333333-3333-4333-8333-333333333333");
+    assert.equal(read.ok, true);
+    assert.match(read.value.line, /invitation=T/);
+    assert.deepEqual(calls, [["/api/deployments/targets/ocharo-dev/controls/33333333-3333-4333-8333-333333333333/reveal", "POST", "control"]]);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

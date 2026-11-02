@@ -37,4 +37,16 @@ public sealed class TargetControlsController(ISender sender, IActorContext actor
             request.Command), ct);
         return this.ToActionResult(result, envelope => Accepted(envelope));
     }
+
+    /// <summary>Reads a run's last line as its command printed it, once (v0.13) — an invitation link the job keeps cut —
+    /// as <c>{ line }</c>, never cached. The target removes it with this read; a second read, one past 15 minutes or a
+    /// job that is no run of the target is refused (409). The audit names the run, never the line.</summary>
+    [HttpPost("controls/{job:guid}/reveal")]
+    [RequireActionHeader("control")]
+    public async Task<IActionResult> Reveal([RegularExpression(Slug)] string target, Guid job, CancellationToken ct)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var result = await sender.SendAsync(new RunRevealCommand(target, job, actor.Actor), ct);
+        return this.ToActionResult(result);
+    }
 }

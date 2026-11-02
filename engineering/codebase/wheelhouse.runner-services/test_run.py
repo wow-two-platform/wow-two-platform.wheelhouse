@@ -157,6 +157,83 @@ class RunTests(unittest.TestCase):
         self.assertIn("run", history.OBSERVED)
 
 
+INVITE = ("admin-result {\"verb\":\"invite\",\"exit\":0,\"link\":\"https://id.example.com/sign-up?invitation="
+          + "Tk9" * 12 + "\",\"expiresAt\":\"2026-11-09T10:00:00Z\"}")
+
+
+class RunRevealTests(unittest.TestCase):
+    """A run whose last line the scrub cut keeps it as printed for one read, never in the job."""
+    setUp_rig = test_controls.RunnerControlTests.setUp
+    tearDown = RunTests.tearDown
+    deployed = RunTests.deployed
+    run_command = RunTests.run_command
+
+    def setUp(self):
+        RunTests.setUp(self)
+        RunDocker.answer = (0, INVITE)
+
+    def test_a_cut_line_is_kept_privately_and_read_once(self):
+        self.deployed()
+        record = self.run_command()
+        self.assertEqual("succeeded", record["status"], record.get("reason"))
+        self.assertIn("sign-up…", record["run"]["lastLine"])
+        self.assertNotIn("Tk9Tk9", json.dumps(record))
+        self.assertIn("expiresAt", record["run"]["reveal"])
+        kept = self.base / runner.RUN_REVEALS / (record["id"] + ".json")
+        self.assertEqual((0o600, 0o700), (kept.stat().st_mode & 0o777, kept.parent.stat().st_mode & 0o777))
+        self.assertNotIn("Tk9Tk9", (self.base / "jobs" / (record["id"] + ".json")).read_text())
+        self.assertEqual({"line": INVITE}, runner.reveal(self.target, record["id"]))
+        self.assertFalse(kept.exists())
+        with self.assertRaisesRegex(ValueError, "shown once already or expired"):
+            runner.reveal(self.target, record["id"])
+
+    def test_a_line_the_scrub_left_whole_keeps_nothing_to_reveal(self):
+        self.deployed()
+        RunDocker.answer = (0, RESULT)
+        record = self.run_command()
+        self.assertNotIn("reveal", record["run"])
+        self.assertFalse((self.base / runner.RUN_REVEALS).exists() and any((self.base / runner.RUN_REVEALS).iterdir()))
+        with self.assertRaisesRegex(ValueError, "kept no line"):
+            runner.reveal(self.target, record["id"])
+
+    def test_a_kept_line_expires_and_the_next_run_or_the_retention_removes_it(self):
+        self.deployed()
+        record = self.run_command()
+        kept = self.base / runner.RUN_REVEALS / (record["id"] + ".json")
+        later = runner.time.time() + runner.RUN_REVEAL_SECONDS + 1
+        with self.assertRaisesRegex(ValueError, "expired"):
+            runner.reveal(self.target, record["id"], clock=lambda: later)
+        self.assertFalse(kept.exists())
+        record = self.run_command(job="11111111-1111-4111-8111-111111111183")
+        self.assertEqual(1, runner.prune_reveals(self.base / runner.RUN_REVEALS, clock=lambda: later))
+        self.assertEqual(0, runner.prune(self.target)["reveals"])
+
+
+class TransportRevealTests(unittest.TestCase):
+    setUp = test_controls.TransportControlTests.setUp
+    tearDown = test_controls.TransportControlTests.tearDown
+
+    def test_only_a_run_of_the_named_target_is_read_and_its_line_goes_only_to_the_caller(self):
+        local, remote = "33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444"
+        transport.write_json(self.root / "jobs" / (local + ".json"), {
+            "id": local, "targetId": "pilot-dev", "remoteJobId": remote, "status": "succeeded",
+            "operation": {"kind": "run", "services": ["api"], "command": "admin invite --role …"}})
+        calls = []
+
+        def fake_remote(ssh, action, target, *arguments, **options):
+            calls.append((action, arguments))
+            return {"line": INVITE}
+
+        with patch.object(transport.fleet, "resolve_target", return_value=self.config), \
+                patch.object(transport, "run_remote", side_effect=fake_remote):
+            self.assertEqual({"line": INVITE}, transport.reveal(self.root, "pilot-dev", local))
+            for target, job in (("pilot-prod", local), ("pilot-dev", remote)):
+                with self.subTest(target=target, job=job), self.assertRaisesRegex(ValueError, "No run of"):
+                    transport.reveal(self.root, target, job)
+        self.assertEqual([("reveal", ("--job", remote))], calls)
+        self.assertNotIn("Tk9Tk9", "".join(path.read_text() for path in self.root.rglob("*.json")))
+
+
 class RunLabelTests(unittest.TestCase):
     def test_a_label_keeps_leading_words_and_option_names_never_a_value(self):
         self.assertEqual(LABEL, runner.run_label(COMMAND))

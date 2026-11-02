@@ -155,6 +155,29 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
     }
 
     [Fact]
+    public async Task Reveal_ShouldAnswerARunsLineOnce_UncachedAndUnaudited()
+    {
+        var job = Guid.NewGuid();
+        var first = await ActionClient().PostAsync($"/api/deployments/targets/foreverpin-dev/controls/{job}/reveal", null);
+        first.StatusCode.Should().Be(HttpStatusCode.OK, await first.Content.ReadAsStringAsync());
+        first.Headers.CacheControl!.NoStore.Should().BeTrue();
+        (await first.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data").GetProperty("line").GetString()
+            .Should().Contain("invitation=SECRET");
+        Fixture.Deployments.Reveals.Should().Equal(("foreverpin-dev", job.ToString("D")));
+
+        var again = await ActionClient().PostAsync($"/api/deployments/targets/foreverpin-dev/controls/{job}/reveal", null);
+        again.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await ActionClient().PostAsync($"/api/deployments/targets/nowhere-dev/controls/{job}/reveal", null)).StatusCode
+            .Should().Be(HttpStatusCode.NotFound);
+
+        var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray()
+            .Where(entry => entry.GetProperty("action").GetString() == "service.run.reveal").ToList();
+        audit.Should().Contain(entry => entry.GetProperty("subject").GetString() == "foreverpin-dev"
+            && entry.GetProperty("detail").GetString() == "deployment " + job.ToString("D"));
+        audit.Select(entry => entry.GetRawText()).Should().NotContain(text => text.Contains("SECRET"));
+    }
+
+    [Fact]
     public async Task SetReset_ShouldPassTheRunnersRefusalOfAnUnknownSetOn()
     {
         Fixture.Deployments.ControlRefusal = "The release v1.0.0 has no migration set nope";

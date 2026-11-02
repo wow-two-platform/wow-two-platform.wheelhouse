@@ -280,6 +280,21 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
     /// <summary>Every run's command, in submission order.</summary>
     public List<IReadOnlyList<string>> Commands { get; } = [];
 
+    /// <summary>Every reveal asked for, in order: target and job; the first of a job answers its line, a later one is
+    /// refused as the runner refuses a line read once already.</summary>
+    public List<(string Target, string Job)> Reveals { get; } = [];
+
+    public Task<AppResult<JsonElement>> RevealRunAsync(string target, string job, CancellationToken ct)
+    {
+        var again = Reveals.Contains((target, job));
+        Reveals.Add((target, job));
+        if (Runner is not null)
+            return Runner.RevealRunAsync(target, job, ct);
+        return Task.FromResult(again
+            ? AppResult<JsonElement>.Fail(AppErrorFactory.Conflict("Nothing to show: the run kept no line, or it was shown once already or expired"))
+            : AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new { line = "admin-result {\"link\":\"https://id.test/sign-up?invitation=SECRET\"}" })));
+    }
+
     public Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set, string actor,
         string? reason, CancellationToken ct) =>
         ControlAsync(target, operation, service, set, actor, reason, null, ct);
