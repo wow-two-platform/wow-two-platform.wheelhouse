@@ -110,7 +110,12 @@ watch(
 async function submit(typed: string) {
   const request = props.request;
   if (!request) return;
+  // A run again from the same dialog starts clean: the last run's result and its show-once line belong to its own job.
   outcome.value = null;
+  finished.value = null;
+  revealable.value = null;
+  revealed.value = null;
+  revealProblem.value = null;
   submitting.value = true;
   try {
     const result = await control.mutateAsync({
