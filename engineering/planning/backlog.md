@@ -120,6 +120,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Ability to copy backups off the host to another VPS or storage | feature | Owner 2026-10-30: after the same-host backups; the provider and its bill are the owner's pick |
 | Ability to gate Wheelhouse's own returns without forced compatibility | engineering | Drop the forced `rollbackCompatible` from `self-deploy.py` `gated()` and `fleet.py` once neither console keeps a release from before `v0.7.8`; both still did on 2026-10-30 |
 | Fix the console's history missing a break-glass rollout | fix | 2026-10-30: `self-deploy.py` promoted prod to `v0.9.0`, yet Deployments still lists the failed console promotion as unrecovered and offers `v0.7.8` → `v0.9.0` |
+| Verify the config check live in the rollback gate and on a missing required setting | engineering | v0.12 2026-11-02: dev proved a consistent check and a refused unknown key; only unit tests cover the rollback gate, and only the canary's E2E covers refusing a missing `required` setting. Identity's first deploy can prove the refusal |
 | Ability to drain requests and show maintenance before a rollout | feature | |
 | Ability to dry-run pending migrations before a rollout | feature | |
 | Ability for product frontends to refresh onto a new version | feature | |
