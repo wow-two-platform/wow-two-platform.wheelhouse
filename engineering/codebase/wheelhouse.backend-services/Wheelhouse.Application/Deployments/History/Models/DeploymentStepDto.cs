@@ -6,5 +6,7 @@ namespace Wheelhouse.Application.Deployments.History.Models;
 /// <param name="StartedAt">When the step started.</param>
 /// <param name="CompletedAt">When the step finished.</param>
 /// <param name="Detail">What the step did or why it failed.</param>
+/// <param name="Findings">What a config check step found, by setting and rule; null on every other step.</param>
 public sealed record DeploymentStepDto(
-    string Name, string Status, DateTimeOffset? StartedAt, DateTimeOffset? CompletedAt, string? Detail);
+    string Name, string Status, DateTimeOffset? StartedAt, DateTimeOffset? CompletedAt, string? Detail,
+    IReadOnlyList<DeploymentStepFindingDto>? Findings = null);

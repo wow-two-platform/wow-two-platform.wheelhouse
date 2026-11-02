@@ -131,6 +131,7 @@ public static class DeploymentStateRules
     {
         null => "checking",
         _ when Checking.Contains(step) => "checking",
+        _ when step.StartsWith("Config check", StringComparison.Ordinal) => "checking",
         _ when Verifying.Contains(step) => "verifying",
         _ when step.StartsWith("Drain", StringComparison.Ordinal) => "draining",
         _ when step.StartsWith("Maintenance", StringComparison.Ordinal) => "maintenance",

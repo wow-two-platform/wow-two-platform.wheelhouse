@@ -277,9 +277,9 @@ export const DeploymentStates = {
   },
 
   /**
-   * A rollout's steps cut where changes start: the checks before (snapshot, pull, dry run, a rollback gate, drain), the
-   * changes from the first step that touches the services or a database, and what follows once they run (sites, the dev
-   * check, housekeeping). A rollout that stopped before changes has none after the boundary.
+   * A rollout's steps cut where changes start: the checks before (snapshot, pull, dry run, a rollback gate, a config
+   * check, drain), the changes from the first step that touches the services or a database, and what follows once they
+   * run (sites, the dev check, housekeeping). A rollout that stopped before changes has none after the boundary.
    */
   sections(steps: readonly DeploymentStep[]): StepSections {
     const start = steps.findIndex(
@@ -287,7 +287,8 @@ export const DeploymentStates = {
         !BEFORE_CHANGES.has(step.name) &&
         !step.name.startsWith('Drain') &&
         !step.name.startsWith('Wait') &&
-        !step.name.startsWith('Rollback gate'),
+        !step.name.startsWith('Rollback gate') &&
+        !step.name.startsWith('Config check'),
     );
     if (start < 0) return { before: steps, changes: [], after: [] };
     const tail = steps.slice(start);

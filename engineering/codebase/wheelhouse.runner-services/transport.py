@@ -656,12 +656,14 @@ def watch_record(root, job_id):
 
 def regressions(reading, baseline):
     """What a look found wrong against the rollout's first look: a container that stopped, turned unhealthy or
-    restarted since, or a site that answered at the deploy and no longer does."""
+    restarted since, or a site that answered at the deploy and no longer does. A service the owner stopped, or one a
+    reset left resting until the next deploy, is no regression."""
     found = []
     stopped = reading.get("stopped") if isinstance(reading.get("stopped"), dict) else None
     if stopped and stopped.get("environment"):
         return found  # the owner stopped the whole environment
     held = set(stopped.get("services") or []) if stopped else set()
+    held |= {name for name in reading.get("resting") or [] if isinstance(name, str)}
     for container in reading.get("containers") or []:
         service = str(container.get("service") or "a container")
         if service in held:

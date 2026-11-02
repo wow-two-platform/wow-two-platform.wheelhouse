@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { JobStatus, StepStatus, TargetCondition } from "@/domain/deployments";
+import { JobStatus, StepFindingKind, StepStatus, TargetCondition } from "@/domain/deployments";
 import { ControlOperation } from "@/domain/deployments/controls";
 
 const jobStatus = z.enum(JobStatus);
@@ -21,12 +21,30 @@ const PublishedSiteSchema = z.object({
     })
     .optional(),
 });
+/** One finding a config check step names, by setting and rule code; a finding this console cannot read is dropped. */
+const StepFindingSchema = z.object({
+  kind: z.enum(StepFindingKind),
+  setting: z.string().nullish().transform((value) => value ?? null),
+  code: z.string().nullish().transform((value) => value ?? null),
+  count: z.number().int().nonnegative().nullish().transform((value) => value ?? null),
+});
+/** A config check step's findings; absent on other steps, and a malformed list reads as absent. */
+export const StepFindingsSchema = z
+  .array(z.unknown())
+  .transform((items) => items.flatMap((item) => {
+    const finding = StepFindingSchema.safeParse(item);
+    return finding.success ? [finding.data] : [];
+  }))
+  .nullish()
+  .catch(undefined)
+  .transform((value) => value ?? undefined);
 const DeploymentStepSchema = z.object({
   name: z.string(),
   status: z.enum(StepStatus),
   startedAt: z.string().optional(),
   completedAt: z.string().optional(),
   detail: z.string().optional(),
+  findings: StepFindingsSchema,
 });
 const nullableText = z.string().nullable();
 /** What the owner keeps stopped on a target. */

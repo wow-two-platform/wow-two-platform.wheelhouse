@@ -1,4 +1,5 @@
 import type { StepStatus } from '../enums/StepStatus';
+import type { StepFinding } from './StepFinding';
 
 /** One step of a rollout; details are display-safe text and never carry setting values. */
 export interface DeploymentStep {
@@ -7,4 +8,6 @@ export interface DeploymentStep {
   startedAt?: string;
   completedAt?: string;
   detail?: string;
+  /** What a config check step found, by setting and rule; absent on every other step. */
+  findings?: readonly StepFinding[];
 }

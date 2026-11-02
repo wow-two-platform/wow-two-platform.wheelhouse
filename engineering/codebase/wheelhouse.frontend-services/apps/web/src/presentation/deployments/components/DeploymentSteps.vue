@@ -15,12 +15,15 @@ import { computed } from "vue";
 import { CircleCheck, CircleDashed, CircleX, LoaderCircle, TriangleAlert, Undo2 } from "lucide-vue-next";
 
 import { Measures } from "@/domain/common";
-import { DeploymentStates, StepKind, StepKinds, StepStatus } from "@/domain/deployments";
+import { DeploymentStates, StepFindingKind, StepKind, StepKinds, StepStatus } from "@/domain/deployments";
+import type { StepFinding } from "@/domain/deployments";
 import { StepKindIcons } from "./StepKindIcons";
 
 /**
  * Renders each rollout step as a timeline: its outcome as the node on a line joining the steps, then its name led by a
- * quiet glyph of its kind, its detail one shade dimmer, and its duration, so the owner sees what the target did. The
+ * quiet glyph of its kind, its detail one shade dimmer, and its duration, so the owner sees what the target did. A
+ * config check lists each finding under its detail — what is wrong, the setting to fix and the rule's code — and never
+ * a value. The
  * outcome is the only circle on the line; the kind's glyph sits small in the text and is decorative. A skipped step
  * says so in words, with a dashed node and its name dimmed: it had nothing to do. Sectioned,
  * the checks before any change come first — a cancel there stops cleanly — then a boundary, "Changes start here",
@@ -66,8 +69,20 @@ function seconds(step: DeploymentStep) {
 /** The automatic restore's steps, nested under the failure they answer. @internal */
 const restore = computed(() => StepKinds.restoreSteps(props.steps ?? []));
 /** A restore step that put something back, marked as undone rather than done; a rollback gate only checks. @internal */
-const isRollBack = (step: DeploymentStep) =>
-  restore.value.has(step) && StepKinds.of(step.name) !== StepKind.RollbackGate;
+const isRollBack = (step: DeploymentStep) => {
+  const kind = StepKinds.of(step.name);
+  return restore.value.has(step) && (kind === StepKind.RollBack || kind === StepKind.Restore);
+};
+
+/** What each finding says is wrong, as its line opens. @internal */
+const findingWords: Record<StepFindingKind, string> = {
+  [StepFindingKind.Invalid]: "Invalid",
+  [StepFindingKind.Unknown]: "Unknown key",
+  [StepFindingKind.Stranded]: "Strands people",
+};
+/** A stranding finding's count in words. @internal */
+const stranded = (finding: StepFinding) =>
+  finding.count === null ? null : `${finding.count} ${finding.count === 1 ? "person" : "people"} left no way in`;
 </script>
 
 <template>
@@ -138,6 +153,27 @@ const isRollBack = (step: DeploymentStep) =>
                 <span class="sr-only">, {{ label[step.status] }}</span>
               </span>
               <span v-if="step.detail" class="mt-0.5 block text-xs text-subtle-foreground">{{ step.detail }}</span>
+              <ul
+                v-if="step.findings?.length"
+                class="mt-1 flex flex-col gap-0.5 text-xs"
+                :aria-label="`What ${step.name} found`"
+              >
+                <li
+                  v-for="(finding, at) in step.findings"
+                  :key="at"
+                  class="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5"
+                >
+                  <span class="text-muted-foreground">{{ findingWords[finding.kind] }}</span>
+                  <code class="min-w-0 font-mono break-all text-foreground">{{ finding.setting ?? "an unnamed setting" }}</code>
+                  <span
+                    v-if="finding.code"
+                    class="rounded border border-border px-1 font-mono leading-4 text-subtle-foreground"
+                    :title="`Rule ${finding.code}`"
+                    >{{ finding.code }}</span
+                  >
+                  <span v-if="stranded(finding)" class="text-subtle-foreground">{{ stranded(finding) }}</span>
+                </li>
+              </ul>
             </span>
             <span v-if="seconds(step) !== null" class="font-mono text-xs leading-5 text-muted-foreground tabular-nums">
               {{ Measures.duration(seconds(step)) }}

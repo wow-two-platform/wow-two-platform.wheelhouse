@@ -108,6 +108,36 @@ public sealed class RunnerDeploymentRecordsTests : IDisposable
         plain.Should().BeOfType<AppResult<DeploymentObservation>.Success>().Subject.Data.ServiceRollout.Should().BeNull();
     }
 
+    [Fact]
+    public async Task ObserveAsync_ShouldCarryAConfigCheckStepsFindings_AndNoneOnOtherSteps()
+    {
+        _gateway.Observation = new
+        {
+            status = "failed",
+            steps = new object[]
+            {
+                new { name = "Pull images", status = "succeeded", detail = "1 image" },
+                new
+                {
+                    name = "Config check identity", status = "failed", detail = "Refused (exit 1): 3 findings in 1s",
+                    findings = new object[]
+                    {
+                        new { kind = "invalid", setting = "Identity:Password:MinLength", code = "range" },
+                        new { kind = "unknown", setting = "Identity:SignUp:Enabled", code = (string?)null },
+                        new { kind = "stranded", setting = "Identity:Methods:Password:IsEnabled", code = "only-method-removed", count = 3 },
+                        new { setting = "No:Kind" },
+                    },
+                },
+            },
+        };
+        var observed = await Records().ObserveAsync(Guid.Parse("00000000-0000-4000-8000-000000000001"), CancellationToken.None);
+        var steps = observed.Should().BeOfType<AppResult<DeploymentObservation>.Success>().Subject.Data.Steps!;
+        steps[0].Findings.Should().BeNull();
+        steps[1].Findings!.Select(finding => (finding.Kind, finding.Setting, finding.Code, finding.Count)).Should().Equal(
+            ("invalid", "Identity:Password:MinLength", "range", null), ("unknown", "Identity:SignUp:Enabled", null, null),
+            ("stranded", "Identity:Methods:Password:IsEnabled", "only-method-removed", 3));
+    }
+
     /// <summary>Answers the history read with one good record and two malformed ones, counting reads.</summary>
     private sealed class CountingGateway : IDeploymentGateway
     {

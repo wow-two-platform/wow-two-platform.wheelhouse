@@ -707,8 +707,9 @@ the latest release winning, and submits a queued deploy once its target runs no 
 auto-deploying product; the [GitHub App](#github-access) keeps the calls within the authenticated limit.
 Each pass also looks at the targets inside their watch window (`Deployment:WatchMinutes`, default
 10; 0 turns it off): one SSH read a minute per watched target, two per pass at most, recorded under
-`<runner root>/watching/` (preserve it with the runner root). A product that auto-promotes sends a release that
-passed its dev watch to prod.
+`<runner root>/watching/` (preserve it with the runner root). A service the owner stopped, or one a reset left stopped
+until the next deploy (the target's `resting.json`, cleared by that deploy or a start), is no regression. A product
+that auto-promotes sends a release that passed its dev watch to prod.
 
 A fleet rollout worker runs every `Deployment:FleetSeconds` (default 10; 0 turns it off) while a fleet runs: it reads
 the history projection (no target is contacted) for the finished outcome of the product the fleet is on, then submits
@@ -758,6 +759,8 @@ Each rollout records its steps in its job record as they start and end, so the d
 | Pull images | Every missing image, before any container changes; a private one under a sign-in made for this pull only; another owner's public pinned image anonymously |
 | Migrate `<service>` | Each `migrate` item the release declares, in order, on every forward deploy and before the first wave ([§ Migrate step](#migrate-step)); a failure stops the rollout before any service restarts |
 | Rollback gate `<service>` | A return to an older release — a deploy of one whose sets sit below the database's level, or the automatic restore after a migrated rollout fails — runs that release's `migrate check` instead; anything but exit 0 refuses, naming the pre-deploy snapshot |
+| Config check `<service>` | Each `configCheck` item the release declares, in order, after migrate and before the first wave, on every deploy and settings apply (hub `deploy-descriptor.md` § Config check): the service's `config check` in a one-off container from its release image, with its rendered settings, mounts read-only and never the migrate key; every item runs, a refusal, failure or timeout then stops the rollout before any service restarts, and the step lists each finding by setting and code, never a value or the rule's message |
+| Rollback gate config check `<service>` | The automatic restore, once its migrate gate passes: the previous release's own `config check` on the settings this rollout rendered; anything but consistent refuses the restore. A previous release without an item skips it, with a warning when the release it leaves had one |
 | Start `<services>` | Only when the release changes some services but not all, or its changed services span dependency waves: `compose up --no-deps --force-recreate --wait` of one wave of changed services, after the waves they depend on, so a settings-only change applies and no dependent restarts; a failure leaves later waves unstarted |
 | Start containers | `compose up --wait --remove-orphans` within the target's health timeout: the whole release, with `--no-recreate` after the waves (or when nothing changed), so unchanged services keep running untouched, and `--force-recreate` when every service changed in one wave; its detail names how many services changed and how many kept running |
 | Verify services | Exact image references, health, and the target's smoke checks |

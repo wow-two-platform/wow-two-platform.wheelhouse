@@ -118,10 +118,20 @@ public sealed partial class RunnerDeploymentRecords(
             ? [.. items.EnumerateArray().Select(read).OfType<T>()]
             : null;
 
-    /// <summary>Reads one step; null without a name and a status. @internal</summary>
+    /// <summary>Reads one step; null without a name and a status. A config check step's findings come along, each
+    /// one without a kind left out. @internal</summary>
     private static DeploymentStepDto? ParseStep(JsonElement step) =>
         Text(step, "name") is { } name && Text(step, "status") is { } status
-            ? new DeploymentStepDto(name, status, Instant(step, "startedAt"), Instant(step, "completedAt"), Text(step, "detail"))
+            ? new DeploymentStepDto(name, status, Instant(step, "startedAt"), Instant(step, "completedAt"), Text(step, "detail"),
+                Each(step, "findings", ParseFinding) is { Count: > 0 } findings ? findings : null)
+            : null;
+
+    /// <summary>Reads one config check finding: its kind, setting, rule code and stranded count. @internal</summary>
+    private static DeploymentStepFindingDto? ParseFinding(JsonElement finding) =>
+        Text(finding, "kind") is { } kind
+            ? new DeploymentStepFindingDto(kind, Text(finding, "setting"), Text(finding, "code"),
+                finding.TryGetProperty("count", out var count) && count.ValueKind == JsonValueKind.Number
+                    && count.TryGetInt32(out var people) && people >= 0 ? people : null)
             : null;
 
     /// <summary>Reads one site; null without a name and an http(s) address. @internal</summary>

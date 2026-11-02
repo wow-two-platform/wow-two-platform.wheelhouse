@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Attention, DeployState, ServiceResult } from '@/domain/common';
 import { DeploymentIssueKind, DeploymentOutcome, DeploymentStates, JobStatus, StepStatus } from '@/domain/deployments';
-import { DeploymentOperationSchema, ReleaseComponentSchema, ServiceRolloutSchema } from './schemas';
+import { DeploymentOperationSchema, ReleaseComponentSchema, ServiceRolloutSchema, StepFindingsSchema } from './schemas';
 
 const nullableText = z.string().nullable();
 // Site links open in the owner's browser, so only http(s) addresses survive decoding.
@@ -223,6 +223,7 @@ export const DeploymentDetailSchema = z.object({
         startedAt: z.string().nullable().optional().transform((value) => value ?? undefined),
         completedAt: z.string().nullable().optional().transform((value) => value ?? undefined),
         detail: z.string().nullable().optional().transform((value) => value ?? undefined),
+        findings: StepFindingsSchema,
       }),
     )
     .default([]),

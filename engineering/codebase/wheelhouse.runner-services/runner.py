@@ -165,6 +165,23 @@ MIGRATIONS_FILE = "migrations.json"
 SET_NAME = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 EXTENSION = re.compile(r"[a-z][a-z0-9_-]{0,62}")
 MIGRATION_KINDS = ("expand", "contract")
+# The config check step (hub deploy-descriptor § Config check, the service's config-check.md): each item a release
+# declares runs its service's `config check` in a one-off container from that service's release image, with the
+# settings the deploy rendered, after migrate and before the first wave; the default and allowed timeouts, and the verb
+# every command ends in.
+CONFIG_CHECK_TIMEOUT = 120
+CONFIG_CHECK_TIMEOUT_LIMITS = (10, 600)
+CONFIG_CHECK_VERB = ["config", "check"]
+# What a check prints last on stdout: `config-result {json}`; read as a migrate run's line is.
+CONFIG_RESULT = "config-result "
+# A finding as a step names it: the rule's kebab-case code and the setting's configuration path, never a value; at most
+# this many per item, the rest counted.
+FINDING_CODE = re.compile(r"[a-z][a-z0-9-]{0,63}")
+FINDING_SETTING = re.compile(r"[A-Za-z0-9_.:$@#/\[\]-]{1,200}")
+FINDINGS_LIMIT = 50
+# What a reset left stopped until the next deploy, beside current.json: never `stopped.json`, which would refuse that
+# deploy, so a look after a rollout reads these services as resting rather than exited.
+RESTING = "resting.json"
 
 
 class Rejected(ValueError):
@@ -290,6 +307,7 @@ def validate_bundle(bundle):
     release_migrate(manifest)
     release_migration_sets(manifest)
     release_extensions(manifest)
+    release_config_check(manifest)
     return manifest
 
 
@@ -442,6 +460,32 @@ def release_migrate(manifest):
         timeout = item.get("timeoutSeconds", MIGRATE_TIMEOUT)
         require(type(timeout) is int and MIGRATE_TIMEOUT_LIMITS[0] <= timeout <= MIGRATE_TIMEOUT_LIMITS[1],
                 "The migrate timeout must be 10-3600 seconds")
+        result.append({"service": item["service"], "command": list(command), "timeoutSeconds": timeout})
+    return result
+
+
+def release_config_check(manifest):
+    """The config check items a release declares (`configCheck`), in the order they run: each names a service of the
+    release whose image runs `command` (the program and its arguments, ending in the `config check` verb) as its
+    container's entrypoint, and its `timeoutSeconds`. Empty for a release that declares none, which runs no step."""
+    items = manifest.get("configCheck")
+    if items is None:
+        return []
+    require(isinstance(items, list) and 0 < len(items) <= 20, "Invalid configCheck list")
+    result, seen = [], set()
+    for item in items:
+        require(isinstance(item, dict) and isinstance(item.get("service"), str)
+                and item["service"] in manifest.get("images", {}), "A configCheck item names an unknown service")
+        require(item["service"] not in seen, "Two configCheck items name " + item["service"])
+        seen.add(item["service"])
+        command = item.get("command")
+        require(isinstance(command, list) and len(CONFIG_CHECK_VERB) < len(command) <= 32
+                and all(isinstance(part, str) and part and len(part) <= 1000 and "\0" not in part for part in command)
+                and command[-len(CONFIG_CHECK_VERB):] == CONFIG_CHECK_VERB,
+                "A configCheck command must name the program and its arguments, ending in config check")
+        timeout = item.get("timeoutSeconds", CONFIG_CHECK_TIMEOUT)
+        require(type(timeout) is int and CONFIG_CHECK_TIMEOUT_LIMITS[0] <= timeout <= CONFIG_CHECK_TIMEOUT_LIMITS[1],
+                "The configCheck timeout must be 10-600 seconds")
         result.append({"service": item["service"], "command": list(command), "timeoutSeconds": timeout})
     return result
 
@@ -1900,6 +1944,18 @@ class Docker:
         name, never as an argument). Returns its exit code and the last stdout line that starts with `migrate-result `
         (None when it printed none); a run past `timeout` stops and removes `container` and returns None for the code.
         stderr and every other line are discarded unread: they may name the database."""
+        return self.result_run(arguments, variables, timeout, container, MIGRATE_RESULT)
+
+    def config_check(self, arguments, timeout, container):
+        """Runs a one-off config check container with no variable passed into it. Returns its exit code and the last
+        stdout line that starts with `config-result ` (None when it printed none); a run past `timeout` stops and
+        removes `container` and returns None for the code. stderr, the check's human report, and every other line are
+        discarded unread: a note there may quote what a setting holds."""
+        return self.result_run(arguments, {}, timeout, container, CONFIG_RESULT)
+
+    def result_run(self, arguments, variables, timeout, container, prefix):
+        """A one-off container whose verb prints its result line last: its exit code and the last stdout line that
+        starts with `prefix`, or None for the code past `timeout`, when the container is stopped and removed."""
         try:
             result = subprocess.run(arguments, env={**self.environment, **variables}, stdout=subprocess.PIPE,
                                     stderr=subprocess.DEVNULL, text=True, errors="replace", timeout=timeout)
@@ -1909,7 +1965,7 @@ class Docker:
                     subprocess.run(command, env=self.environment, capture_output=True, timeout=60)
             return None, None
         output = (result.stdout or "")[-MIGRATE_OUTPUT_LIMIT:]
-        line = next((line.strip() for line in reversed(output.splitlines()) if line.startswith(MIGRATE_RESULT)), None)
+        line = next((line.strip() for line in reversed(output.splitlines()) if line.startswith(prefix)), None)
         return result.returncode, line
 
     def health_timeout(self):
@@ -2184,6 +2240,10 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
             # runs its rollback gate instead. A failure here leaves the previous release serving.
             migrate_release(root, target, previous, manifest, compose, project, environment, docker, steps, record,
                             job_id)
+            # Every declared item, on every deploy and every settings apply (the running release deployed again), each
+            # on the settings this deploy rendered; any refusal, failure or timeout leaves the previous release serving.
+            config_check_release(root, target, previous, manifest, compose, project, environment, docker, steps,
+                                 record, job_id)
             mutation_started = True
             record["mutationStarted"] = True
             save()
@@ -2242,6 +2302,8 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                         step["detail"] = plural(len(probed), "site") + " answered"
             record["status"] = "succeeded"
             write_json(previous_path, {key: record[key] for key in CURRENT if key in record})
+            # Every service runs again, whatever a reset left resting.
+            write_resting(root, [])
             # Dev only, once the release is recorded: the release's own end-to-end check. Its result gates auto-promote
             # and never changes the outcome; a failure is a warning, since every container is healthy.
             verification = release_verification(manifest) if target["environment"] == "dev" else None
@@ -2281,10 +2343,12 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
             settle_services(record, starting if mutation_started else None)
             # A release that declares it, or a target that does: the previous images run on whatever schema this release
             # left. A release that ran its migrate step asks the previous images' own `migrate check` first (the
-            # rollback gate, M15); a gated return restores the release it left, which ran on this very database.
+            # rollback gate, M15); a gated return restores the release it left, which ran on this very database. The
+            # previous images' own `config check` then reads the settings this rollout rendered.
             if mutation_started and previous and restore_allowed(
                     root, target, previous, record, steps, job_id, project,
-                    manifest["rollbackCompatible"] or target.get("rollbackCompatible") is True, docker_factory):
+                    manifest["rollbackCompatible"] or target.get("rollbackCompatible") is True, docker_factory,
+                    manifest):
                 try:
                     with steps.run("Roll back to " + str(previous.get("release") or "the previous release")):
                         prior_bundle = root / "releases" / previous["id"]
@@ -2300,6 +2364,7 @@ def apply(bundle, target, actor, job_id=None, docker_factory=Docker, prober=prob
                         prior_docker.up(prior_bundle)
                         prior_docker.verify(prior_bundle, prior_manifest)
                     record["status"] = "rolled_back"
+                    write_resting(root, [])
                     settle_services(record, None, rolled_back=True)
                     # Every service of the previous release passed its check; one this release added is gone.
                     record_health(record, {name: "healthy" for name in prior_manifest["images"]})
@@ -2449,10 +2514,11 @@ def migrate_key(target, manifest, service):
     return target_database(folder) if folder.is_dir() else None
 
 
-def migrate_mounts(compose, definition, project, variables, docker):
+def migrate_mounts(compose, definition, project, variables, docker, read_only=False):
     """The service's mounts for its migrate container, as `-v` arguments: each bind (its settings file among them) with
     its source interpolated as Compose would, and each named volume that already exists. A volume not created yet holds
-    nothing to migrate, and creating it here would leave it without Compose's labels."""
+    nothing to migrate, and creating it here would leave it without Compose's labels. `read_only` mounts every one
+    read-only, for a container that writes nothing (a config check)."""
     declared = compose.get("volumes") or {}
     arguments = []
     for mount in definition.get("volumes") or []:
@@ -2461,15 +2527,15 @@ def migrate_mounts(compose, definition, project, variables, docker):
             require(2 <= len(parts) <= 3, "Invalid service mount")
             source, path = parts[0], parts[1]
             kind = "bind" if source.startswith(("/", ".", "~")) else "volume"
-            read_only = len(parts) == 3 and "ro" in parts[2].split(",")
+            mount_read_only = len(parts) == 3 and "ro" in parts[2].split(",")
         else:
             require(isinstance(mount, dict), "Invalid service mount")
             kind, source, path = mount.get("type", "volume"), interpolate(mount.get("source"), variables), mount.get("target")
-            read_only = mount.get("read_only") is True
+            mount_read_only = mount.get("read_only") is True
         require(kind in ("bind", "volume") and isinstance(source, str) and source and isinstance(path, str)
                 and path.startswith("/") and not set(":,\n") & set(source + path), "Invalid service mount")
         if kind == "bind":
-            require(Path(source).is_absolute(), "A migrate container mounts absolute bind sources only")
+            require(Path(source).is_absolute(), "A one-off container mounts absolute bind sources only")
         else:
             options = declared.get(source) if isinstance(declared.get(source), dict) else {}
             full = options.get("name") or (source if options.get("external") else project + "_" + source)
@@ -2479,14 +2545,16 @@ def migrate_mounts(compose, definition, project, variables, docker):
             except CommandFailed:
                 continue
             source = full
-        arguments += ["-v", source + ":" + path + (":ro" if read_only else "")]
+        arguments += ["-v", source + ":" + path + (":ro" if read_only or mount_read_only else "")]
     return arguments
 
 
-def migrate_arguments(target, compose, manifest, project, service, command, key, variables, docker, container):
+def migrate_arguments(target, compose, manifest, project, service, command, key, variables, docker, container,
+                      label="wheelhouse.migrate", read_only=False):
     """The one-off migrate container (M8), modelled on the dev check: the service's release image, `--pull never`, the
     command as its entrypoint, the service's environment, mounts and memory, the platform network, every capability
-    dropped and the image's own user unless the service names one. The migrate key travels by name only."""
+    dropped and the image's own user unless the service names one. The migrate key travels by name only. A config check
+    builds the same container under its own `label`, every mount `read_only` and no migrate key."""
     definition = compose["services"][service]
     declared = definition.get("environment") or {}
     if isinstance(declared, list):
@@ -2502,13 +2570,13 @@ def migrate_arguments(target, compose, manifest, project, service, command, key,
     memory = definition.get("mem_limit")
     return ["docker", "run", "--rm", "--name", container, "--pull", "never",
             *(["--network", network] if network else []), "--security-opt", "no-new-privileges:true",
-            "--cap-drop", "ALL", "--label", "wheelhouse.migrate=" + project,
+            "--cap-drop", "ALL", "--label", label + "=" + project,
             *(["--memory", str(memory)] if memory else []),
             *(["--user", str(definition["user"])] if definition.get("user") else []),
             *(["--init"] if definition.get("init") is True else []),
             *[part for name in sorted(environment) for part in ("-e", name + "=" + environment[name])],
             *(["-e", MIGRATE_KEY] if key else []),
-            *migrate_mounts(compose, definition, project, variables, docker),
+            *migrate_mounts(compose, definition, project, variables, docker, read_only),
             "--entrypoint", command[0], manifest["images"][service], *command[1:]]
 
 
@@ -2797,7 +2865,15 @@ def migrate_release(base, target, previous, manifest, compose, project, environm
             step["detail"] = entry["detail"]
 
 
-def restore_allowed(base, target, previous, record, steps, job_id, project, compatible, docker_factory):
+def restore_allowed(base, target, previous, record, steps, job_id, project, compatible, docker_factory, left=None):
+    """Whether the automatic restore after a failed rollout may run: the migrate rule (migrate_restore_allowed), then,
+    once the return may go ahead, the previous release's own `config check` on the settings this rollout rendered
+    (config_restore_allowed). `left` is the manifest of the release the restore leaves."""
+    return (migrate_restore_allowed(base, target, previous, record, steps, job_id, project, compatible, docker_factory)
+            and config_restore_allowed(base, target, previous, record, steps, job_id, project, docker_factory, left))
+
+
+def migrate_restore_allowed(base, target, previous, record, steps, job_id, project, compatible, docker_factory):
     """Whether the automatic restore after a failed rollout may run (M15). A rollout that migrated nothing keeps the
     rule it had: the release's rollback compatibility. One that ran its migrate step asks the previous release's own
     `migrate check` first: every item must exit 0, else the restore is refused, naming the pre-deploy snapshot; a
@@ -2865,6 +2941,199 @@ def migrate_check(target, docker_factory=None):
             remember_migrations(base, result["items"], "check")
         result["migrations"] = known_migrations(base)
         return result
+
+
+# ---- Config check step (hub deploy-descriptor § Config check) ----
+
+class ConfigCheckFailed(CommandFailed):
+    """A config check that stops a rollout before any service restarts, or refuses a return to an older release; its
+    message names each item and its findings by setting and code, never a value."""
+
+
+def finding_setting(value):
+    """A finding's setting as a step names it: a configuration path, else None (a name that does not read as one)."""
+    return value if isinstance(value, str) and FINDING_SETTING.fullmatch(value) else None
+
+
+def finding_code(value):
+    """A finding's rule code as a step names it: a short kebab-case id, else None."""
+    return value if isinstance(value, str) and FINDING_CODE.fullmatch(value) else None
+
+
+def config_result(line):
+    """What the job keeps of a `config-result` line (config-check.md § Output): its exit, its findings — each invalid
+    value's setting and code, each unknown key, each stranding rule's setting, code and count — how many it reported, and
+    its error, scrubbed. Never a finding's message: a rule's message is the service's own text and may quote the value
+    it rejected. None when the line is missing or malformed: the exit code alone decides then."""
+    if not isinstance(line, str) or not line.startswith(CONFIG_RESULT):
+        return None
+    try:
+        value = json.loads(line[len(CONFIG_RESULT):])
+    except ValueError:
+        return None
+    if not isinstance(value, dict):
+        return None
+
+    def listed(key):
+        return value.get(key) if isinstance(value.get(key), list) else []
+    findings = [{"kind": "invalid", "setting": finding_setting(item.get("setting")), "code": finding_code(item.get("code"))}
+                for item in listed("invalid") if isinstance(item, dict)]
+    findings += [{"kind": "unknown", "setting": finding_setting(name), "code": None} for name in listed("unknown")]
+    findings += [{"kind": "stranded", "setting": finding_setting(item.get("setting")), "code": finding_code(item.get("code")),
+                  "count": count(item.get("count"))} for item in listed("stranded") if isinstance(item, dict)]
+    result = {"exit": value["exit"] if type(value.get("exit")) is int else None, "findings": findings[:FINDINGS_LIMIT],
+              "findingCount": len(findings)}
+    error = scrubbed(value.get("error"))
+    if error:
+        result["error"] = error[:200]
+    return result
+
+
+def config_status(code):
+    """An item's status from its exit (config-check.md § Exit codes): `0` consistent, `1` refused, None (past its
+    timeout) timed out, and anything else — `2`, a crash, Docker unable to start it — failed."""
+    if code is None:
+        return "timed out"
+    return {0: "consistent", 1: "refused"}.get(code, "failed")
+
+
+def finding_text(finding):
+    """One finding's words: `invalid Identity:Password:MinLength [range]`, `unknown Identity:SignUp:Enabled`, `stranded
+    Identity:Methods:Password:IsEnabled [only-method-removed]: 3 people`."""
+    text = finding["kind"] + " " + (finding["setting"] or "a setting") + (
+        " [" + finding["code"] + "]" if finding.get("code") else "")
+    if finding["kind"] == "stranded" and finding.get("count") is not None:
+        text += ": " + str(finding["count"]) + (" person" if finding["count"] == 1 else " people")
+    return text
+
+
+def config_detail(entry, timeout, problem=None, named=True):
+    """An item's operator-safe line: its outcome and, on a refusal, the first findings by setting and code (`named`),
+    else only how many — the line of a step that carries its findings."""
+    code, status = entry["exitCode"], entry["status"]
+    took = " in " + str(entry["seconds"]) + "s"
+    if problem:
+        return "It could not run: " + problem
+    if status == "timed out":
+        return "Timed out after " + str(timeout) + "s; the container was stopped"
+    if status == "consistent":
+        return "Consistent" + ("" if entry["reported"] else "; exit 0, no config-result line") + took
+    if code in (125, 126, 127):
+        return "Docker could not start it (exit " + str(code) + ")"
+    if status == "refused":
+        findings, total = entry["findings"], entry["findingCount"]
+        if not findings:
+            return "Refused (exit 1): no finding reported" + took
+        if not named:
+            return "Refused (exit 1): " + plural(total, "finding") + took
+        more = total - min(len(findings), 5)
+        return ("Refused (exit 1): " + plural(total, "finding") + ": "
+                + "; ".join(finding_text(finding) for finding in findings[:5])
+                + ("; " + str(more) + " more" if more else "") + took)
+    return (("Failed" if code == 2 else "Crashed") + " (exit " + str(code) + ")"
+            + (": " + entry["error"] if entry.get("error") else "") + took)
+
+
+def run_config_check_item(target, manifest, compose, project, item, environment, docker, container,
+                          clock=time.monotonic):
+    """Runs one config check item in its one-off container, built as a migrate item's is (migrate_arguments): the
+    item's release image, `--pull never`, its command as the entrypoint, the service's environment and rendered
+    settings file (its secrets included), its other mounts read-only, the platform network, every capability dropped,
+    the image's user; never the migrate key. Never raises for what the container did; returns the item's record entry:
+    status, exit code, seconds, an operator-safe detail and its findings by setting and code."""
+    service, timeout = item["service"], item["timeoutSeconds"]
+    started, begun = now(), clock()
+    code, line, problem = -1, None, None
+    try:
+        arguments = migrate_arguments(target, compose, manifest, project, service, item["command"], None, environment,
+                                      docker, container, label="wheelhouse.config-check", read_only=True)
+        code, line = docker.config_check(arguments, timeout, container)
+    except Rejected as error:
+        code, problem = -1, reason(error)
+    except Exception as error:
+        code, problem = -1, type(error).__name__
+    run = config_result(line)
+    entry = {"service": service, "release": manifest["release"],
+             "status": "failed" if problem else config_status(code),
+             "exitCode": code if type(code) is int and code >= 0 else None, "seconds": int(clock() - begun),
+             "startedAt": started, "completedAt": now(), "reported": run is not None,
+             "findings": run["findings"] if run else [], "findingCount": run["findingCount"] if run else 0}
+    if run and run.get("error"):
+        entry["error"] = run["error"]
+    entry["detail"] = config_detail(entry, timeout, problem)
+    return entry
+
+
+def config_check_release(base, target, previous, manifest, compose, project, environment, docker, steps, record,
+                         job_id, purpose="deploy"):
+    """The config check step, after migrate and before the first wave: every item `manifest` declares, in order, one step
+    each, every item even after one refuses, so one deploy names every finding. Each entry joins the record's
+    `configChecks`, and its step carries the findings. Raises ConfigCheckFailed, naming each item that did not read
+    consistent, before any service restarts. A release that declares none runs no step; on a return to an older release
+    (a gated deploy) that declares none while the running release does, the step is skipped with a warning. `purpose`
+    `restore` is the rollback gate's own check of the release a failed rollout returns to."""
+    items = release_config_check(manifest)
+    gate = purpose == "restore"
+    if not items:
+        if not gate and previous is not None and migrate_mode(base, previous, manifest)[0] == "gate":
+            running = running_manifest(base, previous)
+            if running is not None and release_config_check(running):
+                config_check_skipped(steps, record, manifest["release"])
+        return
+    refused = []
+    for item in items:
+        name = ("Rollback gate config check " if gate else "Config check ") + item["service"]
+        with steps.run(name) as step:
+            entry = run_config_check_item(target, manifest, compose, project, item, environment, docker,
+                                          project + ("-config-gate-" if gate else "-config-") + item["service"] + "-"
+                                          + job_id[:8])
+            entry["purpose"] = purpose
+            record.setdefault("configChecks", []).append(entry)
+            # A step that carries its findings says how many; the entry and the rollout's reason name them.
+            step["detail"] = (manifest["release"] + "'s check: " if gate else "") + (
+                config_detail(entry, item["timeoutSeconds"], named=False) if entry["findings"] else entry["detail"])
+            if entry["findings"]:
+                step["findings"] = entry["findings"]
+            if entry["status"] != "consistent":
+                step["status"] = "failed"
+                refused.append(entry)
+    if refused:
+        # Cut to fit the record's 300-character reason, so its outcome stays at the end.
+        head = "Rollback gate config check: " + manifest["release"] + "'s " if gate else "Config check "
+        tail = "" if gate else "; no service was restarted"
+        body = "; ".join(entry["service"] + ": " + entry["detail"] for entry in refused)
+        limit = 300 - len(head) - len(tail)
+        raise ConfigCheckFailed(head + (body if len(body) <= limit else body[:limit - 1] + "…") + tail)
+
+
+def config_check_skipped(steps, record, label):
+    """The step a return to a release without config check items records: skipped, with a warning."""
+    warning = label + " declares no config check, so the settings it returns to go unchecked"
+    steps.add("Rollback gate config check", "warning", now(), warning)
+    record.setdefault("warnings", []).append("Rollback gate: " + warning)
+
+
+def config_restore_allowed(base, target, previous, record, steps, job_id, project, docker_factory, left=None):
+    """The rollback gate's config check (hub deploy-descriptor § Config check): before a failed rollout returns to the
+    previous release, that release's own images check the settings files this rollout rendered, the ones its
+    containers will mount; every item must read consistent, else the restore is refused. A previous release that
+    declares no item skips the step, with a warning when the release it leaves (`left`) checked its settings."""
+    prior = running_manifest(base, previous)
+    if prior is None or not release_config_check(prior):
+        if prior is not None and left is not None and release_config_check(left):
+            config_check_skipped(steps, record, str(previous.get("release") or "the previous release"))
+        return True
+    try:
+        bundle = Path(base) / "releases" / previous["id"]
+        prior_environment = environment_for(target, prior)
+        config_check_release(base, target, previous, prior, read_json(bundle / "compose.json"), project,
+                             prior_environment, docker_factory(target, prior_environment), steps, record, job_id,
+                             purpose="restore")
+    except Exception as error:
+        record["reason"] = ((record.get("reason") or "The rollout failed") + "; the roll back was refused: "
+                            + (reason(error) or "the rollback gate could not run"))[:600]
+        return False
+    return True
 
 
 def plan_against(root, previous, compose, target, manifest, settings=None):
@@ -3006,6 +3275,27 @@ def write_stopped(base, stopped, actor):
     value = {"environment": stopped["environment"], "services": sorted(stopped["services"]), "at": now(), "actor": actor}
     write_json(path, value)
     return value
+
+
+def resting_of(base):
+    """The services a reset left stopped until the next deploy (`resting.json`), sorted; empty while none is. Unlike
+    `stopped.json`, a deploy goes ahead and starts them; a look after a rollout reads them as resting, never as exited."""
+    try:
+        value = read_json(Path(base) / RESTING)
+    except (OSError, ValueError):
+        return []
+    services = value.get("services") if isinstance(value, dict) and isinstance(value.get("services"), list) else []
+    return sorted({name for name in services if isinstance(name, str) and SLUG.fullmatch(name)})
+
+
+def write_resting(base, services, job_id=None):
+    """Saves which services a reset leaves stopped until the next deploy, or removes the marker when none is."""
+    path = Path(base) / RESTING
+    if not services:
+        path.unlink(missing_ok=True)
+        return []
+    write_json(path, {"services": sorted(set(services)), "at": now(), "job": job_id})
+    return sorted(set(services))
 
 
 def control_label(operation, services, set_name=None):
@@ -3332,6 +3622,9 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker, s
                     docker.stop(bundle, services)
                     docker.start(bundle, services)
                     step["detail"] = services[0] + " healthy on " + str(current.get("release"))
+            if operation in ("start", "restart"):
+                # What started runs again, whatever a reset left resting.
+                write_resting(base, [name for name in resting_of(base) if services and name not in services], job_id)
             record["status"] = "succeeded"
         except (Exception, KeyboardInterrupt) as error:
             record["status"] = "failed"
@@ -3341,8 +3634,15 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker, s
             if operation == "reset" and set_name:
                 record["reason"] = reset_set_failed(record.get("reason"), docker, bundle, prior, progress, record,
                                                     resting)
+                if progress.get("rollback"):
+                    # Its service stays stopped until the next deploy, as after a set reset that finished.
+                    with contextlib.suppress(Exception):
+                        write_resting(base, [*resting_of(base), *resting], job_id)
             elif operation == "reset":
                 record["reason"] = reset_failed(record.get("reason"), docker, bundle, prior, progress, record)
+                if progress["dropped"]:
+                    with contextlib.suppress(Exception):
+                        write_resting(base, names, job_id)
             elif docker is not None and operation != "stop" and isinstance(error, CommandFailed):
                 with contextlib.suppress(Exception):
                     states = docker.unhealthy(bundle)
@@ -3391,6 +3691,7 @@ def reset(base, target, manifest, bundle, project, docker, steps, record, job_id
         step["detail"] = ((plural(count, "migration set") + " at level 0" if count else "No migration set recorded yet")
                           + "; the next deploy's migrate step builds the schema")
     write_stopped(base, None, actor)
+    write_resting(base, names, job_id)
 
 
 def reset_failed(why, docker, bundle, prior, progress, record):
@@ -3451,6 +3752,7 @@ def reset_set(base, target, manifest, bundle, project, environment, docker, step
         reset_set_level(base, job_id, manifest["release"], taken["path"], name, service)
         step["detail"] = (name + " at level 0; the next deploy's migrate step builds it again and starts " + service)
     write_stopped(base, after, actor)
+    write_resting(base, [*resting_of(base), service], job_id)
 
 
 def reset_set_failed(why, docker, bundle, prior, progress, record, resting):
@@ -3528,7 +3830,7 @@ def lock_held(base):
 def summary(record):
     fields = ("id", "release", "sourceCommit", "kind", "branch", "versions", "sites", "status", "actor", "startedAt",
               "completedAt", "failure", "reason", "mutationStarted", "previous", "steps", "warnings", "snapshot",
-              "verification", "operation", "stopped", "health", "migrations", "reset")
+              "verification", "operation", "stopped", "health", "migrations", "configChecks", "reset")
     return None if record is None else {key: record[key] for key in fields if key in record}
 
 
@@ -4011,8 +4313,9 @@ def vitals(target, docker_factory=None):
 
 
 def watch(target, docker_factory=None, prober=probe_sites):
-    """One look at a target after a rollout: its containers (state, health, restarts) and every site that answered at
-    the deploy, requested again through the ingress. Read-only; the control plane judges regressions."""
+    """One look at a target after a rollout: its containers (state, health, restarts), what the owner stopped and what a
+    reset left resting until the next deploy, and every site that answered at the deploy, requested again through the
+    ingress. Read-only; the control plane judges regressions."""
     root, project = validate_target(target)
     reading = vitals(target, docker_factory)
     base = root / project
@@ -4026,7 +4329,7 @@ def watch(target, docker_factory=None, prober=probe_sites):
         probed = None
     return {"project": project, "currentId": current.get("id"), "release": current.get("release"),
             "condition": reading["condition"], "containers": reading["containers"], "problems": reading["problems"],
-            "stopped": reading.get("stopped"),
+            "stopped": reading.get("stopped"), "resting": resting_of(base),
             "sites": None if probed is None else [{"name": site["name"], "service": site.get("service"),
                                                    "url": site.get("url"), "ok": site["probe"]["ok"],
                                                    "detail": site["probe"].get("detail")}

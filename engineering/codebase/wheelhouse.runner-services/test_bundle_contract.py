@@ -225,6 +225,28 @@ class BundleContractTests(unittest.TestCase):
         self.assertEqual(([], {}, []), (runner.release_migrate(validated), runner.release_migration_sets(validated),
                                         runner.release_extensions(validated)))
 
+    @unittest.skipUnless(release is not None and hasattr(release, "config_check_of"),
+                         "the pinned generator predates configCheck")
+    def test_a_bundle_declaring_config_check_carries_the_items_the_runner_reads(self):
+        declared = copy.deepcopy(DESCRIPTOR)
+        declared["configCheck"] = [{"service": "api", "command": ["dotnet", "Pilot.Api.dll", "config", "check"],
+                                    "timeout": "30s"},
+                                   {"service": "edge", "command": ["edge", "config", "check"]}]
+        self.descriptor = release.validate(declared)
+        validated = self.bundle("main")
+        self.assertEqual([{"service": "api", "command": ["dotnet", "Pilot.Api.dll", "config", "check"],
+                           "timeoutSeconds": 30},
+                          {"service": "edge", "command": ["edge", "config", "check"],
+                           "timeoutSeconds": runner.CONFIG_CHECK_TIMEOUT}],
+                         runner.release_config_check(validated))
+
+    @unittest.skipUnless(release is not None and hasattr(release, "config_check_of"),
+                         "the pinned generator predates configCheck")
+    def test_a_bundle_without_config_check_carries_no_key_and_runs_no_step(self):
+        validated = self.bundle("main")
+        self.assertNotIn("configCheck", validated)
+        self.assertEqual([], runner.release_config_check(validated))
+
     @unittest.skipUnless(release is not None and hasattr(release, "pinned_images"), "the pinned generator predates pins")
     def test_a_pinned_image_of_another_repository_passes_the_runner_by_digest(self):
         declared = copy.deepcopy(DESCRIPTOR)

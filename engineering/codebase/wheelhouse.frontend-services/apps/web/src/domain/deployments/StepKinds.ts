@@ -12,6 +12,9 @@ export const StepKind = {
   /** Whether a release may run on the database as it stands (`Rollback gate api`), before a roll back or a deploy of
    * an older release. */
   RollbackGate: 'rollback_gate',
+  /** A service's `config check` on the settings the deploy rendered, before any restart (`Config check api`), and the
+   * rollback gate's own check of the release a restore returns to (`Rollback gate config check api`). */
+  ConfigCheck: 'config_check',
   Drain: 'drain',
   Wait: 'wait',
   Start: 'start',
@@ -55,7 +58,9 @@ const NAMED: Readonly<Record<string, StepKind>> = {
 /** Step names that carry what they act on after a fixed opening word: `Start desk, jobs`, `Roll back to v0.8.4`. A
  * longer opening comes before a shorter one it starts with. @internal */
 const PREFIXED: readonly (readonly [string, StepKind])[] = [
+  ['Rollback gate config check', StepKind.ConfigCheck],
   ['Rollback gate', StepKind.RollbackGate],
+  ['Config check', StepKind.ConfigCheck],
   ['Roll back', StepKind.RollBack],
   ['Restore ', StepKind.Restore],
   ['Restart ', StepKind.Restart],
@@ -69,6 +74,11 @@ const PREFIXED: readonly (readonly [string, StepKind])[] = [
 
 /** Pure rules over rollout steps' kinds. */
 export const StepKinds = {
+  /** Whether a step belongs to a rollback gate: its migrate check, its config check, or its skip with a warning. */
+  isGate(name: string): boolean {
+    return name.startsWith('Rollback gate');
+  },
+
   /** The kind of a step by its name; a name the runner adds later reads as `other`. */
   of(name: string): StepKind {
     const named = NAMED[name];
@@ -78,15 +88,16 @@ export const StepKinds = {
 
   /**
    * The steps of an automatic restore, drawn nested under the failure they answer: each roll back and restore, and a
-   * rollback gate that follows a failed step. A gate before any failure guards a deploy of an older release and stays
-   * a step of its own.
+   * rollback gate — its migrate check or its config check — that follows a failed step. A gate before any failure
+   * guards a deploy of an older release and stays a step of its own, as does a config check of the release deployed,
+   * even one after another item refused.
    */
   restoreSteps(steps: readonly DeploymentStep[]): ReadonlySet<DeploymentStep> {
     const restore = new Set<DeploymentStep>();
     let failed = false;
     for (const step of steps) {
       const kind = StepKinds.of(step.name);
-      if (kind === StepKind.RollBack || kind === StepKind.Restore || (kind === StepKind.RollbackGate && failed))
+      if (kind === StepKind.RollBack || kind === StepKind.Restore || (StepKinds.isGate(step.name) && failed))
         restore.add(step);
       if (step.status === StepStatus.Failed) failed = true;
     }

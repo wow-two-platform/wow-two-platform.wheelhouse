@@ -223,6 +223,43 @@ class ResetTests(unittest.TestCase):
         self.assertIsNone(runner.stopped_of(self.base))
         self.assertEqual("succeeded", self.apply(ResetDocker)["status"])
 
+    def look(self, states):
+        """The target's look after a rollout, as the watch takes it, with each service's container in `states`."""
+        reading = {"containers": [{"service": name, "state": state, "health": None, "restarts": 0}
+                                  for name, state in states.items()], "problems": [], "condition": "ready",
+                   "stopped": runner.stopped_of(self.base)}
+        with patch.object(runner, "vitals", return_value=reading):
+            return runner.watch(self.target, prober=lambda *arguments, **options: [])
+
+    def test_a_reset_inside_the_watch_leaves_every_service_resting_never_a_regression(self):
+        record = self.reset()
+        self.assertEqual("succeeded", record["status"], record.get("reason"))
+        self.assertEqual(["api"], runner.resting_of(self.base))
+        look = self.look({"api": "exited"})
+        self.assertEqual((["api"], None), (look["resting"], look["stopped"]))
+        self.assertEqual([], transport.regressions(look, {"api": 0}))
+        # The next deploy starts them: nothing rests any more, and an exited container regresses again.
+        self.assertEqual("succeeded", self.apply(ResetDocker)["status"])
+        self.assertEqual([], runner.resting_of(self.base))
+        self.assertEqual(["api is exited"], transport.regressions(self.look({"api": "exited"}), {"api": 0}))
+
+    def test_a_reset_failing_after_the_drop_leaves_them_resting_and_one_before_it_does_not(self):
+        ResetDocker.fail_stop = True
+        self.assertEqual("failed", self.reset()["status"])
+        self.assertEqual([], runner.resting_of(self.base))
+        ResetDocker.fail_stop = False
+        self.running(extensions=["pg_trgm"])
+        ResetDocker.fail_psql = "CREATE EXTENSION"
+        self.assertEqual("failed", self.reset(job="11111111-1111-4111-8111-111111111192")["status"])
+        self.assertEqual(["api"], runner.resting_of(self.base))
+
+    def test_a_start_after_a_reset_clears_what_rests(self):
+        self.reset()
+        record = runner.control(self.target, "start", [], "max", "11111111-1111-4111-8111-111111111193",
+                                docker_factory=ResetDocker)
+        self.assertEqual("succeeded", record["status"], record.get("reason"))
+        self.assertEqual([], runner.resting_of(self.base))
+
     def test_a_reset_launches_like_any_control(self):
         target_path = self.root / "target.json"
         runner.write_json(target_path, self.target)
@@ -425,6 +462,23 @@ class SetResetTests(unittest.TestCase):
         self.assertFalse(any(event.startswith("start") for event in FakeDocker.events))
         self.assertEqual([("default", 1, "behind", "reset")], [(item["name"], item["level"], item["state"], item["source"])
                                                                for item in self.known()])
+
+    def test_a_set_reset_leaves_only_its_service_resting_until_the_next_deploy(self):
+        self.with_web()
+        self.assertEqual("succeeded", self.reset_set()["status"])
+        self.assertEqual(["api"], runner.resting_of(self.base))
+        look = ResetTests.look(self, {"api": "exited", "web": "exited"})
+        self.assertEqual(["web is exited"], transport.regressions(look, {}))
+        self.assertEqual("succeeded", self.apply(SetResetDocker)["status"])
+        self.assertEqual([], runner.resting_of(self.base))
+
+    def test_a_set_reset_whose_rollback_ran_leaves_its_service_resting_and_a_refused_one_does_not(self):
+        Rig.forced = [(1, rollback_line("refused", "current", 2, 2))]
+        self.assertEqual("failed", self.reset_set()["status"])
+        self.assertEqual([], runner.resting_of(self.base))
+        Rig.forced = [(2, rollback_line("failed", "behind", 2, 1, [("002-notes", "expand")]))]
+        self.assertEqual("failed", self.reset_set(job="11111111-1111-4111-8111-111111111194")["status"])
+        self.assertEqual(["api"], runner.resting_of(self.base))
 
     def test_a_set_reset_keeps_what_the_owner_stopped_but_its_own_service(self):
         self.with_web()

@@ -71,6 +71,17 @@ class WatchPassTests(unittest.TestCase):
         self.run_pass(20)
         self.assertEqual("degraded", self.record()["status"], "a degraded rollout stays degraded")
 
+    def test_a_service_a_reset_left_resting_is_no_regression(self):
+        # A reset inside the window: its services stay stopped until the next deploy, their sites with them.
+        self.look(restarts=0)
+        self.run_pass(1)
+        self.look(state="exited", health=None, sites=(("app", False),))
+        self.readings[-1].update(resting=["api"])
+        self.readings[-1]["sites"][0]["service"] = "api"
+        self.run_pass(3)
+        self.assertEqual(("watching", []), (self.record()["status"], self.record()["findings"]))
+        self.assertEqual(1, self.run_pass(11)["passed"])
+
     def test_an_unhealthy_container_on_the_first_look_degrades_too(self):
         self.look(state="exited", health=None)
         self.run_pass(1)

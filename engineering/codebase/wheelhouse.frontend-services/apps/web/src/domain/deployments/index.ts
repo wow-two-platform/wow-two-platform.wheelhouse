@@ -1,6 +1,7 @@
 export { JobStatus } from './enums/JobStatus';
 export { TargetCondition } from './enums/TargetCondition';
 export { StepStatus } from './enums/StepStatus';
+export { StepFindingKind } from './enums/StepFindingKind';
 export { StepKind, StepKinds } from './StepKinds';
 export {
   RolloutProgress,
@@ -10,6 +11,7 @@ export {
   type ServiceVersionCell,
 } from './RolloutProgress';
 export type { DeploymentStep } from './models/DeploymentStep';
+export type { StepFinding } from './models/StepFinding';
 export type { DeploymentJob } from './models/DeploymentJob';
 export type { DeploymentTarget } from './models/DeploymentTarget';
 export type { SelfDeployment, SelfDeploymentRun } from './models/SelfDeployment';
