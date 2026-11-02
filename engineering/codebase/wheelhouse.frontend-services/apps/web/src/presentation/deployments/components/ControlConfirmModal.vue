@@ -14,7 +14,7 @@ export interface ControlConfirmModalProps {
 import { computed, ref, watch } from "vue";
 import { Eraser, Pause, Play, RotateCw, SquareTerminal } from "lucide-vue-next";
 
-import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Button, CopyButton } from "@wow-two-beta/fe/presentation/actions";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 import { Field, TextInput } from "@wow-two-beta/fe/presentation/forms";
 import { TypedConfirmModal } from "@wow-two-beta/fe/presentation/overlays";
@@ -46,6 +46,8 @@ const progress = ref<string | null>(null);
 const outcome = ref<string | null>(null);
 /** How a run's command ended, once it succeeded: the dialog stays open on it. */
 const finished = ref<ControlRun | null>(null);
+/** How a run's command ended, once it failed or timed out: the target's reason shows it, and its last line copies. */
+const failed = ref<ControlRun | null>(null);
 /** While the control is queued and followed: nothing typed changes it any more. */
 const submitting = ref(false);
 /** A finished run whose last line the target kept as printed, for one read: its target and job. */
@@ -97,6 +99,7 @@ watch(
     progress.value = null;
     outcome.value = null;
     finished.value = null;
+    failed.value = null;
     revealable.value = null;
     revealed.value = null;
     revealProblem.value = null;
@@ -113,6 +116,7 @@ async function submit(typed: string) {
   // A run again from the same dialog starts clean: the last run's result and its show-once line belong to its own job.
   outcome.value = null;
   finished.value = null;
+  failed.value = null;
   revealable.value = null;
   revealed.value = null;
   revealProblem.value = null;
@@ -132,6 +136,7 @@ async function submit(typed: string) {
     progress.value = null;
     if (ended?.run?.reveal) revealable.value = { target: request.target.id, job: result.value.id };
     if (ended && ended.status !== JobStatus.Succeeded) {
+      failed.value = ended.run ?? null;
       outcome.value =
         ended.reason || (ended.run ? ServiceControls.runResult(ended.run) : `The target could not ${request.operation} it (${ended.status}).`);
       throw new Error(outcome.value);
@@ -190,15 +195,52 @@ async function reveal() {
     </Field>
     <p v-if="progress" role="status" class="text-sm text-muted-foreground">{{ progress }}</p>
     <Alert v-if="finished" role="status" severity="success" :title="ServiceControls.runResult(finished)">
-      <p v-if="finished.lastLine" class="break-all font-mono text-xs">{{ finished.lastLine }}</p>
+      <div v-if="finished.lastLine" class="flex items-start gap-2">
+        <p class="min-w-0 flex-1 break-all font-mono text-xs">{{ finished.lastLine }}</p>
+        <CopyButton
+          :text="finished.lastLine"
+          size="sm"
+          variant="outline"
+          tone="neutral"
+          shape="square"
+          class="max-md:size-11"
+          aria-label="Copy the last line"
+          copied-aria-label="Last line copied"
+        />
+      </div>
       <p v-else class="text-xs">The command printed no output.</p>
     </Alert>
+    <div v-if="failed?.lastLine" class="flex items-center justify-end gap-2">
+      <span class="text-xs text-muted-foreground">Copy the last line it printed</span>
+      <CopyButton
+        :text="failed.lastLine"
+        size="sm"
+        variant="outline"
+        tone="neutral"
+        shape="square"
+        class="max-md:size-11"
+        aria-label="Copy the last line"
+        copied-aria-label="Last line copied"
+      />
+    </div>
     <div v-if="revealable" class="flex flex-wrap items-center gap-2">
       <Button size="sm" variant="outline" @click="reveal">Show the full line once</Button>
       <span class="text-xs text-muted-foreground">It holds something the job keeps cut, such as an invitation link.</span>
     </div>
     <Alert v-if="revealed" severity="warning" title="Shown once: copy it now">
-      <p class="select-all break-all font-mono text-xs">{{ revealed }}</p>
+      <div class="flex items-start gap-2">
+        <p class="min-w-0 flex-1 select-all break-all font-mono text-xs">{{ revealed }}</p>
+        <CopyButton
+          :text="revealed"
+          size="sm"
+          variant="outline"
+          tone="neutral"
+          shape="square"
+          class="max-md:size-11"
+          aria-label="Copy the full line"
+          copied-aria-label="Full line copied"
+        />
+      </div>
       <p class="text-xs">Wheelhouse keeps no copy; it is gone once this dialog closes.</p>
     </Alert>
     <Alert v-if="revealProblem" severity="danger" :title="revealProblem" />
