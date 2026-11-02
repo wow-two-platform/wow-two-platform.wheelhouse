@@ -111,7 +111,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Ability to run each service's `config check` before any restart | feature | Next, v0.13. Hub `deploy-descriptor.md` § Config check (`ae74bf1`): a `configCheck:` item, after migrate on every release deploy, on every settings-only apply and in the rollback gate; Identity answered the contract 2026-11-01, and its verb is not built yet (the be sdk hosts it) |
 | Offer a drifted set's Reset on the deploy that refused for drift | feature | Owner 2026-11-01: drift resets by one click, never automatically (hub `migrations.md` § Lifecycle). Ocharo prod's refused deploy named the drift, and the owner had to find the Migrations panel's Reset |
 | Ability to record each deployment's settings, diff two deploys and restore them exactly | feature | Identity 2026-11-01: non-secret values plus each secret's vault version, with a hash; the audit records who and when, not values. Feeds the issuer-change warning and an exact restore on rollback |
 | Warn before a deploy changes a product's `Identity:Server:Issuer` | feature | Every token and client registration names the old issuer; needs the per-deploy settings record |
@@ -121,7 +120,6 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 | Ability to copy backups off the host to another VPS or storage | feature | Owner 2026-10-30: after the same-host backups; the provider and its bill are the owner's pick |
 | Ability to gate Wheelhouse's own returns without forced compatibility | engineering | Drop the forced `rollbackCompatible` from `self-deploy.py` `gated()` and `fleet.py` once neither console keeps a release from before `v0.7.8`; both still did on 2026-10-30 |
 | Fix the console's history missing a break-glass rollout | fix | 2026-10-30: `self-deploy.py` promoted prod to `v0.9.0`, yet Deployments still lists the failed console promotion as unrecovered and offers `v0.7.8` → `v0.9.0` |
-| Fix a database reset inside the post-rollout watch reading as degraded | fix | The reset leaves the services stopped until the next deploy; the watch reads them exited |
 | Ability to drain requests and show maintenance before a rollout | feature | |
 | Ability to dry-run pending migrations before a rollout | feature | |
 | Ability for product frontends to refresh onto a new version | feature | |
