@@ -804,7 +804,8 @@ get them only from the deploy-time render. Dev Wheelhouse keeps its own vault an
   A deploy never replaces a stored value; Regenerate under Secrets makes a new version. The audit
   (`settings.generate`, `settings.secret.regenerate`) names keys and versions, never a value.
 - Linked keys: a `from` key holds no value of its own; the render copies its source's value, and the console shows it
-  read-only with its source.
+  read-only with its source. One naming another repository (`linkRepositories`) reads only that repository's services;
+  composing the release set refuses it when that repository's release lacks the source.
 
 ### The root key file (owner, once per console)
 

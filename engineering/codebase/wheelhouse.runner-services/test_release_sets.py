@@ -285,6 +285,45 @@ class ComposeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unknown service'):
             release_sets.compose('pilot', 'pilot-set-0123456789ab', parts)
 
+    def linked_parts(self, source='Auth:Client', repository='app', source_settings=None):
+        """A set whose studio links into the app repository; `source_settings` replaces what api declares."""
+        parts = self.parts()
+        parts[0][2]['requiredConfiguration']['api'] = ['AllowedHosts', 'Auth:Client']
+        parts[0][2]['settings'] = {'api': source_settings if source_settings is not None else {
+            'secrets': ['Auth:Client'], 'types': {'Auth:Client': {'type': 'text'}},
+            'generate': {'Auth:Client': {'random': 32}}}}
+        parts[1][2]['settings'] = {'studio': {'links': {'Sso:Secret': source},
+                                              'linkRepositories': {'Sso:Secret': repository}}}
+        return parts
+
+    def test_a_link_into_another_repository_composes_when_that_release_holds_its_source(self):
+        manifest, compose_bytes = release_sets.compose('pilot', 'pilot-set-0123456789ab', self.linked_parts())
+        self.assertEqual({'links': {'Sso:Secret': 'Auth:Client'}, 'linkRepositories': {'Sso:Secret': 'app'}},
+                         manifest['settings']['studio'])
+        with tempfile.TemporaryDirectory() as folder:
+            release_sets.write(folder, manifest, compose_bytes)
+            declared = runner.release_settings(runner.validate_bundle(folder))
+        self.assertEqual({'Sso:Secret': 'app'}, declared['studio']['linkRepositories'])
+        # A site that repository publishes is a source too.
+        parts = self.linked_parts(source='Sites:app:Url')
+        self.assertEqual('Sites:app:Url', release_sets.compose('pilot', 'pilot-set-0123456789ab',
+                                                               parts)[0]['settings']['studio']['links']['Sso:Secret'])
+
+    def test_a_link_into_another_repository_is_refused_when_its_source_is_missing(self):
+        linked = {'links': {'Auth:Client': 'Sites:app:Url'}}
+        own = self.linked_parts(source='Studio:Own')
+        own[1][2]['requiredConfiguration']['studio'] = ['AllowedHosts', 'Studio:Own']
+        for parts, message in (
+                (self.linked_parts(source='Auth:Ghost'),
+                 'owner/pilot-studio: studio: setting Sso:Secret: from Auth:Ghost in app: that release declares no such key'),
+                (self.linked_parts(source='Sites:ghost:Url'), 'that release publishes no such site'),
+                (self.linked_parts(repository='billing'), 'this release set holds no such repository'),
+                # Declared by the set, but in the repository the link does not name.
+                (own, 'from Studio:Own in app: that release declares no such key'),
+                (self.linked_parts(source_settings=linked), 'that key is itself linked')):
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                release_sets.compose('pilot', 'pilot-set-0123456789ab', parts)
+
     def test_a_set_refuses_a_shared_service_another_product_or_mixed_platforms(self):
         parts = self.parts()
         clash = bundle('v0.3.0', digested([('api', 'ghcr.io/owner/pilot-studio/api')]), 'b' * 40)
@@ -523,6 +562,18 @@ class ReleaseSetTests(unittest.TestCase):
         self.assertNotIn(older['id'], [item['id'] for item in artifacts.available(self.root)])
         self.assertEqual('app-v0.1.0_studio-v0.2.0',
                          runner.validate_bundle(artifacts.prepare(self.root, older['id'], transport.import_bundle))['release'])
+
+    def test_a_set_whose_link_lost_its_source_is_refused_when_it_deploys(self):
+        # The listing composes nothing, so the deploy's own bundle read is what refuses the set, and nothing is cached.
+        settings = {'settings': {'studio': {'links': {'Sso:Secret': 'Auth:Ghost'},
+                                            'linkRepositories': {'Sso:Secret': 'app'}}}}
+        self.github.release(STUDIO, 'v0.3.0', '2026-10-04T00:00:00Z', 22, *bundle('v0.3.0', self.studio_images, '4' * 40,
+                                                                                    **settings))
+        newest = artifacts.available(self.root)[0]
+        self.assertEqual('app-v0.1.1_studio-v0.3.0', newest['release'])
+        with self.assertRaisesRegex(ValueError, 'from Auth:Ghost in app: that release declares no such key'):
+            artifacts.prepare(self.root, newest['id'], transport.import_bundle)
+        self.assertFalse((self.root / 'bundles' / newest['id']).exists())
 
     def test_a_repository_whose_descriptor_still_names_its_old_product_is_named(self):
         manifest, compose_bytes = bundle('v0.2.1', self.studio_images, '4' * 40)

@@ -18,14 +18,18 @@ later sets take it; the primary repository serves the front door, so no set exis
   every component in the set declares it (a repository not in it yet declares nothing); .NET environments stay with the
   services whose repository opted in. Migrate items run in repository order, an item after the items hosting the sets
   its sets depend on; migration sets, extensions and config check items are every repository's, in repository order.
+- Links: a linked key may name another repository's key or site (`linkRepositories`), which its own repository's
+  generator cannot see. The composition checks each against the named repository's release in the set and refuses one
+  that repository does not hold, so a deploy never starts with the key left unset.
 """
 from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
 import re
-from runner import (RELEASE, SHA, SLUG, dependency_waves, read_json, release_config_check, release_extensions,
-                    release_migrate, release_migration_sets, require, service_dependencies, write_json)
+from runner import (RELEASE, SHA, SITE_URL_KEY, SLUG, declares, dependency_waves, read_json, release_config_check,
+                    release_extensions, release_migrate, release_migration_sets, release_settings, require,
+                    service_dependencies, write_json)
 
 SET_ID = re.compile(r"[a-z][a-z0-9-]*-set-([0-9a-f]{12})")
 DIGEST = 12
@@ -134,8 +138,8 @@ def site_parts(manifest):
 def compose(product, set_id, parts):
     """The set's release.json and compose.json bytes. `parts` are each component's (short name, repository, manifest,
     compose) in repository order, primary first, each already validated against its own repository. Refuses a service,
-    a site or a named volume two repositories declare, mixed platforms, and a dependency on no service or in a cycle
-    across repositories."""
+    a site or a named volume two repositories declare, mixed platforms, a dependency on no service or in a cycle across
+    repositories, and a link into a repository that does not hold its source (`check_links`)."""
     require(parts, "A release set needs at least one component")
     platforms = {manifest["platform"] for _, _, manifest, _ in parts}
     require(len(platforms) == 1, "The product's repositories build for different platforms")
@@ -194,6 +198,7 @@ def compose(product, set_id, parts):
     if volumes:
         document["volumes"] = volumes
     dependency_waves(services, service_dependencies(document))
+    check_links(parts)
     compose_bytes = (json.dumps(document, indent=2) + "\n").encode()
     kinds = {component["kind"] for component in components}
     candidates = [manifest.get("branch") for _, _, manifest, _ in parts if manifest.get("kind") == "candidate"]
@@ -229,6 +234,34 @@ def compose(product, set_id, parts):
         result["branch"] = candidates[0]
     require(SHA.fullmatch(result["sourceCommit"]), "A full source commit is required")
     return result, compose_bytes
+
+
+def check_links(parts):
+    """Each link that names a repository (`linkRepositories`) against that repository's release in the set: the set must
+    hold the repository, and the release must declare the source as its own key, or publish it as a site for
+    `Sites:<site>:Url`. A source linked in turn is refused (one hop). Messages name keys and repositories, never a value."""
+    releases = {short: manifest for short, _, manifest, _ in parts}
+    for _, repository, manifest, _ in parts:
+        for service, entry in sorted(release_settings(manifest).items()):
+            for key, named in sorted(entry["linkRepositories"].items()):
+                source = entry["links"][key]
+                what = repository + ": " + service + ": setting " + key + ": from " + source + " in " + named
+                require(named in releases, what + ": this release set holds no such repository; it needs its release first")
+                problem = link_source_problem(releases[named], source)
+                require(problem is None, what + ": " + str(problem))
+
+
+def link_source_problem(manifest, source):
+    """Why a repository's release cannot supply a link's source, or None."""
+    site = SITE_URL_KEY.fullmatch(source)
+    if site is not None:
+        return None if site.group(1) in site_parts(manifest)[0] else "that release publishes no such site"
+    required, declared = manifest.get("requiredConfiguration") or {}, release_settings(manifest)
+    if any(declares(service, source, required, declared) for service in required):
+        return None
+    if any(source in entry["links"] for entry in declared.values()):
+        return "that key is itself linked; a source cannot have from (one hop)"
+    return "that release declares no such key"
 
 
 def migrate_order(items, migration_sets):

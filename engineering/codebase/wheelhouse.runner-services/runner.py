@@ -365,7 +365,7 @@ def dotnet_services(manifest, services):
 
 def no_settings():
     """The declarations of a service that declares nothing beyond its required keys."""
-    return {"optional": {}, "secrets": [], "allowed": {}, "types": {}, "generate": {}, "links": {}}
+    return {"optional": {}, "secrets": [], "allowed": {}, "types": {}, "generate": {}, "links": {}, "linkRepositories": {}}
 
 
 def generated_spec(spec):
@@ -391,9 +391,9 @@ def release_settings(manifest):
     """What a release declares about its services' settings beyond the required keys, by service: `optional` keys with
     their defaults, the keys that are `secrets`, the `allowed` values of a key, each typed key's `types` entry (its
     type, and a date's format), each generated key's `generate` spec (a secret text key without a default) and each
-    linked key's source (`links`: key -> configuration path). A linked key stands alone: no other part names it, it
-    takes its source's type and secrecy, and its source is no linked key (one hop). Optional in a bundle; only services
-    that take a settings file may declare them."""
+    linked key's source (`links`: key -> configuration path), with `linkRepositories` naming the repository of a source
+    in another one. A linked key stands alone: no other part names it, it takes its source's type and secrecy, and its
+    source is no linked key (one hop). Optional in a bundle; only services that take a settings file may declare them."""
     declared = manifest.get("settings", {})
     require(isinstance(declared, dict) and set(declared) <= set(manifest.get("requiredConfiguration") or {}),
             "Settings declarations name a service without a settings file")
@@ -426,12 +426,15 @@ def release_settings(manifest):
         require(isinstance(links, dict) and all(
             SETTING_KEY.fullmatch(key) and isinstance(source, str) and SETTING_KEY.fullmatch(source) and source != key
             for key, source in links.items()), "Invalid linked settings")
+        repositories = entry.get("linkRepositories", {})
+        require(isinstance(repositories, dict) and set(repositories) <= set(links) and all(
+            isinstance(name, str) and SLUG.fullmatch(name) for name in repositories.values()), "Invalid linked settings")
         crowded = sorted(set(links) & (set(optional) | set(secrets) | set(allowed) | set(types)))
         require(not crowded, "A linked setting stands alone: " + ", ".join(crowded))
         result[service] = {"optional": dict(optional), "secrets": list(secrets), "allowed": dict(allowed),
                            "types": {key: dict(value) for key, value in types.items()},
                            "generate": {key: generated_spec(spec) for key, spec in generate.items()},
-                           "links": dict(links)}
+                           "links": dict(links), "linkRepositories": dict(repositories)}
     linked = {key for entry in result.values() for key in entry["links"]}
     for entry in result.values():
         for key, source in sorted(entry["links"].items()):
@@ -1624,11 +1627,26 @@ def declares(service, key, required, declared):
         key in entry[part] for part in ("optional", "secrets", "types", "generate")))
 
 
-def linked_value(source, documents, required, declared, values, derived):
-    """A linked key's value: its source's rendered value in a service that declares the source, else the control
-    plane's provided value, else the derived site URL (`Sites:<site>:Url`); None when none has one."""
+def link_services(manifest, declared, service, key):
+    """The services a linked key may read its source from: those of the repository it names (`linkRepositories`), or
+    None when it names none and any service may. Only a release set holds another repository, and composing one checked
+    the source (release_sets.check_links), so any other release refuses the link rather than leave the key unset."""
+    repository = (declared.get(service) or no_settings())["linkRepositories"].get(key)
+    if repository is None:
+        return None
+    for component in release_components(manifest) or []:
+        if component["name"] == repository:
+            return set(component["services"])
+    raise RenderRefused(service + ": setting " + key + " takes its value from repository " + repository
+                        + ", which this release does not hold")
+
+
+def linked_value(source, documents, required, declared, values, derived, among=None):
+    """A linked key's value: its source's rendered value in a service that declares the source (of `among`, when the
+    key names a repository), else the control plane's provided value, else the derived site URL (`Sites:<site>:Url`);
+    None when none has one."""
     for service in sorted(documents):
-        if declares(service, source, required, declared):
+        if (among is None or service in among) and declares(service, source, required, declared):
             value = configuration_value(documents[service], source)
             if value not in (None, "", []):
                 return json.loads(json.dumps(value))
@@ -1762,7 +1780,8 @@ def render_settings(target, manifest, project, provided, docker):
     # Linked keys last: a source is read from its declaring service's finished document, never from another link.
     for service in sorted(required):
         for key, source in sorted(links[service].items()):
-            value = linked_value(source, documents, required, declared, values, derived_by[service])
+            value = linked_value(source, documents, required, declared, values, derived_by[service],
+                                 link_services(manifest, declared, service, key))
             if value is not None:
                 set_value(documents[service], key, value)
                 sources[service]["linked"].append(key)
@@ -4372,8 +4391,10 @@ def render_readiness(target, manifest, project, service, required, provided, pro
             require(covers(covered, key), "Missing required setting: " + service + ":" + key)
         every = (manifest.get("requiredConfiguration") or {}) if manifest else {}
         for key, source in sorted(links.items()):
+            among = link_services(manifest, declared, service, key)
             for name in sorted(every):
-                if source not in every[name] or source in (declared.get(name) or no_settings())["links"]:
+                if (among is not None and name not in among) or source not in every[name] \
+                        or source in (declared.get(name) or no_settings())["links"]:
                     continue
                 cover = covered if name == service else readiness_cover(
                     target, manifest, project, name, [source], provided, proxy)[0]

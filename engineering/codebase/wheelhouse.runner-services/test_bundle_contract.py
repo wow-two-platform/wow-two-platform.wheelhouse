@@ -3,6 +3,7 @@
 The generator lives in wow-two-platform.pipelines. CI checks it out at the tag the publish workflow pins and names it in
 WHEELHOUSE_PIPELINES; locally the sibling checkout in the workbench serves. Without either, the tests skip.
 """
+import base64
 import copy
 import importlib.util
 import json
@@ -11,7 +12,9 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import release_sets
 import runner
+from test_settings_render import RenderDocker
 
 HERE = Path(__file__).resolve().parent
 PIPELINES = Path(os.environ.get("WHEELHOUSE_PIPELINES") or HERE.parents[3] / "wow-two-platform.pipelines")
@@ -160,6 +163,72 @@ class BundleContractTests(unittest.TestCase):
         self.assertEqual(({"Billing:Mode": "test", "Jobs:Cleanup": "0 3 * * *"}, ["Stripe:ApiKey"]),
                          (settings["optional"], settings["secrets"]))
         self.assertEqual({"type": "date", "format": "dd.MM.yyyy"}, settings["types"]["Promo:EndsOn"])
+
+    def part(self, short, repository, declared):
+        """One repository's real bundle from its descriptor, as a release set's composition takes it."""
+        self.descriptor = release.validate(declared)
+        validated = self.bundle("main")
+        return short, repository, validated, runner.read_json(self.repo / "bundle-main" / "compose.json")
+
+    def linked_set(self, source):
+        """A product of two repositories, each through the real generator: platform's identity generates a client secret,
+        and the site repository's web takes it and identity's site by `from`."""
+        client = "Identity:Server:Clients:0:ClientSecret"
+        platform = {"descriptor": 2, "product": "pilot", "sites": {"identity": {"primary": True}}, "services": {
+            "identity": {"build": {"dockerfile": "deployment/backend.Dockerfile"},
+                         "paths": ["codebase/pilot.backend-services/**"], "health": "/health",
+                         "sites": {"identity": {"paths": ["/"]}},
+                         "settings": {"keys": {client: {"secret": True, "required": True, "generate": {"random": 32}}}}}}}
+        site = {"descriptor": 2, "product": "pilot", "sites": {"web": {"primary": True}}, "services": {
+            "web": {"build": {"dockerfile": "deployment/backend.Dockerfile"},
+                    "paths": ["codebase/pilot.backend-services/**"], "health": "/health",
+                    "sites": {"web": {"paths": ["/"]}},
+                    "settings": {"keys": {
+                        "Identity:Client:ClientSecret": {"from": {"repository": "platform", "key": source}},
+                        "Identity:Client:Authority": {"from": {"repository": "platform", "key": "Sites:identity:Url"}}}}}}}
+        return [self.part("platform", "owner/pilot-platform", platform), self.part("site", "owner/pilot-site", site)]
+
+    @unittest.skipUnless(release is not None and hasattr(release, "link_of"),
+                         "the pinned generator predates links into another repository")
+    def test_a_generated_secret_of_one_descriptor_renders_into_another_repositorys_service(self):
+        client = "Identity:Server:Clients:0:ClientSecret"
+        manifest, compose_bytes = release_sets.compose("pilot", "pilot-set-0123456789ab", self.linked_set(client))
+        folder = self.repo / "set"
+        release_sets.write(folder, manifest, compose_bytes)
+        validated = runner.validate_bundle(folder)
+        target = {"product": "pilot", "environment": "dev", "root": str(self.repo / "srv"), "render": True, "settings": {},
+                  "minimumFreeBytes": 0, "variables": {"PLATFORM_NETWORK": "platform"},
+                  "ingress": {"scheme": "https", "entryPoints": ["web"],
+                              "hosts": {"identity": "id.pilot.example", "web": "web.pilot.example"}}}
+        (self.repo / "srv" / "config" / "pilot-dev").mkdir(parents=True, mode=0o700)
+        (self.repo / "srv" / "config").chmod(0o700)
+        # What the console reads: identity's key says how its value is made, web's that it follows it, as a secret.
+        keys = {service["name"]: {item["key"]: item for item in service["keys"]}
+                for service in runner.settings_declarations(target, validated)["services"]}
+        spec = keys["identity"][client]["generate"]
+        self.assertEqual({"random": 32, "encoding": "base64url"}, spec)
+        self.assertEqual({"key": "Identity:Client:ClientSecret", "required": False, "secret": True, "from": client},
+                         keys["web"]["Identity:Client:ClientSecret"])
+        # Wheelhouse makes the value from that spec and sends it to the deploy.
+        generated = base64.urlsafe_b64encode(os.urandom(spec["random"])).rstrip(b"=").decode()
+        RenderDocker.events, RenderDocker.ingress, RenderDocker.pulled = [], True, None
+        result = runner.apply(folder, target, "max", docker_factory=RenderDocker, provided={"values": {client: generated}})
+        self.assertEqual("succeeded", result["status"], result.get("reason"))
+        rendered = {name: runner.read_json(self.repo / "srv" / "config" / "pilot-dev" / (name + ".target.json"))
+                    for name in ("identity", "web")}
+        self.assertEqual(generated, rendered["identity"]["Identity"]["Server"]["Clients"]["0"]["ClientSecret"])
+        self.assertEqual({"ClientSecret": generated, "Authority": "https://id.pilot.example"},
+                         rendered["web"]["Identity"]["Client"])
+        self.assertEqual(["Identity:Client:Authority", "Identity:Client:ClientSecret"], result["settings"]["web"]["linked"])
+        self.assertNotIn(generated, json.dumps(result))
+
+    @unittest.skipUnless(release is not None and hasattr(release, "link_of"),
+                         "the pinned generator predates links into another repository")
+    def test_a_link_whose_source_the_other_repository_lacks_is_refused(self):
+        with self.assertRaisesRegex(runner.Rejected, "web: setting Identity:Client:ClientSecret: from "
+                                                     "Identity:Server:Clients:9:ClientSecret in platform: "
+                                                     "that release declares no such key"):
+            release_sets.compose("pilot", "pilot-set-0123456789ab", self.linked_set("Identity:Server:Clients:9:ClientSecret"))
 
     @unittest.skipUnless(release is not None and hasattr(release, "generate_of"),
                          "the pinned generator predates generated and linked keys")

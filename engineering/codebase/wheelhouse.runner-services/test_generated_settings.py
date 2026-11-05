@@ -178,6 +178,51 @@ class LinkedSettingsTests(unittest.TestCase):
         self.assertEqual("succeeded", result["status"], result.get("reason"))
         self.assertEqual("solo", self.rendered("desk")["Billing"]["Plan"])
 
+    def linked_across_repositories(self):
+        """The desk's client secret linked into a platform repository, and another repository's same-named key beside it."""
+        self.manifest["images"]["aaa"] = "ghcr.io/owner/pilot/aaa@sha256:" + "e" * 64
+        self.manifest["requiredConfiguration"]["aaa"] = [CLIENT]
+        self.manifest["settings"]["desk"]["linkRepositories"] = {"Auth:ClientSecret": "platform"}
+        self.manifest["set"] = "pilot-set-0123456789ab"
+        self.manifest["components"] = [
+            {"name": "platform", "repository": "owner/pilot-platform", "release": "v1", "kind": "release",
+             "sourceCommit": "a" * 40, "services": ["identity"]},
+            {"name": "site", "repository": "owner/pilot-site", "release": "v1", "kind": "release",
+             "sourceCommit": "b" * 40, "services": ["aaa", "desk"]}]
+        self.host_file("aaa", {"Identity": {"Server": {"Clients": {"0": {"ClientSecret": "OTHER_REPOSITORY"}}}}})
+        self.host_file("identity", {"Identity": {"Server": {"Clients": {"0": {"ClientSecret": "PLATFORM"}}}}})
+        self.save()
+
+    def test_a_link_naming_a_repository_reads_its_source_only_there(self):
+        self.linked_across_repositories()
+        result = self.apply({SIGNING: "SIGNING_PEM"})
+        self.assertEqual("succeeded", result["status"], result.get("reason"))
+        self.assertEqual("PLATFORM", self.rendered("desk")["Auth"]["ClientSecret"])
+        self.assertEqual("https://id.pilot.example", self.rendered("desk")["Auth"]["Authority"])
+        manifest = runner.validate_bundle(self.bundle)
+        ready = runner.check(self.target, manifest, docker_factory=CheckDocker, provided={"keys": [SIGNING]})
+        self.assertTrue(ready["ok"], ready["checks"])
+
+    def test_a_release_that_is_no_set_refuses_a_link_into_another_repository(self):
+        # Nothing but a set holds another repository, so a lone release stops before it would leave the key unset.
+        self.manifest["settings"]["desk"]["linkRepositories"] = {"Auth:ClientSecret": "platform"}
+        self.save()
+        message = "desk: setting Auth:ClientSecret takes its value from repository platform, which this release does not hold"
+        with self.assertRaisesRegex(runner.RenderRefused, message):
+            self.apply({SIGNING: "SIGNING_PEM", CLIENT: "CLIENT_SECRET"})
+        self.assertFalse((self.config / "desk.target.json").exists())
+        manifest = runner.validate_bundle(self.bundle)
+        checked = runner.check(self.target, manifest, docker_factory=CheckDocker, provided={"keys": [SIGNING, CLIENT]})
+        self.assertEqual(message, {item["name"]: item["detail"] for item in checked["checks"]}["Settings: desk"])
+
+    def test_invalid_link_repositories_are_refused(self):
+        for repositories in ({"Auth:Other": "platform"}, {"Auth:ClientSecret": "Platform"}, {"Auth:ClientSecret": 5},
+                             ["platform"]):
+            with self.subTest(repositories=repositories), self.assertRaisesRegex(runner.Rejected, "Invalid linked settings"):
+                manifest = copy.deepcopy(self.manifest)
+                manifest["settings"]["desk"]["linkRepositories"] = repositories
+                runner.release_settings(manifest)
+
     def test_a_linked_key_never_joins_the_required_list(self):
         # A release that lists the linked key as required still renders it from its source, and an optional source
         # with no value leaves it unset instead of refusing the deploy.
