@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-11-01*
+*Last updated: 2026-11-08*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -94,7 +94,8 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
-| Warn before a signing certificate expires, and guide a staged rotation | feature | Identity 2026-11-01: the owner runs `keys generate --role signing --not-before <time>` into `Signing:1`; JWKS lists both; when the old one retires, move the newer into `:0` and clear `:1`. Versions already carry `notAfter`; Ocharo dev expires 2027-02-28, prod about 2027-03-01 |
+| Warn before a signing certificate expires, and guide a staged rotation | feature | Identity 2026-11-01: the owner runs `keys generate --role signing --not-before <time>` into `Signing:1`; JWKS lists both; when the old one retires, move the newer into `:0` and clear `:1`. Versions already carry `notAfter`; Ocharo dev expires 2027-02-28, prod about 2027-03-01. files-integration #14 (2026-11-08): Files joins as a verifier, so `T` (the `--not-before`) is at least now plus the longest verifier's JWKS cache, and `:0` stays published until `T` plus the longest token lifetime plus that cache; identity states the retire rule and the timings. Gap: Regenerate replaces `:0` in place and a hand run puts the PEM through a person, so Wheelhouse needs a generate into the next index with arguments, then a promote. P2, due before 2027-02 |
+| Ability to generate a client key pair for `private_key_jwt` | feature | files-integration #28 (2026-11-08; settled #3: a secret by default, a key set by configuration): one `generate` makes the private half on the caller's key and the public JWKS on Identity's client key. Today one generated value fills one key, and `from` copies a value whole. No P1 caller uses a key set. P2 |
 | Extract the Secrets Vault back into its own repository and service | engineering | Owner 2026-10-30: merged services can no longer deploy apart, and the vault must stay its own service. A vault container on each host, reached over Tailscale, serves secret operations; Wheelhouse integrates with it, and services stop reading secrets from plain-text host files. Its name follows hub `app-t-008` (`secrets`) |
 | Ability to back up the vault with its keys kept apart, and prove a restore | feature | `vault verify` and the canary exist; waits on Wheelhouse's database backups |
 | Ability to rotate the vault's root key with a transactional rewrap | feature | 2026-10-19 merge analysis: unwrap every product key under the old root key, wrap under the new one, prove the canary, one transaction; the owner swaps the file after |
@@ -111,6 +112,10 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Deploy Files' shared host B as product `files`, target `files-dev` on the products host | product | files-integration #28 pick (2026-11-08, lane default under the developer's "decide, review at the end"): the control host serves consoles only and opens no public port; D6 (B's server and byte store) is open, so bytes stay on the `data` volume until it picks; `files-prod` waits with Ocharo prod, out of this goal. B reaches its storage-fit server later as a tenant move. Waits on a Files release whose `deploy.yml` declares its Identity and tenant keys |
+| Type Files' registrations on `ocharo-dev` and B's `ocharo` tenant on `files-dev` | product | files-integration #21, #32 (platform lane, 2026-11-08): platform's `deploy.yml` holds `Identity:Server:Resources:2` (`files`) and the callers' grants and scopes; Wheelhouse types `Resources:2:Uri` (`https://files.{ocharo domain}/`, with the slash, D1 a), `Resources:2:SignalUrl` (`{Uri}signals/identity`) and each caller's `Files:BaseUrl` on `ocharo-dev`, and the tenant's issuer, metadata and audience on `files-dev`. No secret crosses products: signals are JWKS-signed, tokens verified offline. Its DNS record by hand until Domains |
+| Ability to move a product's legacy files into Files on dev (migration job, dev slice) | feature | files-integration #28 pick (2026-11-08, lane default), on t9 W1–W9 (developer 2026-10-26): plan, preflight, dry run, the `files` CLI mover on the source host, verify, the id-map hand-off, cancel and progress. Freeze, cutover, rollback and retire with its 7-day wait come with Ocharo prod. Waits on Files' import API, CLI image and import tokens, and platform's `engineering/deployment/files-migration.yml` |
+| Ability to link a key across products | feature | files-integration #28, #32: `from` stays inside one product (`release_sets.py` `check_links`), so Files' audience and signal URL are typed on both `ocharo-dev` and `files-dev`. A `{ product, key }` form types each once. P2 |
 | Offer a drifted set's Reset on the deploy that refused for drift | feature | Owner 2026-11-01: drift resets by one click, never automatically (hub `migrations.md` § Lifecycle). Ocharo prod's refused deploy named the drift, and the owner had to find the Migrations panel's Reset |
 | Ability to record each deployment's settings, diff two deploys and restore them exactly | feature | Identity 2026-11-01: non-secret values plus each secret's vault version, with a hash; the audit records who and when, not values. Feeds the issuer-change warning and an exact restore on rollback |
 | Warn before a deploy changes a product's `Identity:Server:Issuer` | feature | Every token and client registration names the old issuer; needs the per-deploy settings record |
@@ -172,6 +177,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Ability to answer one site on several hosts per environment (host aliases) | feature | files-integration #21, #28, D1 (a) (2026-11-08): B's audience is each tenant's own `https://files.{domain}/`, so B's `app` site answers every tenant's host. Building in v0.14: each alias gets its own routers and certificate, so a host without DNS breaks no other; public sites only; probes and `Sites:<site>:Url` keep the primary host |
 | Ability to connect a Cloudflare account with a scoped token and see its status | feature | `ocharo.co` proves the chain, public dev then prod (decisions 47–51) |
 | Ability to sync a Cloudflare account's zones and choose from its domains | feature | |
 | Ability to bind a product's sites to a domain per environment with derived hosts | feature | |
@@ -190,6 +196,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Deploy WoW2's own Identity instance as product `identity` | product | files-integration #29, open with the developer (B's issuers in P1). Sized 2026-11-08: no Wheelhouse code; Identity's own `deploy.yml` needs `generate` on its 3 certificates and `from: Sites:app:Url` on `Issuer` (identity lane, one release); target `identity-dev` on the products host with a database, an operator sign-in method and `admin create`; WoW2's registrations as owner keys or in a small host repository; ~512 MB, prod doubles it |
 | Ability to create a product and deploy a platform server into it from a form, before any repository exists | feature | Owner 2026-10-28, complex. In the console: create the product, pick a platform server (Identity first) and its version, then fill its options in a form — authentication methods, providers, values; no repository or `deploy.yml` yet. Local development then connects to the deployed instance directly. Needs: each platform server publishing a settings manifest (keys, types, secrets, allowed values); its secrets in the vault; the product's database placed and the server's migrate step run from its pinned image; a host reachable from a developer machine, with localhost redirect URIs and CORS; and an adoption path — the product's first `deploy.yml` takes the instance over as a pinned-image service (migrations spec M77) without a redeploy |
 | Ability to declare `dependsOn` on another repository's service | feature | The runner orders and checks it across a release set; the shared generator in `wow-two-platform.pipelines` refuses it until a pipelines tag |
 | Move ForeverPin's and every other product repository's identity into its `deploy.yml` | feature | Decided 2026-10-27 (decision 7, format A): `name`, `description`, `homepage` in `deploy.yml` ([convention](../../../../../conventions/deployment/descriptor/deploy-descriptor.md#identity)), pipelines `v0.11.0`; Wheelhouse, the canary and the product template moved in v0.7; a repo with a `product/product.json` reads it with a notice, one with neither shows its row |
