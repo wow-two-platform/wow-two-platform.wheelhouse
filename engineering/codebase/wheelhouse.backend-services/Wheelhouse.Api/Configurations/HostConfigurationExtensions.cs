@@ -187,6 +187,10 @@ public static partial class HostConfigurationExtensions
                 o.AllowPrivateNetworkTargets = true;
                 o.RequireHttps = false;
             });
+        // Files hosts' import API (the files migration): no redirects, proxies or cookies; the URL is the owner's Files target's.
+        builder.Services.AddHttpClient<IFilesImportClient, Wheelhouse.Infrastructure.Files.HttpFilesImportClient>(
+                client => client.Timeout = TimeSpan.FromSeconds(15))
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = false, UseCookies = false });
         builder.Services.AddSingleton<Wheelhouse.Infrastructure.Vaults.VaultSessionCache>();
         builder.Services.AddScoped<IVaultGateway, Wheelhouse.Infrastructure.Vaults.VaultGateway>();
 

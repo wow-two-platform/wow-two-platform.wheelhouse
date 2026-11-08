@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import selectors
 import socket
 import ssl
 import subprocess
@@ -54,7 +55,7 @@ SCHEMAS = (1, 2)
 # Host platform services a release may declare it needs; see the deploy descriptor convention.
 PLATFORM_SERVICES = ("postgres", "valkey", "broker")
 EXPOSURES = ("public", "private")
-TERMINAL = {"succeeded", "failed", "rolled_back", "rollback_failed", "interrupted", "rejected"}
+TERMINAL = {"succeeded", "failed", "rolled_back", "rollback_failed", "interrupted", "rejected", "cancelled"}
 PROXIES = "Deployment:TrustedProxies"
 HOSTS = "AllowedHosts"
 # A rendering target's settings: <root>/config/<product>-<environment>/<service>.target.json, beside the host's own
@@ -134,6 +135,11 @@ VERIFY_SUMMARY_LIMIT = 300
 # the service that hosts it. A run (v0.13) runs the owner's command once in a one-off container of one service's running
 # release image; nothing stops and nothing stopped changes.
 OPERATIONS = ("stop", "start", "restart", "reset", "run")
+# The Files migration job (files_migration.py): a control of its own, beside the others, that never stops a service.
+# A cancel leaves `cancel/<job>.json` for the worker to read; `Docker.stream` answers CANCELLED when it saw one.
+FILES_MIGRATION = "files-migration"
+FILES_CANCEL = "cancel"
+CANCELLED = "cancelled"
 STOPPED = "stopped.json"
 # A database and its owner the reset names in SQL: plain lowercase identifiers only, so quoting can never break.
 IDENTIFIER = re.compile(r"[a-z_][a-z0-9_]{0,62}")
@@ -2029,6 +2035,52 @@ class Docker:
         `timeout` stops and removes `container` and returns None for the code. stderr is discarded unread."""
         return self.result_run(arguments, {}, timeout, container, None)
 
+    def stream(self, arguments, document, timeout, container, on_line, cancelled):
+        """Runs a one-off container with `document` (bytes, it may hold a secret) on its stdin and hands each stdout line to
+        `on_line` as it arrives; stderr is discarded unread. Returns the exit code; None past `timeout`, and CANCELLED when
+        `cancelled()` turned true; either way the container is stopped and removed."""
+        process = subprocess.Popen(arguments, env=self.environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL)
+        with contextlib.suppress(OSError), process.stdin:
+            process.stdin.write(document)
+
+        def stop():
+            for command in (["docker", "rm", "--force", container],):
+                with contextlib.suppress(Exception):
+                    subprocess.run(command, env=self.environment, capture_output=True, timeout=60)
+            with contextlib.suppress(Exception):
+                process.kill()
+            process.wait()
+
+        deadline, buffer = time.monotonic() + timeout, b""
+        selector = selectors.DefaultSelector()
+        selector.register(process.stdout, selectors.EVENT_READ)
+        try:
+            while True:
+                if cancelled():
+                    stop()
+                    return CANCELLED
+                if time.monotonic() > deadline:
+                    stop()
+                    return None
+                if not selector.select(0.2):
+                    continue
+                chunk = os.read(process.stdout.fileno(), 65536)
+                if not chunk:
+                    break
+                buffer += chunk
+                while b"\n" in buffer:
+                    line, _, buffer = buffer.partition(b"\n")
+                    on_line(line.decode(errors="replace"))
+                if len(buffer) > 1024 * 1024:
+                    buffer = b""
+            if buffer.strip():
+                on_line(buffer.decode(errors="replace"))
+            return process.wait()
+        finally:
+            selector.close()
+            process.stdout.close()
+
     def result_run(self, arguments, variables, timeout, container, prefix):
         """A one-off container whose verb prints its result line last: its exit code and the last stdout line that
         starts with `prefix` (with no prefix, the last nonblank one), or None for the code past `timeout`, when the
@@ -3828,6 +3880,58 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker, s
         return record
 
 
+def files_migration():
+    """The files-migration module, bound to this runner's helpers; it sits beside runner.py on a target."""
+    import files_migration as module
+    module.bind(globals())
+    return module
+
+
+def cancel_requested(base, job_id):
+    return (Path(base) / FILES_CANCEL / (job_id + ".json")).is_file()
+
+
+def finish_cancelled(record, actor=None):
+    """Ends a job `cancelled`: its running step too; steps not started stay absent (not run)."""
+    for step in record.get("steps", []):
+        if step.get("status") == "running":
+            step.update(status="cancelled", completedAt=now())
+    record["status"] = "cancelled"
+    if isinstance(actor, str) and actor:
+        record["cancelledBy"] = actor
+    return record
+
+
+def control_cancel(target, job_id, actor, docker_factory=Docker):
+    """Cancels a queued or running files migration: leaves the marker its worker reads, removes its named container, and
+    when no worker holds the lock any more (it died) ends the job here. A worker that is alive ends it itself."""
+    root, project = validate_target(target)
+    base = root / project
+    require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
+    require(str(uuid.UUID(job_id)) == job_id, "Invalid deployment id")
+    path = base / "jobs" / (job_id + ".json")
+    record = read_json(path) if path.is_file() else None
+    require(isinstance(record, dict), "No such job on " + project)
+    require(isinstance(record.get("operation"), dict) and record["operation"].get("kind") == FILES_MIGRATION,
+            "Only a files migration can be cancelled")
+    require(record.get("status") in ("queued", "running"), "The job already finished (" + str(record.get("status")) + ")")
+    write_json(base / FILES_CANCEL / (job_id + ".json"), {"at": now(), "actor": actor})
+    with contextlib.suppress(Exception):
+        docker_factory(target, base_environment(target)).execute(
+            ["docker", "rm", "--force", project + "-files-migration-" + job_id], "docker rm", timeout=60)
+    if not lock_held(base):
+        with contextlib.suppress(Rejected), deployment_lock(base):
+            record = read_json(path)
+            if record.get("status") in ("queued", "running"):
+                finish_cancelled(record, actor)
+                record["completedAt"] = now()
+                write_json(path, record)
+                active = base / "active.json"
+                if active.is_file() and read_json(active).get("id") == job_id:
+                    write_json(active, record)
+    return {"id": job_id, "status": record.get("status"), "cancelRequested": True}
+
+
 class RunFailed(CommandFailed):
     """A one-off command that did not exit 0, timed out or never started; its message names the exit and the scrubbed
     last line, never an argument."""
@@ -4092,7 +4196,7 @@ def lock_held(base):
 def summary(record):
     fields = ("id", "release", "sourceCommit", "kind", "branch", "versions", "sites", "status", "actor", "startedAt",
               "completedAt", "failure", "reason", "mutationStarted", "previous", "steps", "warnings", "snapshot",
-              "verification", "operation", "stopped", "health", "migrations", "configChecks", "reset")
+              "verification", "operation", "stopped", "health", "migrations", "configChecks", "reset", "filesMigration")
     return None if record is None else {key: record[key] for key in fields if key in record}
 
 
@@ -4639,8 +4743,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["validate", "apply", "launch", "status", "acknowledge", "state", "check",
                                            "host", "vitals", "topology", "logs", "watch", "prune", "passed",
-                                           "control-launch", "control", "migrate-check", "generate-setting",
-                                           "reveal"])
+                                           "control-launch", "control", "control-cancel", "migrate-check",
+                                           "generate-setting", "reveal"])
     parser.add_argument("--bundle")
     parser.add_argument("--target")
     parser.add_argument("--target-json")
@@ -4651,7 +4755,8 @@ def main():
     parser.add_argument("--service", help="logs: the service to read; control: the service, or none for the environment; "
                                           "generate-setting: the service whose release image runs the command")
     parser.add_argument("--key", help="generate-setting: the configuration path of the generated key")
-    parser.add_argument("--operation", choices=OPERATIONS, help="control: stop, start, restart, reset or run")
+    parser.add_argument("--operation", choices=(*OPERATIONS, FILES_MIGRATION),
+                        help="control: stop, start, restart, reset, run or files-migration")
     parser.add_argument("--set", dest="set_name", help="control: the migration set a reset rolls back to 0, alone")
     parser.add_argument("--tail", type=int, default=200)
     parser.add_argument("--stdin", action="store_true",
@@ -4698,6 +4803,12 @@ def main():
         elif args.action == "generate-setting":
             manifest = decode(args.release_json) if args.release_json else validate_bundle(args.bundle)
             result = generate_setting(target or read_json(args.target), manifest, args.service, args.key, provided)
+        elif args.action == "control-cancel":
+            result = control_cancel(target or read_json(args.target), args.job, args.actor)
+        elif args.action == "control-launch" and args.operation == FILES_MIGRATION:
+            result = files_migration().launch(args.target, args.actor, provided, Path(__file__).resolve())
+        elif args.action == "control" and args.operation == FILES_MIGRATION:
+            result = files_migration().work(read_json(args.target), args.actor, args.job, provided)
         elif args.action == "control-launch":
             result = control_launch(args.target, args.operation, [args.service] if args.service else [], args.actor,
                                     args.set_name, (provided or {}).get("command"))
@@ -4723,9 +4834,11 @@ def main():
                 if refused.get("reason"):
                     failed_step["detail"] = refused["reason"]
                 command = (provided or {}).get("command")
-                kept = {"operation": control_operation(args.operation, [args.service] if args.service else [],
-                                                       args.set_name, command if isinstance(command, list) else None)
-                        } if args.action == "control" else {}
+                kept = ({"operation": files_migration().operation_safe(provided)}
+                        if args.action == "control" and args.operation == FILES_MIGRATION else
+                        {"operation": control_operation(args.operation, [args.service] if args.service else [],
+                                                        args.set_name, command if isinstance(command, list) else None)
+                         } if args.action == "control" else {})
                 write_json(root / project / "jobs" / (args.job + ".json"),
                            {"id": args.job, **kept, **refused, "completedAt": now(), "steps": [failed_step]})
             except Exception:

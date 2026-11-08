@@ -58,6 +58,9 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
     /// <summary>The shared runner stub — answers the deployment reads and records what was submitted.</summary>
     public StubDeploymentGateway Deployments { get; } = new();
 
+    /// <summary>The fake Files host the files migration's import client talks to.</summary>
+    public StubFilesHost FilesHost { get; } = new();
+
     /// <summary>The shared vault stub — records the last change so tests can assert what Wheelhouse forwarded.</summary>
     public StubVaultGateway Vaults { get; } = new();
 
@@ -133,6 +136,10 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
                 services.RemoveAll<Wheelhouse.Application.Abstractions.IInfraGateway>();
                 services.AddSingleton<Wheelhouse.Application.Abstractions.IInfraGateway>(Infra);
 
+                // The import client talks to the fake Files host, never the network.
+                services.AddHttpClient<Wheelhouse.Application.Abstractions.IFilesImportClient, Wheelhouse.Infrastructure.Files.HttpFilesImportClient>()
+                    .ConfigurePrimaryHttpMessageHandler(() => FilesHost);
+
                 // Product icons come from the stub, never from GitHub.
                 services.RemoveAll<Wheelhouse.Application.Abstractions.IProductIconSource>();
                 services.AddSingleton<Wheelhouse.Application.Abstractions.IProductIconSource>(ProductIcons);
@@ -205,6 +212,9 @@ public sealed class WheelhouseAppFixture : IAsyncLifetime
         Deployments.Controls.Clear();
         Deployments.Commands.Clear();
         Deployments.Reveals.Clear();
+        Deployments.FilesMigrations.Clear();
+        Deployments.Cancels.Clear();
+        FilesHost.Reset();
         Deployments.ControlRefusal = null;
         Deployments.Observations.Clear();
         Deployments.Declarations = null;

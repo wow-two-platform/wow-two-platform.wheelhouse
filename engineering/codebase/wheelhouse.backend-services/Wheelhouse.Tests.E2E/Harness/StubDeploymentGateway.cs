@@ -317,6 +317,31 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
         })));
     }
 
+    /// <summary>Every files migration submitted, in order: target, actor and the payload the runner would read on stdin.</summary>
+    public List<(string Target, string Actor, JsonElement Payload)> FilesMigrations { get; } = [];
+
+    /// <summary>Every cancel, in order: target, job and actor.</summary>
+    public List<(string Target, string Job, string Actor)> Cancels { get; } = [];
+
+    public Task<AppResult<JsonElement>> FilesMigrationAsync(string target, string actor, JsonElement payload, CancellationToken ct)
+    {
+        FilesMigrations.Add((target, actor, payload.Clone()));
+        if (ControlRefusal is not null)
+            return Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(ControlRefusal)));
+        return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new
+        {
+            id = Guid.NewGuid(), targetId = target,
+            operation = new { kind = "files-migration", services = Array.Empty<string>() },
+            release = "v1.0.0", status = "queued",
+        })));
+    }
+
+    public Task<AppResult<JsonElement>> CancelControlAsync(string target, string job, string actor, CancellationToken ct)
+    {
+        Cancels.Add((target, job, actor));
+        return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new { id = job, status = "cancelling" })));
+    }
+
     public Task<AppResult<JsonElement>> ReconcileAsync(string target, string job, string actor, CancellationToken ct)
     {
         LastTarget = target;

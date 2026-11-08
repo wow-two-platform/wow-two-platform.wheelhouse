@@ -228,6 +228,23 @@ promotion replace them), as is a target a running fleet has yet to promote (409)
   returns it once and the target deletes it, as the next run and the daily retention delete expired ones. Nothing
   stops, nothing stopped changes, and it runs whatever is stopped; never on Wheelhouse's own
   ([deployment § One-off command](../deployment/deployment.md#one-off-command)).
+- **Files migration (v0.14, dev slice).** `POST /api/deployments/targets/{target}/files-migrations`
+  `{ step, wave?, sources?, filesTarget, filesUrl, import? }` (action header `control`, owner session only) moves a dev
+  target's legacy files into Files' shared host B (Files t9, `files-integration` #28, #38); prod and Wheelhouse's own
+  are refused (409). The API reads `engineering/deployment/files-migration.yml` from each repository of the release the
+  target runs, at its source commit, picks sources by `wave` and id, and checks `filesTarget` is a `files` target of the
+  same environment whose `app` site host or alias `filesUrl` names. A push opens an import on B (`POST {filesUrl}imports`,
+  a verify or resumed push asks `…/imports/{id}/tokens`) with `X-Api-Key: files_` plus `filesTarget`'s vault secret
+  `Files:Operator:ApiKey`. The transport's `control --operation files-migration --stdin` carries the step, the image
+  `filesTarget` runs, the URL, the import and its token, and the sources to a `files-migration` worker under the
+  deployment lock. Per source it runs `dotnet Files.Api.dll migrate <step>` in a one-off container of that image
+  (`--pull never` after a pull with the lent sign-in, every capability dropped, 512 MB, the image's user): a volume
+  source mounted read-only at `/source`, a PostgreSQL source on the platform network with the connection its service's
+  rendered settings name plus `default_transaction_read_only`; the document goes on stdin, never into argv, a job file
+  or a log. Its JSON-line progress updates the step (`N files · B bytes`), exit 1 refuses, 2 fails, and a failed source
+  stops the job. `POST …/controls/{job}/cancel` kills the container and reads `cancelled`. Audit: `files-migration.<step>`
+  and `files-migration.cancel`, subject `{target}`, with sources, wave and import id, never a token or key. The mover's
+  protocol is Files' (`wow-two-sdk-beta.files` t9 § 6); the API keeps it in `HttpFilesImportClient`.
 
 ## Settings at deploy
 

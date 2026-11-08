@@ -61,6 +61,7 @@
 | `transport.py` | Runner CLI + SSH adapter used by the API |
 | `history.py` | Deployment history projection the API filters: bundle facts, live steps, one observation |
 | `runner.py` | Target-side executor: locks, health gates, recovery |
+| `files_migration.py` | Target-side Files migration control: one read-only mover container per manifest source, progress, cancel |
 | `infra.py` | Infrastructure CLI the API runs: Tailscale status and policy, enrollment, placement, host upkeep, finished jobs |
 | `tailnet.py` · `enroll.py` · `placement.py` · `upkeep.py` | Tailscale OAuth client, keys and policy; fresh-server enrollment; product databases and site nodes; an enrolled host brought to the current kit (Refresh kit) |
 | `infra_jobs.py` · `kit.py` | Infrastructure job journals and locks; the products-host kit an enrollment uploads |

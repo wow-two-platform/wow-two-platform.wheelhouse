@@ -65,6 +65,14 @@ public interface IDeploymentGateway
         command is null
             ? ControlAsync(target, operation, service, set, actor, reason, ct)
             : Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("This runner cannot run a command.")));
+    /// <summary>Submits a files migration (operation <c>files-migration</c>) as a control: the whole
+    /// <paramref name="payload"/> (<c>step</c>, <c>image</c>, <c>files</c>, <c>import</c>, <c>token</c>, <c>sources</c>)
+    /// reaches the runner on its standard input, never as an argument. A gateway without migrations refuses it.</summary>
+    Task<AppResult<JsonElement>> FilesMigrationAsync(string target, string actor, JsonElement payload, CancellationToken ct) =>
+        Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("This runner cannot move files.")));
+    /// <summary>Cancels a running control job of a target (<c>control-cancel</c>). A gateway without it refuses.</summary>
+    Task<AppResult<JsonElement>> CancelControlAsync(string target, string job, string actor, CancellationToken ct) =>
+        Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("This runner cannot cancel a control.")));
     /// <summary>Reads a run's last line as its command printed it, once: <c>{ line }</c> from the line the target kept
     /// when the job's scrub cut something (an invitation link), removed by this read. A gateway without runs refuses.</summary>
     Task<AppResult<JsonElement>> RevealRunAsync(string target, string job, CancellationToken ct) =>

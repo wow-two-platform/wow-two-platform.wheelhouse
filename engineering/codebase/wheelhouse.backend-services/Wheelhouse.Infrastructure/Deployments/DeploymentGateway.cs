@@ -148,6 +148,15 @@ public sealed class DeploymentGateway(
     }
 
     /// <inheritdoc />
+    public Task<AppResult<JsonElement>> FilesMigrationAsync(string target, string actor, JsonElement payload, CancellationToken ct) =>
+        // The payload carries an import token: standard input only.
+        RunAsync(["control", "--target", target, "--operation", "files-migration", "--actor", actor, "--stdin"], ct, payload.GetRawText());
+
+    /// <inheritdoc />
+    public Task<AppResult<JsonElement>> CancelControlAsync(string target, string job, string actor, CancellationToken ct) =>
+        RunAsync(["control-cancel", "--target", target, "--job", job, "--actor", actor], ct);
+
+    /// <inheritdoc />
     public Task<AppResult<JsonElement>> RevealRunAsync(string target, string job, CancellationToken ct) =>
         RunAsync(["reveal", "--target", target, "--job", job], ct);
 

@@ -27,6 +27,7 @@ import history
 import inventory
 import registry
 import release_sets
+import runner
 from fleet import rehearsal
 from runner import (GENERATE_PULL_TIMEOUT, OPERATIONS, PROXIES, SET_NAME, SETTING_KEY, SLUG, TERMINAL, CommandFailed,
                     Rejected, control_command, control_operation, now, reason, rejection, require, read_json, write_json, validate_bundle,
@@ -451,6 +452,68 @@ def control(root, target_id, operation, service, actor, reason=None, set_name=No
     write_json(root / "jobs" / (request_id + ".json"), record)
     return {"id": request_id, "targetId": target_id, "operation": record["operation"], "release": record["release"],
             "status": record["status"]}
+
+
+def files_migration(root, target_id, actor, reason, document):
+    """Files' mover (dev slice) once per manifest source on the target's host, as a job: the payload (`step`, `image`,
+    `files`, `import`, `token`, `sources`) is checked whole here, the image's pull sign-in picked as a deploy's is, and
+    both travel on SSH stdin only; the record keeps the step and the source ids, never the token or a connection. The
+    runner and its files_migration module are uploaded beside the target."""
+    reason = deploy_reason(reason)
+    require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
+    module = runner.files_migration()
+    payload = module.validate(document)
+    config = fleet.resolve_target(root, target_id)
+    require(config["target"].get("environment") == "dev", module.REFUSAL)
+    require(not config.get("self") and config["target"].get("product") != runner.SELF_PRODUCT, module.SELF_REFUSAL)
+    target_root, _ = validate_target(config["target"])
+    require(re.fullmatch(r"/[A-Za-z0-9/_-]+", str(target_root)), "SSH root requires a simple absolute path")
+    login, attempt = registry.sign_in_for([payload["image"]])
+    registry.note_packages(root, config["target"]["product"], [payload["image"]], attempt)
+    unreadable = registry.unreadable_images(attempt)
+    sent = {**{key: document[key] for key in module.TOP_LEVEL - {"registry", "unreadable"} if key in document},
+            **({"registry": login} if login else {}), **({"unreadable": unreadable} if unreadable else {})}
+    ssh = Ssh(config["ssh"])
+    request_id = str(uuid.uuid4())
+    remote = str(target_root / "incoming" / request_id)
+    ssh.run("umask 077; mkdir -p " + shlex.quote(remote))
+    with tempfile.TemporaryDirectory() as temporary:
+        target_path = Path(temporary) / "target.json"
+        write_json(target_path, config["target"])
+        ssh.copy([RUNNER, Path(__file__).with_name("files_migration.py"), target_path], remote)
+    record = {"id": request_id, "targetId": target_id, "environment": config["target"]["environment"],
+              "operation": module.operation_of(payload), "remote": remote, "actor": actor, "status": "submitting",
+              "submittedAt": now(), "ssh": config["ssh"], "serverId": config["serverId"]}
+    if reason:
+        record["deployReason"] = reason
+    write_json(root / "jobs" / (request_id + ".json"), record)
+    launch = shlex.join(["python3", remote + "/runner.py", "control-launch", "--target", remote + "/target.json",
+                         "--operation", runner.FILES_MIGRATION, "--actor", actor, "--stdin"])
+    remote_job = launched(root, request_id, lambda: json.loads(ssh.run(launch, json.dumps(sent))))
+    record.update(status=remote_job["status"], remoteJobId=remote_job["id"], release=remote_job.get("release"))
+    write_json(root / "jobs" / (request_id + ".json"), record)
+    return {"id": request_id, "targetId": target_id, "operation": record["operation"], "release": record["release"],
+            "status": record["status"]}
+
+
+def control_cancel(root, target_id, job_id, actor):
+    """Cancels a queued or running files migration of `target_id`: the target's runner leaves the cancel marker its worker
+    reads and removes the named container; the job then ends `cancelled`, never `failed`."""
+    require(isinstance(job_id, str) and str(uuid.UUID(job_id)) == job_id, "Invalid deployment id")
+    require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
+    path = root / "jobs" / (job_id + ".json")
+    record = read_json(path) if path.is_file() else {}
+    operation = record.get("operation")
+    require(record.get("targetId") == target_id and isinstance(operation, dict)
+            and operation.get("kind") == runner.FILES_MIGRATION and isinstance(record.get("remoteJobId"), str),
+            "No files migration of " + str(target_id) + " has that id")
+    config = fleet.resolve_target(root, target_id)
+    validate_target(config["target"])
+    result = run_remote(Ssh(config["ssh"]), "control-cancel", config["target"], "--job", record["remoteJobId"],
+                        "--actor", actor)
+    with contextlib.suppress(Exception):
+        refresh_status(root, job_id, force=True)
+    return {"id": job_id, "status": result.get("status") if isinstance(result, dict) else None, "cancelRequested": True}
 
 
 def reveal(root, target_id, job_id):
@@ -884,7 +947,7 @@ def jobs(root, limit=50, controls=False):
         if isinstance(record.get("operation"), dict):
             item["operation"] = record["operation"]
         for key in ("reason", "failure", "startedAt", "completedAt", "mutationStarted", "sourceCommit", "warnings",
-                    "verification", "stopped"):
+                    "verification", "stopped", "filesMigration"):
             if key in observed:
                 item[key] = observed[key]
         result.append(item)
@@ -1177,7 +1240,7 @@ def main():
                                            "branches", "commits", "build", "logs", "history", "observation",
                                            "latest", "facts", "changelog", "watch", "builds", "retention", "usage",
                                            "settings", "registry", "compose", "control", "stops", "migrations",
-                                           "generate-setting", "reveal"])
+                                           "generate-setting", "reveal", "control-cancel"])
     parser.add_argument("--root", required=True)
     parser.add_argument("--target")
     parser.add_argument("--bundle")
@@ -1259,6 +1322,10 @@ def main():
             result = artifacts.commits(args.product, args.branch, args.repository)
         elif args.action == "build":
             result = artifacts.request_build(args.product, args.commit, args.repository)
+        elif args.action == "control-cancel":
+            result = control_cancel(root, args.target, args.job, args.actor)
+        elif args.action == "control" and args.operation == runner.FILES_MIGRATION:
+            result = files_migration(root, args.target, args.actor, args.reason, provided)
         elif args.action == "control":
             result = control(root, args.target, args.operation, args.service, args.actor, args.reason, args.set_name,
                              (provided or {}).get("command"))

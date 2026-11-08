@@ -33,6 +33,7 @@ COPY wheelhouse.runner-services/runner.py wheelhouse.runner-services/transport.p
      wheelhouse.runner-services/infra.py wheelhouse.runner-services/infra_jobs.py wheelhouse.runner-services/tailnet.py \
      wheelhouse.runner-services/enroll.py wheelhouse.runner-services/placement.py wheelhouse.runner-services/kit.py \
      wheelhouse.runner-services/upkeep.py wheelhouse.runner-services/self_check.py \
+     wheelhouse.runner-services/files_migration.py \
      /app/runner/
 # The app user cannot write /app/runner, so Python would compile every module the runner imports on each of its starts:
 # ship the bytecode. checked-hash keeps it valid whatever timestamps the layers carry.
