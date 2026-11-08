@@ -58,9 +58,41 @@ export const TargetStopSchema = z.object({
  * a run its command as a masked label. */
 export const DeploymentOperationSchema = z.object({
   kind: z.enum(ControlOperation),
-  services: z.array(z.string()).default([]),
+  services: z.array(z.string()).nullish().transform((value) => value ?? []),
   set: z.string().nullish(),
   command: z.string().nullish(),
+  /** A files migration's step and source ids; absent on every other control. */
+  step: z.string().nullish().catch(null),
+  sources: z.array(z.string()).nullish().catch(null),
+});
+/** How the mover counted one source; a count it did not report reads as none. */
+const FilesMigrationResultSchema = z.object({
+  files: z.number().int().nonnegative(),
+  bytes: z.number().nonnegative(),
+  skipped: z.number().int().nonnegative().nullish().transform((value) => value ?? 0),
+  failed: z.number().int().nonnegative().nullish().transform((value) => value ?? 0),
+});
+/** What a files migration job kept: its import and each finished source's result. A record from before the control, or a
+ * malformed one, reads as none and never fails the read it rides on. */
+export const FilesMigrationRunSchema = z
+  .object({
+    import: z.string().nullish().transform((value) => value ?? null),
+    results: z.record(z.string(), FilesMigrationResultSchema).nullish().transform((value) => value ?? {}),
+  })
+  .nullish()
+  .catch(null);
+/** The sources the manifests of the release a target runs list, and the Files targets of its environment. */
+export const FilesMigrationManifestSchema = z.object({
+  tenant: z.string(),
+  sources: z.array(
+    z.object({
+      id: z.string(),
+      kind: z.string(),
+      wave: z.number().int().nullish().transform((value) => value ?? null),
+      repository: z.string().nullish().transform((value) => value ?? null),
+    }),
+  ),
+  filesTargets: z.array(z.object({ target: z.string(), urls: z.array(z.string()) })).default([]),
 });
 /** What a run kept on its job: how its command ended, with the exit code and the last output line. */
 export const ControlRunSchema = z.object({
@@ -124,6 +156,8 @@ export const DeploymentJobSchema = z.object({
   operation: DeploymentOperationSchema.nullish().catch(null),
   // A run's job carries how its command ended; a malformed one never fails the outcome read.
   run: ControlRunSchema.nullish().catch(null),
+  // A files migration's job carries its import and each finished source's result.
+  filesMigration: FilesMigrationRunSchema,
 });
 export const DeploymentTargetSchema = z.object({
   id: z.string(),
@@ -238,6 +272,7 @@ const RolloutSchema = z.object({
   steps: z.array(DeploymentStepSchema).optional(),
   warnings: z.array(z.string()).optional(),
   operation: DeploymentOperationSchema.nullish().catch(null),
+  filesMigration: FilesMigrationRunSchema,
 });
 /** A field the runner may leave out or not read: absent, null and an unexpected shape all read as null. */
 const readText = z.string().nullish().catch(null);

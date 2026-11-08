@@ -3,12 +3,13 @@ using System.Text.Json;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments.FilesMigrations.Models;
 using Wheelhouse.Application.Deployments.FilesMigrations.Services;
+using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Infrastructure.Files;
 
 /// <summary>Calls a Files host's import API with the operator key: <c>POST {url}imports</c> and
-/// <c>POST {url}imports/{id}/tokens</c>. The key goes in <c>X-Api-Key</c> as <c>files_</c> followed by the vault value
+/// <c>POST {url}imports/{id}/tokens</c>, and the keyless <c>GET {url}health</c> preflight. The key goes in <c>X-Api-Key</c> as <c>files_</c> followed by the vault value
 /// and reaches only these two paths. An error answer becomes a failure naming the status; its body is never read.</summary>
 public sealed class HttpFilesImportClient(HttpClient http) : IFilesImportClient
 {
@@ -26,6 +27,31 @@ public sealed class HttpFilesImportClient(HttpClient http) : IFilesImportClient
     /// <inheritdoc />
     public Task<AppResult<FilesImport>> TokenAsync(string filesUrl, string operatorKey, string import, CancellationToken ct) =>
         PostAsync(filesUrl + "imports/" + Uri.EscapeDataString(import) + "/tokens", operatorKey, null, ct);
+
+    /// <summary>Holds how long a health answer may take.</summary>
+    public static readonly TimeSpan HealthTimeout = TimeSpan.FromSeconds(5);
+
+    /// <inheritdoc />
+    public async Task<AppResult<bool>> HealthAsync(string filesUrl, CancellationToken ct)
+    {
+        string detail;
+        try
+        {
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            limit.CancelAfter(HealthTimeout);
+            using var request = new HttpRequestMessage(HttpMethod.Get, filesUrl + "health");
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, limit.Token);
+            if (response.StatusCode == System.Net.HttpStatusCode.OK)
+                return AppResult<bool>.Ok(true);
+            detail = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            detail = exception is TaskCanceledException ? "timeout" : "unreachable";
+        }
+
+        return AppResult<bool>.Fail(AppErrorFactory.Conflict($"Files at {new Uri(filesUrl).Host} is not healthy ({detail})."));
+    }
 
     private async Task<AppResult<FilesImport>> PostAsync(string url, string operatorKey, object? body, CancellationToken ct)
     {

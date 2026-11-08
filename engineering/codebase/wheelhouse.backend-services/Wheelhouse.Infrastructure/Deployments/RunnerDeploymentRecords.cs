@@ -59,6 +59,7 @@ public sealed partial class RunnerDeploymentRecords(
             ReconciledBy = Text(document, "reconciledBy"),
             Snapshot = ParseSnapshot(document),
             ServiceRollout = ParseServiceRollout(document),
+            FilesMigration = ParseFilesMigration(document),
         };
         return AppResult<DeploymentObservation>.Ok(observation);
     }
@@ -99,7 +100,11 @@ public sealed partial class RunnerDeploymentRecords(
                 return null;
             // A watch window another rollout ended was recorded `superseded` before the rename to `replaced`.
             var watch = record.Watch is { Status: "superseded" } legacy ? legacy with { Status = "replaced" } : record.Watch;
-            return record with { Watch = watch, ServiceRollout = ParseServiceRollout(element) };
+            return record with
+            {
+                Watch = watch, ServiceRollout = ParseServiceRollout(element),
+                FilesMigration = element.TryGetProperty("filesMigration", out _) ? ParseFilesMigration(element) : null,
+            };
         }
         catch (JsonException)
         {
@@ -167,6 +172,26 @@ public sealed partial class RunnerDeploymentRecords(
             return null;
         }
     }
+
+    /// <summary>Reads what a files migration kept: its import and each source's counts; null when absent or malformed.
+    /// A source whose counts are not whole numbers is left out. @internal</summary>
+    private static FilesMigrationDto? ParseFilesMigration(JsonElement document)
+    {
+        if (document.ValueKind != JsonValueKind.Object || !document.TryGetProperty("filesMigration", out var migration)
+            || migration.ValueKind != JsonValueKind.Object)
+            return null;
+        var results = new Dictionary<string, FilesMigrationResultDto>(StringComparer.Ordinal);
+        if (migration.TryGetProperty("results", out var kept) && kept.ValueKind == JsonValueKind.Object)
+            foreach (var source in kept.EnumerateObject())
+                if (source.Value.ValueKind == JsonValueKind.Object && Count(source.Value, "files") is { } files && Count(source.Value, "bytes") is { } bytes)
+                    results[source.Name] = new FilesMigrationResultDto(files, bytes, Count(source.Value, "skipped") ?? 0, Count(source.Value, "failed") ?? 0);
+        return new FilesMigrationDto(Text(migration, "import"), results);
+    }
+
+    /// <summary>A whole non-negative number property, or null. @internal</summary>
+    private static long? Count(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var count) && count >= 0
+            ? count : null;
 
     /// <summary>Reads how a rollout treated each service; null when absent or malformed. @internal</summary>
     private static ServiceRolloutDto? ParseServiceRollout(JsonElement document)

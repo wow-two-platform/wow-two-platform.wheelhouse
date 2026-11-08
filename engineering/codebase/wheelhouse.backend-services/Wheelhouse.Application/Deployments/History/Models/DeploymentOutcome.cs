@@ -15,6 +15,9 @@ public static class DeploymentOutcome
     /// <summary>The rollout is submitting, queued or running.</summary>
     public const string Pending = "pending";
 
+    /// <summary>Holds the outcome of a control the owner stopped before it ended: a cancelled files migration.</summary>
+    public const string Cancelled = "cancelled";
+
     /// <summary>The control plane holds no receipt from the target.</summary>
     public const string Unknown = "unknown";
 
@@ -28,6 +31,7 @@ public static class DeploymentOutcome
         status == "succeeded" ? Succeeded
         : FailedStatuses.Contains(status) ? Failed
         : status == "rejected" ? Refused
+        : status == "cancelled" ? Cancelled
         : PendingStatuses.Contains(status) ? Pending
         : Unknown;
 }

@@ -138,6 +138,8 @@ export const DeploymentStates = {
         return { state: DeployState.Failed, substate: 'interrupted', attention: Attention.Act };
       case JobStatus.Rejected:
         return { state: DeployState.NotApplied, substate: 'refused', attention: Attention.None };
+      case JobStatus.Cancelled:
+        return { state: DeployState.NotApplied, substate: 'cancelled', attention: Attention.None };
       default:
         return PENDING.has(status)
           ? { state: DeployState.InProgress, substate: status === JobStatus.Running ? null : 'queued', attention: Attention.Info }

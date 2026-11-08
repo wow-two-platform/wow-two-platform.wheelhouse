@@ -20,4 +20,7 @@ public sealed record DeploymentObservation
 
     /// <summary>Gets how the rollout treated each service; null for a rollout older than service-aware rollouts.</summary>
     public ServiceRolloutDto? ServiceRollout { get; init; }
+
+    /// <summary>Gets what a files migration job kept, as its target last reported it; null for any other job.</summary>
+    public FilesMigrationDto? FilesMigration { get; init; }
 }

@@ -12,7 +12,7 @@ export interface DeploymentStepsProps {
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { CircleCheck, CircleDashed, CircleX, LoaderCircle, TriangleAlert, Undo2 } from "lucide-vue-next";
+import { CircleCheck, CircleDashed, CircleSlash, CircleX, LoaderCircle, TriangleAlert, Undo2 } from "lucide-vue-next";
 
 import { Measures } from "@/domain/common";
 import { DeploymentStates, StepFindingKind, StepKind, StepKinds, StepStatus } from "@/domain/deployments";
@@ -39,6 +39,7 @@ const tone: Record<StepStatus, string> = {
   [StepStatus.Failed]: "text-destructive",
   [StepStatus.Warning]: "text-warning",
   [StepStatus.Skipped]: "text-muted-foreground",
+  [StepStatus.Cancelled]: "text-muted-foreground",
 };
 const label: Record<StepStatus, string> = {
   [StepStatus.Running]: "running",
@@ -46,6 +47,7 @@ const label: Record<StepStatus, string> = {
   [StepStatus.Failed]: "failed",
   [StepStatus.Warning]: "needs a look",
   [StepStatus.Skipped]: "skipped, nothing to do",
+  [StepStatus.Cancelled]: "cancelled by the owner",
 };
 
 /** The groups to draw: one untitled group, or the three sections with their titles. @internal */
@@ -131,6 +133,7 @@ const stranded = (finding: StepFinding) =>
               <CircleCheck v-else-if="step.status === StepStatus.Succeeded" :size="16" />
               <CircleX v-else-if="step.status === StepStatus.Failed" :size="16" />
               <TriangleAlert v-else-if="step.status === StepStatus.Warning" :size="16" />
+              <CircleSlash v-else-if="step.status === StepStatus.Cancelled" :size="16" />
               <CircleDashed v-else :size="16" />
             </span>
             <span class="min-w-0">

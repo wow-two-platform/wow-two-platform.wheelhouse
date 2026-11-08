@@ -5,6 +5,7 @@ using Wheelhouse.Api.Auth;
 using Wheelhouse.Api.Requests;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments.FilesMigrations.Commands;
+using Wheelhouse.Application.Deployments.FilesMigrations.Queries;
 using Wheelhouse.Application.Deployments.FilesMigrations.Services;
 using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 using WoW.Two.Sdk.Beta.Be.Mediator;
@@ -22,6 +23,13 @@ namespace Wheelhouse.Api.Controllers;
 public sealed class FilesMigrationsController(ISender sender, IActorContext actor) : ControllerBase
 {
     private const string Slug = FormatPatternConstants.NameSlug;
+
+    /// <summary>Reads what the target's files migration can move: the sources the manifests of the release it runs list,
+    /// and the Files targets of its environment with their https URLs. Refused (409) for prod and Wheelhouse's own
+    /// targets and when the release has no manifest.</summary>
+    [HttpGet("files-migrations/manifest")]
+    public async Task<IActionResult> Manifest([RegularExpression(Slug)] string target, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new FilesMigrationManifestQuery(target), ct));
 
     /// <summary>Queues a plan, push or verify of the product's legacy files as a job in the target's journal and answers
     /// it. Refused (409) for prod and Wheelhouse's own targets and when no manifest or Files credential exists; (400)

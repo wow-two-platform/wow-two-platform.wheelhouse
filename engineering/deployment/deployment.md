@@ -1162,6 +1162,25 @@ console in that service's running release image
 - Exit 0 succeeds; anything else fails the job with the exit and the last line. It reads as not applied (command
   failed): the environment still runs what it ran, and nothing needs reconciling.
 
+### Move files to Files (dev)
+
+A dev environment's legacy files move into Files' shared host B (v0.14,
+[architecture § Service controls](../architecture/architecture.md#service-controls)). The product's repositories list
+their sources in `engineering/deployment/files-migration.yml`; `files-dev` holds `Files:Operator:ApiKey` in its vault.
+
+1. **Products › the product › its dev environment › Move files to Files…** Pick the files target, its address (the
+   tenant's `files.{domain}`: the `app` site's host or an alias) and a wave or sources.
+2. **Plan** (the default) counts files and bytes per source and changes nothing.
+3. **Push** opens an import on B and uploads; the dialog asks to confirm the source count and the Files host. A rerun
+   with the import id resumes: each file uploads once per tenant, source and key.
+4. **Verify** with the import id compares count and SHA-256 per source; the results table and the import id stay on the
+   job, which the product's cutover reads by reference.
+
+- Cancel stops the running source's container; the job reads cancelled and later sources do not run.
+- Source data stays untouched: volumes mount read-only and database sessions are read-only. Freeze, cutover, rollback
+  and retire come with prod (backlog).
+- Push and verify first ask `GET {address}health`; a Files that does not answer 200 in 5 seconds refuses the run.
+
 ## VPS wiring checklist
 
 1. Verify provider account, host architecture, capacity and cost in the wiring session.

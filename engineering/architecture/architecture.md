@@ -243,7 +243,11 @@ promotion replace them), as is a target a running fleet has yet to promote (409)
   rendered settings name plus `default_transaction_read_only`; the document goes on stdin, never into argv, a job file
   or a log. Its JSON-line progress updates the step (`N files · B bytes`), exit 1 refuses, 2 fails, and a failed source
   stops the job. `POST …/controls/{job}/cancel` kills the container and reads `cancelled`. Audit: `files-migration.<step>`
-  and `files-migration.cancel`, subject `{target}`, with sources, wave and import id, never a token or key. The mover's
+  and `files-migration.cancel`, subject `{target}`, with sources, wave and import id, never a token or key.
+  `GET …/files-migrations/manifest` lists the sources (`id`, `kind`, `wave`, `repository`) and each candidate files
+  target with its `urls`, for the console's "Move files to Files…" dialog; a push or verify first asks
+  `GET {filesUrl}health` (200 within 5 s, else 409). The history carries `filesMigration` (import, results per source)
+  and reads a cancelled or failed migration as not applied. The mover's
   protocol is Files' (`wow-two-sdk-beta.files` t9 § 6); the API keeps it in `HttpFilesImportClient`.
 
 ## Settings at deploy

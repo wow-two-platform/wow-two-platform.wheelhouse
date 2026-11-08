@@ -271,6 +271,7 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Application.Products.Services.ProductsProjectionService>();
         builder.Services.AddScoped<Wheelhouse.Application.Targets.Services.TargetsProjectionService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.History.Services.DeploymentHistoryService>();
+        builder.Services.AddScoped<Wheelhouse.Application.Deployments.FilesMigrations.Services.FilesMigrationReleaseReader>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Automation.Services.DeploymentAutomationService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Freezes.Services.DeployFreezeService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Fleets.Services.FleetRolloutService>();

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Attention, DeployState, ServiceResult } from '@/domain/common';
 import { DeploymentIssueKind, DeploymentOutcome, DeploymentStates, JobStatus, StepStatus } from '@/domain/deployments';
-import { DeploymentOperationSchema, ReleaseComponentSchema, ServiceRolloutSchema, StepFindingsSchema } from './schemas';
+import { DeploymentOperationSchema, FilesMigrationRunSchema, ReleaseComponentSchema, ServiceRolloutSchema, StepFindingsSchema } from './schemas';
 
 const nullableText = z.string().nullable();
 // Site links open in the owner's browser, so only http(s) addresses survive decoding.
@@ -103,6 +103,8 @@ const DeploymentItemFields = z.object({
   settingsSuspect: z.boolean().optional().catch(false).transform((value) => value ?? false),
   /** Set when the item is a control — a stop, start or restart of the release its target runs. */
   operation: DeploymentOperationSchema.nullish().catch(null).transform((value) => value ?? null),
+  /** What a files migration kept — its import and each finished source's result; null for any other item. */
+  filesMigration: FilesMigrationRunSchema.transform((value) => value ?? null),
 });
 
 /** A deployment as lists read it; an answer from before the status taxonomy reads its state from the runner status. */

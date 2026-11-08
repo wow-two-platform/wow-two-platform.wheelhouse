@@ -19,6 +19,8 @@ export const ControlOperation = {
   Restart: 'restart',
   Reset: 'reset',
   Run: 'run',
+  /** Moves a dev target's legacy files into Files: a plan, a push or a verify. */
+  FilesMigration: 'files-migration',
 } as const;
 export type ControlOperation = (typeof ControlOperation)[keyof typeof ControlOperation];
 
@@ -30,6 +32,10 @@ export interface DeploymentOperation {
   services: string[];
   set?: string | null | undefined;
   command?: string | null | undefined;
+  /** A files migration's step: `plan`, `push` or `verify`. */
+  step?: string | null | undefined;
+  /** A files migration's source ids. */
+  sources?: string[] | null | undefined;
 }
 
 /** How a run's command ended: it exited 0, it exited otherwise or never started, or it outran its time limit. */
@@ -120,8 +126,18 @@ export const ServiceControls = {
 
   /** A control's name: `Stop management`, `Start the environment`, `Reset the database`, `Reset the identity
    * migrations`, `Run admin create on identity`; a run without its label reads `Run a command on identity`. */
-  label: (operation: ControlOperation, service: string | null, set?: string | null, command?: string | null): string =>
-    operation === ControlOperation.Reset
+  label: (
+    operation: ControlOperation,
+    service: string | null,
+    set?: string | null,
+    command?: string | null,
+    step?: string | null,
+  ): string =>
+    operation === ControlOperation.FilesMigration
+      ? step
+        ? `Files migration: ${step}`
+        : 'Files migration'
+      : operation === ControlOperation.Reset
       ? set
         ? `Reset the ${set} migrations`
         : 'Reset the database'
@@ -136,6 +152,7 @@ export const ServiceControls = {
       operation.services.length ? operation.services.join(', ') : null,
       operation.set,
       operation.command,
+      operation.step,
     ),
 
   /** A request's name; a run's arguments never name it, only its recorded label does. */
@@ -177,7 +194,9 @@ export const ServiceControls = {
           ? 'Reset'
           : operation === ControlOperation.Run
             ? 'Run'
-            : 'Restart',
+            : operation === ControlOperation.FilesMigration
+              ? 'Move files'
+              : 'Restart',
 
   /** What a stopped environment's state reads: `Stopped`, or `management stopped`. */
   stateLabel: (stop: TargetStop): string =>
@@ -198,6 +217,8 @@ export const ServiceControls = {
       return `The command runs once in a one-off container of ${subject}'s running release, with its settings and `
         + `database network on ${request.target.id}. The services keep running and nothing stopped changes. The exit `
         + 'code and the last output line stay on the job; the arguments do not.';
+    if (request.operation === ControlOperation.FilesMigration)
+      return `${subject}'s legacy files move into Files; the services keep running and nothing stopped changes.`;
     if (request.operation === ControlOperation.Restart)
       return `${subject} stops and starts again on the release it runs.`;
     if (request.operation === ControlOperation.Start)

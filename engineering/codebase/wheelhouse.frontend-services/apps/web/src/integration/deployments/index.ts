@@ -11,7 +11,12 @@ import type {
   TargetCheck,
   TargetState,
 } from "@/domain/deployments";
-import type { ControlOperation, QueuedControl } from "@/domain/deployments/controls";
+import type {
+  ControlOperation,
+  FilesMigrationBody,
+  FilesMigrationManifest,
+  QueuedControl,
+} from "@/domain/deployments/controls";
 import type { MigrationCheck } from "@/domain/deployments/migrations";
 import { requestData } from "@/integration/common";
 import {
@@ -21,6 +26,7 @@ import {
   DeploymentJobSchema,
   DeploymentStatsSchema,
   DeploymentTargetSchema,
+  FilesMigrationManifestSchema,
   MigrationCheckSchema,
   ReleaseArtifactSchema,
   RunRevealSchema,
@@ -186,6 +192,31 @@ export const deploymentsApi = {
     requestData<{ line: string }>(
       `/api/deployments/targets/${encodeURIComponent(target)}/controls/${encodeURIComponent(job)}/reveal`,
       RunRevealSchema,
+      { signal, method: "POST", action: "control" },
+    ),
+
+  /** The sources the manifests of the release a dev target runs list, and the Files targets of its environment with
+   *  their addresses; refused (409) for prod, Wheelhouse itself and a release with no manifest. */
+  filesMigrationManifest: (target: string, signal?: AbortSignal) =>
+    requestData<FilesMigrationManifest>(
+      `/api/deployments/targets/${encodeURIComponent(target)}/files-migrations/manifest`,
+      FilesMigrationManifestSchema,
+      { signal },
+    ),
+
+  /** Plans, pushes or verifies a dev target's legacy files into a Files host; the answer is the queued job. */
+  startFilesMigration: (target: string, body: FilesMigrationBody, signal?: AbortSignal) =>
+    requestData<QueuedControl>(
+      `/api/deployments/targets/${encodeURIComponent(target)}/files-migrations`,
+      ControlSubmittedSchema,
+      { signal, method: "POST", action: "control", body },
+    ),
+
+  /** Cancels a running files migration job; it then reads cancelled, never failed. */
+  cancelControl: (target: string, job: string, signal?: AbortSignal) =>
+    requestData<unknown>(
+      `/api/deployments/targets/${encodeURIComponent(target)}/controls/${encodeURIComponent(job)}/cancel`,
+      z.unknown(),
       { signal, method: "POST", action: "control" },
     ),
 

@@ -23,4 +23,12 @@ public interface IFilesImportClient
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The token, or the failure.</returns>
     Task<AppResult<FilesImport>> TokenAsync(string filesUrl, string operatorKey, string import, CancellationToken ct);
+
+    /// <summary>Checks the Files host answers before a push or verify is submitted: <c>GET {url}health</c> must answer 200
+    /// within 5 seconds. The call carries no key.</summary>
+    /// <param name="filesUrl">The Files host's https URL, ending with <c>/</c>.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>A success when healthy, else a <c>Conflict</c> failure: <c>Files at {host} is not healthy ({status or
+    /// timeout})</c>.</returns>
+    Task<AppResult<bool>> HealthAsync(string filesUrl, CancellationToken ct);
 }

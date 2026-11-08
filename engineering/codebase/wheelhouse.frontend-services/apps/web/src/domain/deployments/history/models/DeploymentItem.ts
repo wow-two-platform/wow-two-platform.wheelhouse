@@ -4,6 +4,7 @@ import type { JobStatus } from '../../enums/JobStatus';
 import type { ReleaseKind } from '../../models/ReleaseArtifact';
 import type { ReleaseComponent } from '../../models/ReleaseComponent';
 import type { DeploymentOperation } from '../../controls/ServiceControls';
+import type { FilesMigrationRun } from '../../controls/FilesMigration';
 
 /** What a deployment status amounted to before the status taxonomy; kept one release beside the state. */
 export const DeploymentOutcome = {
@@ -11,6 +12,8 @@ export const DeploymentOutcome = {
   Failed: 'failed',
   Refused: 'refused',
   Pending: 'pending',
+  /** A files migration the owner cancelled. */
+  Cancelled: 'cancelled',
   Unknown: 'unknown',
 } as const;
 export type DeploymentOutcome = (typeof DeploymentOutcome)[keyof typeof DeploymentOutcome];
@@ -117,4 +120,6 @@ export interface DeploymentItem {
   /** Set when the item is a control — a stop, start or restart of the release its target runs, which `release` names;
    * null for a deploy. */
   operation?: DeploymentOperation | null;
+  /** What a files migration kept — its import and each finished source's result; null for any other item. */
+  filesMigration?: FilesMigrationRun | null;
 }

@@ -3,7 +3,7 @@ using System.Text;
 
 namespace Wheelhouse.Tests.E2E.Harness;
 
-/// <summary>A fake Files host: answers <c>POST /imports</c> and <c>POST /imports/{id}/tokens</c> and records each request
+/// <summary>A fake Files host: answers <c>GET /health</c>, <c>POST /imports</c> and <c>POST /imports/{id}/tokens</c> and records each request
 /// with the operator key header it carried.</summary>
 public sealed class StubFilesHost : HttpMessageHandler
 {
@@ -16,19 +16,39 @@ public sealed class StubFilesHost : HttpMessageHandler
     /// <summary>Every request, in order: method, URL, the <c>X-Api-Key</c> header and the body.</summary>
     public List<(string Method, string Url, string? Key, string Body)> Requests { get; } = [];
 
-    /// <summary>When set, every request is answered with this status and a body that must never surface.</summary>
+    /// <summary>Every health preflight, in order: the URL and whether it carried an <c>X-Api-Key</c> header (it must not).</summary>
+    public List<(string Url, bool Keyed)> HealthChecks { get; } = [];
+
+    /// <summary>The status the health preflight is answered with.</summary>
+    public HttpStatusCode HealthStatus { get; set; } = HttpStatusCode.OK;
+
+    /// <summary>When set, the health preflight times out, as the client's five second limit would end it.</summary>
+    public bool HealthTimesOut { get; set; }
+
+    /// <summary>When set, every import request is answered with this status and a body that must never surface.</summary>
     public HttpStatusCode? Failure { get; set; }
 
     /// <summary>Clears the recorded requests and the failure.</summary>
     public void Reset()
     {
         Requests.Clear();
+        HealthChecks.Clear();
+        HealthStatus = HttpStatusCode.OK;
+        HealthTimesOut = false;
         Failure = null;
     }
 
     /// <inheritdoc />
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        if (request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath.EndsWith("/health", StringComparison.Ordinal))
+        {
+            HealthChecks.Add((request.RequestUri.ToString(), request.Headers.Contains("X-Api-Key")));
+            if (HealthTimesOut)
+                throw new TaskCanceledException("The request timed out.", new TimeoutException());
+            return new HttpResponseMessage(HealthStatus) { Content = new StringContent("secret-body-from-files") };
+        }
+
         var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
         Requests.Add((request.Method.Method, request.RequestUri!.ToString(),
             request.Headers.TryGetValues("X-Api-Key", out var keys) ? keys.Single() : null, body));

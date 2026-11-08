@@ -116,6 +116,10 @@ public sealed record DeploymentItemDto
     /// <see cref="Release"/> names — or null for a deploy.</summary>
     public DeploymentOperationDto? Operation { get; init; }
 
+    /// <summary>Gets what a files migration kept — its import and each finished source's result — or null for any other
+    /// item and for a record older than the control.</summary>
+    public FilesMigrationDto? FilesMigration { get; init; }
+
     /// <summary>Maps an entry.</summary>
     /// <param name="entry">The joined submission.</param>
     /// <returns>The list item.</returns>
@@ -141,6 +145,7 @@ public sealed record DeploymentItemDto
             FleetId = record.FleetId,
             Status = record.Status,
             Operation = record.Operation,
+            FilesMigration = record.FilesMigration,
             Outcome = entry.Outcome,
             State = entry.State.State,
             Substate = entry.State.Substate,

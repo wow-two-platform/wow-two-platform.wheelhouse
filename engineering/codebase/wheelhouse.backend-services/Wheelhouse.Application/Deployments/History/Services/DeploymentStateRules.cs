@@ -101,7 +101,8 @@ public static class DeploymentStateRules
 
     /// <summary>A control — a stop, start or restart of the release a target runs — read into the taxonomy: it changes
     /// no release, so it reads as in progress, succeeded or failed, or as not applied when the runner refused it. A run
-    /// whose command failed reads as not applied too: it stops and replaces nothing the environment runs.</summary>
+    /// whose command failed, a files migration that failed and one the owner cancelled read as not applied too: they stop
+    /// and replace nothing the environment runs.</summary>
     /// <param name="record">The control's record.</param>
     /// <returns>The reading.</returns>
     public static DeploymentStateReading OfControl(DeploymentRecord record)
@@ -116,6 +117,10 @@ public static class DeploymentStateRules
             "succeeded" => Reading(DeploymentState.Succeeded, null, DeploymentAttention.None),
             "failed" when record.Operation?.Kind == "run" => Reading(DeploymentState.NotApplied, "command_failed",
                 DeploymentAttention.Look, new DeploymentCauseDto("step", step, record.Reason ?? "The command failed.", record.CompletedAt)),
+            "failed" when record.Operation?.Kind == "files-migration" => Reading(DeploymentState.NotApplied, "command_failed",
+                DeploymentAttention.Look, new DeploymentCauseDto("step", step, record.Reason ?? "The files migration failed.", record.CompletedAt)),
+            "cancelled" => Reading(DeploymentState.NotApplied, "cancelled", DeploymentAttention.None,
+                new DeploymentCauseDto("operator", step, record.Reason ?? "Cancelled by the owner.", record.CompletedAt)),
             "failed" => Reading(DeploymentState.Failed, null, DeploymentAttention.Act,
                 new DeploymentCauseDto("step", step, record.Reason ?? "The control failed.", record.CompletedAt)),
             "interrupted" => Reading(DeploymentState.Failed, "interrupted", DeploymentAttention.Act,

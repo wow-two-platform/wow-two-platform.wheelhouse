@@ -11,6 +11,12 @@ export {
   useTargetStates,
 } from "./hooks/useDeploymentInventory";
 export { useDeploymentOutcome } from "./hooks/useDeploymentOutcome";
+export {
+  useCancelFilesMigration,
+  useFilesMigrationManifest,
+  useLatestFilesImport,
+  useStartFilesMigration,
+} from "./hooks/useFilesMigration";
 export { useSelfDeployment } from "./hooks/useSelfDeployment";
 export { useDeploySettings, useSaveDeploySettings } from "./hooks/useDeploySettings";
 export {

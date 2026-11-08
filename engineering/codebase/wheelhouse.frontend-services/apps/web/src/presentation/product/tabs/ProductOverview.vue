@@ -10,6 +10,7 @@ import {
   Layers,
   List,
   Network,
+  FolderInput,
   Pause,
   Play,
   Rocket,
@@ -67,13 +68,14 @@ import {
 } from "@/domain/deployments";
 import { ProductStatusRules } from "@/domain/products";
 import { SelfProduct } from "@/domain/deployments";
-import { ServiceControls, type ControlRequest } from "@/domain/deployments/controls";
+import { FilesMigrations, ServiceControls, type ControlRequest } from "@/domain/deployments/controls";
 import { ServerExtensions } from "@/domain/servers";
 import { EnvironmentOrder, type DeploymentEnvironment } from "@/domain/targets";
 import { withoutServices } from "@/domain/topology";
 import {
   ControlConfirmModal,
   DeployModal,
+  FilesMigrationModal,
   DeploymentStatusPill,
   DeploymentSteps,
   ReconcileModal,
@@ -177,6 +179,9 @@ const controlTarget = computed(() =>
     ? { id: target.value.id, environment: target.value.environment, product: target.value.product }
     : null,
 );
+/** Whether the environment takes the Files migration: dev only, never Wheelhouse itself. */
+const movesFiles = computed(() => FilesMigrations.offers(controlTarget.value, SelfProduct));
+const movingFiles = ref(false);
 /** The environment's stop or start the owner is confirming. */
 const environmentControl = ref<ControlRequest | null>(null);
 const confirmingControl = ref(false);
@@ -1038,6 +1043,14 @@ function openDeploy(job?: DeploymentJob): void {
                     ><Play v-if="ServiceControls.anyStopped(stopped)" :size="14" /><Pause v-else :size="14"
                   /></template
                   >{{ ServiceControls.anyStopped(stopped) ? "Start environment" : "Stop environment" }}</Button
+                >
+                <Button
+                  v-if="movesFiles && state.data.value?.current"
+                  variant="outline"
+                  tone="neutral"
+                  is-full-width
+                  @click="movingFiles = true"
+                  ><template #leading><FolderInput :size="14" /></template>Move files to Files…</Button
                 ></template
               >
               <div class="border-t border-border pt-4">
@@ -1081,6 +1094,12 @@ function openDeploy(job?: DeploymentJob): void {
       :active="state.data.value.active"
       :open="reconciling"
       @update:open="reconciling = $event"
+    />
+    <FilesMigrationModal
+      v-if="movesFiles && controlTarget"
+      :target="controlTarget"
+      :open="movingFiles"
+      @update:open="movingFiles = $event"
     />
     <ControlConfirmModal
       :open="confirmingControl"

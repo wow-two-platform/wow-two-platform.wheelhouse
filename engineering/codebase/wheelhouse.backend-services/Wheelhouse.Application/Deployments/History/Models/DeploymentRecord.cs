@@ -102,6 +102,10 @@ public sealed record DeploymentRecord
     /// a deploy.</summary>
     public DeploymentOperationDto? Operation { get; init; }
 
+    /// <summary>Gets what a files migration job kept — its import and each finished source's result; null for any other
+    /// job and for a record older than the control.</summary>
+    public FilesMigrationDto? FilesMigration { get; init; }
+
     /// <summary>Gets what the owner kept stopped on the target once this control ended; null for a deploy, a control
     /// that has not ended, or one that left nothing stopped.</summary>
     public TargetStopDto? Stopped { get; init; }

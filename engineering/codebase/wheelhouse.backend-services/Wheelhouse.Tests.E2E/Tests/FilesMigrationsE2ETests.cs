@@ -329,6 +329,215 @@ public sealed class FilesMigrationsE2ETests(WheelhouseAppFixture fixture) : Whee
             .Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [Fact]
+    public async Task Manifest_ShouldListTheSourcesOfEveryRepository_AndTheFilesTargetsWithTheirAliases()
+    {
+        await PrepareAsync(release: false);
+        var main = Fixture.GitHub.Push(Repository, Manifest, ManifestYaml);
+        var studio = Fixture.GitHub.Push("owner/foreverpin-studio", Manifest,
+            ManifestYaml.Replace("brand-media", "studio-media").Replace("desk-preparation-media", "studio-other").Replace("wave: 2", "wave: 3"));
+        var bare = Fixture.GitHub.Push("owner/foreverpin-bare", "README.md", "hi");
+        Fixture.Deployments.History.Add(Succeeded("foreverpin-dev", components: new object[]
+        {
+            new { repository = Repository, sourceCommit = main }, new { repository = "owner/foreverpin-studio", sourceCommit = studio },
+            new { repository = "owner/foreverpin-bare", sourceCommit = bare },
+        }));
+
+        var response = await AdminClient.GetAsync("/api/deployments/targets/foreverpin-dev/files-migrations/manifest");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var data = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data");
+        data.GetProperty("tenant").GetString().Should().Be("ocharo");
+        data.GetProperty("sources").EnumerateArray()
+            .Select(source => (source.GetProperty("id").GetString(), source.GetProperty("kind").GetString(),
+                source.GetProperty("wave").GetInt32(), source.GetProperty("repository").GetString()))
+            .Should().Equal(
+                ("brand-media", "volume-folder", 1, Repository), ("desk-preparation-media", "postgres-column", 2, Repository),
+                ("studio-media", "volume-folder", 1, "owner/foreverpin-studio"), ("studio-other", "postgres-column", 3, "owner/foreverpin-studio"));
+        var files = data.GetProperty("filesTargets").EnumerateArray().Should().ContainSingle("only files-dev is a dev files target").Which;
+        files.GetProperty("target").GetString().Should().Be("files-dev");
+        files.GetProperty("urls").EnumerateArray().Select(url => url.GetString())
+            .Should().Equal("https://files.dev.ocharo.test/", "https://files.ocharo.test/");
+        Fixture.FilesHost.Requests.Should().BeEmpty("a read calls nothing");
+        Fixture.Deployments.FilesMigrations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Manifest_ShouldRefuseProdSelfAndAMissingManifest_AndTheOwnerAloneReadsIt()
+    {
+        await PrepareAsync(manifest: false);
+        var none = await AdminClient.GetAsync("/api/deployments/targets/foreverpin-dev/files-migrations/manifest");
+        none.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await none.Content.ReadAsStringAsync()).Should().Contain("no migration manifest");
+        (await AdminClient.GetAsync("/api/deployments/targets/foreverpin-prod/files-migrations/manifest")).StatusCode
+            .Should().Be(HttpStatusCode.Conflict);
+        (await AdminClient.GetAsync("/api/deployments/targets/nowhere-dev/files-migrations/manifest")).StatusCode
+            .Should().Be(HttpStatusCode.NotFound);
+
+        await using (var scope = Fixture.Host.Services.CreateAsyncScope())
+        {
+            var services = scope.ServiceProvider;
+            var product = await services.GetRequiredService<IProductsRepository>().GetBySlugAsync("wheelhouse");
+            var control = await services.GetRequiredService<IServersRepository>().CreateAsync(new ServerEntity
+            {
+                Id = Guid.NewGuid(), Slug = "control", Name = "Control host", Provider = VpsProvider.Ovhcloud,
+                Host = "172.30.0.1", Region = "bhs", SshUser = "wheelhouse-deploy", SshPort = 22, Ingress = new ServerIngressValueObject(),
+            });
+            await services.GetRequiredService<ITargetsRepository>().CreateAsync(new TargetEntity
+            {
+                Id = Guid.NewGuid(), Slug = "wheelhouse-dev", ProductId = product!.Id, ServerId = control.Id,
+                Environment = DeploymentEnvironment.Dev, Network = "wheelhouse", Root = "/srv/wheelhouse",
+            });
+        }
+
+        var self = await AdminClient.GetAsync("/api/deployments/targets/wheelhouse-dev/files-migrations/manifest");
+        self.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await self.Content.ReadAsStringAsync()).Should().Contain("runs Wheelhouse itself");
+
+        (await AnonymousClient.GetAsync("/api/deployments/targets/foreverpin-dev/files-migrations/manifest")).StatusCode
+            .Should().Be(HttpStatusCode.Unauthorized);
+        var admin = AdminClient;
+        admin.DefaultRequestHeaders.Add("X-Wheelhouse-Action", "key-create");
+        var created = await admin.PostAsJsonAsync("/api/integration-keys", new { name = "Claude", scopes = new[] { "deployments:read" } });
+        var secret = (await created.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data").GetProperty("secret").GetString();
+        var key = AnonymousClient;
+        key.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
+        (await key.GetAsync("/api/deployments/targets/foreverpin-dev/files-migrations/manifest")).StatusCode
+            .Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Theory]
+    [InlineData("push")]
+    [InlineData("verify")]
+    public async Task PushAndVerify_ShouldCheckTheFilesHostFirst_AndTakeNoKeyToIt(string step)
+    {
+        await PrepareAsync();
+        var response = await MigrateAsync("foreverpin-dev",
+            new { step, import = step == "verify" ? "imp-3" : null, filesTarget = "files-dev", filesUrl = FilesUrl });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
+        Fixture.FilesHost.HealthChecks.Should().Equal((FilesUrl + "health", false));
+        Fixture.FilesHost.Requests.Should().ContainSingle().Which.Url.Should().StartWith(FilesUrl + "imports");
+    }
+
+    [Theory]
+    [InlineData("push", HttpStatusCode.ServiceUnavailable, false, "503")]
+    [InlineData("verify", HttpStatusCode.InternalServerError, false, "500")]
+    [InlineData("push", HttpStatusCode.OK, true, "timeout")]
+    public async Task UnhealthyFilesHost_ShouldBeAConflict_BeforeAnythingIsOpenedOrSubmitted(
+        string step, HttpStatusCode status, bool timesOut, string detail)
+    {
+        await PrepareAsync();
+        Fixture.FilesHost.HealthStatus = status;
+        Fixture.FilesHost.HealthTimesOut = timesOut;
+
+        var response = await MigrateAsync("foreverpin-dev",
+            new { step, import = step == "verify" ? "imp-3" : null, filesTarget = "files-dev", filesUrl = FilesUrl });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var text = await response.Content.ReadAsStringAsync();
+        text.Should().Contain($"Files at files.ocharo.test is not healthy ({detail})").And.NotContain("secret-body-from-files");
+        Fixture.FilesHost.Requests.Should().BeEmpty("no import opens and no token is minted");
+        Fixture.Deployments.FilesMigrations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Plan_ShouldSkipTheHealthCheck_AndRunAgainstAnUnhealthyFilesHost()
+    {
+        await PrepareAsync();
+        Fixture.FilesHost.HealthStatus = HttpStatusCode.ServiceUnavailable;
+        (await MigrateAsync("foreverpin-dev", new { step = "plan", filesTarget = "files-dev", filesUrl = FilesUrl }))
+            .StatusCode.Should().Be(HttpStatusCode.Accepted);
+        Fixture.FilesHost.HealthChecks.Should().BeEmpty();
+        Fixture.Deployments.FilesMigrations.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task History_ShouldCarryTheMigrationsStepSourcesAndResults_AndReadACancelledJobAsCancelled()
+    {
+        await PrepareAsync();
+        const string done = "00000000-0000-4000-8000-000000000f01";
+        const string stopped = "00000000-0000-4000-8000-000000000f02";
+        const string old = "00000000-0000-4000-8000-000000000f03";
+        var now = Fixture.Host.Clock.GetUtcNow();
+        object Job(string id, string status, object? migration, int hours) => new
+        {
+            id, targetId = "foreverpin-dev", environment = "dev", release = "v1.0.0", actor = "test-admin", status,
+            operation = new { kind = "files-migration", step = "push", sources = new[] { "brand-media", "desk-preparation-media" } },
+            filesMigration = migration, submittedAt = Instant(now.AddHours(-hours)), completedAt = Instant(now.AddHours(-hours).AddMinutes(2)),
+        };
+        var results = new
+        {
+            import = "imp-7",
+            results = new Dictionary<string, object> { ["brand-media"] = new { files = 12, bytes = 3400, skipped = 2, failed = 0 } },
+        };
+        Fixture.Deployments.History.Add(Job(done, "succeeded", results, 3));
+        Fixture.Deployments.History.Add(Job(stopped, "cancelled", results, 2));
+        Fixture.Deployments.History.Add(Job(old, "succeeded", null, 1));
+        Fixture.Deployments.Observations[stopped] = new
+        {
+            status = "cancelled",
+            filesMigration = new { import = "imp-7", results = new Dictionary<string, object>
+            {
+                ["brand-media"] = new { files = 12, bytes = 3400, skipped = 2, failed = 0 },
+                ["desk-preparation-media"] = new { files = 5, bytes = 90, skipped = 0, failed = 1 },
+            } },
+        };
+
+        var items = (await ReadAsync("/api/deployments/history?notApplied=true")).GetProperty("items").EnumerateArray().ToList();
+        var first = items.Single(item => item.GetProperty("id").GetString() == done);
+        first.GetProperty("operation").GetProperty("step").GetString().Should().Be("push");
+        first.GetProperty("operation").GetProperty("sources").EnumerateArray().Select(id => id.GetString())
+            .Should().Equal("brand-media", "desk-preparation-media");
+        var kept = first.GetProperty("filesMigration");
+        kept.GetProperty("import").GetString().Should().Be("imp-7");
+        var brand = kept.GetProperty("results").GetProperty("brand-media");
+        (brand.GetProperty("files").GetInt64(), brand.GetProperty("bytes").GetInt64(), brand.GetProperty("skipped").GetInt64(), brand.GetProperty("failed").GetInt64())
+            .Should().Be((12, 3400, 2, 0));
+
+        var cancelled = items.Single(item => item.GetProperty("id").GetString() == stopped);
+        (cancelled.GetProperty("status").GetString(), cancelled.GetProperty("outcome").GetString(), cancelled.GetProperty("state").GetString(),
+            cancelled.GetProperty("substate").GetString(), cancelled.GetProperty("attention").GetString())
+            .Should().Be(("cancelled", "cancelled", "not_applied", "cancelled", "none"));
+        items.Single(item => item.GetProperty("id").GetString() == old).GetProperty("filesMigration").ValueKind
+            .Should().Be(JsonValueKind.Null, "a record without the field reads as before");
+
+        var detail = (await ReadAsync($"/api/deployments/{stopped}/detail")).GetProperty("deployment");
+        detail.GetProperty("outcome").GetString().Should().Be("cancelled");
+        detail.GetProperty("filesMigration").GetProperty("results").EnumerateObject().Select(source => source.Name)
+            .Should().Equal("brand-media", "desk-preparation-media");
+        detail.GetProperty("filesMigration").GetProperty("results").GetProperty("desk-preparation-media").GetProperty("failed").GetInt64().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task History_ShouldReadAFailedMigrationAsNotApplied_AndKeepItsOperationWithoutServices()
+    {
+        await PrepareAsync();
+        const string id = "00000000-0000-4000-8000-000000000f04";
+        var now = Fixture.Host.Clock.GetUtcNow();
+        Fixture.Deployments.History.Add(new
+        {
+            id, targetId = "foreverpin-dev", environment = "dev", release = "v1.0.0", actor = "test-admin", status = "failed",
+            reason = "the mover failed on brand-media (exit 2)",
+            operation = new { kind = "files-migration", step = "verify", sources = new[] { "brand-media" } },
+            submittedAt = Instant(now.AddHours(-1)), completedAt = Instant(now.AddHours(-1).AddMinutes(1)),
+        });
+
+        var item = (await ReadAsync("/api/deployments/history?notApplied=true")).GetProperty("items").EnumerateArray()
+            .Single(entry => entry.GetProperty("id").GetString() == id);
+        (item.GetProperty("outcome").GetString(), item.GetProperty("state").GetString(), item.GetProperty("operation").GetProperty("services").GetArrayLength())
+            .Should().Be(("failed", "not_applied", 0));
+    }
+
+    private static string Instant(DateTimeOffset at) => at.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+
+    private async Task<JsonElement> ReadAsync(string url)
+    {
+        var response = await AdminClient.GetAsync(url);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data");
+    }
+
     private async Task PrepareAsync(bool manifest = true, bool key = true, bool release = true)
     {
         await using (var scope = Fixture.Host.Services.CreateAsyncScope())

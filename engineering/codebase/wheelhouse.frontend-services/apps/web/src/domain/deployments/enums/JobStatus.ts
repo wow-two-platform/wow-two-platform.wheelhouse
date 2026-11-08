@@ -9,6 +9,8 @@ export const JobStatus = {
   RollbackFailed: 'rollback_failed',
   Interrupted: 'interrupted',
   Rejected: 'rejected',
+  /** The owner stopped a files migration before it ended; it changed no release. */
+  Cancelled: 'cancelled',
   Unknown: 'unknown',
 } as const;
 export type JobStatus = (typeof JobStatus)[keyof typeof JobStatus];

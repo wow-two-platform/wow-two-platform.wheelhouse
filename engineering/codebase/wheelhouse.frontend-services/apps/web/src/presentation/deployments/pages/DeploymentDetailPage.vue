@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ReleaseSets } from "@/domain/deployments";
-import { ServiceControls } from "@/domain/deployments/controls";
+import { ControlOperation, ServiceControls } from "@/domain/deployments/controls";
 import { computed, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { ArrowRight, Crosshair, ExternalLink, FileText, RotateCcw, TriangleAlert, Undo2, Wrench } from "lucide-vue-next";
@@ -22,6 +22,7 @@ import { ProductIcon } from "@/presentation/products";
 import DeployModal from "../components/DeployModal.vue";
 import DeploymentStateChip from "../components/DeploymentStateChip.vue";
 import DeploymentSteps from "../components/DeploymentSteps.vue";
+import FilesMigrationResults from "../components/FilesMigrationResults.vue";
 import ImpactList from "../components/ImpactList.vue";
 import ReconcileModal from "../components/ReconcileModal.vue";
 import ServiceLogsModal from "../components/ServiceLogsModal.vue";
@@ -396,7 +397,7 @@ function rollBack(): void {
             </ul>
           </Panel>
           <Panel title="Rollout steps" v-bind="isLive ? { description: 'Following the target live.' } : {}">
-            <DeploymentSteps v-if="steps.length" :steps="steps" is-sectioned />
+            <DeploymentSteps v-if="steps.length" :steps="steps" :is-sectioned="deployment?.operation?.kind !== ControlOperation.FilesMigration" />
             <p v-else class="text-sm text-muted-foreground">
               {{
                 detail.data.value?.observed === false
@@ -407,6 +408,12 @@ function rollBack(): void {
                     ? "Waiting for the target to start the rollout."
                     : "The target recorded no steps: the runner refused the release before it started."
               }}
+            </p>
+          </Panel>
+          <Panel v-if="deployment?.filesMigration" title="Files migration">
+            <FilesMigrationResults :run="deployment.filesMigration" :order="deployment.operation?.sources ?? []" />
+            <p v-if="!Object.keys(deployment.filesMigration.results).length" class="text-sm text-muted-foreground">
+              No source has finished yet.
             </p>
           </Panel>
           <Panel title="Services">

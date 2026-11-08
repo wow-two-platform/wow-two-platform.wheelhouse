@@ -29,5 +29,8 @@ export const DeploymentKeys = {
   promotions: (filter: string) => ["deployments", "history", "view", "promotions", filter] as const,
   issues: (filter: string) => ["deployments", "history", "view", "issues", filter] as const,
   running: (filter: string) => ["deployments", "history", "running", filter] as const,
+  /** A dev target's files-migration manifest read and the import its newest migration job kept. */
+  filesManifest: (target: string) => ["deployments", "files-migration", "manifest", target] as const,
+  filesImport: (target: string) => ["deployments", "files-migration", "import", target] as const,
   detail: (id: string) => ["deployments", "history", "detail", id] as const,
 };
