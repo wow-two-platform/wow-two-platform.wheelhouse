@@ -141,6 +141,62 @@ public sealed class InventoryValidatorTests
     }
 
     [Fact]
+    public void TargetValidate_ShouldAcceptAliases_WhenEachIsALowercaseHostUniqueInTheTarget()
+    {
+        var validator = new TargetCreateCommandValidator();
+        validator.Validate(Target with
+        {
+            Sites = [new SiteHostValueObject { Site = "app", Host = "files.example.com", Aliases = ["files.tenant.example", "files.other.example"] }],
+        }).IsValid.Should().BeTrue();
+        validator.Validate(Target with
+        {
+            Sites = [new SiteHostValueObject { Site = "app", Host = "files.example.com", Aliases = [.. Enumerable.Range(0, 20).Select(i => $"t{i}.example.com")] }],
+        }).IsValid.Should().BeTrue();
+        // Two sites may still share a host, as they could before aliases.
+        validator.Validate(Target with
+        {
+            Sites =
+            [
+                new SiteHostValueObject { Site = "app", Host = "files.example.com", Aliases = ["files.tenant.example"] },
+                new SiteHostValueObject { Site = "go", Host = "files.example.com" },
+            ],
+        }).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TargetValidate_ShouldFail_WhenAnAliasIsMalformedTooManyOrRepeated()
+    {
+        var create = new TargetCreateCommandValidator();
+        var update = new TargetUpdateCommandValidator();
+        SiteHostValueObject[][] bad =
+        [
+            [new SiteHostValueObject { Site = "app", Host = "a.example.com", Aliases = ["Tenant.Example"] }],
+            [new SiteHostValueObject { Site = "app", Host = "a.example.com", Aliases = ["not a host"] }],
+            [new SiteHostValueObject { Site = "app", Host = "a.example.com", Aliases = [.. Enumerable.Range(0, 21).Select(i => $"t{i}.example.com")] }],
+            [new SiteHostValueObject { Site = "app", Host = "a.example.com", Aliases = ["a.example.com"] }],
+            [new SiteHostValueObject { Site = "app", Host = "a.example.com", Aliases = ["b.example.com", "b.example.com"] }],
+            [
+                new SiteHostValueObject { Site = "app", Host = "a.example.com", Aliases = ["b.example.com"] },
+                new SiteHostValueObject { Site = "go", Host = "c.example.com", Aliases = ["b.example.com"] },
+            ],
+            [
+                new SiteHostValueObject { Site = "app", Host = "a.example.com" },
+                new SiteHostValueObject { Site = "go", Host = "c.example.com", Aliases = ["a.example.com"] },
+            ],
+        ];
+        foreach (var sites in bad)
+        {
+            create.Validate(Target with { Sites = sites }).IsValid.Should().BeFalse();
+            update.Validate(new TargetUpdateCommand
+            {
+                Slug = Target.Slug, Product = Target.Product, Server = Target.Server, Environment = Target.Environment,
+                Network = Target.Network, Root = Target.Root, Settings = Target.Settings, SmokeChecks = Target.SmokeChecks,
+                Sites = sites,
+            }).IsValid.Should().BeFalse();
+        }
+    }
+
+    [Fact]
     public void VaultValidate_ShouldFail_WhenTheUrlCarriesAPath()
     {
         new VaultCreateCommandValidator().Validate(Vault with { Url = "http://vault:8080/admin" }).IsValid.Should().BeFalse();

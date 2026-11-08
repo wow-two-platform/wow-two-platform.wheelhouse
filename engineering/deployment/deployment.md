@@ -421,7 +421,7 @@ reconciled/
 
 A new database starts with ForeverPin and Wheelhouse as products and no server. During wiring, add the verified host
 under Servers (slug, address, SSH user and port, ingress), place its `ssh/<slug>/` files, then add each environment
-under Products (server, settings files per service, smoke checks, site hosts).
+under Products (server, settings files per service, smoke checks, site hosts and their aliases).
 
 Add a real redirect smoke probe to the target after the stable pilot code exists.
 The default root is `/srv/wheelhouse`; secret values never enter source, bundles or the browser.

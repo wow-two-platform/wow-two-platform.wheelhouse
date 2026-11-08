@@ -94,7 +94,10 @@ internal static class InventorySnapshotMapper
         Root = target.Root,
         Settings = [.. target.Settings.Select(setting => new SnapshotSettingModel { Service = setting.Service, Path = setting.Path })],
         Smoke = [.. target.SmokeChecks.Select(check => new SnapshotSmokeModel { Service = check.Service, Path = check.Path, Status = check.Status })],
-        Sites = [.. target.Sites.Select(site => new SnapshotSiteModel { Site = site.Site, Host = site.Host })],
+        Sites = [.. target.Sites.Select(site => new SnapshotSiteModel
+        {
+            Site = site.Site, Host = site.Host, Aliases = site.Aliases is { Count: > 0 } aliases ? aliases : null,
+        })],
     };
 
     /// <summary>Maps a stored vault to its snapshot entry.</summary>
@@ -153,5 +156,5 @@ internal static class InventorySnapshotMapper
     /// <param name="sites">The site hosts as the runner defines them.</param>
     /// <returns>The stored site hosts.</returns>
     public static IReadOnlyList<SiteHostValueObject> Map(IReadOnlyList<SnapshotSiteModel> sites) =>
-        [.. sites.Select(site => new SiteHostValueObject { Site = site.Site, Host = site.Host })];
+        [.. sites.Select(site => new SiteHostValueObject { Site = site.Site, Host = site.Host, Aliases = site.Aliases ?? [] })];
 }

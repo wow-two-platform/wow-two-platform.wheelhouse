@@ -134,5 +134,35 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(['hel1'], [item['id'] for item in json.loads(result.stdout)])
 
 
+    def test_site_aliases_round_trip_and_are_written_only_when_present(self):
+        document = json.loads(json.dumps(SNAPSHOT))
+        document['targets'][0]['sites'] = [
+            {'site': 'app', 'host': 'pilot.example.com', 'aliases': ['a.tenant.example', 'b.tenant.example']},
+            {'site': 'admin', 'host': 'admin.example.com'}, {'site': 'docs', 'host': 'docs.example.com', 'aliases': []}]
+        self.write(document)
+        inventory.install(self.root)
+        target = fleet.TARGETS[0]
+        self.assertEqual((('app', ('a.tenant.example', 'b.tenant.example')),), target.site_aliases)
+        self.assertEqual([{'site': 'app', 'host': 'pilot.example.com', 'aliases': ['a.tenant.example', 'b.tenant.example']},
+                          {'site': 'admin', 'host': 'admin.example.com'},
+                          {'site': 'docs', 'host': 'docs.example.com'}], inventory.target_json(target)['sites'])
+        with patch.dict(os.environ, NO_RIG):
+            ingress = fleet.resolve_target(self.root, 'pilot-prod')['target']['ingress']
+        self.assertEqual({'app': ['a.tenant.example', 'b.tenant.example']}, ingress['aliases'])
+
+    def test_a_snapshot_without_aliases_reads_unchanged(self):
+        self.write(SNAPSHOT)
+        inventory.install(self.root)
+        self.assertEqual(((), [{'site': 'app', 'host': 'pilot.example.com'}]),
+                         (fleet.TARGETS[0].site_aliases, inventory.target_json(fleet.TARGETS[0])['sites']))
+
+    def test_malformed_aliases_are_refused(self):
+        document = json.loads(json.dumps(SNAPSHOT))
+        document['targets'][0]['sites'][0]['aliases'] = 'a.tenant.example'
+        self.write(document)
+        with self.assertRaises(ValueError):
+            inventory.install(self.root)
+
+
 if __name__ == '__main__':
     unittest.main()

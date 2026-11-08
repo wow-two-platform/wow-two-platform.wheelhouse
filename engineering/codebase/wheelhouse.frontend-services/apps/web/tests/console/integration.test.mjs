@@ -119,7 +119,7 @@ test("writes inventory rows with their own actions and decodes what the server s
       privateEntryPoints: [], certResolver: "letsencrypt", pattern: null, probe: null, privateProbe: null } };
   const target = { slug: "test-dev", product: "test", server: "hel1", environment: "dev", network: "platform",
     root: "/srv/wheelhouse", settings: [{ service: "api", path: "/srv/settings/test/api.json" }],
-    smokeChecks: [{ service: "api", path: "/health", status: 200 }], sites: [{ site: "app", host: "dev.example.com" }] };
+    smokeChecks: [{ service: "api", path: "/health", status: 200 }], sites: [{ site: "app", host: "dev.example.com", aliases: ["files.tenant.example"] }] };
   const requests = [];
   globalThis.fetch = async (url, options) => {
     requests.push({ url, options });
@@ -130,6 +130,12 @@ test("writes inventory rows with their own actions and decodes what the server s
   assert.deepEqual((await serversApi.createServer(server)).value, server);
   assert.deepEqual((await serversApi.updateServer("hel1", serverBody)).value, server);
   assert.deepEqual((await targetsApi.updateTarget("test-dev", target)).value, target);
+  // An older API answer carries no aliases: they read as none.
+  const older = { ...target, sites: [{ site: "app", host: "dev.example.com" }] };
+  const record = globalThis.fetch;
+  globalThis.fetch = async () => json({ data: older });
+  assert.deepEqual((await targetsApi.updateTarget("test-dev", older)).value.sites, [{ site: "app", host: "dev.example.com", aliases: [] }]);
+  globalThis.fetch = record;
   assert.equal((await secretsApi.deleteVault("hel1-vault")).ok, true);
   assert.equal((await productsApi.deleteProduct("test")).ok, true);
   assert.deepEqual(

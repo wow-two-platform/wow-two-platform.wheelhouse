@@ -775,6 +775,14 @@ def target_ingress(target):
     hosts = ingress.get("hosts", {})
     require(isinstance(hosts, dict) and all(isinstance(name, str) and SLUG.fullmatch(name) and isinstance(host, str)
                                             and HOST.fullmatch(host) for name, host in hosts.items()), "Invalid site host")
+    aliases = ingress.get("aliases", {})
+    require(isinstance(aliases, dict) and all(
+        isinstance(name, str) and name in hosts and isinstance(extra, list) and len(extra) <= 20
+        and all(isinstance(alias, str) and HOST.fullmatch(alias) for alias in extra)
+        for name, extra in aliases.items()), "Invalid site alias")
+    # Two sites may still share a host, as before aliases; an alias appears once and is never a site's host.
+    every = [alias for extra in aliases.values() for alias in extra]
+    require(len(set(every)) == len(every) and not set(every) & set(hosts.values()), "Duplicate site host")
     # Where the runner reaches the ingress's public and private entry points from the target host.
     for key in ("probe", "privateProbe"):
         address = ingress.get(key)
@@ -858,6 +866,9 @@ def ingress_routes(target, project, manifest):
         upstream = project + "-" + site["service"] + "-" + str(site["port"])
         upstreams[upstream] = {"loadBalancer": {"servers": [
             {"url": "http://" + project + "-" + site["service"] + ":" + str(site["port"])}]}}
+        # A public site also answers on its aliases: routers of their own, so each takes its own certificate and a host
+        # without DNS breaks no other. Private sites ignore aliases.
+        aliases = ingress.get("aliases", {}).get(site["site"], []) if site["exposure"] == "public" else []
         for path in site["paths"]:
             router = {"rule": route_rule(host, path), "priority": route_priority(path), "service": upstream,
                       "entryPoints": points}
@@ -870,11 +881,16 @@ def ingress_routes(target, project, manifest):
             while name in routers:
                 name, suffix = base + "-" + str(suffix), suffix + 1
             routers[name] = router
+            for number, alias in enumerate(aliases, 1):
+                # Named after the primary router's final name, so two paths whose labels collide keep apart.
+                routers[name + "-alias-" + str(number)] = {**router, "rule": route_rule(alias, path)}
         entry = site["paths"][0]
-        published.append(((site["site"], len(entry), entry, site["service"]),
-                          {"name": site["site"], "service": site["service"], "exposure": site["exposure"],
-                           "primary": site["site"] == primary,
-                           "url": ingress["scheme"] + "://" + host + origin_port + ("" if entry == "/" else entry)}))
+        record = {"name": site["site"], "service": site["service"], "exposure": site["exposure"],
+                  "primary": site["site"] == primary,
+                  "url": ingress["scheme"] + "://" + host + origin_port + ("" if entry == "/" else entry)}
+        if aliases:
+            record["aliases"] = list(aliases)
+        published.append(((site["site"], len(entry), entry, site["service"]), record))
     return ({"http": {"routers": routers, "services": upstreams}},
             [record for _, record in sorted(published, key=lambda item: item[0])])
 
@@ -1479,13 +1495,16 @@ def derived_settings(target, project, manifest, service):
     hosts of the sites it serves here, its platform name and localhost) and `Sites:<site>:Url` (the origin of every site
     the product publishes here). Deployment:TrustedProxies comes from the ingress on the target, at deploy."""
     _, published = ingress_routes(target, project, manifest)
-    hosts, sites = [], {}
+    hosts, extra, sites = [], [], {}
     for site in published:
         parts = urllib.parse.urlsplit(site["url"])
         if site["service"] == service and parts.hostname not in hosts:
             hosts.append(parts.hostname)
+        if site["service"] == service:
+            extra += [alias for alias in site.get("aliases", []) if alias not in extra]
         sites.setdefault(site["name"], parts.scheme + "://" + parts.netloc)
     # The platform name lets another service reach this one by its internal address; localhost serves the probes.
+    hosts += [alias for alias in extra if alias not in hosts]
     values = {HOSTS: ";".join(hosts + [project + "-" + service, "localhost"])}
     for name in sorted(sites):
         values["Sites:" + name + ":Url"] = sites[name]

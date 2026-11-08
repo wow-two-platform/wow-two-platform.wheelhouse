@@ -218,3 +218,42 @@ class FleetTests(unittest.TestCase):
         with patch.object(fleet, 'SERVERS', (server, server)):
             with self.assertRaisesRegex(ValueError, 'Duplicate server'):
                 fleet.servers()
+
+    def alias_target(self, sites, aliases):
+        server = fleet.Server('pilot', 'Pilot', fleet.VpsProvider.HETZNER, 'vps.example.net', 'hel1')
+        target = fleet.Target('foreverpin-prod', 'pilot', 'foreverpin', fleet.DeploymentEnvironment.PROD, (),
+                              'platform', sites=sites, site_aliases=aliases)
+        return server, target
+
+    def test_site_aliases_reach_the_ingress_and_default_to_none(self):
+        server, target = self.alias_target((('app', 'files.example.com'),),
+                                           (('app', ('files.tenant.example', 'files.other.example')),))
+        self.assertEqual({'app': ['files.tenant.example', 'files.other.example']},
+                         fleet.ingress_of(server, target)['aliases'])
+        plain = fleet.Target('foreverpin-prod', 'pilot', 'foreverpin', fleet.DeploymentEnvironment.PROD, (), 'platform',
+                             sites=(('app', 'files.example.com'),))
+        self.assertEqual({}, fleet.ingress_of(server, plain)['aliases'])
+
+    def test_site_aliases_are_validated(self):
+        many = tuple('f%d.tenant.example' % number for number in range(21))
+        cases = (
+            ((('app', 'a.example.com'),), (('app', ('Bad.Example',)),), 'Invalid site alias'),
+            ((('app', 'a.example.com'),), (('app', ('bad_host',)),), 'Invalid site alias'),
+            ((('app', 'a.example.com'),), (('app', many),), 'Too many site aliases'),
+            ((('app', 'a.example.com'),), (('admin', ('b.example.com',)),), 'Alias without a site host'),
+            ((('app', 'a.example.com'),), (('app', ('a.example.com',)),), 'Duplicate site host'),
+            ((('app', 'a.example.com'),), (('app', ('b.example.com', 'b.example.com')),), 'Duplicate site host'),
+            ((('app', 'a.example.com'), ('admin', 'b.example.com')), (('app', ('b.example.com',)),), 'Duplicate site host'),
+            ((('app', 'a.example.com'), ('admin', 'b.example.com')),
+             (('app', ('c.example.com',)), ('admin', ('c.example.com',))), 'Duplicate site host'),
+        )
+        for sites, aliases, message in cases:
+            with self.subTest(message=message, aliases=aliases):
+                server, target = self.alias_target(sites, aliases)
+                with self.assertRaisesRegex(ValueError, message):
+                    fleet.ingress_of(server, target)
+        server, target = self.alias_target((('app', 'a.example.com'),), (('app', many[:20]),))
+        self.assertEqual(20, len(fleet.ingress_of(server, target)['aliases']['app']))
+        # Two sites may still share a host, as they could before aliases.
+        server, target = self.alias_target((('app', 'a.example.com'), ('admin', 'a.example.com')), (('app', ('b.example.com',)),))
+        self.assertEqual({'app': 'a.example.com', 'admin': 'a.example.com'}, fleet.ingress_of(server, target)['hosts'])

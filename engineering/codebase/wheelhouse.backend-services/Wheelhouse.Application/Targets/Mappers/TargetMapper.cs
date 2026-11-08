@@ -24,6 +24,6 @@ internal static class TargetMapper
         [
             .. target.SmokeChecks.Select(check => new SmokeCheckDto { Service = check.Service, Path = check.Path, Status = check.Status }),
         ],
-        Sites = [.. target.Sites.Select(site => new SiteHostDto { Site = site.Site, Host = site.Host })],
+        Sites = [.. target.Sites.Select(site => new SiteHostDto { Site = site.Site, Host = site.Host, Aliases = site.Aliases ?? [] })],
     };
 }

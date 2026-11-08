@@ -29,6 +29,54 @@ export interface TargetFormModel {
   sites: SiteHost[];
 }
 
+/** The rules a site's alias hosts follow; the host enforces the same ones. */
+export const SiteAliasRules = {
+  /** Aliases one site may carry. */
+  max: 20,
+  /** Whether text is a lowercase host name: dot-separated labels of letters, digits and inner dashes, 253 characters at most. */
+  isHost: (value: string): boolean =>
+    value.length > 0 && value.length <= 253 && /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/.test(value),
+  /** The hosts typed one per line or separated by commas or spaces, blanks dropped. */
+  parse: (text: string): string[] => text.split(/[\s,]+/).filter(Boolean),
+  /** What is wrong with the sites' aliases, by site: an invalid or uppercase alias, more than the maximum, or a host
+   * used twice anywhere in the target (every site's host and aliases together). Empty when all is well. */
+  errorsOf: (sites: readonly Pick<SiteHost, "site" | "host" | "aliases">[]): Record<string, string> => {
+    const errors: Record<string, string> = {};
+    const seen = new Map<string, string>();
+    for (const item of sites) {
+      const host = item.host.trim();
+      if (host) seen.set(host, item.site);
+    }
+    for (const item of sites) {
+      const aliases = (item.aliases ?? []).map((alias) => alias.trim()).filter(Boolean);
+      const host = item.host.trim();
+      if (!aliases.length) continue;
+      if (aliases.length > SiteAliasRules.max) {
+        errors[item.site] = `At most ${SiteAliasRules.max} aliases.`;
+        continue;
+      }
+      const bad = aliases.find((alias) => !SiteAliasRules.isHost(alias));
+      if (bad) {
+        errors[item.site] = bad !== bad.toLowerCase() ? `Use lowercase: ${bad}` : `Not a valid host name: ${bad}`;
+        continue;
+      }
+      for (const alias of aliases) {
+        if (alias === host) {
+          errors[item.site] = `${alias} is already this site's host.`;
+          break;
+        }
+        const owner = seen.get(alias);
+        if (owner !== undefined) {
+          errors[item.site] = owner === item.site ? `${alias} is listed twice.` : `${alias} is already used by site ${owner}.`;
+          break;
+        }
+        seen.set(alias, item.site);
+      }
+    }
+    return errors;
+  },
+} as const;
+
 /** Validates what the form can judge alone; the host checks paths, hosts and duplicates and names the field. */
 export const targetFormSchema = z.object({
   slug: z.string().trim().regex(InventoryRules.slug, "Start with a lowercase letter; use lowercase letters, digits and dashes."),
@@ -38,7 +86,15 @@ export const targetFormSchema = z.object({
   root: z.string().trim().min(1, "Enter the releases folder."),
   settings: z.array(z.object({ service: z.string().trim(), path: z.string().trim() })),
   smokeChecks: z.array(z.object({ service: z.string().trim(), path: z.string().trim(), status: z.number().int() })),
-  sites: z.array(z.object({ site: z.string().trim(), host: z.string().trim() })),
+  sites: z
+    .array(z.object({ site: z.string().trim(), host: z.string().trim(), aliases: z.array(z.string().trim()) }))
+    .superRefine((sites, context) => {
+      const errors = SiteAliasRules.errorsOf(sites);
+      sites.forEach((item, index) => {
+        const message = errors[item.site];
+        if (message) context.addIssue({ code: "custom", message, path: [index, "aliases"] });
+      });
+    }),
 });
 
 /** The slug a new environment of a product suggests. */
@@ -66,7 +122,7 @@ export function targetFormOf(
     root: target?.root ?? "/srv/wheelhouse",
     settings: target?.settings.map((setting) => ({ ...setting })) ?? [],
     smokeChecks: target?.smokeChecks.map((check) => ({ ...check })) ?? [],
-    sites: target?.sites.map((site) => ({ ...site })) ?? [],
+    sites: target?.sites.map((site) => ({ ...site, aliases: [...(site.aliases ?? [])] })) ?? [],
   };
 }
 
@@ -134,6 +190,8 @@ export interface SiteHostRow {
   host: string;
   /** A private site's tailnet node in this environment. */
   node: string | null;
+  /** The extra hosts the site also answers on, as stored. */
+  aliases: string[];
   /** Why the row reads as it does, or null for a host derived as usual. */
   note: string | null;
 }
@@ -175,33 +233,38 @@ export function siteRowsOf(
   context: SiteHostContext,
 ): SiteHostRow[] {
   const kept = new Map<string, string>();
+  const aliasesOf = new Map<string, string[]>();
   for (const item of stored) {
     const site = item.site.trim();
     const host = item.host.trim();
-    if (site && host && !kept.has(site)) kept.set(site, host);
+    if (site && host && !kept.has(site)) {
+      kept.set(site, host);
+      aliasesOf.set(site, [...(item.aliases ?? [])]);
+    }
   }
   const rows = known.map((site): SiteHostRow => {
     const host = kept.get(site.name) ?? "";
+    const aliases = aliasesOf.get(site.name) ?? [];
     kept.delete(site.name);
     if (site.exposure === "private") {
       const node = context.node(site.name);
-      return { site: site.name, exposure: "private", host, node, note: host ? "Private; stored host" : "Private; tailnet node" };
+      return { site: site.name, exposure: "private", host, node, aliases, note: host ? "Private; stored host" : "Private; tailnet node" };
     }
     const derived = BaselineHost.of(context.product, site.name, context.environment, context.address, site.primary);
     if (host)
-      return { site: site.name, exposure: "public", host, node: null, note: host === derived ? null : derived ? `Stored; derived: ${derived}` : "Stored" };
+      return { site: site.name, exposure: "public", host, node: null, aliases, note: host === derived ? null : derived ? `Stored; derived: ${derived}` : "Stored" };
     return derived
-      ? { site: site.name, exposure: "public", host: derived, node: null, note: null }
-      : { site: site.name, exposure: "public", host: "", node: null, note: "Set once the server has a public address" };
+      ? { site: site.name, exposure: "public", host: derived, node: null, aliases, note: null }
+      : { site: site.name, exposure: "public", host: "", node: null, aliases, note: "Set once the server has a public address" };
   });
   for (const [site, host] of kept)
-    rows.push({ site, exposure: null, host, node: null, note: "Stored; not declared by the product" });
+    rows.push({ site, exposure: null, host, node: null, aliases: aliasesOf.get(site) ?? [], note: "Stored; not declared by the product" });
   return rows;
 }
 
-/** The hosts a form with these rows sends: every row that has one. */
-export function siteHostsOf(rows: readonly SiteHostRow[]): SiteHost[] {
-  return rows.filter((row) => row.host).map((row) => ({ site: row.site, host: row.host }));
+/** The hosts a form with these rows sends: every row that has one, with its aliases (typed ones replace the stored). */
+export function siteHostsOf(rows: readonly SiteHostRow[], typed: Readonly<Record<string, string[]>> = {}): SiteHost[] {
+  return rows.filter((row) => row.host).map((row) => ({ site: row.site, host: row.host, aliases: typed[row.site] ?? row.aliases }));
 }
 
 /**
@@ -262,9 +325,10 @@ export function selfSiteRowsOf(
     exposure: "private",
     host: item.host,
     node: null,
+    aliases: [...(item.aliases ?? [])],
     note: `This console's hostname${port}`,
   }));
   return rows.length
     ? rows
-    : [{ site, exposure: "private", host: "", node: null, note: "This console's settings name no hostname" }];
+    : [{ site, exposure: "private", host: "", node: null, aliases: [], note: "This console's settings name no hostname" }];
 }

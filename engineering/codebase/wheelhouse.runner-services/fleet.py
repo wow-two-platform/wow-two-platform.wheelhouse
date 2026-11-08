@@ -14,6 +14,7 @@ from catalog import product as defined_product, rehearsal
 from runner import SLUG, require
 
 VAULT_URL = re.compile(r"https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?")
+MAX_ALIASES = 20
 HOST = re.compile(r"(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+")
 # Where a target deploys unless its row names another root; also the disk a server's host reading covers before it
 # runs a target.
@@ -99,6 +100,8 @@ class Target:
     smoke: tuple[dict, ...] = ()
     # Site name -> host, for sites the server's pattern does not cover (every prod site).
     sites: tuple[tuple[str, str], ...] = ()
+    # Site name -> extra hosts the site answers on beside its named host, in order.
+    site_aliases: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -234,17 +237,27 @@ def ingress_of(server, target):
     hosts = dict(target.sites)
     require(len(hosts) == len(target.sites), "Duplicate site host")
     require(all(SLUG.fullmatch(name) and HOST.fullmatch(host) for name, host in hosts.items()), "Invalid site host")
+    aliases = {}
+    for name, extra in target.site_aliases:
+        require(name not in aliases, "Duplicate site aliases")
+        require(name in hosts, "Alias without a site host")
+        require(len(extra) <= MAX_ALIASES, "Too many site aliases")
+        require(all(isinstance(alias, str) and HOST.fullmatch(alias) for alias in extra), "Invalid site alias")
+        aliases[name] = list(extra)
+    # Two sites may still share a host, as before aliases; an alias appears once and is never a site's host.
+    every = [alias for extra in aliases.values() for alias in extra]
+    require(len(set(every)) == len(every) and not set(every) & set(hosts.values()), "Duplicate site host")
     console = console_ingress(server, target)
     if console is not None:
         # One server row serves both consoles: each takes its environment's entry point, whatever the row's ingress.
-        return {**console, "hosts": hosts}
+        return {**console, "hosts": hosts, "aliases": aliases}
     # Prod on a VPS names every host itself; a shared preview pattern would publish it under the wrong domain.
     pattern = ingress.pattern if (target.environment is not DeploymentEnvironment.PROD
                                   or server.provider is VpsProvider.LOCAL) else None
     probe = ingress.probe or ingress.scheme + "://127.0.0.1" + (":" + str(ingress.port) if ingress.port else "")
     return {"scheme": ingress.scheme, "port": ingress.port, "entryPoints": list(ingress.entry_points),
             "privateEntryPoints": list(ingress.private_entry_points), "certResolver": ingress.cert_resolver,
-            "pattern": pattern, "hosts": hosts, "probe": probe, "privateProbe": ingress.private_probe,
+            "pattern": pattern, "hosts": hosts, "aliases": aliases, "probe": probe, "privateProbe": ingress.private_probe,
             "publicAddress": ingress.public_address}
 
 

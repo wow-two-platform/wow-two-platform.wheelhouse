@@ -165,7 +165,7 @@ test("the environment form lists every site the product declares with its derive
   const mounted = mountDialog(dialogs.TargetFormModal, { product: "ocharo-studio", servers, knownSites, target: null });
   mounted.state.open = true;
   await nextTick();
-  assert.deepEqual(mounted.values().sites, [{ site: "app", host: "ocharo-studio-dev.203-0-113-10.sslip.io" }]);
+  assert.deepEqual(mounted.values().sites, [{ site: "app", host: "ocharo-studio-dev.203-0-113-10.sslip.io", aliases: [] }]);
   assert.deepEqual(mounted.setup().siteRows.map((row) => [row.site, row.host || row.node, row.note]), [
     ["app", "ocharo-studio-dev.203-0-113-10.sslip.io", null],
     ["admin", "ocharo-studio-admin-dev", "Private; tailnet node"],
@@ -177,8 +177,8 @@ test("the environment form lists every site the product declares with its derive
     environment: "prod", network: "platform", root: "/srv/wheelhouse", settings: [], smokeChecks: [],
     sites: [{ site: "status", host: "status.ocharo.example" }] }, open: true });
   await nextTick();
-  assert.deepEqual(edited.values().sites, [{ site: "app", host: "ocharo-studio.203-0-113-10.sslip.io" },
-    { site: "status", host: "status.ocharo.example" }]);
+  assert.deepEqual(edited.values().sites, [{ site: "app", host: "ocharo-studio.203-0-113-10.sslip.io", aliases: [] },
+    { site: "status", host: "status.ocharo.example", aliases: [] }]);
   edited.unmount();
 });
 
@@ -188,7 +188,7 @@ test("editing an environment keeps its stored hosts and re-derives a baseline ho
   const knownSites = [{ name: "desk", exposure: "public", primary: true }, { name: "studio", exposure: "public", primary: false }];
   const target = { slug: "ocharo-dev", product: "ocharo", server: "ocharo-vps", environment: "dev", network: "platform",
     root: "/srv/wheelhouse", settings: [], smokeChecks: [],
-    sites: [{ site: "desk", host: "ocharo-dev.203-0-113-10.sslip.io" }, { site: "studio", host: "studio-dev.ocharo.example" }] };
+    sites: [{ site: "desk", host: "ocharo-dev.203-0-113-10.sslip.io", aliases: [] }, { site: "studio", host: "studio-dev.ocharo.example", aliases: [] }] };
   const mounted = mountDialog(dialogs.TargetFormModal, { product: "ocharo", servers, knownSites, target });
   mounted.state.open = true;
   await nextTick();
@@ -198,8 +198,8 @@ test("editing an environment keeps its stored hosts and re-derives a baseline ho
   // Moving to another server: the baseline host follows, the bound one stays.
   mounted.setup().form.setValue("server", "second-vps");
   await nextTick();
-  assert.deepEqual(mounted.values().sites, [{ site: "desk", host: "ocharo-dev.198-51-100-7.sslip.io" },
-    { site: "studio", host: "studio-dev.ocharo.example" }]);
+  assert.deepEqual(mounted.values().sites, [{ site: "desk", host: "ocharo-dev.198-51-100-7.sslip.io", aliases: [] },
+    { site: "studio", host: "studio-dev.ocharo.example", aliases: [] }]);
   mounted.unmount();
 });
 
@@ -212,12 +212,12 @@ test("a new environment starts as the first the product lacks, with its slug and
   await nextTick();
   assert.equal(mounted.values().environment, "prod");
   assert.equal(mounted.values().slug, "ocharo-prod");
-  assert.deepEqual(mounted.values().sites, [{ site: "desk", host: "ocharo.203-0-113-10.sslip.io" }]);
+  assert.deepEqual(mounted.values().sites, [{ site: "desk", host: "ocharo.203-0-113-10.sslip.io", aliases: [] }]);
   // Back to dev by the picker: slug and hosts follow.
   mounted.setup().form.setValue("environment", "dev");
   await nextTick();
   assert.equal(mounted.values().slug, "ocharo-dev");
-  assert.deepEqual(mounted.values().sites, [{ site: "desk", host: "ocharo-dev.203-0-113-10.sslip.io" }]);
+  assert.deepEqual(mounted.values().sites, [{ site: "desk", host: "ocharo-dev.203-0-113-10.sslip.io", aliases: [] }]);
   mounted.unmount();
   // A product with neither environment, or both, starts at dev.
   for (const taken of [[], ["dev", "prod"]]) {
@@ -232,7 +232,7 @@ test("a new environment starts as the first the product lacks, with its slug and
 test("Wheelhouse's own environment takes the control host and what the console derives, as the read arrives", async () => {
   const host = "wheelhouse.tail1234.ts.net";
   const derived = (environment) => ({ environment, network: "control", root: "/srv/wheelhouse",
-    settings: [{ service: "console", path: `/srv/wheelhouse/config/console-${environment}.json` }], sites: [{ site: "console", host }] });
+    settings: [{ service: "console", path: `/srv/wheelhouse/config/console-${environment}.json` }], sites: [{ site: "console", host, aliases: [] }] });
   const servers = [{ slug: "ocharo-vps", ingress: { publicAddress: "203.0.113.10" } }, { slug: "control", controlHost: true }];
   const knownSites = [{ name: "console", exposure: "private", primary: true }];
   const mounted = mountDialog(dialogs.TargetFormModal, { product: "wheelhouse", servers, knownSites, target: null, selfTarget: null });
@@ -246,13 +246,13 @@ test("Wheelhouse's own environment takes the control host and what the console d
   await nextTick();
   const values = mounted.values();
   assert.deepEqual([values.slug, values.network, values.root, values.settings, values.sites], ["wheelhouse-dev", "control",
-    "/srv/wheelhouse", [{ service: "console", path: "/srv/wheelhouse/config/console-dev.json" }], [{ site: "console", host }]]);
+    "/srv/wheelhouse", [{ service: "console", path: "/srv/wheelhouse/config/console-dev.json" }], [{ site: "console", host, aliases: [] }]]);
   // Prod: the same hostname, its own settings file.
   mounted.setup().form.setValue("environment", "prod");
   await nextTick();
   await nextTick();
   assert.deepEqual([mounted.values().slug, mounted.values().settings[0].path, mounted.values().sites],
-    ["wheelhouse-prod", "/srv/wheelhouse/config/console-prod.json", [{ site: "console", host }]]);
+    ["wheelhouse-prod", "/srv/wheelhouse/config/console-prod.json", [{ site: "console", host, aliases: [] }]]);
   mounted.unmount();
 });
 
@@ -302,7 +302,7 @@ test("the environment form fills a public site's baseline host when deploy.yml i
   assert.deepEqual(mounted.values().sites, []);
   mounted.state.knownSites = [{ name: "app", exposure: "public", primary: true }];
   await nextTick();
-  assert.deepEqual(mounted.values().sites, [{ site: "app", host: "ocharo-studio-dev.203-0-113-10.sslip.io" }]);
+  assert.deepEqual(mounted.values().sites, [{ site: "app", host: "ocharo-studio-dev.203-0-113-10.sslip.io", aliases: [] }]);
   mounted.unmount();
 });
 

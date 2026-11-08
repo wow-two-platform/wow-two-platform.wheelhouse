@@ -28,10 +28,12 @@ export interface SmokeCheck {
   status: number;
 }
 
-/** The host a named site answers on. */
+/** The host a named site answers on, with the extra hosts (aliases) that reach the same site. */
 export interface SiteHost {
   site: string;
   host: string;
+  /** Extra hosts the site also answers on; each needs a DNS record at the server and gets its own certificate. */
+  aliases: string[];
 }
 
 /** One environment of a product on one server, as the inventory editor holds it. */

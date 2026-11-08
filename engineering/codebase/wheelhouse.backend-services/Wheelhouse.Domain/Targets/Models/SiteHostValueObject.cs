@@ -8,4 +8,7 @@ public sealed record SiteHostValueObject
 
     /// <summary>Gets the host name, such as <c>app.example.com</c>.</summary>
     public required string Host { get; init; }
+
+    /// <summary>Gets the extra host names the site also answers on, such as <c>files.tenant.example</c>; rows stored before aliases existed read as empty.</summary>
+    public IReadOnlyList<string> Aliases { get; init; } = [];
 }

@@ -41,6 +41,7 @@ import {
   SelectPickerItem,
   SelectPickerTrigger,
   SelectPickerValue,
+  TextAreaInput,
   TextInput,
 } from "@wow-two-beta/fe/presentation/forms";
 import {
@@ -60,6 +61,7 @@ import {
   selfEnvironmentOf,
   selfSiteRowsOf,
   serverChoicesOf,
+  SiteAliasRules,
   siteHostsOf,
   siteRowsOf,
   storedHostsOf,
@@ -152,17 +154,31 @@ useFormDialogSession(form, {
     const derived = isSelf.value ? selfEnvironmentOf(props.selfTarget, values.environment) : null;
     return { ...(derived ? withSelfDefinition(values, derived) : values), sites: siteHostsOf(rowsFor(values.environment, values.server)) };
   },
-  onOpen: () => (removeError.value = ""),
+  onOpen: () => {
+    removeError.value = "";
+    typedAliases.value = {};
+  },
 });
 
 /** What the Site hosts show, and the form sends. */
 const siteRows = computed(() => rowsFor(form.state.values.environment, form.state.values.server));
 
+/** The aliases typed per site this session, as text; a site not typed in shows its stored aliases. */
+const typedAliases = ref<Record<string, string>>({});
+const aliasTextOf = (row: SiteHostRow): string => typedAliases.value[row.site] ?? row.aliases.join("\n");
+/** The hosts to send: each row's host with the aliases typed or stored. */
+const sentSites = computed(() => {
+  const typed: Record<string, string[]> = {};
+  for (const [site, text] of Object.entries(typedAliases.value)) typed[site] = SiteAliasRules.parse(text);
+  return siteHostsOf(siteRows.value, typed);
+});
+/** What is wrong with each site's aliases, by site. */
+const aliasErrors = computed(() => SiteAliasRules.errorsOf(sentSites.value));
+
 /** Keeps the sent hosts as the rows show them: they follow the environment, the server, the sites deploy.yml declares
  * once it is read and the nodes a placement registers. */
-watch(siteRows, (rows) => {
+watch(sentSites, (sites) => {
   if (!props.open) return;
-  const sites = siteHostsOf(rows);
   if (JSON.stringify(sites) !== JSON.stringify(form.state.values.sites)) form.setValue("sites", sites);
 });
 
@@ -364,6 +380,22 @@ async function remove(): Promise<void> {
                   placeholder="Not set yet"
                   autocomplete="off"
               /></Field>
+              <Field
+                v-if="row.host && !isSelf"
+                class="sm:col-start-2"
+                :label="`Aliases of ${row.site} (optional)`"
+                :helper="aliasErrors[row.site] ? '' : 'One host per line or comma-separated. Each alias needs a DNS record pointing at the server and gets its own certificate.'"
+                :error="aliasErrors[row.site] ?? ''"
+                ><TextAreaInput
+                  :model-value="aliasTextOf(row)"
+                  :rows="2"
+                  :aria-label="`Aliases of ${row.site}`"
+                  placeholder="files.tenant.example"
+                  @update:model-value="typedAliases = { ...typedAliases, [row.site]: String($event ?? '') }"
+              /></Field>
+              <p v-else-if="row.aliases.length" class="text-xs text-muted-foreground sm:col-start-2">
+                Also answers on {{ row.aliases.join(", ") }}
+              </p>
             </div>
             <p v-if="!siteRows.length" class="text-sm text-muted-foreground">No sites known yet</p>
           </fieldset>

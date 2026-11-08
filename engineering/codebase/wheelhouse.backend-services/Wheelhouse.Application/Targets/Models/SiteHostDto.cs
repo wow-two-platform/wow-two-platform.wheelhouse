@@ -8,4 +8,7 @@ public sealed record SiteHostDto
 
     /// <summary>Gets the host name.</summary>
     public required string Host { get; init; }
+
+    /// <summary>Gets the extra host names the site also answers on.</summary>
+    public IReadOnlyList<string> Aliases { get; init; } = [];
 }

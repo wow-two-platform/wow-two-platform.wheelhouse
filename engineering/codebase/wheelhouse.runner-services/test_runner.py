@@ -1539,5 +1539,85 @@ class ProbeTests(unittest.TestCase):
             runner.validate_target(self.target)
 
 
+class AliasRouteTests(unittest.TestCase):
+    """A public site answers on its aliases through routers of their own; the primary host routes as before."""
+
+    def setUp(self):
+        self.target = {"product": "pilot", "environment": "prod", "root": "/srv/pilot",
+                       "ingress": {"scheme": "https", "entryPoints": ["websecure"], "privateEntryPoints": ["private"],
+                                   "certResolver": "letsencrypt",
+                                   "hosts": {"app": "files.example.com", "admin": "admin.example.com"}}}
+        self.manifest = {"schemaVersion": 2, "images": {name: "ghcr.io/o/" + name for name in ("web", "api")},
+                         "sites": {"app": {"exposure": "public", "primary": True, "environments": ["prod"]},
+                                   "admin": {"exposure": "private", "primary": False, "environments": ["prod"]}},
+                         "routes": {"web": {"app": {"port": 80, "paths": ["/"]}},
+                                    "api": {"app": {"port": 8080, "paths": ["/api"]},
+                                            "admin": {"port": 8080, "paths": ["/"]}}}}
+
+    def render(self):
+        return runner.ingress_routes(self.target, "pilot-prod", self.manifest)
+
+    def test_without_aliases_the_output_is_unchanged(self):
+        before = self.render()
+        self.target["ingress"]["aliases"] = {}
+        self.assertEqual(before, self.render())
+        self.assertNotIn("aliases", before[1][0])
+        self.assertTrue(all("-alias-" not in name for name in before[0]["http"]["routers"]))
+
+    def test_each_alias_gets_its_own_router_per_path(self):
+        self.target["ingress"]["aliases"] = {"app": ["files.tenant.example", "files.other.example"]}
+        config, published = self.render()
+        routers = config["http"]["routers"]
+        primary = routers["pilot-prod-app-api-api"]
+        self.assertEqual("Host(`files.example.com`) && (Path(`/api`) || PathPrefix(`/api/`))", primary["rule"])
+        for number, host in ((1, "files.tenant.example"), (2, "files.other.example")):
+            for service, path in (("api", "/api"), ("web", "/")):
+                base = "pilot-prod-app-" + service + "-" + runner.route_label(path)
+                alias = routers[base + "-alias-" + str(number)]
+                original = routers[base]
+                self.assertEqual(runner.route_rule(host, path), alias["rule"])
+                self.assertEqual({key: original[key] for key in ("priority", "service", "entryPoints", "tls")},
+                                 {key: alias[key] for key in ("priority", "service", "entryPoints", "tls")})
+        self.assertEqual(6, len([name for name in routers if name.startswith("pilot-prod-app-")]))
+        self.assertEqual(["files.tenant.example", "files.other.example"],
+                         [site for site in published if site["name"] == "app"][0]["aliases"])
+        self.assertTrue(all(site["url"].startswith("https://files.example.com") for site in published
+                            if site["name"] == "app"))
+
+    def test_paths_whose_labels_collide_keep_their_alias_routers_apart(self):
+        self.manifest["routes"]["api"]["app"]["paths"] = ["/a-b", "/a/b"]
+        self.target["ingress"]["aliases"] = {"app": ["files.tenant.example"]}
+        routers = self.render()[0]["http"]["routers"]
+        base = "pilot-prod-app-api-a-b"
+        self.assertEqual(runner.route_rule("files.tenant.example", "/a-b"), routers[base + "-alias-1"]["rule"])
+        self.assertEqual(runner.route_rule("files.tenant.example", "/a/b"), routers[base + "-2-alias-1"]["rule"])
+
+    def test_private_sites_ignore_aliases(self):
+        self.target["ingress"]["aliases"] = {"admin": ["admin.tenant.example"]}
+        config, published = self.render()
+        self.assertTrue(all("-alias-" not in name for name in config["http"]["routers"]))
+        self.assertTrue(all("aliases" not in site for site in published))
+
+    def test_ingress_validation_refuses_bad_aliases(self):
+        for aliases in ({"app": ["Bad.Example"]}, {"other": ["x.example.com"]}, {"app": ["files.example.com"]},
+                        {"app": ["x.example.com", "x.example.com"]}, {"app": "x.example.com"},
+                        {"app": ["h%d.example.com" % number for number in range(21)]}):
+            with self.subTest(aliases=aliases):
+                self.target["ingress"]["aliases"] = aliases
+                with self.assertRaises(runner.Rejected):
+                    runner.target_ingress(self.target)
+
+    def test_allowed_hosts_list_primaries_then_aliases_before_platform_name(self):
+        self.target["ingress"]["aliases"] = {"app": ["files.tenant.example", "files.other.example"],
+                                             "admin": ["admin.tenant.example"]}
+        values = runner.derived_settings(self.target, "pilot-prod", self.manifest, "api")
+        self.assertEqual("admin.example.com;files.example.com;files.tenant.example;files.other.example;pilot-prod-api;localhost",
+                         values[runner.HOSTS])
+        self.assertEqual("https://files.example.com", values["Sites:app:Url"])
+        web = runner.derived_settings(self.target, "pilot-prod", self.manifest, "web")
+        self.assertEqual("files.example.com;files.tenant.example;files.other.example;pilot-prod-web;localhost",
+                         web[runner.HOSTS])
+
+
 if __name__ == "__main__":
     unittest.main()

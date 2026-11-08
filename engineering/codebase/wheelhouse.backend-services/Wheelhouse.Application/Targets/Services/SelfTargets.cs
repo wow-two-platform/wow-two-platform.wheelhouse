@@ -72,7 +72,7 @@ public static class SelfTargets
             differs.Add($"folder '{expected.Root}'");
         if (settings.Count != 1 || settings[0].Service != setting.Service || settings[0].Path != setting.Path)
             differs.Add($"settings file {setting.Service} → {setting.Path}");
-        if (sites.Count != 1 || sites[0].Site != site.Site || sites[0].Host != site.Host)
+        if (sites.Count != 1 || sites[0].Site != site.Site || sites[0].Host != site.Host || sites[0].Aliases is not { Count: 0 })
             differs.Add($"site {site.Site} → {site.Host}");
         return differs.Count == 0
             ? null

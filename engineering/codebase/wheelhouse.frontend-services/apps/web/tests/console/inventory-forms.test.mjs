@@ -149,10 +149,10 @@ test("a new environment starts as dev on the first server, and its slug follows 
   assert.equal(values.slug, "foreverpin-dev");
   assert.equal(values.server, "hel1");
   assert.equal(forms.suggestedTargetSlug("foreverpin", "prod"), "foreverpin-prod");
-  const body = forms.targetRequestOf({ ...values, sites: [{ site: "app", host: "dev.example.com" }] }, "foreverpin", false);
+  const body = forms.targetRequestOf({ ...values, sites: [{ site: "app", host: "dev.example.com", aliases: [] }] }, "foreverpin", false);
   assert.equal("slug" in body, false);
   assert.equal(body.product, "foreverpin");
-  assert.deepEqual(body.sites, [{ site: "app", host: "dev.example.com" }]);
+  assert.deepEqual(body.sites, [{ site: "app", host: "dev.example.com", aliases: [] }]);
   assert.equal(forms.targetFormSchema.safeParse({ ...values, server: "" }).success, false);
 });
 
@@ -213,21 +213,21 @@ const rowContext = (environment, address = "203.0.113.10") => ({ product: "ochar
 test("every site the product declares is a row: the derived baseline host, or the tailnet node of a private site", () => {
   const dev = forms.siteRowsOf(ocharo, [], rowContext("dev"));
   assert.deepEqual(dev, [
-    { site: "desk", exposure: "public", host: "ocharo-dev.203-0-113-10.sslip.io", node: null, note: null },
-    { site: "motion", exposure: "private", host: "", node: "ocharo-motion-dev", note: "Private; tailnet node" },
-    { site: "studio", exposure: "public", host: "ocharo-studio-dev.203-0-113-10.sslip.io", node: null, note: null },
+    { site: "desk", exposure: "public", host: "ocharo-dev.203-0-113-10.sslip.io", node: null, aliases: [], note: null },
+    { site: "motion", exposure: "private", host: "", node: "ocharo-motion-dev", aliases: [], note: "Private; tailnet node" },
+    { site: "studio", exposure: "public", host: "ocharo-studio-dev.203-0-113-10.sslip.io", node: null, aliases: [], note: null },
   ]);
   // Only the hosts are sent: a private site's node is no host.
   assert.deepEqual(forms.siteHostsOf(dev), [
-    { site: "desk", host: "ocharo-dev.203-0-113-10.sslip.io" },
-    { site: "studio", host: "ocharo-studio-dev.203-0-113-10.sslip.io" },
+    { site: "desk", host: "ocharo-dev.203-0-113-10.sslip.io", aliases: [] },
+    { site: "studio", host: "ocharo-studio-dev.203-0-113-10.sslip.io", aliases: [] },
   ]);
   const prod = forms.siteRowsOf(ocharo, [], rowContext("prod"));
   assert.deepEqual(prod.map((row) => row.host || row.node),
     ["ocharo.203-0-113-10.sslip.io", "ocharo-motion", "ocharo-studio.203-0-113-10.sslip.io"]);
   // Without a public address a public site has no host to show or send; the deploy fills it.
   const unplaced = forms.siteRowsOf(ocharo, [], rowContext("dev", null));
-  assert.deepEqual(unplaced[0], { site: "desk", exposure: "public", host: "", node: null, note: "Set once the server has a public address" });
+  assert.deepEqual(unplaced[0], { site: "desk", exposure: "public", host: "", node: null, aliases: [], note: "Set once the server has a public address" });
   assert.deepEqual(forms.siteHostsOf(unplaced), []);
   assert.deepEqual(forms.siteRowsOf([], [], rowContext("dev")), []);
 });
@@ -254,7 +254,7 @@ test("a target keeps the hosts it stores, notes the one that is not the derived 
     ["legacy", "legacy.ocharo.example", "Stored; not declared by the product"],
   ]);
   assert.equal(rows[3].exposure, null);
-  assert.deepEqual(forms.siteHostsOf(rows), [stored[0], stored[1], stored[2]]);
+  assert.deepEqual(forms.siteHostsOf(rows), stored.map((site) => ({ ...site, aliases: [] })));
   // A private site with a host of its own keeps it, still labelled private.
   const bound = forms.siteRowsOf(ocharo, [{ site: "motion", host: "motion.ocharo.example" }], rowContext("dev"));
   assert.deepEqual([bound[1].host, bound[1].node, bound[1].note], ["motion.ocharo.example", "ocharo-motion-dev", "Private; stored host"]);
@@ -280,7 +280,7 @@ test("Wheelhouse's own environment runs on the control host and takes what this 
   assert.deepEqual(forms.serverChoicesOf("foreverpin", servers).map((server) => server.slug), ["pilot", "control", "old"]);
 
   const host = "wheelhouse.tail1234.ts.net";
-  const derived = (environment, sites = [{ site: "console", host }]) => ({
+  const derived = (environment, sites = [{ site: "console", host, aliases: [] }]) => ({
     environment, network: "control", root: "/srv/wheelhouse", sites,
     settings: [{ service: "console", path: `/srv/wheelhouse/config/console-${environment}.json` }],
   });
@@ -295,7 +295,7 @@ test("Wheelhouse's own environment runs on the control host and takes what this 
   assert.equal(dev.settings[0].path, "/srv/wheelhouse/config/console-dev.json", "the form edits a detached copy");
 
   const rows = forms.selfSiteRowsOf(dev, "dev");
-  assert.deepEqual(forms.siteHostsOf(rows), [{ site: "console", host }]);
+  assert.deepEqual(forms.siteHostsOf(rows), [{ site: "console", host, aliases: [] }]);
   assert.equal(rows[0].note, "This console's hostname; dev on port 8443");
   assert.equal(forms.selfSiteRowsOf(forms.selfEnvironmentOf(self, "prod"), "prod")[0].note, "This console's hostname");
   const unnamed = forms.selfSiteRowsOf(derived("dev", []), "dev");
@@ -359,4 +359,27 @@ test("a vault keeps its server, and a new one is named after it", () => {
   assert.deepEqual(forms.vaultDefinitionRequestOf({ ...values, name: "Vault" }, "hel1", false), {
     name: "Vault", server: "hel1", url: "http://vault:8080",
   });
+});
+
+test("a site's aliases ride its row and the request, and the form checks them before the host does", () => {
+  const stored = [{ site: "desk", host: "files.example.com", aliases: ["files.tenant.example"] }];
+  const rows = forms.siteRowsOf(ocharo, stored, rowContext("dev"));
+  assert.deepEqual(rows[0].aliases, ["files.tenant.example"]);
+  assert.deepEqual(forms.siteHostsOf(rows)[0], stored[0]);
+  assert.deepEqual(forms.siteHostsOf(rows, { desk: ["a.example", "b.example"] })[0].aliases, ["a.example", "b.example"]);
+  assert.deepEqual(forms.targetFormOf({ ...product, slug: "x", environment: "dev", server: "s", network: "n", root: "/r",
+    settings: [], smokeChecks: [], sites: stored }, "ocharo", "s").sites, stored);
+  assert.deepEqual(forms.SiteAliasRules.parse("a.example, b.example\nc.example  "), ["a.example", "b.example", "c.example"]);
+  const rules = forms.SiteAliasRules;
+  const site = (aliases, name = "app", host = "files.example.com") => ({ site: name, host, aliases });
+  assert.deepEqual(rules.errorsOf([site(["files.tenant.example"])]), {});
+  assert.match(rules.errorsOf([site(["Files.Tenant.example"])]).app, /lowercase/);
+  assert.match(rules.errorsOf([site(["not a host!"])]).app, /valid host/);
+  assert.match(rules.errorsOf([site(["files.example.com"])]).app, /already/);
+  assert.match(rules.errorsOf([site(["a.example", "a.example"])]).app, /twice/);
+  assert.match(rules.errorsOf([site([]), site(["files.example.com"], "admin", "admin.example.com")]).admin, /site app/);
+  assert.match(rules.errorsOf([site(Array.from({ length: 21 }, (_, i) => `h${i}.example`))]).app, /At most 20/);
+  const values = { ...forms.targetFormOf(null, "foreverpin", "hel1"), network: "n", root: "/r" };
+  assert.equal(forms.targetFormSchema.safeParse({ ...values, sites: [site(["a.example"])] }).success, true);
+  assert.equal(forms.targetFormSchema.safeParse({ ...values, sites: [site(["BAD"])] }).success, false);
 });

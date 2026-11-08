@@ -239,7 +239,7 @@ own targets keep their hand-placed files), into `<root>/config/<product>-<enviro
 |---|---|
 | Host file | The file the target names for the service, if any: the pre-render settings, kept as a layer |
 | Wheelhouse | The environment's stored settings (`environment_settings`) and its built-in vault secrets, read at deploy |
-| Derived | `AllowedHosts` (the hosts of the sites the service serves, its platform name `<product>-<environment>-<service>`, any other host its host file listed, `localhost`), `Sites:<site>:Url` (the origin of every site the product publishes there), `Deployment:TrustedProxies` (the address of the host kit's `ingress` on the target's network). A public site's host is the target's, else the server's pattern, else its baseline host on the server's public address (`<product>[-<site>][-dev].<ip-with-dashes>.sslip.io`, decision 68), so both keys name it |
+| Derived | `AllowedHosts` (the hosts of the sites the service serves, then their aliases, its platform name `<product>-<environment>-<service>`, any other host its host file listed, `localhost`), `Sites:<site>:Url` (the origin of every site the product publishes there), `Deployment:TrustedProxies` (the address of the host kit's `ingress` on the target's network). A public site's host is the target's, else the server's pattern, else its baseline host on the server's public address (`<product>[-<site>][-dev].<ip-with-dashes>.sslip.io`, decision 68), so both keys name it |
 | Database | A required connection key (`ConnectionStrings:<name>`, `<Section>:ConnectionString`) no other layer sets, from `config/<product>-<environment>/database.json` (`prepare.py --database`), for a service that needs PostgreSQL |
 | Default | An optional key's `default` from the release (descriptor § Typed keys), for each key the service declares that no other layer sets (v0.13); a rendered value of `""` counts as unset. Before v0.13.3 the render skipped this layer while the console already named it as the source |
 
@@ -376,6 +376,13 @@ snapshot while the API is down.
 
 A server's ingress row carries its public address (`publicAddress`), where its public sites' baseline hosts point.
 Enrollment and Refresh kit record it with the kit's ingress; a server edit keeps it, so it is never typed.
+
+A target names a host for a site its server's pattern does not cover, and may name aliases beside it (v0.14, Files'
+shared host: one `app` site answers each tenant's `files.{domain}`). An alias is a lowercase host, at most 20 per site,
+and no host appears twice in one target. A public site routes each alias on routers of its own, so each alias gets its
+own certificate and a host whose DNS is not set yet breaks no other; a private site ignores aliases. The primary host
+stays the site's URL, its `Sites:<site>:Url` and its probe; `AllowedHosts` adds the aliases. Each alias needs its DNS
+record set by hand until the Domains group binds it.
 
 Credentials never enter the database. A server's SSH identity and pinned host key (`ssh/<server>/identity`,
 `known_hosts`) and a vault's administrator password (`vaults/<vault>/password`) are files the owner places on

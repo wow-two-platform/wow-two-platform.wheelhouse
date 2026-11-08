@@ -145,6 +145,48 @@ public sealed class RepositoryTests(WheelhouseTestDb db) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SiteAliases_ShouldRoundTripAndRowsWithoutThemReadEmpty_WhenStored()
+    {
+        var product = InventoryRows.Product("pilot");
+        var server = InventoryRows.Server("hel1");
+        var target = InventoryRows.Target("pilot-prod", product, server);
+        target.Sites =
+        [
+            new Wheelhouse.Domain.Targets.Models.SiteHostValueObject
+            {
+                Site = "app", Host = "files.example.com", Aliases = ["files.tenant.example", "files.other.example"],
+            },
+        ];
+        await using (var ctx = db.NewContext())
+        {
+            await new ProductsRepository(ctx).CreateAsync(product);
+            await new ServersRepository(ctx).CreateAsync(server);
+            await new TargetsRepository(ctx).CreateAsync(target);
+            // A row written before aliases existed: the site object has no `aliases` key.
+            await ctx.Database.GetDbConnection().ExecuteAsync(
+                "update targets set sites = '[{\"site\":\"go\",\"host\":\"go.example.com\"}]' where slug = 'pilot-prod'");
+        }
+
+        await using (var read = db.NewContext())
+        {
+            var old = (await new TargetsRepository(read).GetBySlugAsync("pilot-prod"))!;
+            old.Sites.Should().ContainSingle().Which.Aliases.Should().NotBeNull().And.BeEmpty();
+        }
+
+        await using (var ctx = db.NewContext())
+        {
+            var targets = new TargetsRepository(ctx);
+            var loaded = (await targets.GetBySlugAsync("pilot-prod"))!;
+            loaded.Sites = target.Sites;
+            await targets.UpdateAsync(loaded);
+        }
+
+        await using var again = db.NewContext();
+        (await new TargetsRepository(again).GetBySlugAsync("pilot-prod"))!.Sites.Single().Aliases
+            .Should().Equal("files.tenant.example", "files.other.example");
+    }
+
+    [Fact]
     public async Task ChangedTargetDetails_ShouldPersist_WhenUpdated()
     {
         var product = InventoryRows.Product("pilot");

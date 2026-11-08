@@ -2,6 +2,13 @@ import { z } from "zod";
 import { DeploymentEnvironment, type InventoryTarget, type SaveTargetRequest, type SelfTarget } from "@/domain/targets";
 import { requestData, requestEmpty } from "@/integration/common";
 
+/** A site's host and its aliases; an older API answer without aliases reads as none. */
+const SiteHostSchema = z.object({
+  site: z.string(),
+  host: z.string(),
+  aliases: z.array(z.string()).default([]),
+});
+
 const TargetSchema = z.object({
   slug: z.string(),
   product: z.string(),
@@ -11,7 +18,7 @@ const TargetSchema = z.object({
   root: z.string(),
   settings: z.array(z.object({ service: z.string(), path: z.string() })),
   smokeChecks: z.array(z.object({ service: z.string(), path: z.string(), status: z.number().int() })),
-  sites: z.array(z.object({ site: z.string(), host: z.string() })),
+  sites: z.array(SiteHostSchema),
 });
 
 const SelfTargetSchema = z.object({
@@ -23,7 +30,7 @@ const SelfTargetSchema = z.object({
       network: z.string(),
       root: z.string(),
       settings: z.array(z.object({ service: z.string(), path: z.string() })),
-      sites: z.array(z.object({ site: z.string(), host: z.string() })),
+      sites: z.array(SiteHostSchema),
     }),
   ),
 });

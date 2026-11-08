@@ -73,6 +73,18 @@ def pairs(items, first, second):
     return tuple((text(entry, first), text(entry, second)) for entry in items)
 
 
+def aliases_of(items):
+    """Site -> extra hosts; absent or empty `aliases` means none, so a snapshot written before them reads unchanged."""
+    result = []
+    for entry in items:
+        extra = entry.get("aliases") or []
+        require(isinstance(extra, list) and all(isinstance(alias, str) for alias in extra),
+                "Inventory snapshot is malformed")
+        if extra:
+            result.append((text(entry, "site"), tuple(extra)))
+    return tuple(result)
+
+
 def release_of(release):
     return None if release is None else catalog.Release(text(release, "asset"),
                                                         pairs(release["images"], "service", "image"),
@@ -114,7 +126,8 @@ def target_of(item):
         text(item, "network"), text(item, "root"),
         smoke=tuple({"service": text(check, "service"), "path": text(check, "path"), "status": number(check, "status")}
                     for check in smoke),
-        sites=pairs(item["sites"], "site", "host"))
+        sites=pairs(item["sites"], "site", "host"),
+        site_aliases=aliases_of(item["sites"]))
 
 
 def vault_of(item):
@@ -153,7 +166,10 @@ def target_json(target):
             "environment": target.environment.value, "network": target.network, "root": target.root,
             "settings": [{"service": service, "path": path} for service, path in target.settings],
             "smoke": [dict(check) for check in target.smoke],
-            "sites": [{"site": site, "host": host} for site, host in target.sites]}
+            "sites": [{"site": site, "host": host,
+                       **({"aliases": list(extra)} if extra else {})}
+                      for site, host in target.sites
+                      for extra in [dict(target.site_aliases).get(site, ())]]}
 
 
 def vault_json(vault):

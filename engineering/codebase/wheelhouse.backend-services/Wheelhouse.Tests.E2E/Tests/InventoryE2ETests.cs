@@ -221,6 +221,45 @@ public sealed class InventoryE2ETests(WheelhouseAppFixture fixture) : Wheelhouse
             .Should().Be(("dev", "pilot-host", 200));
     }
 
+    [Fact]
+    public async Task Targets_ShouldCarrySiteAliasesThroughCreateUpdateReadAndTheSnapshot_WhenGiven()
+    {
+        var response = await ActionClient("target").PostJsonAsync("api/targets", new
+        {
+            slug = "foreverpin-alias", product = "foreverpin", server = "pilot-host", environment = "dev", network = "platform",
+            sites = new[] { new { site = "app", host = "files.example.com", aliases = new[] { "files.tenant.example" } } },
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        async Task<System.Text.Json.JsonElement> ReadSite() =>
+            (await (await AdminClient.GetAsync("api/targets?product=foreverpin")).ReadEnvelopeAsync<System.Text.Json.JsonElement>())
+            .EnumerateArray().Single(item => item.GetProperty("slug").GetString() == "foreverpin-alias").GetProperty("sites")[0];
+
+        (await ReadSite()).GetProperty("aliases").EnumerateArray().Select(item => item.GetString()).Should().Equal("files.tenant.example");
+        var exported = Snapshot().GetProperty("targets").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "foreverpin-alias").GetProperty("sites")[0];
+        exported.GetProperty("aliases").EnumerateArray().Select(item => item.GetString()).Should().Equal("files.tenant.example");
+
+        // Aliases are optional on update: a site without them reads empty and the snapshot omits the key.
+        var updated = await ActionClient("target").PutJsonAsync("api/targets/foreverpin-alias", new
+        {
+            product = "foreverpin", server = "pilot-host", environment = "dev", network = "platform",
+            sites = new[] { new { site = "app", host = "files.example.com" } },
+        });
+        updated.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await ReadSite()).GetProperty("aliases").GetArrayLength().Should().Be(0);
+        Snapshot().GetProperty("targets").EnumerateArray()
+            .Single(item => item.GetProperty("id").GetString() == "foreverpin-alias").GetProperty("sites")[0]
+            .TryGetProperty("aliases", out _).Should().BeFalse();
+
+        var duplicate = await ActionClient("target").PutJsonAsync("api/targets/foreverpin-alias", new
+        {
+            product = "foreverpin", server = "pilot-host", environment = "dev", network = "platform",
+            sites = new[] { new { site = "app", host = "files.example.com", aliases = new[] { "files.example.com" } } },
+        });
+        duplicate.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [Theory]
     [InlineData("\"test\"")]
     [InlineData("1")]
