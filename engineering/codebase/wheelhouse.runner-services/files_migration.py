@@ -46,7 +46,7 @@ RELATIVE = {"volume-folder": ("path",), "postgres-column": (), "sqlite-column": 
 NAMES = ("Rejected", "CommandFailed", "SLUG", "SELF_PRODUCT", "TERMINAL", "Docker", "require", "reason", "read_json",
          "write_json", "now", "validate_target", "validate_bundle", "deployment_lock", "control_ready", "stopped_of",
          "mounted_settings", "private_settings", "configuration_value", "base_environment", "registry_login",
-         "registry_unreadable", "cancel_requested", "finish_cancelled", "CANCELLED")
+         "registry_unreadable", "cancel_requested", "finish_cancelled", "CANCELLED", "run_line")
 
 
 def bind(namespace):
@@ -198,6 +198,22 @@ def prepare(target, payload):
         else:
             volume_name(compose, project, source["volume"])
     return base, project, current, bundle, manifest, compose
+
+
+def mover_said(line, payload, stdin):
+    """The mover's last stderr line as a reason's tail (": …"), or "" without one. The token and every connection string
+    the run carried are replaced first, then the one-off scrub cuts digit runs, queries and token-like runs; the
+    protocol keeps stderr to counts and source keys, so this is belt and braces."""
+    if not isinstance(line, str) or not line.strip():
+        return ""
+    secrets = [payload.get("token")]
+    with contextlib.suppress(Exception):
+        secrets.append(json.loads(stdin).get("connection"))
+    for secret in secrets:
+        if isinstance(secret, str) and secret:
+            line = line.replace(secret, "***")
+    kept = run_line(line)
+    return ": " + kept if kept else ""
 
 
 def container_name(project, job_id):
@@ -357,17 +373,19 @@ def run_sources(target, base, project, compose, manifest, bundle, payload, names
                 except CommandFailed:
                     raise CommandFailed(source["id"] + ": the volume " + source["volume"] + " does not exist on this target") from None
             arguments, stdin = arguments_for(target, project, compose, manifest, bundle, payload, source, job_id)
+            said = []
             code = docker.stream(arguments, stdin, TIMEOUT, container_name(project, job_id), reader,
-                                 lambda: cancel_requested(base, job_id))
+                                 lambda: cancel_requested(base, job_id), on_error=said.append)
             if code == CANCELLED:
                 finish_cancelled(record, actor)
                 return
+            why = mover_said(said[-1] if said else None, payload, stdin)
             if code == 1:
-                raise Rejected("the mover refused " + source["id"])
+                raise Rejected("the mover refused " + source["id"] + why)
             if code is None:
                 raise CommandFailed("the mover timed out on " + source["id"] + " after " + str(TIMEOUT) + "s")
             if code != 0:
-                raise CommandFailed("the mover failed on " + source["id"] + " (exit " + str(code) + ")")
+                raise CommandFailed("the mover failed on " + source["id"] + " (exit " + str(code) + ")" + why)
         except BaseException as error:
             step.update(status="failed", completedAt=now())
             if reason(error):

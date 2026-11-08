@@ -53,10 +53,14 @@ class MoverDocker(ControlDocker):
             raise runner.CommandFailed("docker volume inspect failed (exit 1); inspect target containers privately")
         return ""
 
-    def stream(self, arguments, document, timeout, container, on_line, cancelled):
+    errors = []
+
+    def stream(self, arguments, document, timeout, container, on_line, cancelled, on_error=None):
         self.runs.append({"arguments": arguments, "stdin": json.loads(document), "timeout": timeout, "container": container,
                           "environment": self.environments[-1]})
         lines, code = self.script[len(self.runs) - 1] if len(self.runs) <= len(self.script) else ([], 0)
+        if on_error is not None:
+            on_error(self.errors[len(self.runs) - 1] if len(self.runs) <= len(self.errors) else None)
         for line in lines:
             if self.during:
                 self.during(len(self.runs))
@@ -359,6 +363,19 @@ class ExitTests(Rig):
                     self.assertEqual(("failed", expected), (record["steps"][0]["status"], record["steps"][0]["detail"]))
         self.assertEqual("ready", runner.state(self.target)["condition"], "a failed migration needs no reconciliation")
 
+    def test_the_movers_last_error_line_ends_the_reason_scrubbed_and_without_the_token(self):
+        self.deployed()
+        said = "The source folder 'blobs/media' does not exist; token " + TOKEN + " at https://files.example.test/imports?sig=abc"
+        MoverDocker.script, MoverDocker.runs, MoverDocker.errors = [([], 1)], [], [said]
+        try:
+            record = self.work(payload(sources=[FOLDER]), job="11111111-1111-4111-8111-111111111299")
+        finally:
+            MoverDocker.errors = []
+        self.assertTrue(record["reason"].startswith("the mover refused brand-media: The source folder 'blobs/media' does not exist"))
+        self.assertNotIn(TOKEN, json.dumps(record))
+        self.assertNotIn("sig=abc", record["reason"])
+        self.assertEqual(record["reason"], record["steps"][0]["detail"])
+
     def test_a_failed_or_refused_source_stops_the_job_and_later_sources_do_not_run(self):
         self.deployed()
         for code, reason in ((2, "the mover failed on desk-media"), (1, "the mover refused desk-media")):
@@ -518,6 +535,13 @@ class StreamTests(unittest.TestCase):
                                   "sys.stderr.write('SECRET'); sys.stdout.write('tail'); sys.exit(2)")
         self.assertEqual(2, code)
         self.assertEqual(["a", "{\"echo\":\"hello\"}", "tail"], lines)
+
+    def test_on_error_gets_the_last_stderr_line_and_stdout_stays_apart(self):
+        said = []
+        docker = runner.Docker({"product": "pilot", "environment": "dev"}, {"PATH": "/usr/bin:/bin"})
+        code = docker.stream([sys.executable, "-c", "import sys; print('out'); sys.stderr.write('first\\nlast line\\n\\n'); sys.exit(1)"],
+                             b"", 20, "box", (lines := []).append, lambda: False, on_error=said.append)
+        self.assertEqual((1, ["out"], ["last line"]), (code, lines, said))
 
     def test_a_run_past_its_timeout_returns_none_and_a_cancel_returns_cancelled(self):
         code, _ = self.stream("import time; time.sleep(30)", timeout=0.5)

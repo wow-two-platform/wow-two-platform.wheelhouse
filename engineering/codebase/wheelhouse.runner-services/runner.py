@@ -2035,12 +2035,13 @@ class Docker:
         `timeout` stops and removes `container` and returns None for the code. stderr is discarded unread."""
         return self.result_run(arguments, {}, timeout, container, None)
 
-    def stream(self, arguments, document, timeout, container, on_line, cancelled):
+    def stream(self, arguments, document, timeout, container, on_line, cancelled, on_error=None):
         """Runs a one-off container with `document` (bytes, it may hold a secret) on its stdin and hands each stdout line to
-        `on_line` as it arrives; stderr is discarded unread. Returns the exit code; None past `timeout`, and CANCELLED when
-        `cancelled()` turned true; either way the container is stopped and removed."""
+        `on_line` as it arrives. stderr is discarded unread, unless `on_error` is given: it then gets the last non-empty
+        stderr line once the process ends (unscrubbed; the caller scrubs it). Returns the exit code; None past `timeout`,
+        and CANCELLED when `cancelled()` turned true; either way the container is stopped and removed."""
         process = subprocess.Popen(arguments, env=self.environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=subprocess.DEVNULL)
+                                   stderr=subprocess.DEVNULL if on_error is None else subprocess.PIPE)
         with contextlib.suppress(OSError), process.stdin:
             process.stdin.write(document)
 
@@ -2052,34 +2053,48 @@ class Docker:
                 process.kill()
             process.wait()
 
-        deadline, buffer = time.monotonic() + timeout, b""
+        deadline, buffer, errors = time.monotonic() + timeout, b"", b""
         selector = selectors.DefaultSelector()
-        selector.register(process.stdout, selectors.EVENT_READ)
+        selector.register(process.stdout, selectors.EVENT_READ, "out")
+        if on_error is not None:
+            selector.register(process.stderr, selectors.EVENT_READ, "err")
+        open_streams = len(selector.get_map())
         try:
-            while True:
+            while open_streams:
                 if cancelled():
                     stop()
                     return CANCELLED
                 if time.monotonic() > deadline:
                     stop()
                     return None
-                if not selector.select(0.2):
-                    continue
-                chunk = os.read(process.stdout.fileno(), 65536)
-                if not chunk:
-                    break
-                buffer += chunk
-                while b"\n" in buffer:
-                    line, _, buffer = buffer.partition(b"\n")
-                    on_line(line.decode(errors="replace"))
-                if len(buffer) > 1024 * 1024:
-                    buffer = b""
+                for key, _ in selector.select(0.2):
+                    chunk = os.read(key.fileobj.fileno(), 65536)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        open_streams -= 1
+                        continue
+                    if key.data == "err":
+                        # Only the last line matters: keep the tail, never the whole output.
+                        errors = (errors + chunk)[-8192:]
+                        continue
+                    buffer += chunk
+                    while b"\n" in buffer:
+                        line, _, buffer = buffer.partition(b"\n")
+                        on_line(line.decode(errors="replace"))
+                    if len(buffer) > 1024 * 1024:
+                        buffer = b""
             if buffer.strip():
                 on_line(buffer.decode(errors="replace"))
-            return process.wait()
+            code = process.wait()
+            if on_error is not None:
+                lines = [line for line in errors.decode(errors="replace").splitlines() if line.strip()]
+                on_error(lines[-1] if lines else None)
+            return code
         finally:
             selector.close()
             process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
 
     def result_run(self, arguments, variables, timeout, container, prefix):
         """A one-off container whose verb prints its result line last: its exit code and the last stdout line that
