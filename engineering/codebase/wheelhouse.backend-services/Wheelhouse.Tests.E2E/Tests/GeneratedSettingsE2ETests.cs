@@ -210,6 +210,40 @@ public sealed class GeneratedSettingsE2ETests(WheelhouseAppFixture fixture) : Wh
         await ShouldNotShow("SOURCE_SECRET_9c1");
     }
 
+    [Fact]
+    public async Task KeyOneServiceOwnsAndAnotherLinks_ShouldStaySettable_AndReachTheDeploy()
+    {
+        const string BaseUrl = "Files:BaseUrl";
+        const string Resource = "Identity:Server:Resources:2:Uri";
+        Fixture.Deployments.History.Add(Succeeded());
+        // Blog links the key, Brand owns it, Marketing links it again: the owner's declaration wins in either order.
+        Fixture.Deployments.Declarations = new
+        {
+            targetId = "foreverpin-dev", release = "v1.0.0", product = "foreverpin", environment = "dev",
+            services = new object[]
+            {
+                new { name = "blog", hostFile = false, keys = new object[] { new { key = BaseUrl, required = true, secret = false, from = Resource } } },
+                new { name = "brand", hostFile = false, keys = new object[] { new { key = BaseUrl, required = true, secret = false, type = "url" } } },
+                new { name = "identity", hostFile = false, keys = new object[] { new { key = Resource, required = true, secret = false, type = "url" } } },
+                new { name = "marketing", hostFile = false, keys = new object[] { new { key = BaseUrl, required = true, secret = false, from = Resource } } },
+            },
+        };
+
+        (await Owner("settings").PutAsJsonAsync(Settings, new
+            {
+                values = new[]
+                {
+                    new { key = BaseUrl, value = "https://files.example.test/" },
+                    new { key = Resource, value = "https://files.example.test/" },
+                },
+            }))
+            .StatusCode.Should().Be(HttpStatusCode.OK, "Brand declares the key as its own, so its value is the owner's to set");
+
+        (await Deploy()).StatusCode.Should().Be(HttpStatusCode.Accepted);
+        Fixture.Deployments.LastSettings!.Value.GetProperty("values").GetProperty(BaseUrl).GetString()
+            .Should().Be("https://files.example.test/", "Brand renders the stored value; Blog and Marketing render their source's");
+    }
+
     /// <summary>Declares an Identity service whose signing key a command makes and whose client secret is random, and a
     /// desk service that links to the client secret and keeps a plain setting of its own.</summary>
     private void DeclareIdentity() =>

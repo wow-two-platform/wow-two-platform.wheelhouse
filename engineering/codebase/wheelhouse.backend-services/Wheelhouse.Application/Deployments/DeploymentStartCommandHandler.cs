@@ -113,7 +113,11 @@ public sealed class DeploymentStartCommandHandler(
             await RecordAsync(request, target, DeploymentRefusal.Validation, failure.Message, ct);
             return AppResult<Settings.Models.RenderValues>.Fail(failure);
         }
-        var linked = planned.Services.SelectMany(service => service.Keys).Where(key => key.From is not null)
+        // A key is withheld only when every service declaring it links it: a service that declares the same key as its
+        // own still gets the stored value, and the render sets each linked copy from its source.
+        var keys = planned.Services.SelectMany(service => service.Keys).ToList();
+        var owned = keys.Where(key => key.From is null).Select(key => key.Key).ToHashSet(StringComparer.Ordinal);
+        var linked = keys.Where(key => key.From is not null && !owned.Contains(key.Key))
             .Select(key => key.Key).ToHashSet(StringComparer.Ordinal);
         var values = await settings.ValuesAsync(target, product, linked, ct);
         // A vault that cannot render the environment's secrets holds the deploy, kept as a refusal like any other.

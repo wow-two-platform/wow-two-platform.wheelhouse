@@ -134,6 +134,9 @@ public sealed partial class DeploymentSettingsService(
                 if (Text(item, "key") is not { } key || Text(item, "derived") is not null)
                     continue;
                 var declaration = Declare(item, key) with { Service = name };
+                // A key one service declares as its own and another links stays the owner's to set: the link reads it.
+                if (result.GetValueOrDefault(key) is { AdHoc: false, From: null } && declaration.From is not null)
+                    continue;
                 // The first service declaring how its value is made keeps it: its image runs a command.
                 if (result.GetValueOrDefault(key) is { AdHoc: false, Generate: not null } earlier)
                     declaration = declaration with { Generate = earlier.Generate, Service = earlier.Service };
