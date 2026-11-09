@@ -86,7 +86,7 @@ public sealed class FilesMigrationsE2ETests(WheelhouseAppFixture fixture) : Whee
         var text = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, text);
         var request = Fixture.FilesHost.Requests.Should().ContainSingle().Which;
-        (request.Method, request.Url).Should().Be(("POST", FilesUrl + "imports"));
+        (request.Method, request.Url).Should().Be(("POST", FilesUrl + "api/files/v1/imports"));
         request.Key.Should().Be("files_" + OperatorKey, "the header is the prefix and the stored value, exactly");
         using var body = JsonDocument.Parse(request.Body);
         body.RootElement.GetProperty("tenant").GetString().Should().Be("ocharo");
@@ -119,7 +119,7 @@ public sealed class FilesMigrationsE2ETests(WheelhouseAppFixture fixture) : Whee
             new { step = "verify", sources = new[] { "brand-media" }, import = "imp-3", filesTarget = "files-dev", filesUrl = FilesUrl });
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
         var request = Fixture.FilesHost.Requests.Should().ContainSingle().Which;
-        (request.Url, request.Key).Should().Be((FilesUrl + "imports/imp-3/tokens", "files_" + OperatorKey));
+        (request.Url, request.Key).Should().Be((FilesUrl + "api/files/v1/imports/imp-3/tokens", "files_" + OperatorKey));
         var payload = Fixture.Deployments.FilesMigrations.Should().ContainSingle().Which.Payload;
         (payload.GetProperty("step").GetString(), payload.GetProperty("import").GetString(), payload.GetProperty("token").GetString())
             .Should().Be(("verify", "imp-3", StubFilesHost.Token));
@@ -417,7 +417,7 @@ public sealed class FilesMigrationsE2ETests(WheelhouseAppFixture fixture) : Whee
 
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
         Fixture.FilesHost.HealthChecks.Should().Equal((FilesUrl + "health", false));
-        Fixture.FilesHost.Requests.Should().ContainSingle().Which.Url.Should().StartWith(FilesUrl + "imports");
+        Fixture.FilesHost.Requests.Should().ContainSingle().Which.Url.Should().StartWith(FilesUrl + "api/files/v1/imports");
     }
 
     [Theory]

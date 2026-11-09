@@ -8,9 +8,10 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Infrastructure.Files;
 
-/// <summary>Calls a Files host's import API with the operator key: <c>POST {url}imports</c> and
-/// <c>POST {url}imports/{id}/tokens</c>, and the keyless <c>GET {url}health</c> preflight. The key goes in <c>X-Api-Key</c> as <c>files_</c> followed by the vault value
-/// and reaches only these two paths. An error answer becomes a failure naming the status; its body is never read.</summary>
+/// <summary>Calls a Files host's import API with the operator key: <c>POST {url}api/files/v1/imports</c> and
+/// <c>POST {url}api/files/v1/imports/{id}/tokens</c>, and the keyless <c>GET {url}health</c> preflight. The key goes in
+/// <c>X-Api-Key</c> as <c>files_</c> followed by the vault value and reaches only these two paths. Files answers inside
+/// its <c>{ "data": … }</c> envelope. An error answer becomes a failure naming the status; its body is never read.</summary>
 public sealed class HttpFilesImportClient(HttpClient http) : IFilesImportClient
 {
     /// <summary>Holds the header that carries the operator key.</summary>
@@ -19,14 +20,17 @@ public sealed class HttpFilesImportClient(HttpClient http) : IFilesImportClient
     /// <summary>Holds the prefix Files puts before the key's vault value.</summary>
     public const string KeyPrefix = "files_";
 
+    /// <summary>Holds the path of Files' imports below its URL.</summary>
+    public const string ImportsPath = "api/files/v1/imports";
+
     /// <inheritdoc />
     public Task<AppResult<FilesImport>> OpenAsync(
         string filesUrl, string operatorKey, string tenant, IReadOnlyList<string> sources, CancellationToken ct) =>
-        PostAsync(filesUrl + "imports", operatorKey, new { tenant, sources }, ct);
+        PostAsync(filesUrl + ImportsPath, operatorKey, new { tenant, sources }, ct);
 
     /// <inheritdoc />
     public Task<AppResult<FilesImport>> TokenAsync(string filesUrl, string operatorKey, string import, CancellationToken ct) =>
-        PostAsync(filesUrl + "imports/" + Uri.EscapeDataString(import) + "/tokens", operatorKey, null, ct);
+        PostAsync(filesUrl + ImportsPath + "/" + Uri.EscapeDataString(import) + "/tokens", operatorKey, null, ct);
 
     /// <summary>Holds how long a health answer may take.</summary>
     public static readonly TimeSpan HealthTimeout = TimeSpan.FromSeconds(5);
@@ -66,6 +70,8 @@ public sealed class HttpFilesImportClient(HttpClient http) : IFilesImportClient
             if (!response.IsSuccessStatusCode)
                 return AppResult<FilesImport>.Fail(FilesImportErrors.Answered((int)response.StatusCode));
             var answer = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+            if (answer.ValueKind == JsonValueKind.Object && answer.TryGetProperty("data", out var data))
+                answer = data;
             var token = answer.ValueKind == JsonValueKind.Object && answer.TryGetProperty("token", out var t) && t.ValueKind == JsonValueKind.String
                 ? t.GetString() : null;
             if (string.IsNullOrEmpty(token))

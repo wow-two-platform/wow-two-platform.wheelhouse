@@ -3,8 +3,9 @@ using System.Text;
 
 namespace Wheelhouse.Tests.E2E.Harness;
 
-/// <summary>A fake Files host: answers <c>GET /health</c>, <c>POST /imports</c> and <c>POST /imports/{id}/tokens</c> and records each request
-/// with the operator key header it carried.</summary>
+/// <summary>A fake Files host: answers <c>GET /health</c>, <c>POST /api/files/v1/imports</c> (201) and
+/// <c>POST /api/files/v1/imports/{id}/tokens</c> (200) inside Files' <c>{ "data": … }</c> envelope, any other path 404, and
+/// records each request with the operator key header it carried.</summary>
 public sealed class StubFilesHost : HttpMessageHandler
 {
     /// <summary>The token the fake mints.</summary>
@@ -55,10 +56,16 @@ public sealed class StubFilesHost : HttpMessageHandler
         if (Failure is { } status)
             return new HttpResponseMessage(status) { Content = new StringContent("secret-body-from-files") };
         var path = request.RequestUri.AbsolutePath;
-        var json = path.EndsWith("/tokens", StringComparison.Ordinal)
-            ? $$"""{ "token": "{{Token}}", "expiresAt": "2026-11-08T20:00:00+00:00" }"""
-            : $$"""{ "id": "{{ImportId}}", "token": "{{Token}}", "expiresAt": "2026-11-08T20:00:00+00:00" }""";
-        return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+        if (!path.StartsWith("/api/files/v1/imports", StringComparison.Ordinal))
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        var tokens = path.EndsWith("/tokens", StringComparison.Ordinal);
+        var json = tokens
+            ? $$"""{ "data": { "token": "{{Token}}", "expiresAt": "2026-11-08T20:00:00+00:00" } }"""
+            : $$"""{ "data": { "id": "{{ImportId}}", "token": "{{Token}}", "expiresAt": "2026-11-08T20:00:00+00:00" } }""";
+        return new HttpResponseMessage(tokens ? HttpStatusCode.OK : HttpStatusCode.Created)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
     }
 
     /// <inheritdoc />

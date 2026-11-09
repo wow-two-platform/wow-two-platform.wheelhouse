@@ -233,8 +233,8 @@ promotion replace them), as is a target a running fleet has yet to promote (409)
   target's legacy files into Files' shared host B (Files t9, `files-integration` #28, #38); prod and Wheelhouse's own
   are refused (409). The API reads `engineering/deployment/files-migration.yml` from each repository of the release the
   target runs, at its source commit, picks sources by `wave` and id, and checks `filesTarget` is a `files` target of the
-  same environment whose `app` site host or alias `filesUrl` names. A push opens an import on B (`POST {filesUrl}imports`,
-  a verify or resumed push asks `…/imports/{id}/tokens`) with `X-Api-Key: files_` plus `filesTarget`'s vault secret
+  same environment whose `app` site host or alias `filesUrl` names. A push opens an import on B (`POST {filesUrl}api/files/v1/imports`,
+  a verify or resumed push asks `…/imports/{id}/tokens`; answers in Files' `data` envelope) with `X-Api-Key: files_` plus `filesTarget`'s vault secret
   `Files:Operator:ApiKey`. The transport's `control --operation files-migration --stdin` carries the step, the image
   `filesTarget` runs, the URL, the import and its token, and the sources to a `files-migration` worker under the
   deployment lock. Per source it runs `dotnet Files.Api.dll migrate <step>` in a one-off container of that image
