@@ -13,6 +13,7 @@ import sys
 import time
 import urllib.parse
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 OPERATION = "files-migration"
@@ -20,6 +21,8 @@ STEPS = ("plan", "push", "verify")
 KINDS = ("volume-folder", "postgres-column", "sqlite-column")
 # The mover's own limits: how long one source may run, how often progress is written to the job, its memory.
 TIMEOUT = 6 * 60 * 60
+# A source does not start on a token this close to its expiry: a push or verify stops cleanly and its rerun resumes.
+TOKEN_MARGIN = timedelta(minutes=10)
 PROGRESS_SECONDS = 2
 MEMORY = "512m"
 MOUNT = "/source"
@@ -34,7 +37,8 @@ IMPORT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
 IMAGE = re.compile(r"[a-z0-9][a-z0-9.-]{0,252}(?::[0-9]{1,5})?/[a-z0-9][a-z0-9./_-]{0,200}"
                    r"(?::[A-Za-z0-9][A-Za-z0-9._-]{0,127})?(?:@sha256:[a-f0-9]{64})?")
 VOLUME_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
-TOP_LEVEL = {"step", "image", "files", "import", "token", "sources", "registry", "unreadable"}
+TOP_LEVEL = {"step", "image", "files", "import", "token", "tokenExpiresAt", "sources", "registry", "unreadable"}
+INSTANT = re.compile(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(\.\d+)?(Z|[+-]\d\d:\d\d)")
 # What each kind needs (text fields), and what it may also carry; `key` may be a list on a PostgreSQL column.
 REQUIRED = {"volume-folder": ("volume", "path", "reference"),
             "postgres-column": ("database", "table", "key", "content", "reference"),
@@ -116,6 +120,9 @@ def validate(document):
         require(isinstance(imported, str) and IMPORT_ID.fullmatch(imported), "A " + step + " needs the import id")
         require(isinstance(token, str) and 0 < len(token) <= 4096 and not any(c.isspace() for c in token),
                 "A " + step + " needs the import token")
+    expires = document.get("tokenExpiresAt")
+    require(expires is None or (step != "plan" and instant(expires) is not None),
+            "tokenExpiresAt is the token's ISO 8601 expiry, push and verify only")
     sources = document.get("sources")
     require(isinstance(sources, list) and 0 < len(sources) <= SOURCES_LIMIT, "A files migration names 1 to "
             + str(SOURCES_LIMIT) + " sources")
@@ -125,7 +132,33 @@ def validate(document):
     registry_login(document)
     registry_unreadable(document)
     return {"step": step, "image": image, "files": document["files"], "import": imported, "token": token,
-            "sources": sources}
+            "tokenExpiresAt": instant(expires) if expires is not None else None, "sources": sources}
+
+
+def instant(text):
+    """An ISO 8601 instant with an offset as an aware datetime (fractions past microseconds cut), or None."""
+    match = INSTANT.fullmatch(text) if isinstance(text, str) else None
+    if not match:
+        return None
+    fraction = (match.group(2) or "")[:7]
+    offset = "+00:00" if match.group(3) == "Z" else match.group(3)
+    with contextlib.suppress(ValueError):
+        return datetime.fromisoformat(match.group(1) + fraction + offset)
+    return None
+
+
+def wall_clock():
+    return datetime.now(timezone.utc)
+
+
+def token_note(payload, source, expired_during):
+    """Why a push or verify stopped on its import token: Files gives a token a fixed lifetime and only the API mints one,
+    so the job ends cleanly and the same step run again with the import id resumes with a fresh token."""
+    expires = payload.get("tokenExpiresAt")
+    when = " at " + expires.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%MZ") if expires else ""
+    head = ("Files refused the import token on " + source + (" (it expired" + when + ")" if expires and expired_during else "")
+            if expired_during is not None else "the import token expires" + when + ", too soon to start " + source)
+    return head + "; run " + payload["step"] + " again with import " + payload["import"] + ": it resumes with a fresh token"
 
 
 def operation_of(payload):
@@ -375,7 +408,10 @@ def run_sources(target, base, project, compose, manifest, bundle, payload, names
         record["steps"].append(step)
         save()
         reader = Reader(step, save, clock)
+        expires = payload.get("tokenExpiresAt")
         try:
+            if expires is not None and wall_clock() >= expires - TOKEN_MARGIN:
+                raise Rejected(token_note(payload, source["id"], None))
             if source["kind"] != "postgres-column":
                 full = volume_name(compose, project, source["volume"])
                 try:
@@ -391,6 +427,9 @@ def run_sources(target, base, project, compose, manifest, bundle, payload, names
                 finish_cancelled(record, actor)
                 return
             why = mover_said(mover_error(said), payload, stdin)
+            expired = expires is not None and wall_clock() >= expires - timedelta(minutes=1)
+            if code == 1 and payload["step"] != "plan" and (expired or re.search(r"\b401\b", why)):
+                raise Rejected(token_note(payload, source["id"], expired) + why)
             if code == 1:
                 raise Rejected("the mover refused " + source["id"] + why)
             if code is None:

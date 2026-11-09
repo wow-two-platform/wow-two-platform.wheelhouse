@@ -149,6 +149,9 @@ class ValidationTests(Rig):
             ("sqlite key list", payload(sources=[{**SQLITE, "key": ["id"]}]), "needs key"),
             ("sqlite db path", payload(sources=[{**SQLITE, "database": "../x.db"}]), "path inside the volume"),
             ("bad registry", payload(registry={"server": "bad server"}), "Invalid registry sign-in"),
+            ("expiry not an instant", payload(tokenExpiresAt="tomorrow"), "tokenExpiresAt"),
+            ("expiry without an offset", payload(tokenExpiresAt="2026-11-09T15:00:00"), "tokenExpiresAt"),
+            ("expiry on plan", payload("plan", tokenExpiresAt="2026-11-09T15:00:00+00:00"), "tokenExpiresAt"),
         ]
         for name, document, message in cases:
             with self.subTest(name), self.assertRaisesRegex(ValueError, message):
@@ -393,6 +396,58 @@ class ExitTests(Rig):
         self.assertEqual("failed blobs/a.png: missing", files_migration.mover_error(
             ["failed blobs/a.png: missing", "verify: files=1 bytes=4 skipped=0 failed=1"]))
         self.assertIsNone(files_migration.mover_error([]))
+
+    def test_a_token_near_its_expiry_starts_no_source_and_the_reason_says_run_it_again(self):
+        self.deployed()
+        module = files_migration_module()
+        MoverDocker.script, MoverDocker.runs = [([], 0)], []
+        expires = "2026-11-09T15:00:00.1234567+00:00"
+        with patch.object(module, "wall_clock", return_value=module.instant("2026-11-09T14:55:00Z")):
+            record = self.work(payload(sources=[FOLDER], tokenExpiresAt=expires), job="11111111-1111-4111-8111-111111111297")
+        self.assertEqual([], MoverDocker.runs, "no mover starts on a token about to expire")
+        self.assertEqual("the import token expires at 2026-11-09 15:00Z, too soon to start brand-media; run push again with "
+                         "import " + IMPORT + ": it resumes with a fresh token", record["reason"])
+        self.assertEqual(("failed", record["reason"]), (record["steps"][0]["status"], record["steps"][0]["detail"]))
+
+    def test_a_refusal_after_the_token_expired_names_the_token_not_the_mover(self):
+        self.deployed()
+        module = files_migration_module()
+        MoverDocker.script, MoverDocker.runs = [([], 1)], []
+        MoverDocker.errors = [["Files refused the upload of 'blobs/a.png' with 401.", "push: files=1 bytes=4 skipped=0 failed=0"]]
+        times = iter([module.instant("2026-11-09T09:00:00Z"), module.instant("2026-11-09T15:00:30Z")])
+        try:
+            with patch.object(module, "wall_clock", side_effect=lambda: next(times)):
+                record = self.work(payload(sources=[FOLDER], tokenExpiresAt="2026-11-09T15:00:00Z"),
+                                   job="11111111-1111-4111-8111-111111111296")
+        finally:
+            MoverDocker.errors = []
+        self.assertTrue(record["reason"].startswith(
+            "Files refused the import token on brand-media (it expired at 2026-11-09 15:00Z); run push again with import "
+            + IMPORT + ": it resumes with a fresh token: Files refused the upload of"), record["reason"])
+
+    def test_a_401_on_a_fresh_token_names_the_token_and_other_refusals_name_the_mover(self):
+        self.deployed()
+        module = files_migration_module()
+        for job, said, expected in (
+                ("11111111-1111-4111-8111-111111111295", "The import's map answered 401.",
+                 "Files refused the import token on brand-media; run verify again with import " + IMPORT
+                 + ": it resumes with a fresh token: The import's map answered 401."),
+                ("11111111-1111-4111-8111-111111111294", "The import's map answered 404.",
+                 "the mover refused brand-media: The import's map answered 404.")):
+            with self.subTest(said):
+                MoverDocker.script, MoverDocker.runs, MoverDocker.errors = [([], 1)], [], [[said]]
+                try:
+                    with patch.object(module, "wall_clock", return_value=module.instant("2026-11-09T09:00:00Z")):
+                        record = self.work(payload("verify", sources=[FOLDER], tokenExpiresAt="2026-11-09T15:00:00Z"), job=job)
+                finally:
+                    MoverDocker.errors = []
+                self.assertEqual(expected, record["reason"])
+
+    def test_an_instant_takes_an_offset_and_cuts_dotnet_fractions(self):
+        module = files_migration_module()
+        self.assertEqual("2026-11-09 15:00:00.123456+00:00", str(module.instant("2026-11-09T15:00:00.1234567+00:00")))
+        self.assertEqual("2026-11-09 15:00:00+00:00", str(module.instant("2026-11-09T15:00:00Z")))
+        self.assertIsNone(module.instant("2026-11-09 15:00"))
 
     def test_a_failed_or_refused_source_stops_the_job_and_later_sources_do_not_run(self):
         self.deployed()

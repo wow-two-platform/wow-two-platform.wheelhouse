@@ -73,6 +73,7 @@ public sealed class FilesMigrationCommandHandler(
 
         var import = request.Import;
         string? token = null;
+        DateTimeOffset? expiresAt = null;
         if (request.Step != "plan")
         {
             if (await filesClient.HealthAsync(request.FilesUrl, cancellationToken) is AppResult<bool>.Failure unhealthy)
@@ -89,6 +90,7 @@ public sealed class FilesMigrationCommandHandler(
                 return Fail(failure.Error);
             var opened = ((AppResult<FilesImport>.Success)answer).Data;
             token = opened.Token;
+            expiresAt = opened.ExpiresAt;
             if (import is null)
             {
                 import = opened.Id;
@@ -103,6 +105,9 @@ public sealed class FilesMigrationCommandHandler(
             files = request.FilesUrl,
             import = request.Step == "plan" ? null : import,
             token,
+            // The runner starts no source within ten minutes of the token's expiry, and names an expired token rather
+            // than a refusal; the same step run again mints a fresh one and resumes.
+            tokenExpiresAt = expiresAt,
             sources = picked.Select(source => source.Fields).ToList(),
         });
         var result = await gateway.FilesMigrationAsync(target.Slug, request.Actor, payload, cancellationToken);

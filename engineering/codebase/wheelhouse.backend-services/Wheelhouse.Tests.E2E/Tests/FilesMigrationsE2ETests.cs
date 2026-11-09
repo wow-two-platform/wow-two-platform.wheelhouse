@@ -65,6 +65,7 @@ public sealed class FilesMigrationsE2ETests(WheelhouseAppFixture fixture) : Whee
         payload.GetProperty("files").GetString().Should().Be(FilesUrl);
         payload.GetProperty("import").ValueKind.Should().Be(JsonValueKind.Null);
         payload.GetProperty("token").ValueKind.Should().Be(JsonValueKind.Null);
+        payload.GetProperty("tokenExpiresAt").ValueKind.Should().Be(JsonValueKind.Null);
         var sources = payload.GetProperty("sources").EnumerateArray().ToList();
         sources.Select(source => source.GetProperty("id").GetString()).Should().Equal("brand-media", "desk-preparation-media");
         sources[1].GetProperty("key").EnumerateArray().Select(key => key.GetString()).Should().Equal("id", "version");
@@ -96,6 +97,8 @@ public sealed class FilesMigrationsE2ETests(WheelhouseAppFixture fixture) : Whee
         payload.GetProperty("step").GetString().Should().Be("push");
         payload.GetProperty("import").GetString().Should().Be(StubFilesHost.ImportId);
         payload.GetProperty("token").GetString().Should().Be(StubFilesHost.Token);
+        payload.GetProperty("tokenExpiresAt").GetDateTimeOffset().Should().Be(DateTimeOffset.Parse("2026-11-08T20:00:00+00:00"),
+            "the runner stops cleanly before the token runs out");
         payload.GetProperty("sources").GetArrayLength().Should().Be(1);
 
         var audit = await AdminClient.GetStringAsync("/api/audit");

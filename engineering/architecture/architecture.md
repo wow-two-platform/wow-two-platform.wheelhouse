@@ -242,7 +242,9 @@ promotion replace them), as is a target a running fleet has yet to promote (409)
   source mounted read-only at `/source`, a PostgreSQL source on the platform network with the connection its service's
   rendered settings name plus `default_transaction_read_only`; the document goes on stdin, never into argv, a job file
   or a log. Its JSON-line progress updates the step (`N files · B bytes`), exit 1 refuses, 2 fails, and a failed source
-  stops the job. `POST …/controls/{job}/cancel` kills the container and reads `cancelled`. Audit: `files-migration.<step>`
+  stops the job. The job carries one import token and its expiry (Files' `TokenLifetime`, 6 h); no source starts within
+  10 minutes of it, and a refusal after it or with a 401 names the token, so the same step run again with the import id
+  mints a fresh one and resumes. `POST …/controls/{job}/cancel` kills the container and reads `cancelled`. Audit: `files-migration.<step>`
   and `files-migration.cancel`, subject `{target}`, with sources, wave and import id, never a token or key.
   `GET …/files-migrations/manifest` lists the sources (`id`, `kind`, `wave`, `repository`) and each candidate files
   target with its `urls`, for the console's "Move files to Files…" dialog; a push or verify first asks
