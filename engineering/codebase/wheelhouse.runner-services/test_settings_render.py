@@ -505,6 +505,44 @@ class RegistryPullTests(unittest.TestCase):
                                   ("localhost:15000/pilot-edge:v1@sha256:" + "b" * 64, "localhost:15000/pilot-edge")):
             self.assertEqual(repository, runner.image_repository(image))
 
+    def scripted_pulls(self, failures, stderr):
+        """fake_run, with the first `failures` image pulls exiting 1 and writing `stderr`."""
+        state = {"left": failures}
+
+        def run(arguments, **options):
+            result = self.fake_run(arguments, **options)
+            if "pull" in arguments and "--quiet" in arguments and state["left"]:
+                state["left"] -= 1
+                return subprocess.CompletedProcess(arguments, 1, "", stderr)
+            return result
+        return run
+
+    def test_a_failed_pull_is_tried_again_after_a_short_wait_and_passes(self):
+        self.configs = set()
+        docker = runner.Docker({"product": "pilot", "environment": "dev"}, {})
+        with patch.object(runner.subprocess, "run", side_effect=self.scripted_pulls(2, "manifest unknown\n")), \
+                patch.object(runner.time, "sleep") as slept:
+            result = docker.pull(self.bundle, self.login)
+        self.assertEqual({"images": 2, "fetched": 2, "signedIn": "installation"}, result)
+        self.assertEqual(3, sum(1 for arguments, _ in self.calls if "pull" in arguments and "--quiet" in arguments))
+        self.assertEqual([call.args[0] for call in slept.call_args_list], list(runner.PULL_BACKOFF))
+        self.assertTrue(all(not config.exists() for config in self.configs))
+
+    def test_a_pull_failing_every_attempt_names_its_repository_and_its_error_line(self):
+        self.configs = set()
+        docker = runner.Docker({"product": "pilot", "environment": "dev"}, {})
+        said = ("Error response from daemon: Head \"https://ghcr.io/v2/owner/pilot/api/manifests/sha256:" + "a" * 64
+                + "?token=ghs_SECRET\": denied\n")
+        with patch.object(runner.subprocess, "run", side_effect=self.scripted_pulls(9, said)), \
+                patch.object(runner.time, "sleep"), \
+                self.assertRaisesRegex(runner.CommandFailed, r"^docker pull of ghcr.io/owner/pilot/api failed \(exit 1, "
+                                                             r"3 attempts\): Error response from daemon: .*denied") as raised:
+            docker.pull(self.bundle, self.login)
+        text = str(raised.exception)
+        self.assertNotIn("ghs_SECRET", text)
+        self.assertNotIn("a" * 64, text, "the digest is cut, the repository names the image")
+        self.assertTrue(all(not config.exists() for config in self.configs))
+
     def test_a_refused_sign_in_fails_the_pull_and_still_cleans_up(self):
         def refuse(arguments, **options):
             result = self.fake_run(arguments, **options)

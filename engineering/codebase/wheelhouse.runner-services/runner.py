@@ -196,6 +196,9 @@ RUN_TIMEOUT = 600
 RUN_ARGUMENTS_LIMIT = 40
 RUN_ARGUMENT_LENGTH = 500
 RUN_LINE_LIMIT = 500
+# Seconds before a failed image pull's second and third attempt: a fresh release's first pull has failed at once and
+# passed minutes later (Ocharo dev 2026-11-09, platform v0.2.1 to v0.2.4 and Studio v0.1.17).
+PULL_BACKOFF = (15, 45)
 # A one-off command's label keeps its leading words that read as a program, a file or a verb, and each option's name;
 # every value, and every word after the first that reads as none of these, reads as `…`.
 RUN_WORD = re.compile(r"[A-Za-z][A-Za-z0-9._/-]{0,63}")
@@ -1945,10 +1948,32 @@ class Docker:
         if private:
             with registry_session(self, registry) as config:
                 for image in private:
-                    self.execute(["docker", "--config", config, "pull", "--quiet", image], "docker pull", timeout=1800)
+                    self.pull_image(["docker", "--config", config, "pull", "--quiet", image], image)
             signed = registry["credential"]
         self.compose(bundle, "pull", "--policy", "missing")
         return {"images": len(images), "fetched": len(missing), "signedIn": signed}
+
+    def pull_image(self, arguments, image, timeout=1800):
+        """One `docker … pull --quiet <image>`, tried again after each `PULL_BACKOFF` wait before it fails. The failure
+        names the image's repository, the exit code and the last attempt's last error line, scrubbed as a one-off's line
+        is (digests and token-like runs cut); a pull's output names no secret, since the sign-in sits in its config."""
+        code, line = None, None
+        for wait in (0, *PULL_BACKOFF):
+            if wait:
+                time.sleep(wait)
+            try:
+                result = subprocess.run(arguments, env=self.environment, capture_output=True, text=True,
+                                        errors="replace", timeout=timeout)
+            except subprocess.TimeoutExpired:
+                raise CommandFailed("docker pull of " + image_repository(image) + " timed out after " + str(timeout)
+                                    + "s") from None
+            if not result.returncode:
+                return
+            code = result.returncode
+            lines = [entry for entry in (result.stderr or result.stdout or "").splitlines() if entry.strip()]
+            line = run_line(lines[-1]) if lines else None
+        raise CommandFailed("docker pull of " + image_repository(image) + " failed (exit " + str(code) + ", "
+                            + str(1 + len(PULL_BACKOFF)) + " attempts)" + (": " + line if line else ""))
 
     def fetch(self, image, registry=None, unreadable=(), timeout=1800):
         """One image a one-off container needs, when the host lacks it: under a one-pull sign-in when `registry` covers
@@ -1961,9 +1986,9 @@ class Docker:
             raise CommandFailed("No credential on the control host can read " + repository + ": " + UNREADABLE_HINT)
         if signs_in(image, registry):
             with registry_session(self, registry) as config:
-                self.execute(["docker", "--config", config, "pull", "--quiet", image], "docker pull", timeout=timeout)
+                self.pull_image(["docker", "--config", config, "pull", "--quiet", image], image, timeout)
         else:
-            self.execute(["docker", "pull", "--quiet", image], "docker pull", timeout=timeout)
+            self.pull_image(["docker", "pull", "--quiet", image], image, timeout)
         return True
 
     def present(self, image):
