@@ -49,6 +49,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Show a private site's tailnet URL and reachability, and probe it | bug | Assets chat 2026-11-09: `ocharo-dev`'s private `motion` site reads url null and reachable null, and its tailnet node answers 404 on every path, so the lab is checked only by the rollout's in-container health gate. Find whether the node lacks a serve rule for the site or the console only lacks the URL; a private site gets its URL, a reachability probe over the tailnet, and a step in the rollout's site probes |
 | Retire CI's deploy path and its secrets after the burn-in | engineering | After the self-deploy burn-in below; fallback in `deployment.md` § Activation |
 | Close the control host's public SSH | engineering | Once CI's deploy path is retired |
 | Burn in Wheelhouse's self-deploy with three self-promotions | product | Runs to 2026-10-31; the first self-promotion ran 2026-10-24. Fallback in `deployment.md` § Activation |
@@ -274,6 +275,7 @@ the owner, top to bottom; rows marked *decision* wait on one of them.
 
 | Item | Type | Notes |
 |---|---|---|
+| Remove a Docker volume a release dropped, after a hold | cleanup | Assets chat 2026-11-09: the dropped `motion-data` volume (the lab's old SQLite file) probably still sits on the products host, since Wheelhouse never removes a volume a later descriptor drops. Today a hand cleanup once the file is not needed; later Wheelhouse lists orphaned volumes per target and removes one on the owner's confirm after a hold |
 | Point `rehearse.py`'s ForeverPin path at `maxs-projects/ventures/saas/` | fix | It still reads `workbench/ventures/…` |
 | Retire the placeholder deployment, domain and secret tables | issue | Outcome following uses durable runner files; deployment database ownership remains separate; domains and secrets stay elsewhere |
 | Return `servers[]` from the shared `StubDeploymentGateway` vitals | check | The v0.4 server-vitals E2E test carries its own stub instead |
