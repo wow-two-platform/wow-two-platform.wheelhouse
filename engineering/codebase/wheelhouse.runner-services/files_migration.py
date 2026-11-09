@@ -200,6 +200,17 @@ def prepare(target, payload):
     return base, project, current, bundle, manifest, compose
 
 
+COUNTS_LINE = re.compile(r"^(plan|push|verify): files=\d+ bytes=\d+ skipped=\d+ failed=\d+$")
+
+
+def mover_error(lines):
+    """The stderr line that says why the mover stopped: its last line other than the counts, which the mover writes
+    after every run, failed or not; the counts only when it said nothing else."""
+    lines = [line.strip() for line in lines or [] if isinstance(line, str) and line.strip()]
+    said = [line for line in lines if not COUNTS_LINE.match(line)]
+    return (said or lines or [None])[-1]
+
+
 def mover_said(line, payload, stdin):
     """The mover's last stderr line as a reason's tail (": …"), or "" without one. The token and every connection string
     the run carried are replaced first, then the one-off scrub cuts digit runs, queries and token-like runs; the
@@ -375,11 +386,11 @@ def run_sources(target, base, project, compose, manifest, bundle, payload, names
             arguments, stdin = arguments_for(target, project, compose, manifest, bundle, payload, source, job_id)
             said = []
             code = docker.stream(arguments, stdin, TIMEOUT, container_name(project, job_id), reader,
-                                 lambda: cancel_requested(base, job_id), on_error=said.append)
+                                 lambda: cancel_requested(base, job_id), on_error=said.extend)
             if code == CANCELLED:
                 finish_cancelled(record, actor)
                 return
-            why = mover_said(said[-1] if said else None, payload, stdin)
+            why = mover_said(mover_error(said), payload, stdin)
             if code == 1:
                 raise Rejected("the mover refused " + source["id"] + why)
             if code is None:

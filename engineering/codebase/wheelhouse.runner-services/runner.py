@@ -2037,8 +2037,8 @@ class Docker:
 
     def stream(self, arguments, document, timeout, container, on_line, cancelled, on_error=None):
         """Runs a one-off container with `document` (bytes, it may hold a secret) on its stdin and hands each stdout line to
-        `on_line` as it arrives. stderr is discarded unread, unless `on_error` is given: it then gets the last non-empty
-        stderr line once the process ends (unscrubbed; the caller scrubs it). Returns the exit code; None past `timeout`,
+        `on_line` as it arrives. stderr is discarded unread, unless `on_error` is given: it then gets the non-empty lines of
+        stderr's last 8 KB once the process ends (unscrubbed; the caller picks and scrubs). Returns the exit code; None past `timeout`,
         and CANCELLED when `cancelled()` turned true; either way the container is stopped and removed."""
         process = subprocess.Popen(arguments, env=self.environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=subprocess.DEVNULL if on_error is None else subprocess.PIPE)
@@ -2074,7 +2074,7 @@ class Docker:
                         open_streams -= 1
                         continue
                     if key.data == "err":
-                        # Only the last line matters: keep the tail, never the whole output.
+                        # Only the last lines matter: keep the tail, never the whole output.
                         errors = (errors + chunk)[-8192:]
                         continue
                     buffer += chunk
@@ -2088,7 +2088,7 @@ class Docker:
             code = process.wait()
             if on_error is not None:
                 lines = [line for line in errors.decode(errors="replace").splitlines() if line.strip()]
-                on_error(lines[-1] if lines else None)
+                on_error(lines)
             return code
         finally:
             selector.close()

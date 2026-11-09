@@ -60,7 +60,7 @@ class MoverDocker(ControlDocker):
                           "environment": self.environments[-1]})
         lines, code = self.script[len(self.runs) - 1] if len(self.runs) <= len(self.script) else ([], 0)
         if on_error is not None:
-            on_error(self.errors[len(self.runs) - 1] if len(self.runs) <= len(self.errors) else None)
+            on_error(self.errors[len(self.runs) - 1] if len(self.runs) <= len(self.errors) else [])
         for line in lines:
             if self.during:
                 self.during(len(self.runs))
@@ -366,7 +366,7 @@ class ExitTests(Rig):
     def test_the_movers_last_error_line_ends_the_reason_scrubbed_and_without_the_token(self):
         self.deployed()
         said = "The source folder 'blobs/media' does not exist; token " + TOKEN + " at https://files.example.test/imports?sig=abc"
-        MoverDocker.script, MoverDocker.runs, MoverDocker.errors = [([], 1)], [], [said]
+        MoverDocker.script, MoverDocker.runs, MoverDocker.errors = [([], 1)], [], [[said]]
         try:
             record = self.work(payload(sources=[FOLDER]), job="11111111-1111-4111-8111-111111111299")
         finally:
@@ -375,6 +375,24 @@ class ExitTests(Rig):
         self.assertNotIn(TOKEN, json.dumps(record))
         self.assertNotIn("sig=abc", record["reason"])
         self.assertEqual(record["reason"], record["steps"][0]["detail"])
+
+    def test_the_reason_skips_the_counts_the_mover_writes_after_its_error(self):
+        self.deployed()
+        MoverDocker.script, MoverDocker.runs = [([], 2)], []
+        MoverDocker.errors = [["The source could not be read (SqliteException 14).", "plan: files=0 bytes=0 skipped=0 failed=0"]]
+        try:
+            record = self.work(payload(sources=[FOLDER]), job="11111111-1111-4111-8111-111111111298")
+        finally:
+            MoverDocker.errors = []
+        self.assertEqual("the mover failed on brand-media (exit 2): The source could not be read (SqliteException 14).",
+                         record["reason"])
+
+    def test_the_counts_stand_as_the_reason_when_the_mover_said_nothing_else(self):
+        self.assertEqual("plan: files=0 bytes=0 skipped=0 failed=0",
+                         files_migration.mover_error(["", "plan: files=0 bytes=0 skipped=0 failed=0"]))
+        self.assertEqual("failed blobs/a.png: missing", files_migration.mover_error(
+            ["failed blobs/a.png: missing", "verify: files=1 bytes=4 skipped=0 failed=1"]))
+        self.assertIsNone(files_migration.mover_error([]))
 
     def test_a_failed_or_refused_source_stops_the_job_and_later_sources_do_not_run(self):
         self.deployed()
@@ -536,12 +554,12 @@ class StreamTests(unittest.TestCase):
         self.assertEqual(2, code)
         self.assertEqual(["a", "{\"echo\":\"hello\"}", "tail"], lines)
 
-    def test_on_error_gets_the_last_stderr_line_and_stdout_stays_apart(self):
+    def test_on_error_gets_the_stderr_lines_and_stdout_stays_apart(self):
         said = []
         docker = runner.Docker({"product": "pilot", "environment": "dev"}, {"PATH": "/usr/bin:/bin"})
         code = docker.stream([sys.executable, "-c", "import sys; print('out'); sys.stderr.write('first\\nlast line\\n\\n'); sys.exit(1)"],
                              b"", 20, "box", (lines := []).append, lambda: False, on_error=said.append)
-        self.assertEqual((1, ["out"], ["last line"]), (code, lines, said))
+        self.assertEqual((1, ["out"], [["first", "last line"]]), (code, lines, said))
 
     def test_a_run_past_its_timeout_returns_none_and_a_cancel_returns_cancelled(self):
         code, _ = self.stream("import time; time.sleep(30)", timeout=0.5)
