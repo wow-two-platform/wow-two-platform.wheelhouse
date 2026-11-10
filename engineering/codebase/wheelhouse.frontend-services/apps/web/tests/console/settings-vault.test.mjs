@@ -153,3 +153,22 @@ test("an apply is scheduled from five minutes on and within 90 days", () => {
   assert.ok(min < max);
   assert.match(min, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
 });
+
+test("a key no service declares reads as held until a release declares it, unless every service takes it", () => {
+  const parsed = DeploySettingsSchema.parse({
+    target: "ocharo-dev", product: "ocharo", environment: "dev", release: "v0.3.0", bundle: "ocharo-gh-1",
+    firstDeploy: false, missing: 0,
+    vault: { id: "built-in", namespace: "ocharo-dev", reachable: true, mode: "builtin", sealed: null },
+    services: [{ name: "identity", hostFile: false, keys: [key("Identity:Server:Issuer", "stored", { value: "https://id/" })] }],
+    extra: [
+      key("Identity:Server:Resources:3:Uri", "stored", { value: "https://events/", adHoc: true, held: true }),
+      key("Logging:Level", "stored", { value: "Warning", adHoc: true, everyService: true }),
+    ],
+  });
+  const rows = Object.fromEntries(EnvironmentSettingsRules.settings(parsed).map((row) => [row.key, row]));
+  assert.equal(rows["Identity:Server:Resources:3:Uri"].held, true);
+  assert.equal(EnvironmentSettingsRules.takers(rows["Identity:Server:Resources:3:Uri"]), "held until a release declares it");
+  assert.equal(rows["Logging:Level"].everyService, true);
+  assert.equal(EnvironmentSettingsRules.takers(rows["Logging:Level"]), "every service");
+  assert.equal(EnvironmentSettingsRules.takers(rows["Identity:Server:Issuer"]), "identity");
+});

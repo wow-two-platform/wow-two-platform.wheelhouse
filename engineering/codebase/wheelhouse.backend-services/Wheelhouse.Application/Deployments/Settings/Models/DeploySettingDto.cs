@@ -25,6 +25,13 @@ public sealed record DeploySettingDto(
     /// <summary>Gets whether the owner added the key in the console rather than a release declaring it.</summary>
     public bool AdHoc { get; init; }
 
+    /// <summary>Gets whether every service takes a key the owner added even while no release declares it.</summary>
+    public bool EveryService { get; init; }
+
+    /// <summary>Gets whether the next deploy holds the key's value from every service: no service of the release declares
+    /// it, and the owner did not add it for every service. It reaches a service once a release that declares it deploys.</summary>
+    public bool Held { get; init; }
+
     /// <summary>Gets whether its name reads as a secret, so saving it as a plain setting needs a confirmation.</summary>
     public bool LooksSecret { get; init; }
 

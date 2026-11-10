@@ -31,6 +31,11 @@ public sealed class ProductSettingKeyEntity : IHasTableName, IAuditable
     /// <summary>Gets or sets whether a deploy waits until the key has a value.</summary>
     public bool Required { get; set; }
 
+    /// <summary>Gets or sets whether every service takes the key even while no service of the deployed release declares
+    /// it. Off, a deploy holds its value from a release whose services do not declare it, so a key typed ahead of its
+    /// release waits for that release.</summary>
+    public bool EveryService { get; set; }
+
     /// <summary>Gets or sets the owner's note on what the key is for.</summary>
     public string? Note { get; set; }
 

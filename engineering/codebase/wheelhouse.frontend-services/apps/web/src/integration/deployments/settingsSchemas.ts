@@ -25,6 +25,8 @@ const DeploySettingSchema = z.object({
   type: z.enum(['text', 'number', 'boolean', 'choice', 'url', 'cron', 'date', 'email']).catch('text').default('text'),
   format: nullable(z.string()),
   adHoc: z.boolean().default(false),
+  everyService: z.boolean().default(false),
+  held: z.boolean().default(false),
   looksSecret: z.boolean().default(false),
   vault: nullable(SecretMetaSchema),
   generate: nullable(

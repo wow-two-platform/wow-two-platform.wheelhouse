@@ -90,7 +90,7 @@ public sealed partial class DeploymentSettingsService(
         var adHoc = await added.GetAsync(product.Id, ct);
         var services = Services(declared, stored, held ?? new Dictionary<string, SecretMetadataDto>(), adHoc);
         var named = services.SelectMany(service => service.Keys).Select(key => key.Key).ToHashSet(StringComparer.Ordinal);
-        var extra = Extra(named, stored, held ?? new Dictionary<string, SecretMetadataDto>(), adHoc);
+        var extra = Extra(named, stored, held ?? new Dictionary<string, SecretMetadataDto>(), adHoc, services.Count > 0);
         // The owner's links first: a release's from that reads a linked key sees it set by its source.
         var cross = await LinksAsync(target, product, ct);
         (services, extra) = Cross(services, extra, cross);
@@ -103,7 +103,7 @@ public sealed partial class DeploymentSettingsService(
             place is null ? null : place with { Reachable = place.Reachable && held is not null },
             services,
             services.Where(service => !service.HostFile).Sum(service => service.Keys.Count(key => key.Source == SettingSources.Missing))
-            + extra.Count(key => key.Source == SettingSources.Missing))
+            + extra.Count(key => key.Source == SettingSources.Missing && !key.Held))
         {
             Bundle = bundle,
             Extra = extra,
@@ -168,9 +168,24 @@ public sealed partial class DeploymentSettingsService(
     /// <param name="linked">The release's linked keys; null for none.</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The values and their fingerprints, or why they could not be read.</returns>
+    public Task<AppResult<RenderValues>> ValuesAsync(
+        TargetEntity target, ProductEntity product, IReadOnlySet<string>? linked, CancellationToken ct) =>
+        ValuesAsync(target, product, linked, null, ct);
+
+    /// <summary>The values a deploy sends its target, as <see cref="ValuesAsync(TargetEntity, ProductEntity, IReadOnlySet{string}, CancellationToken)"/>,
+    /// also leaving out <paramref name="withheld"/>: keys no service of the release declares, which wait for a release that
+    /// does (the plan's <see cref="DeploySettingDto.Held"/>). A held key is neither sent nor recorded as rendered.</summary>
+    /// <param name="target">The target.</param>
+    /// <param name="product">The target's product.</param>
+    /// <param name="linked">The release's linked keys; null for none.</param>
+    /// <param name="withheld">The keys the render holds from every service; null for none.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The values and their fingerprints, or why they could not be read.</returns>
     public async Task<AppResult<RenderValues>> ValuesAsync(
-        TargetEntity target, ProductEntity product, IReadOnlySet<string>? linked, CancellationToken ct)
+        TargetEntity target, ProductEntity product, IReadOnlySet<string>? linked, IReadOnlySet<string>? withheld, CancellationToken ct)
     {
+        if (withheld is { Count: > 0 })
+            linked = linked is null ? withheld : new HashSet<string>(linked.Concat(withheld), StringComparer.Ordinal);
         var values = new SortedDictionary<string, string>(StringComparer.Ordinal);
         var keys = new SortedDictionary<string, RenderedKey>(StringComparer.Ordinal);
         foreach (var row in await store.GetAsync(product.Id, target.Environment, ct))
@@ -590,10 +605,12 @@ public sealed partial class DeploymentSettingsService(
     private static bool IsSet(DeploySettingDto key) => key.Source is not (SettingSources.Missing or SettingSources.Unset);
 
     /// <summary>The keys no service declares: those the owner added, then stored values and vault secrets for keys no
-    /// release names. @internal</summary>
+    /// release names. Once the release declares any service (<paramref name="declares"/>), each is held from every service
+    /// unless the owner added it for every service: a key typed ahead of its release waits for the release that declares
+    /// it. A release that declares none (an unreadable one, or none) holds nothing. @internal</summary>
     private static List<DeploySettingDto> Extra(
         IReadOnlySet<string> named, IReadOnlyDictionary<string, string> stored, IReadOnlyDictionary<string, SecretMetadataDto> held,
-        IReadOnlyList<ProductSettingKeyEntity> adHoc)
+        IReadOnlyList<ProductSettingKeyEntity> adHoc, bool declares)
     {
         var result = new List<DeploySettingDto>();
         var seen = new HashSet<string>(named, StringComparer.Ordinal);
@@ -609,6 +626,8 @@ public sealed partial class DeploymentSettingsService(
                 Type = SettingTypes.NameOf(key.Type),
                 Format = key.Format,
                 AdHoc = true,
+                EveryService = key.EveryService,
+                Held = declares && !key.EveryService,
                 LooksSecret = !key.Secret && SettingTypes.LooksSecret(key.Key),
                 Vault = held.GetValueOrDefault(key.Key),
             });
@@ -621,6 +640,7 @@ public sealed partial class DeploymentSettingsService(
             result.Add(new DeploySettingDto(key, false, secret, secret ? SettingSources.Vault : SettingSources.Stored,
                 secret ? null : stored[key])
             {
+                Held = declares,
                 LooksSecret = !secret && SettingTypes.LooksSecret(key),
                 Vault = held.GetValueOrDefault(key),
             });

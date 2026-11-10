@@ -266,10 +266,13 @@ own targets keep their hand-placed files), into `<root>/config/<product>-<enviro
 | Database | A required connection key (`ConnectionStrings:<name>`, `<Section>:ConnectionString`) no other layer sets, from `config/<product>-<environment>/database.json` (`prepare.py --database`), for a service that needs PostgreSQL |
 | Default | An optional key's `default` from the release (descriptor § Typed keys), for each key the service declares that no other layer sets (v0.13); a rendered value of `""` counts as unset. Before v0.13.3 the render skipped this layer while the console already named it as the source |
 
-- A value goes to every service that declares its key (required, or a release's optional or secret declaration), and a
-  key no service declares to every service that takes a settings file. So a value stored ahead of the release that will
-  declare it reaches every service of the running release at its next deploy, apply or automatic rollback (Ocharo dev
-  2026-11-02: an older Identity got the newer client keys and refused to boot).
+- A value goes to every service that declares its key (required, or a release's optional or secret declaration). A key
+  no service of the release declares is held: the control plane leaves it out of the render (the plan's `held`) until a
+  release that declares it deploys, so a value stored ahead of its release never reaches a service that does not take it
+  (Ocharo dev 2026-11-02 and 2026-11-10: an older Identity got the newer client keys and refused to boot, then two
+  Identity config checks refused resource and client keys typed before their names). Only a key the owner added for
+  every service (`everyService`) still goes to every service that takes a settings file while no release declares it;
+  a release that declares no service at all holds nothing. A held key never counts as missing.
 - The control plane sends the Wheelhouse layer on the submission's SSH stdin; the runner hands it to its worker over a
   pipe and writes it nowhere but the rendered files. Job records keep key names by source (`settings`), never a value;
   the render is the rollout's first step, `Render settings`.
@@ -281,7 +284,7 @@ own targets keep their hand-placed files), into `<root>/config/<product>-<enviro
   each service's keys with their source (`derived`, `vault`, `stored`, `default`, `host`, `missing`, `unset`), type,
   whether each is required and secret (the release's declaration, else a guess from the key's name), a secret's
   metadata (version, who, when, fingerprint, expiry), the keys no service declares (`extra`: owner-added keys and values
-  kept for undeclared keys), the keys changed since the target's last render (`unapplied`), a scheduled apply
+  kept for undeclared keys, each `held` unless added for every service), the keys changed since the target's last render (`unapplied`), a scheduled apply
   (`pending`) and the vault's state. Key names, non-secret values and versions only.
 - `PUT …/settings` (action `settings`) `{ values: [{ key, value, secret, note?, expiry?, confirmPlain?, remove?,
   generate? }], release? }` saves in one transaction: each value is checked against its declared type, a key that reads
@@ -311,7 +314,10 @@ own targets keep their hand-placed files), into `<root>/config/<product>-<enviro
   `url`, `cron`, `date` with a format, `email`; required or optional with a default for non-secrets; pipelines
   `v0.10.0`). The bundle carries them as `settings.<service>.{optional, secrets, allowed, types}`, which the runner
   validates and passes on with each key. Owners add keys per product in the console
-  (`PUT|DELETE /api/products/{product}/setting-keys/{key}`, typed the same way).
+  (`PUT|DELETE /api/products/{product}/setting-keys/{key}`, typed the same way). An added key waits for a release that
+  declares it unless `everyService` (v0.15, column `every_service`, off for every key added before it): the Add a setting
+  dialog's "Every service takes it, even before a release declares it". A key typed ahead of its release is added
+  without it.
 - A deploy, the owner's or an automatic one, is refused while a required key has no source on a service without a host
   file, an owner-added required key included; the refusal is kept as a deploy that changed nothing. The deploy dialog
   lists those keys and, on a first deploy, the release's optional ones; each field saves as it is confirmed, so partial

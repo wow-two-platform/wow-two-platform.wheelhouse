@@ -314,6 +314,39 @@ public sealed class DeploymentSettingsE2ETests(WheelhouseAppFixture fixture) : W
     }
 
     [Fact]
+    public async Task Deploy_ShouldHoldAKeyNoServiceDeclares_UntilAReleaseDoes_UnlessAddedForEveryService()
+    {
+        Declare(hostFile: false);
+        (await Owner("settings").PutAsJsonAsync("/api/products/foreverpin/setting-keys/Identity:Server:Resources:3:Uri",
+            new { type = "url" })).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Owner("settings").PutAsJsonAsync("/api/products/foreverpin/setting-keys/Identity:Server:Resources:3:Name",
+            new { type = "text", required = true })).StatusCode.Should().Be(HttpStatusCode.OK);
+        var added = await Owner("settings").PutAsJsonAsync("/api/products/foreverpin/setting-keys/Logging:Level",
+            new { type = "text", everyService = true });
+        added.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await added.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data").GetProperty("everyService").GetBoolean().Should().BeTrue();
+        (await Save(("DataProtection:ApplicationName", "ocharo-desk", false), ("DataProtection:KeysPath", "/keys", false),
+            ("ImageWorker:Key", Secret, true), ("Identity:Server:Resources:3:Uri", "https://events.example/", false),
+            ("Logging:Level", "Warning", false), ("Legacy:Mode", "kept", false))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var plan = await DataAsync("/api/deployments/targets/foreverpin-dev/settings?release=foreverpin-gh-1");
+        var extra = plan.GetProperty("extra").EnumerateArray().ToDictionary(key => key.GetProperty("key").GetString()!);
+        extra["Identity:Server:Resources:3:Uri"].GetProperty("held").GetBoolean().Should().BeTrue("it waits for a release that declares it");
+        extra["Identity:Server:Resources:3:Name"].GetProperty("held").GetBoolean().Should().BeTrue();
+        extra["Legacy:Mode"].GetProperty("held").GetBoolean().Should().BeTrue("a stored key no release declares is held too");
+        extra["Logging:Level"].GetProperty("held").GetBoolean().Should().BeFalse("the owner added it for every service");
+        plan.GetProperty("missing").GetInt32().Should().Be(0, "a held required key waits for its release, not this deploy");
+
+        (await Owner("deploy").PostAsJsonAsync("/api/deployments", new { target = "foreverpin-dev", release = "foreverpin-gh-1" }))
+            .StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var values = Fixture.Deployments.LastSettings!.Value.GetProperty("values");
+        values.GetProperty("DataProtection:ApplicationName").GetString().Should().Be("ocharo-desk");
+        values.GetProperty("Logging:Level").GetString().Should().Be("Warning");
+        values.TryGetProperty("Identity:Server:Resources:3:Uri", out _).Should().BeFalse("no service of the release declares it");
+        values.TryGetProperty("Legacy:Mode", out _).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Deploy_ShouldLeaveAHostFilesKeysToTheTarget()
     {
         Declare(hostFile: true);

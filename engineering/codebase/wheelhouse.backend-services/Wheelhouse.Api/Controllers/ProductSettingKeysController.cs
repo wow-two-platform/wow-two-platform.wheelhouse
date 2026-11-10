@@ -25,7 +25,7 @@ public sealed class ProductSettingKeysController(ISender sender, IActorContext a
     private const string Slug = FormatPatternConstants.NameSlug;
 
     /// <summary>Adds a key, or changes one the owner added; a key that reads as a secret needs <c>confirmPlain</c> to be
-    /// a plain setting.</summary>
+    /// a plain setting, and <c>everyService</c> gives it to every service while no release declares it.</summary>
     [HttpPut("{key}")]
     [RequireActionHeader("settings")]
     [ProducesResponseType<ApiResponse<DeploySettingDto>>(StatusCodes.Status200OK)]
@@ -33,7 +33,7 @@ public sealed class ProductSettingKeysController(ISender sender, IActorContext a
         [RegularExpression(Slug)] string product, [RegularExpression(FormatPatternConstants.ConfigurationKey)] string key, ProductSettingKeyRequest request,
         CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new ProductSettingKeySetCommand(product, key, request.Secret, request.Type,
-            request.Format, request.Choices, request.Required, request.Note, request.ConfirmPlain, actor.Actor), ct));
+            request.Format, request.Choices, request.Required, request.Note, request.ConfirmPlain, actor.Actor, request.EveryService), ct));
 
     /// <summary>Removes a key the owner added.</summary>
     [HttpDelete("{key}")]

@@ -36,6 +36,7 @@ public sealed class ProductSettingKeySetCommandHandler(IProductsRepository produ
             Format = type == SettingType.Date ? request.Format ?? SettingTypes.DefaultDateFormat : null,
             Choices = choices is null ? null : string.Join('\n', choices),
             Required = request.Required,
+            EveryService = request.EveryService,
             Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
             CreatedBy = request.Actor,
         }, cancellationToken);
@@ -45,6 +46,7 @@ public sealed class ProductSettingKeySetCommandHandler(IProductsRepository produ
             Type = SettingTypes.NameOf(type),
             Format = type == SettingType.Date ? request.Format ?? SettingTypes.DefaultDateFormat : null,
             AdHoc = true,
+            EveryService = request.EveryService,
         });
     }
 }

@@ -4,7 +4,7 @@ import { SettingTypes } from "./SettingTypes";
 
 /** One key of an environment as the Settings and Secrets editors list it, once whatever the services that take it. */
 export interface EnvironmentKey extends DeploySetting {
-  /** The services that take it; empty for a key no service declares, which every service takes. */
+  /** The services that take it; empty for a key no service declares, which every service takes unless it is held. */
   services: string[];
   /** Whether its value changed since the target's last deploy rendered it. */
   unapplied: boolean;
@@ -138,6 +138,13 @@ export const EnvironmentSettingsRules = {
     if (!generate) return null;
     if (generate.command?.length) return `command: ${generate.command.join(" ")}`;
     return `${generate.random ?? "?"} random bytes, ${generate.encoding ?? "base64url"}`;
+  },
+
+  /** Who takes a key, in the editors' words: the services that declare it, else every service, else no service yet
+   *  when the next deploy holds it for a release that declares it. */
+  takers(key: Pick<EnvironmentKey, "services"> & Partial<Pick<DeploySetting, "held">>): string {
+    if (key.services.length) return key.services.join(", ");
+    return key.held ? "held until a release declares it" : "every service";
   },
 
   /** The words a key's source reads as in the editors. */

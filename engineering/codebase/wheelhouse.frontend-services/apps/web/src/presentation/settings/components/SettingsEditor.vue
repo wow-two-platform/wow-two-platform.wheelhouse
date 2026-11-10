@@ -43,7 +43,7 @@ watch(() => props.plan.target, () => saver.reset());
 
 function helper(row: EnvironmentKey): string {
   const type = row.type !== "text" ? `${row.type}${row.format ? ` (${row.format})` : ""} · ` : "";
-  const who = row.services.length ? row.services.join(", ") : "every service";
+  const who = EnvironmentSettingsRules.takers(row);
   return `${type}${who} · ${EnvironmentSettingsRules.sourceLabel(row)}${row.unapplied ? " · not deployed yet" : ""}`;
 }
 
@@ -95,6 +95,7 @@ async function save(row: EnvironmentKey, value: string, confirmPlain: boolean): 
           <Badge v-if="EnvironmentSettingsRules.isLinked(row)" variant="neutral">linked</Badge>
           <Badge v-if="row.unapplied" variant="info">changed</Badge>
           <Badge v-if="row.adHoc" variant="neutral">added</Badge>
+          <Badge v-if="row.held" variant="info" title="No service of this release declares it; it waits for a release that does">held</Badge>
           <Button
             v-if="EnvironmentSettingsRules.canLink(row)"
             variant="ghost"

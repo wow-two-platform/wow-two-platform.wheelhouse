@@ -36,6 +36,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "033-product-manifest-source",
         "034-server-console-url",
         "035-setting-links",
+        "036-setting-key-every-service",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -961,6 +962,40 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         (await migrator.HasTableAsync("setting_links")).Should().BeFalse();
         (await Scalar(connection, "SELECT count(*) FROM targets")).Should().Be(1L, "rollback drops only the links");
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("035-setting-links"));
+    }
+
+    [Fact]
+    public async Task SettingKeyEveryService_ShouldStartOffForKeysAddedBefore_ReRunCleanly_AndRollBackToTheColumnsBefore()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        await using (var cleanup = await migrator.OpenConnectionAsync())
+            await Execute(cleanup, "DROP SCHEMA IF EXISTS vault CASCADE"); // the fixture's reset drops public only
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        var before = Ordinals[Array.IndexOf(Migrations, "036-setting-key-every-service") - 1];
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: before, CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000001", "ocharo"));
+        const string insert =
+            "INSERT INTO product_setting_keys (product_id, key, secret, type, required, created_by, created_at_utc, updated_at_utc) " +
+            "VALUES ('00000000-0000-0000-0000-000000000001', '{0}', false, 'Url', false, 'owner', now(), now())";
+        await Execute(connection, string.Format(insert, "Identity:Server:Resources:3:Uri"));
+
+        // A key added before the column waits for a release that declares it, and so does one an older release adds.
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("036-setting-key-every-service"));
+        await Execute(connection, string.Format(insert, "Identity:Server:Clients:10:SignalUrl"));
+        (await ReadColumnsAsync(connection, "product_setting_keys")).Should().Contain(("every_service", "boolean", false));
+        (await Scalar(connection, "SELECT count(*) FROM product_setting_keys WHERE NOT every_service")).Should().Be(2L);
+        await Execute(connection, "UPDATE product_setting_keys SET every_service = true WHERE key = 'Identity:Server:Clients:10:SignalUrl'");
+
+        // Both scripts re-run cleanly over the state they leave.
+        await Execute(connection, MigrationSql("036-setting-key-every-service", "Apply.sql"));
+        (await Scalar(connection, "SELECT count(*) FROM product_setting_keys WHERE every_service")).Should().Be(1L);
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: before, CancellationToken.None));
+        await Execute(connection, MigrationSql("036-setting-key-every-service", "Rollback.sql"));
+        (await ReadColumnsAsync(connection, "product_setting_keys")).Select(column => column.Name).Should().NotContain("every_service");
+        (await Scalar(connection, "SELECT count(*) FROM product_setting_keys")).Should().Be(2L, "rollback drops only the column");
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("036-setting-key-every-service"));
     }
 
     /// <summary>The text of one embedded migration script.</summary>

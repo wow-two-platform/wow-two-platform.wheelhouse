@@ -132,4 +132,6 @@ export interface SettingKeyRequest {
   choices?: string[];
   note?: string;
   confirmPlain?: boolean;
+  /** Every service takes it even while no release declares it; otherwise it waits for a release that declares it. */
+  everyService?: boolean;
 }

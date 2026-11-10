@@ -57,6 +57,11 @@ export interface DeploySetting {
   format: string | null;
   /** Whether the owner added the key in the console. */
   adHoc: boolean;
+  /** Whether every service takes a key the owner added even while no release declares it. */
+  everyService: boolean;
+  /** Whether the next deploy holds its value from every service: no service of the release declares it. It reaches a
+   *  service once a release that declares it deploys. */
+  held: boolean;
   /** Whether its name reads as a secret: saving it as a plain setting needs a confirmation. */
   looksSecret: boolean;
   /** A vault secret's metadata, never its value. */

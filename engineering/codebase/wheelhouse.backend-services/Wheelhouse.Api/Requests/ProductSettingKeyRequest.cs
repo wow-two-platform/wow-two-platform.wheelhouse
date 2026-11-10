@@ -10,6 +10,8 @@ namespace Wheelhouse.Api.Requests;
 /// <param name="Choices">A choice key's values.</param>
 /// <param name="Note">What the key is for.</param>
 /// <param name="ConfirmPlain">Whether a key that reads as a secret is a plain setting all the same.</param>
+/// <param name="EveryService">Whether every service takes it even while no release declares it; off, it waits for a
+/// release that declares it.</param>
 public sealed record ProductSettingKeyRequest(
     [Required, StringLength(20)] string Type,
     bool Secret = false,
@@ -17,4 +19,5 @@ public sealed record ProductSettingKeyRequest(
     [StringLength(40)] string? Format = null,
     [MaxLength(50)] IReadOnlyList<string>? Choices = null,
     [StringLength(300)] string? Note = null,
-    bool ConfirmPlain = false);
+    bool ConfirmPlain = false,
+    bool EveryService = false);

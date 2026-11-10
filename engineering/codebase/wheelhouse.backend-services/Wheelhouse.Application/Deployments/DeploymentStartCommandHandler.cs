@@ -97,7 +97,8 @@ public sealed class DeploymentStartCommandHandler(
                     : key.Link is { } link ? key.Key + " (linked to " + link.Target + " " + link.Key + ")" : key.Key).ToList()))
             .Where(service => service.Keys.Count > 0)
             .ToList();
-        var extra = planned.Extra.Where(key => key.Source == SettingSources.Missing).Select(key => key.Key).ToList();
+        // A held key waits for the release that declares it, so this deploy never waits for its value.
+        var extra = planned.Extra.Where(key => key.Source == SettingSources.Missing && !key.Held).Select(key => key.Key).ToList();
         if (extra.Count > 0)
             missing.Add(("every service", extra));
         if (missing.Count > 0)
@@ -120,7 +121,10 @@ public sealed class DeploymentStartCommandHandler(
         var owned = keys.Where(key => key.From is null).Select(key => key.Key).ToHashSet(StringComparer.Ordinal);
         var linked = keys.Where(key => key.From is not null && !owned.Contains(key.Key))
             .Select(key => key.Key).ToHashSet(StringComparer.Ordinal);
-        var values = await settings.ValuesAsync(target, product, linked, ct);
+        // A key no service of this release declares is held, unless the owner added it for every service: a key typed
+        // ahead of its release never reaches a service that does not take it.
+        var held = planned.Extra.Where(key => key.Held).Select(key => key.Key).ToHashSet(StringComparer.Ordinal);
+        var values = await settings.ValuesAsync(target, product, linked, held, ct);
         // A vault that cannot render the environment's secrets holds the deploy, kept as a refusal like any other.
         if (values is AppResult<Settings.Models.RenderValues>.Failure { Error: var error })
             await RecordAsync(request, target, DeploymentRefusal.Validation, error.Message, ct);

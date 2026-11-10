@@ -37,7 +37,8 @@ import { failureReason } from "@/integration/common";
 
 /**
  * Adds a key every environment of the product takes: its type, choices or date format, whether a deploy waits for it,
- * and a note. A plain key whose name reads as a secret needs the owner to confirm it is plain.
+ * whether every service takes it before a release declares it, and a note. A plain key whose name reads as a secret
+ * needs the owner to confirm it is plain.
  */
 defineOptions({ name: "AddKeyModal" });
 const props = defineProps<AddKeyModalProps>();
@@ -52,6 +53,7 @@ const format = ref(SettingTypes.defaultDateFormat);
 const required = ref(false);
 const note = ref("");
 const confirmPlain = ref(false);
+const everyService = ref(false);
 
 watch(
   () => props.open,
@@ -64,6 +66,7 @@ watch(
     required.value = false;
     note.value = "";
     confirmPlain.value = false;
+    everyService.value = false;
     keys.set.reset();
   },
 );
@@ -95,6 +98,7 @@ async function save(event: Event): Promise<void> {
       ...(type.value === "date" ? { format: format.value } : {}),
       ...(note.value.trim() ? { note: note.value.trim() } : {}),
       ...(confirmPlain.value ? { confirmPlain: true } : {}),
+      ...(everyService.value ? { everyService: true } : {}),
     },
   });
   if (result.ok) emit("update:open", false);
@@ -109,7 +113,7 @@ async function save(event: Event): Promise<void> {
           <ModalTitle>{{ props.secret ? "Add a secret" : "Add a setting" }}</ModalTitle>
           <ModalDescription>
             Every environment of this product takes it, beside the keys its releases declare. Give its value per
-            environment once it is added.
+            environment once it is added. It waits for a release that declares it, unless every service takes it.
           </ModalDescription>
         </ModalHeader>
         <ModalBody class="flex flex-col gap-4">
@@ -134,6 +138,7 @@ async function save(event: Event): Promise<void> {
             <TextInput v-model="note" autocomplete="off" />
           </Field>
           <CheckboxField v-model="required" label="Required: a deploy waits until it has a value" />
+          <CheckboxField v-model="everyService" label="Every service takes it, even before a release declares it" />
           <CheckboxField v-if="looksSecret" v-model="confirmPlain" :label="`${key.trim()} reads as a secret; it is a plain setting`" />
           <Alert v-if="problem" severity="warning" :description="problem" />
           <Alert v-if="keys.set.error.value" severity="danger" :description="failureReason(keys.set.error.value)" />

@@ -17,9 +17,11 @@ namespace Wheelhouse.Application.Deployments.Settings.Commands;
 /// <param name="Note">What the key is for.</param>
 /// <param name="ConfirmPlain">Whether the owner confirmed a key that reads as a secret is a plain setting.</param>
 /// <param name="Actor">Who adds it.</param>
+/// <param name="EveryService">Whether every service takes it even while no release declares it; off, a deploy holds it
+/// from a release whose services do not declare it.</param>
 public sealed record ProductSettingKeySetCommand(
     string Product, string Key, bool Secret, string Type, string? Format, IReadOnlyList<string>? Choices, bool Required,
-    string? Note, bool ConfirmPlain, string Actor) : ICommand<AppResult<DeploySettingDto>>, IAuditedCommand
+    string? Note, bool ConfirmPlain, string Actor, bool EveryService = false) : ICommand<AppResult<DeploySettingDto>>, IAuditedCommand
 {
     /// <inheritdoc />
     public string AuditAction => "product.setting-key.set";
@@ -28,5 +30,6 @@ public sealed record ProductSettingKeySetCommand(
     public string AuditSubject => Product;
 
     /// <inheritdoc />
-    public string AuditDetail => Key + " (" + Type + (Secret ? ", secret" : "") + (Required ? ", required" : "") + ")";
+    public string AuditDetail =>
+        Key + " (" + Type + (Secret ? ", secret" : "") + (Required ? ", required" : "") + (EveryService ? ", every service" : "") + ")";
 }
