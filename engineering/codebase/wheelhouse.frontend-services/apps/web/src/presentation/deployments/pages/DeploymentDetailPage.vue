@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ReleaseSets } from "@/domain/deployments";
 import { ControlOperation, ServiceControls } from "@/domain/deployments/controls";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { RouterLink, useRoute } from "vue-router";
-import { ArrowRight, Crosshair, ExternalLink, FileText, RotateCcw, TriangleAlert, Undo2, Wrench } from "lucide-vue-next";
+import { ArrowRight, Crosshair, ExternalLink, FileText, RotateCcw, SlidersHorizontal, TriangleAlert, Undo2, Wrench } from "lucide-vue-next";
 
 import { Button, RefreshButton } from "@wow-two-beta/fe/presentation/actions";
 import { Badge, DescriptionGroup, RelativeTime } from "@wow-two-beta/fe/presentation/display";
@@ -135,6 +135,8 @@ const hasCauseSection = computed(
 );
 /** The action that fits the state: reconcile, redeploy, retry. */
 const fitting = computed(() => (reading.value ? DeploymentStates.action(reading.value.state) : null));
+/** A deploy refused only for required settings no layer set: the deploy dialog's settings step takes them. */
+const needsSettings = computed(() => DeploymentStates.needsSettings(reading.value?.cause));
 const logServices = computed(() => serviceRows.value.filter((item) => item.to !== null).map((item) => item.service));
 const needsReconciliation = computed(
   () => state.data.value?.condition === TargetCondition.NeedsReconciliation && state.data.value.active !== null,
@@ -178,6 +180,20 @@ function redeploy(): void {
   if (item?.targetId && item.bundleId) deploy.openDeploy({ target: item.targetId, release: item.bundleId });
 }
 
+/** Opens the deploy dialog on this target and release at its settings step, where the missing values are given. */
+function fillIn(): void {
+  const item = deployment.value;
+  if (item?.targetId && item.bundleId) deploy.openDeploy({ target: item.targetId, release: item.bundleId, at: "settings" });
+}
+
+/** `?fill=settings` (a refusal's link) opens the settings step once the refused deploy has loaded. */
+const filled = ref(false);
+watch([needsSettings, targetExists], ([needed, exists]) => {
+  if (!needed || !exists || filled.value || route.query["fill"] !== "settings") return;
+  filled.value = true;
+  fillIn();
+}, { immediate: true });
+
 function rollBack(): void {
   const item = deployment.value;
   const previous = detail.data.value?.rollback;
@@ -190,7 +206,14 @@ function rollBack(): void {
     <PageHeaderActions>
       <RefreshButton size="md" is-icon-only :is-refreshing="refresh.refreshing.value" @click="refresh.refresh" />
       <Button
-        v-if="deployment?.bundleId && targetExists"
+        v-if="deployment?.bundleId && targetExists && needsSettings"
+        :aria-label="`Fill in the settings ${ReleaseSets.text(deployment.release) || deployment.bundleId} needs, then deploy it`"
+        @click="fillIn"
+        ><template #leading><SlidersHorizontal :size="16" /></template
+        ><span class="hidden sm:inline">Fill in settings</span></Button
+      >
+      <Button
+        v-else-if="deployment?.bundleId && targetExists"
         :variant="fitting === 'redeploy' || fitting === 'retry' ? 'solid' : 'outline'"
         :tone="fitting === 'redeploy' || fitting === 'retry' ? 'primary' : 'neutral'"
         :aria-label="`${fitting === 'retry' ? 'Retry' : 'Redeploy'} ${ReleaseSets.text(deployment.release) || deployment.bundleId}`"
@@ -354,6 +377,15 @@ function rollBack(): void {
                     >Origin · {{ reading?.cause?.origin ?? reading?.cause?.kind ?? "the rollout" }}</span
                   >
                   <span class="block text-sm break-words text-muted-foreground">{{ DeploymentStates.causeText(reading?.cause ?? null) }}</span>
+                  <Button
+                    v-if="needsSettings && deployment?.bundleId && targetExists"
+                    class="mt-2"
+                    size="sm"
+                    variant="outline"
+                    tone="neutral"
+                    @click="fillIn"
+                    ><template #leading><SlidersHorizontal :size="14" /></template>Give the missing values and deploy</Button
+                  >
                   <span v-if="deployment?.watch?.findings.length && reading?.substate !== 'at_deploy'" class="mt-1 block text-xs text-muted-foreground">{{
                     deployment.watch.findings.join("; ")
                   }}</span>

@@ -3,6 +3,8 @@
 export interface DeploySelection {
   readonly target: string;
   readonly release: string;
+  /** `settings` opens at the confirm step, whose settings step takes the release's missing values. */
+  readonly at?: "settings";
 }
 
 /** Defines the controlled deployment dialog and its initial selection. */
@@ -238,6 +240,12 @@ const inventoryError = computed(
 const canChoose = computed(() =>
   Boolean(selectedTarget.value && selectedRelease.value),
 );
+/** A selection opened at its settings goes to the confirm step once its target and release are known, once. */
+const toSettings = ref(false);
+watch(canChoose, (ready) => {
+  if (ready && toSettings.value && step.value === "choose") step.value = "confirm";
+  if (ready) toSettings.value = false;
+}, { immediate: true });
 const lockedFailure = computed(
   () =>
     outcome.data.value?.mutationStarted &&
@@ -253,6 +261,7 @@ watch(
     step.value = "choose";
     target.value = props.selection?.target ?? "";
     release.value = props.selection?.release ?? "";
+    toSettings.value = props.selection?.at === "settings";
     jobId.value = null;
     readiness.value = null;
     resetTyped();
@@ -701,6 +710,9 @@ function close(open: boolean): void {
             title="Couldn't read the release's settings"
             :description="failureReason(settings.error.value)"
           />
+          <p v-else-if="settings.loading.value" role="status" class="flex items-center gap-2 text-sm text-muted-foreground">
+            <Spinner size="sm" />Reading the release's settings…
+          </p>
           <DeploySettingsPanel
             v-else-if="settings.data.value"
             v-model:entered="entered"

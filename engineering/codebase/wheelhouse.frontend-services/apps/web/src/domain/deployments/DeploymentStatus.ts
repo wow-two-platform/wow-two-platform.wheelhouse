@@ -315,6 +315,12 @@ export const DeploymentStates = {
   causeText(cause: DeploymentStateCause | null): string | null {
     return cause?.message ? sentence(cause.message) : null;
   },
+
+  /** Whether a deploy was refused only for required settings no layer set: the deploy dialog's settings step takes them
+   *  for that target and release, then deploys. */
+  needsSettings(cause: DeploymentStateCause | null | undefined): boolean {
+    return cause?.kind === 'validation' && (cause.message ?? '').startsWith('Fill in the required settings first');
+  },
 } as const;
 
 /** Each attention's loudness, for the loudest of several. @internal */

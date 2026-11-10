@@ -469,3 +469,13 @@ test("a glyph opens its release on the product's Deployments tab, as a list over
   const state = history.readDeploymentQuery({ view: "list", release: "v1.8.2", env: "prod" });
   assert.deepEqual(history.mergeDeploymentQuery({ release: "v1.8.2", env: "prod" }, state), { release: "v1.8.2", env: "prod", view: "list" });
 });
+
+test("a deploy refused only for missing required settings offers the settings step", () => {
+  const { DeploymentStates } = history;
+  const cause = (kind, message) => ({ kind, origin: null, message, at: null });
+  assert.equal(DeploymentStates.needsSettings(cause("validation",
+    "Fill in the required settings first: events: Events:Intake:Sources:0:OwnerOrg.")), true);
+  assert.equal(DeploymentStates.needsSettings(cause("validation", "The vault is unreachable, so events-dev cannot render its secrets")), false);
+  assert.equal(DeploymentStates.needsSettings(cause("busy", "Fill in the required settings first: x")), false);
+  assert.equal(DeploymentStates.needsSettings(null), false);
+});
