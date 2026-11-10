@@ -344,6 +344,8 @@ public sealed class DeploymentSettingsE2ETests(WheelhouseAppFixture fixture) : W
         values.GetProperty("Logging:Level").GetString().Should().Be("Warning");
         values.TryGetProperty("Identity:Server:Resources:3:Uri", out _).Should().BeFalse("no service of the release declares it");
         values.TryGetProperty("Legacy:Mode", out _).Should().BeFalse();
+        (await DataAsync("/api/deployments/targets/foreverpin-dev/settings?release=foreverpin-gh-1")).GetProperty("unapplied")
+            .EnumerateArray().Should().BeEmpty("a held key waits for its release, so no deploy applies it");
     }
 
     [Fact]

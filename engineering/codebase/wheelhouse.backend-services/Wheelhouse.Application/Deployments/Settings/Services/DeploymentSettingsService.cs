@@ -108,7 +108,8 @@ public sealed partial class DeploymentSettingsService(
         {
             Bundle = bundle,
             Extra = extra,
-            Unapplied = await UnappliedAsync(targetSlug, stored, held, cross, ct),
+            Unapplied = await UnappliedAsync(targetSlug, stored, held, cross,
+                extra.Where(key => key.Held).Select(key => key.Key).ToHashSet(StringComparer.Ordinal), ct),
             Pending = pending is null ? null : new SettingsApplyDto(targetSlug, "scheduled", pending.At, pending.RequestedBy, null, label),
         });
     }
@@ -394,10 +395,12 @@ public sealed partial class DeploymentSettingsService(
     }
 
     /// <summary>The keys whose stored value or secret version differs from the target's last render; a linked key
-    /// compares its source's, so a source's new version marks it. @internal</summary>
+    /// compares its source's, so a source's new version marks it. A key the next deploy holds (<paramref name="withheld"/>)
+    /// counts as absent: it waits for a release that declares it, so no deploy applies it; one the last render still
+    /// held a value for reads as changed until a deploy drops it. @internal</summary>
     private async Task<IReadOnlyList<string>> UnappliedAsync(
         string target, IReadOnlyDictionary<string, string> stored, IReadOnlyDictionary<string, SecretMetadataDto>? held,
-        IReadOnlyList<LinkedSource> cross, CancellationToken ct)
+        IReadOnlyList<LinkedSource> cross, IReadOnlySet<string> withheld, CancellationToken ct)
     {
         if (held is null || await renders.GetLatestAsync(target, ct) is not { } last)
             return [];
@@ -416,6 +419,8 @@ public sealed partial class DeploymentSettingsService(
             else if (item.Stored is { } value)
                 now[item.Link.Key] = new RenderedKey("setting", null, SecretsVaultCrypto.Digest(value));
         }
+        foreach (var key in withheld)
+            now.Remove(key);
         var before = Read(last.Keys);
         // A standalone vault keeps no fingerprint here: its versions alone tell a change.
         var comparable = before.ToDictionary(pair => pair.Key,

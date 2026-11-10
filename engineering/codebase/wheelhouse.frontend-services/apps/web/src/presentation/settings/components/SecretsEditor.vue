@@ -114,6 +114,7 @@ const adding = ref(false);
                 >
                 <Badge v-if="EnvironmentSettingsRules.isLinked(row)" variant="neutral">linked</Badge>
                 <Badge v-if="row.unread" variant="warning" title="Generated, and nothing reads it: no from, no link from another product">unread</Badge>
+                <Badge v-if="row.held" variant="info" title="No service of this release declares it; it waits for a release that does">held</Badge>
               </span>
               <span v-if="row.link && row.vault" class="flex items-center gap-1 text-xs text-muted-foreground"
                 ><Link2 :size="12" aria-hidden="true" />{{ EnvironmentSettingsRules.sourceLabel(row) }}</span
