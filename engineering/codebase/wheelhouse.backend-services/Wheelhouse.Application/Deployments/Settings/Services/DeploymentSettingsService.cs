@@ -95,6 +95,7 @@ public sealed partial class DeploymentSettingsService(
         var cross = await LinksAsync(target, product, ct);
         (services, extra) = Cross(services, extra, cross);
         services = Link(services, extra, stored, held ?? new Dictionary<string, SecretMetadataDto>());
+        services = await UnreadAsync(services, product, target, ct);
         var pending = await applies.GetAsync(target.Id, ct);
         var label = bundle is null ? null : Text(declared, "release") ?? release ?? Label(history, bundle);
         return AppResult<DeploySettingsDto>.Ok(new DeploySettingsDto(
@@ -600,6 +601,31 @@ public sealed partial class DeploymentSettingsService(
     /// say what it holds. @internal</summary>
     private sealed record LinkedSource(
         SettingLinkEntity Link, TargetEntity Source, ProductEntity Owner, bool Known, SecretMetadataDto? Secret, string? Stored);
+
+    /// <summary>Marks each client secret Wheelhouse generated that nothing reads (<see cref="DeploySettingDto.Unread"/>): a
+    /// key named <c>…ClientSecret</c> the release has Wheelhouse generate and the vault holds, which no key of the release
+    /// takes with <c>from</c> and no owner link from another product's target reads. Only a client secret: a generated
+    /// key its own service uses (a signing key, a hash key) has no reader by design. @internal</summary>
+    private async Task<List<DeploySettingsServiceDto>> UnreadAsync(
+        List<DeploySettingsServiceDto> services, ProductEntity product, TargetEntity target, CancellationToken ct)
+    {
+        var read = services.SelectMany(service => service.Keys).Select(key => key.From).OfType<string>()
+            .ToHashSet(StringComparer.Ordinal);
+        var candidates = services.SelectMany(service => service.Keys)
+            .Where(key => key.Key.EndsWith("ClientSecret", StringComparison.Ordinal) && key.Generate is not null
+                && key.From is null && key.Link is null && key.Vault is not null && !read.Contains(key.Key))
+            .Select(key => key.Key).Distinct(StringComparer.Ordinal).ToList();
+        if (candidates.Count == 0)
+            return services;
+        var unread = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var key in candidates)
+            if ((await links.GetBySourceAsync(product.Id, target.Environment, key, ct)).Count == 0)
+                unread.Add(key);
+        return unread.Count == 0 ? services : services.Select(service => service with
+        {
+            Keys = service.Keys.Select(key => unread.Contains(key.Key) ? key with { Unread = true } : key).ToList(),
+        }).ToList();
+    }
 
     /// <summary>Whether a key holds a value, or will by the time a deploy renders it. @internal</summary>
     private static bool IsSet(DeploySettingDto key) => key.Source is not (SettingSources.Missing or SettingSources.Unset);

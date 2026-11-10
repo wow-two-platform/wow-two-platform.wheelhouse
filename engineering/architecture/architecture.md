@@ -288,7 +288,9 @@ own targets keep their hand-placed files), into `<root>/config/<product>-<enviro
   each service's keys with their source (`derived`, `vault`, `stored`, `default`, `host`, `missing`, `unset`), type,
   whether each is required and secret (the release's declaration, else a guess from the key's name), a secret's
   metadata (version, who, when, fingerprint, expiry), the keys no service declares (`extra`: owner-added keys and values
-  kept for undeclared keys, each `held` unless added for every service), the keys changed since the target's last render (`unapplied`), a scheduled apply
+  kept for undeclared keys, each `held` unless added for every service), each generated `…ClientSecret` nothing reads
+  (`unread`: no key of the release takes it with `from` and no other product's target links it, so no client can
+  present it; the Secrets editor names them in a notice), the keys changed since the target's last render (`unapplied`), a scheduled apply
   (`pending`) and the vault's state. Key names, non-secret values and versions only.
 - `PUT …/settings` (action `settings`) `{ values: [{ key, value, secret, note?, expiry?, confirmPlain?, remove?,
   generate? }], release? }` saves in one transaction: each value is checked against its declared type, a key that reads

@@ -172,3 +172,18 @@ test("a key no service declares reads as held until a release declares it, unles
   assert.equal(EnvironmentSettingsRules.takers(rows["Logging:Level"]), "every service");
   assert.equal(EnvironmentSettingsRules.takers(rows["Identity:Server:Issuer"]), "identity");
 });
+
+test("a generated client secret nothing reads shows on the Secrets editor's notice", () => {
+  const parsed = DeploySettingsSchema.parse({
+    target: "ocharo-dev", product: "ocharo", environment: "dev", release: "v0.3.6", bundle: "ocharo-gh-2",
+    firstDeploy: false, missing: 0,
+    vault: { id: "built-in", namespace: "ocharo-dev", reachable: true, mode: "builtin", sealed: null },
+    services: [{
+      name: "identity", hostFile: false, keys: [
+        key("Identity:Server:Clients:9:ClientSecret", "vault", { secret: true, unread: true, generate: { random: 32 } }),
+        key("Identity:Server:Clients:8:ClientSecret", "vault", { secret: true, generate: { random: 32 } }),
+      ],
+    }],
+  });
+  assert.deepEqual(EnvironmentSettingsRules.unread(parsed).map((row) => row.key), ["Identity:Server:Clients:9:ClientSecret"]);
+});

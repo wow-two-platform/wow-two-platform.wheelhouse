@@ -28,6 +28,11 @@ public sealed record DeploySettingDto(
     /// <summary>Gets whether every service takes a key the owner added even while no release declares it.</summary>
     public bool EveryService { get; init; }
 
+    /// <summary>Gets whether a client secret Wheelhouse generated is read by nothing: no key of the release takes it with
+    /// <c>from</c>, and no other product's target links it, so no client can present it (its value is write-only). Link
+    /// it from the product that signs in with it, or drop its registration.</summary>
+    public bool Unread { get; init; }
+
     /// <summary>Gets whether the next deploy holds the key's value from every service: no service of the release declares
     /// it, and the owner did not add it for every service. It reaches a service once a release that declares it deploys.</summary>
     public bool Held { get; init; }

@@ -27,6 +27,7 @@ const DeploySettingSchema = z.object({
   adHoc: z.boolean().default(false),
   everyService: z.boolean().default(false),
   held: z.boolean().default(false),
+  unread: z.boolean().default(false),
   looksSecret: z.boolean().default(false),
   vault: nullable(SecretMetaSchema),
   generate: nullable(

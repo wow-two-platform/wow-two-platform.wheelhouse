@@ -101,6 +101,54 @@ public sealed class SettingLinksE2ETests(WheelhouseAppFixture fixture) : Wheelho
     }
 
     [Fact]
+    public async Task GeneratedClientSecret_ShouldReadUnread_UntilAKeyTakesItWithFromOrAnotherProductLinksIt()
+    {
+        const string Read = "Identity:Server:Clients:0:ClientSecret";
+        const string Orphan = "Identity:Server:Clients:9:ClientSecret";
+        const string Own = "Identity:Otp:HashKey";
+        await AddEventsAsync();
+        var generate = new { random = 32, encoding = "base64url" };
+        Fixture.Deployments.TargetDeclarations["foreverpin-dev"] = new
+        {
+            targetId = "foreverpin-dev", release = "v1.0.0", product = "foreverpin", environment = "dev",
+            services = new object[]
+            {
+                new
+                {
+                    name = "identity", hostFile = false,
+                    keys = new object[]
+                    {
+                        new { key = SourceKey, required = true, secret = true, generate },
+                        new { key = Read, required = true, secret = true, generate },
+                        new { key = Orphan, required = true, secret = true, generate },
+                        new { key = Own, required = true, secret = true, generate },
+                    },
+                },
+                new
+                {
+                    name = "desk", hostFile = false,
+                    keys = new object[] { new { key = "Identity:Client:ClientSecret", required = false, secret = true, from = Read } },
+                },
+            },
+        };
+        Fixture.Deployments.History.Add(Succeeded("foreverpin-dev", "foreverpin-gh-1"));
+        foreach (var key in new[] { SourceKey, Read, Orphan, Own })
+            (await Save("foreverpin-dev", key, SourceValue + key.Length, secret: true)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        bool Unread(JsonElement plan, string key) => Declared(plan, key).GetProperty("unread").GetBoolean();
+        var before = await DataAsync(Settings("foreverpin-dev"));
+        Unread(before, SourceKey).Should().BeTrue("no key takes it and no other product links it yet");
+        Unread(before, Orphan).Should().BeTrue();
+        Unread(before, Read).Should().BeFalse("desk takes it with from");
+        Unread(before, Own).Should().BeFalse("only a client secret has a reader to miss");
+
+        (await Link("events-dev", LinkingKey, "foreverpin-dev", SourceKey)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var after = await DataAsync(Settings("foreverpin-dev"));
+        Unread(after, SourceKey).Should().BeFalse("events-dev links it");
+        Unread(after, Orphan).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task DeclaredKey_ShouldWaitForItsLinkedSource_AndShowAPlainSourcesValue()
     {
         await AddEventsAsync();

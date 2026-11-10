@@ -42,6 +42,7 @@ export const EnvironmentSettingsRules = {
           known.generate ??= key.generate;
           known.from ??= key.from;
           known.link ??= key.link;
+          known.unread ||= key.unread;
           if (sourceOrder[key.source] < sourceOrder[known.source]) known.source = key.source;
           continue;
         }
@@ -66,6 +67,11 @@ export const EnvironmentSettingsRules = {
   /** The secrets: declared ones and any the vault holds. */
   secrets(plan: DeploySettings | null | undefined): EnvironmentKey[] {
     return EnvironmentSettingsRules.keys(plan).filter((key) => EnvironmentSettingsRules.isSecret(key) && key.source !== "derived");
+  },
+
+  /** The generated client secrets nothing reads, for the Secrets editor's notice. */
+  unread(plan: DeploySettings | null | undefined): EnvironmentKey[] {
+    return EnvironmentSettingsRules.secrets(plan).filter((key) => key.unread);
   },
 
   /** The keys each deploy derives, for the editors' footnote. */

@@ -59,6 +59,9 @@ export interface DeploySetting {
   adHoc: boolean;
   /** Whether every service takes a key the owner added even while no release declares it. */
   everyService: boolean;
+  /** Whether a client secret Wheelhouse generated is read by nothing: no key of the release takes it with `from` and no
+   *  other product links it, so no client can present it. */
+  unread: boolean;
   /** Whether the next deploy holds its value from every service: no service of the release declares it. It reaches a
    *  service once a release that declares it deploys. */
   held: boolean;

@@ -12,6 +12,7 @@ export interface SecretsEditorProps {
 import { computed, ref, shallowRef } from "vue";
 import { History, KeyRound, Link2, Plus, RefreshCw } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
+import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 import { ConfirmPopover } from "@wow-two-beta/fe/presentation/overlays";
 import {
   Badge,
@@ -51,6 +52,7 @@ const links = useSettingLinks();
 const regenerate = useRegenerateSecret();
 const linking = ref<string | null>(null);
 const rows = computed(() => EnvironmentSettingsRules.secrets(props.plan));
+const unread = computed(() => EnvironmentSettingsRules.unread(props.plan));
 /** Why the last regeneration failed, by key: the runner's error line, never a value. */
 const failures = ref<Record<string, string>>({});
 
@@ -71,6 +73,19 @@ const adding = ref(false);
       <p class="text-sm text-muted-foreground">Values are write-only. Every change keeps a version for the audit.</p>
       <Button size="sm" @click="adding = true"><template #leading><Plus :size="14" /></template>Add secret</Button>
     </div>
+    <Alert
+      v-if="unread.length"
+      severity="warning"
+      :title="`${unread.length} generated client ${unread.length === 1 ? 'secret' : 'secrets'} nothing reads`"
+    >
+      <p class="text-sm">
+        No key of this release takes {{ unread.length === 1 ? "it" : "them" }} with <code>from</code> and no other product
+        links {{ unread.length === 1 ? "it" : "them" }}, so no client can present
+        {{ unread.length === 1 ? "it" : "them" }}: link each from the product that signs in with it, or drop its
+        registration.
+      </p>
+      <p class="mt-1 font-mono text-xs break-all">{{ unread.map((key) => key.key).join(", ") }}</p>
+    </Alert>
     <EmptyState
       v-if="!rows.length"
       size="sm"
@@ -98,6 +113,7 @@ const adding = ref(false);
                   >generated</Badge
                 >
                 <Badge v-if="EnvironmentSettingsRules.isLinked(row)" variant="neutral">linked</Badge>
+                <Badge v-if="row.unread" variant="warning" title="Generated, and nothing reads it: no from, no link from another product">unread</Badge>
               </span>
               <span v-if="row.link && row.vault" class="flex items-center gap-1 text-xs text-muted-foreground"
                 ><Link2 :size="12" aria-hidden="true" />{{ EnvironmentSettingsRules.sourceLabel(row) }}</span
