@@ -17,9 +17,9 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 namespace Wheelhouse.Application.Deployments.Settings.Services;
 
 /// <summary>Joins what a release's services take on a target (read from the runner) with where the next deploy's render
-/// takes each value from: what it derives, the environment's secrets, Wheelhouse's settings store, a release default or
-/// the target's host file. Builds the values a deploy sends the target, records what each render held, and the keys a
-/// check weighs.</summary>
+/// takes each value from: what it derives, the environment's secrets, Wheelhouse's settings store, an owner's link to
+/// another product's key in the same environment, a release default or the target's host file. Builds the values a
+/// deploy sends the target, records what each render held, and the keys a check weighs.</summary>
 /// <remarks>
 /// An environment's secrets live in the built-in Secrets Vault, under the product's data key (or, while the fallback
 /// is on, in a standalone vault: <see cref="IEnvironmentSecrets"/>). Values never reach a log, a record or the browser:
@@ -34,7 +34,8 @@ public sealed partial class DeploymentSettingsService(
     IProductSettingKeysRepository added,
     IDeploymentRecords records,
     IDeploymentRenders renders,
-    ISettingsApplies applies)
+    ISettingsApplies applies,
+    ISettingLinksRepository links)
 {
     /// <summary>Holds the keys every render derives, which no stored setting or secret may set.</summary>
     public static readonly IReadOnlySet<string> DerivedKeys =
@@ -90,6 +91,9 @@ public sealed partial class DeploymentSettingsService(
         var services = Services(declared, stored, held ?? new Dictionary<string, SecretMetadataDto>(), adHoc);
         var named = services.SelectMany(service => service.Keys).Select(key => key.Key).ToHashSet(StringComparer.Ordinal);
         var extra = Extra(named, stored, held ?? new Dictionary<string, SecretMetadataDto>(), adHoc);
+        // The owner's links first: a release's from that reads a linked key sees it set by its source.
+        var cross = await LinksAsync(target, product, ct);
+        (services, extra) = Cross(services, extra, cross);
         services = Link(services, extra, stored, held ?? new Dictionary<string, SecretMetadataDto>());
         var pending = await applies.GetAsync(target.Id, ct);
         var label = bundle is null ? null : Text(declared, "release") ?? release ?? Label(history, bundle);
@@ -103,7 +107,7 @@ public sealed partial class DeploymentSettingsService(
         {
             Bundle = bundle,
             Extra = extra,
-            Unapplied = await UnappliedAsync(targetSlug, stored, held, ct),
+            Unapplied = await UnappliedAsync(targetSlug, stored, held, cross, ct),
             Pending = pending is null ? null : new SettingsApplyDto(targetSlug, "scheduled", pending.At, pending.RequestedBy, null, label),
         });
     }
@@ -147,7 +151,8 @@ public sealed partial class DeploymentSettingsService(
     }
 
     /// <summary>The values a deploy sends its target: the environment's stored settings, then its vault secrets over
-    /// them, with what each key was. Refused while its secrets cannot be read (a sealed or unreachable vault), so a render
+    /// them, then each key the owner linked to another product's key with that source's current value, with what each key
+    /// was. Refused while its secrets or a linked source's cannot be read (a sealed or unreachable vault), so a render
     /// never drops a secret a service had.</summary>
     /// <param name="target">The target.</param>
     /// <param name="product">The target's product.</param>
@@ -194,7 +199,59 @@ public sealed partial class DeploymentSettingsService(
                 keys[key] = new RenderedKey("secret", secret.Version, secret.Fingerprint);
             }
         }
+        if (await LinkedValuesAsync(target, product, linked, values, keys, ct) is { } refused)
+            return AppResult<RenderValues>.Fail(refused);
         return AppResult<RenderValues>.Ok(new RenderValues(JsonSerializer.SerializeToElement(new { values }), keys));
+    }
+
+    /// <summary>Puts each linked key's source value under it, over the key's own: a source's vault secret (read through
+    /// the source target's vault), else its stored setting; a source without a value leaves the key out. The error when
+    /// a source's vault cannot say or read what it holds; null once every link is rendered. @internal</summary>
+    private async Task<AppError?> LinkedValuesAsync(
+        TargetEntity target, ProductEntity product, IReadOnlySet<string>? linked,
+        SortedDictionary<string, string> values, SortedDictionary<string, RenderedKey> keys, CancellationToken ct)
+    {
+        var cross = (await LinksAsync(target, product, ct))
+            .Where(item => IsKey(item.Link.Key) && !IsDerived(item.Link.Key) && linked?.Contains(item.Link.Key) != true).ToList();
+        foreach (var item in cross)
+        {
+            values.Remove(item.Link.Key);
+            keys.Remove(item.Link.Key);
+        }
+        foreach (var group in cross.GroupBy(item => item.Source.Id))
+        {
+            var source = group.First();
+            if (!source.Known)
+                return AppErrorFactory.ExternalUnavailable(
+                    $"The vault of {source.Source.Slug} is unreachable, so {target.Slug} cannot render the keys it links there; deploy once it answers.");
+            var wanted = group.Where(item => item.Secret is not null).Select(item => item.Link.SourceKey).Distinct(StringComparer.Ordinal).ToList();
+            IReadOnlyDictionary<string, RenderedSecret> found = new Dictionary<string, RenderedSecret>(StringComparer.Ordinal);
+            if (wanted.Count > 0)
+            {
+                var read = await secrets.ReadAsync(source.Source, source.Owner, wanted, "deploy " + target.Slug + " (link)", ct);
+                if (read is not AppResult<IReadOnlyDictionary<string, RenderedSecret>>.Success { Data: var data })
+                {
+                    var error = ((AppResult<IReadOnlyDictionary<string, RenderedSecret>>.Failure)read).Error;
+                    return AppErrorFactory.ExternalUnavailable(
+                        error.Message + " " + target.Slug + " waits: it renders the keys it links to " + source.Source.Slug + " at every deploy.");
+                }
+                found = data;
+            }
+            foreach (var item in group)
+            {
+                if (found.TryGetValue(item.Link.SourceKey, out var secret))
+                {
+                    values[item.Link.Key] = secret.Value;
+                    keys[item.Link.Key] = new RenderedKey("secret", secret.Version, secret.Fingerprint);
+                }
+                else if (item.Secret is null && item.Stored is { } value)
+                {
+                    values[item.Link.Key] = value;
+                    keys[item.Link.Key] = new RenderedKey("setting", null, SecretsVaultCrypto.Digest(value));
+                }
+            }
+        }
+        return null;
     }
 
     /// <summary>The setting keys Wheelhouse would send a target, without values, for its readiness check; null when the
@@ -205,9 +262,9 @@ public sealed partial class DeploymentSettingsService(
     public Task<IReadOnlyCollection<string>?> KeysAsync(TargetEntity target, CancellationToken ct) => KeysAsync(target, null, ct);
 
     /// <summary>The setting keys Wheelhouse would send a target for <paramref name="release"/>, without values, for its
-    /// readiness check: stored settings and vault secrets, each key the release has Wheelhouse generate (a deploy makes
-    /// it before it starts), and each linked key whose source is among them or derived. Null when the vault cannot say
-    /// which secrets it holds.</summary>
+    /// readiness check: stored settings and vault secrets, each key the owner linked to another product's key that holds a
+    /// value, each key the release has Wheelhouse generate (a deploy makes it before it starts), and each linked key whose
+    /// source is among them or derived. Null when a vault cannot say which secrets it holds.</summary>
     /// <param name="target">The target.</param>
     /// <param name="release">The release bundle; null for the one the target runs.</param>
     /// <param name="ct">A cancellation token.</param>
@@ -221,6 +278,15 @@ public sealed partial class DeploymentSettingsService(
         if (await secrets.ListAsync(target, product, ct) is not { } held)
             return null;
         keys.UnionWith(held.Keys);
+        foreach (var item in await LinksAsync(target, product, ct))
+        {
+            if (!item.Known)
+                return null;
+            if (item.Secret is not null || item.Stored is not null)
+                keys.Add(item.Link.Key);
+            else
+                keys.Remove(item.Link.Key);
+        }
         var declared = await DeclarationsAsync(target, product, release, ct);
         keys.UnionWith(declared.Values.Where(key => key.Generate is not null && key.From is null).Select(key => key.Key));
         keys.UnionWith(declared.Values.Where(key => key.From is { } from && (keys.Contains(from) || IsDerived(from))).Select(key => key.Key));
@@ -311,9 +377,11 @@ public sealed partial class DeploymentSettingsService(
         return await renders.GetLatestAsync(target, ct);
     }
 
-    /// <summary>The keys whose stored value or secret version differs from the target's last render. @internal</summary>
+    /// <summary>The keys whose stored value or secret version differs from the target's last render; a linked key
+    /// compares its source's, so a source's new version marks it. @internal</summary>
     private async Task<IReadOnlyList<string>> UnappliedAsync(
-        string target, IReadOnlyDictionary<string, string> stored, IReadOnlyDictionary<string, SecretMetadataDto>? held, CancellationToken ct)
+        string target, IReadOnlyDictionary<string, string> stored, IReadOnlyDictionary<string, SecretMetadataDto>? held,
+        IReadOnlyList<LinkedSource> cross, CancellationToken ct)
     {
         if (held is null || await renders.GetLatestAsync(target, ct) is not { } last)
             return [];
@@ -324,6 +392,14 @@ public sealed partial class DeploymentSettingsService(
         foreach (var (key, secret) in held)
             if (IsKey(key) && !IsDerived(key))
                 now[key] = new RenderedKey("secret", secret.Version, string.IsNullOrEmpty(secret.Fingerprint) ? null : secret.Fingerprint);
+        foreach (var item in cross.Where(item => item.Known && IsKey(item.Link.Key) && !IsDerived(item.Link.Key)))
+        {
+            now.Remove(item.Link.Key);
+            if (item.Secret is { } secret)
+                now[item.Link.Key] = new RenderedKey("secret", secret.Version, string.IsNullOrEmpty(secret.Fingerprint) ? null : secret.Fingerprint);
+            else if (item.Stored is { } value)
+                now[item.Link.Key] = new RenderedKey("setting", null, SecretsVaultCrypto.Digest(value));
+        }
         var before = Read(last.Keys);
         // A standalone vault keeps no fingerprint here: its versions alone tell a change.
         var comparable = before.ToDictionary(pair => pair.Key,
@@ -430,7 +506,7 @@ public sealed partial class DeploymentSettingsService(
                             Secret = secret,
                             Source = set || !key.Required ? SettingSources.Linked
                                 : service.HostFile ? SettingSources.Host : SettingSources.Missing,
-                            Value = !secret && origin is { Source: SettingSources.Stored or SettingSources.Default or SettingSources.Derived }
+                            Value = !secret && origin is { Source: SettingSources.Stored or SettingSources.Default or SettingSources.Derived or SettingSources.Linked }
                                 ? origin.Value : null,
                             Type = origin?.Type ?? key.Type,
                             Format = origin?.Format ?? key.Format,
@@ -441,6 +517,74 @@ public sealed partial class DeploymentSettingsService(
             }),
         ];
     }
+
+    /// <summary>The owner's links of a target's product environment, each with its source resolved: the source's target
+    /// and product, what that environment's vault holds for the key and its stored value. A link whose source target is
+    /// gone is passed over. @internal</summary>
+    private async Task<IReadOnlyList<LinkedSource>> LinksAsync(TargetEntity target, ProductEntity product, CancellationToken ct)
+    {
+        var result = new List<LinkedSource>();
+        foreach (var group in (await links.GetAsync(product.Id, target.Environment, ct)).GroupBy(link => link.SourceTargetId))
+        {
+            if (await targets.GetByIdAsync(group.Key, ct) is not { } source || await products.GetByIdAsync(source.ProductId, ct) is not { } owner)
+                continue;
+            var stored = (await store.GetAsync(owner.Id, source.Environment, ct)).ToDictionary(row => row.Key, row => row.Value, StringComparer.Ordinal);
+            var held = await secrets.ListAsync(source, owner, ct);
+            result.AddRange(group.Select(link => new LinkedSource(
+                link, source, owner, held is not null, held?.GetValueOrDefault(link.SourceKey), stored.GetValueOrDefault(link.SourceKey))));
+        }
+        return result;
+    }
+
+    /// <summary>Marks each key the owner linked to another product's key: it takes the source's secrecy, vault metadata
+    /// and a plain source's value, and counts as set while the source holds a value (or its vault cannot say); a required
+    /// one whose source holds none is missing. A link on a key no release declares joins the extra keys. A key the
+    /// render derives, or the release links with <c>from</c>, keeps that. @internal</summary>
+    private static (List<DeploySettingsServiceDto> Services, List<DeploySettingDto> Extra) Cross(
+        List<DeploySettingsServiceDto> services, List<DeploySettingDto> extra, IReadOnlyList<LinkedSource> cross)
+    {
+        if (cross.Count == 0)
+            return (services, extra);
+        var byKey = cross.ToDictionary(item => item.Link.Key, StringComparer.Ordinal);
+        services =
+        [
+            .. services.Select(service => service with
+            {
+                Keys =
+                [
+                    .. service.Keys.Select(key => key.Derived is null && key.From is null && byKey.TryGetValue(key.Key, out var item)
+                        ? Linked(key, item, service.HostFile) : key),
+                ],
+            }),
+        ];
+        extra = [.. extra.Select(key => byKey.TryGetValue(key.Key, out var item) ? Linked(key, item, false) : key)];
+        var listed = services.SelectMany(service => service.Keys).Concat(extra).Select(key => key.Key).ToHashSet(StringComparer.Ordinal);
+        extra.AddRange(cross.Where(item => !listed.Contains(item.Link.Key) && IsKey(item.Link.Key) && !IsDerived(item.Link.Key))
+            .OrderBy(item => item.Link.Key, StringComparer.Ordinal)
+            .Select(item => Linked(new DeploySettingDto(item.Link.Key, false, false, SettingSources.Linked), item, false)));
+        return (services, extra);
+    }
+
+    /// <summary>A key as its link to another product's key makes it; never a value of a secret. @internal</summary>
+    private static DeploySettingDto Linked(DeploySettingDto key, LinkedSource item, bool hostFile)
+    {
+        var set = !item.Known || item.Secret is not null || item.Stored is not null;
+        return key with
+        {
+            Secret = item.Secret is not null || (item.Stored is null && key.Secret),
+            Source = set || !key.Required ? SettingSources.Linked : hostFile ? SettingSources.Host : SettingSources.Missing,
+            Value = item.Secret is null ? item.Stored : null,
+            Vault = item.Secret,
+            Generate = null,
+            LooksSecret = false,
+            Link = new SettingLinkDto(item.Source.Slug, item.Link.SourceKey),
+        };
+    }
+
+    /// <summary>An owner's link with its source resolved; <see cref="Known"/> is false while the source's vault cannot
+    /// say what it holds. @internal</summary>
+    private sealed record LinkedSource(
+        SettingLinkEntity Link, TargetEntity Source, ProductEntity Owner, bool Known, SecretMetadataDto? Secret, string? Stored);
 
     /// <summary>Whether a key holds a value, or will by the time a deploy renders it. @internal</summary>
     private static bool IsSet(DeploySettingDto key) => key.Source is not (SettingSources.Missing or SettingSources.Unset);

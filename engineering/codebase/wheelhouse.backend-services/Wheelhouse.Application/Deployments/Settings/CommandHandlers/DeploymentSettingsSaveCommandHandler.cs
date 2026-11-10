@@ -12,9 +12,11 @@ using WoW.Two.Sdk.Beta.Be.Mediator.Result;
 
 namespace Wheelhouse.Application.Deployments.Settings.CommandHandlers;
 
-/// <summary>Writes an environment's values in one transaction: each value is checked against its declared type, a key
-/// that reads as a secret is refused as a plain setting unless confirmed, then secrets become new vault versions and
-/// settings go to the store; a key moving between the two leaves the other. Any refusal or failure writes nothing.</summary>
+/// <summary>Writes an environment's values in one transaction: a value for a key the owner linked to another product's
+/// key is refused until it is unlinked, each value is checked against its declared type, a key that reads as a secret is
+/// refused as a plain setting unless confirmed, then secrets become new vault versions and settings go to the store; a
+/// key moving between the two leaves the other. A removal touches only the environment's own value, never a linked
+/// source's. Any refusal or failure writes nothing.</summary>
 /// <remarks>While the standalone-vault fallback is on, secrets go to that vault first and outside the transaction.</remarks>
 public sealed class DeploymentSettingsSaveCommandHandler(
     ITargetsRepository targets,
@@ -23,6 +25,7 @@ public sealed class DeploymentSettingsSaveCommandHandler(
     IEnvironmentSecrets secrets,
     IDataSession session,
     DeploymentSettingsService settings,
+    ISettingLinksRepository links,
     IIdGenerator ids)
     : ICommandHandler<DeploymentSettingsSaveCommand, AppResult<DeploySettingsSavedDto>>
 {
@@ -35,7 +38,13 @@ public sealed class DeploymentSettingsSaveCommandHandler(
             return AppResult<DeploySettingsSavedDto>.Fail(AppErrorFactory.NotFound($"Target '{request.Target}' was not found."));
 
         var declarations = await settings.DeclarationsAsync(target, product, request.Release, cancellationToken);
-        var problems = Check(request.Values, declarations);
+        var problems = new List<string>();
+        var linked = (await links.GetAsync(product.Id, target.Environment, cancellationToken)).ToDictionary(link => link.Key, StringComparer.Ordinal);
+        foreach (var value in request.Values.Where(value => !value.Remove))
+            if (linked.GetValueOrDefault(value.Key) is { } link)
+                problems.Add(value.Key + " is linked to " + ((await targets.GetByIdAsync(link.SourceTargetId, cancellationToken))?.Slug ?? "another target")
+                    + " " + link.SourceKey + "; unlink it to give it a value of its own.");
+        problems.AddRange(Check(request.Values, declarations));
         if (problems.Count > 0)
             return AppResult<DeploySettingsSavedDto>.Fail(AppErrorFactory.Validation(string.Join(" ", problems)));
 

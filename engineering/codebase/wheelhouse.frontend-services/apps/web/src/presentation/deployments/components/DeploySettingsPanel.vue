@@ -241,8 +241,8 @@ function edit(key: string, event: MouseEvent): void {
       <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
         <template v-for="item in linked" :key="item.key">
           <dt class="font-mono text-xs">{{ item.key }}</dt>
-          <dd class="min-w-0 truncate text-xs text-muted-foreground" :title="item.from">
-            from {{ item.from }}{{ item.value !== null ? ` · ${item.value}` : "" }}
+          <dd class="min-w-0 truncate text-xs text-muted-foreground" :title="item.target ? `${item.target} · ${item.from}` : item.from">
+            {{ item.target ? `linked to ${item.target} · ${item.from}` : `from ${item.from}` }}{{ item.value !== null ? ` · ${item.value}` : "" }}
           </dd>
         </template>
       </dl>

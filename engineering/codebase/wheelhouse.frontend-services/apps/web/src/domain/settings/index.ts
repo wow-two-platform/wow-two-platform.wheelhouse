@@ -14,7 +14,7 @@ export type {
 } from "./models";
 export { SettingTypes } from "./SettingTypes";
 export { RootKeyRules } from "./RootKeyRules";
-export { EnvironmentSettingsRules, type EnvironmentKey } from "./EnvironmentSettingsRules";
+export { EnvironmentSettingsRules, type EnvironmentKey, type LinkableTarget } from "./EnvironmentSettingsRules";
 export type {
   DeploySettingsVault,
   PendingApply,
@@ -22,5 +22,6 @@ export type {
   SecretFormat,
   SecretMeta,
   SettingGenerate,
+  SettingLink,
   SettingType,
 } from "../deployments/models/DeploySettings";

@@ -24,11 +24,12 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@wow-two-beta/fe/presentation/display";
-import { useRegenerateSecret, useSettingKeys, useSettingSaver } from "@/application/settings";
+import { useRegenerateSecret, useSettingKeys, useSettingLinks, useSettingSaver } from "@/application/settings";
 import { EnvironmentSettingsRules, type EnvironmentKey } from "@/domain/settings";
 import { DeleteConfirm } from "@/presentation/common/components";
 import { failureReason } from "@/integration/common";
 import AddKeyModal from "./AddKeyModal.vue";
+import LinkKeyModal from "./LinkKeyModal.vue";
 import SecretHistoryModal from "./SecretHistoryModal.vue";
 import SecretValueModal from "./SecretValueModal.vue";
 
@@ -36,7 +37,9 @@ import SecretValueModal from "./SecretValueModal.vue";
  * The environment's secrets: each declared or held key with its version, who changed it and when, its fingerprint and
  * expiry — never a value. A new value writes the next version with a note; History shows every version and restores
  * one; Remove stops it rendering and keeps its versions. A secret the release has Wheelhouse make offers Regenerate
- * instead of a typed value: a new version the next deploy applies. A linked secret shows its source, read-only.
+ * instead of a typed value: a new version the next deploy applies. A linked secret shows its source, read-only; one
+ * linked to another product's key shows that key's version and fingerprint, and Unlink gives it back its own. Link takes
+ * a secret from another product's key in the same environment, such as a client secret that product's vault generates.
  */
 defineOptions({ name: "SecretsEditor" });
 const props = defineProps<SecretsEditorProps>();
@@ -44,7 +47,9 @@ defineSlots<{}>();
 
 const saver = useSettingSaver(() => props.plan.target);
 const keys = useSettingKeys();
+const links = useSettingLinks();
 const regenerate = useRegenerateSecret();
+const linking = ref<string | null>(null);
 const rows = computed(() => EnvironmentSettingsRules.secrets(props.plan));
 /** Why the last regeneration failed, by key: the runner's error line, never a value. */
 const failures = ref<Record<string, string>>({});
@@ -94,6 +99,9 @@ const adding = ref(false);
                 >
                 <Badge v-if="EnvironmentSettingsRules.isLinked(row)" variant="neutral">linked</Badge>
               </span>
+              <span v-if="row.link && row.vault" class="flex items-center gap-1 text-xs text-muted-foreground"
+                ><Link2 :size="12" aria-hidden="true" />{{ EnvironmentSettingsRules.sourceLabel(row) }}</span
+              >
               <span v-if="failures[row.key]" class="text-xs text-danger" role="alert">{{ failures[row.key] }}</span>
             </span>
           </TableCell>
@@ -170,6 +178,25 @@ const adding = ref(false);
                 :question="`Remove the key ${row.key} from ${props.product}?`"
                 :on-confirm="() => keys.remove.mutateAsync({ product: props.product, key: row.key })"
               />
+              <Button
+                v-if="EnvironmentSettingsRules.canLink(row)"
+                variant="ghost"
+                tone="neutral"
+                size="sm"
+                :aria-label="`Link ${row.key} to another product's key`"
+                title="Take the value of another product's key"
+                @click="linking = row.key"
+              >
+                <Link2 :size="14" />
+              </Button>
+            </div>
+            <div v-else-if="row.link" class="flex justify-end gap-1">
+              <DeleteConfirm
+                size="sm"
+                label="Unlink"
+                :question="`Unlink ${row.key} from ${row.link.target} · ${row.link.key}? It renders its own value again, if it has one.`"
+                :on-confirm="() => links.unlink.mutateAsync({ target: props.plan.target, key: row.key })"
+              />
             </div>
           </TableCell>
         </TableRow>
@@ -189,5 +216,11 @@ const adding = ref(false);
       @update:open="(open: boolean) => !open && (viewing = null)"
     />
     <AddKeyModal v-model:open="adding" :product="props.product" :secret="true" />
+    <LinkKeyModal
+      :open="linking !== null"
+      :plan="props.plan"
+      :setting-key="linking"
+      @update:open="(open: boolean) => !open && (linking = null)"
+    />
   </div>
 </template>

@@ -36,6 +36,7 @@ const DeploySettingSchema = z.object({
     }),
   ),
   from: nullable(z.string()),
+  link: nullable(z.object({ target: z.string(), key: z.string() })),
 });
 
 /** The settings plan of a release on a target; secret values never travel, so none is decoded. */
@@ -111,6 +112,9 @@ export const SecretHistorySchema = z.object({
 
 /** A restored version. */
 export const SecretWrittenSchema = z.object({ key: z.string(), version: z.number().int(), fingerprint: z.string() });
+
+/** The source a key was linked to: a target of another product and its key; never a value. */
+export const SettingLinkSchema = z.object({ target: z.string(), key: z.string() });
 
 /** A key the owner added, as the plan lists it. */
 export const AddedKeySchema = DeploySettingSchema;

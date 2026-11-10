@@ -28,6 +28,8 @@ public static class SettingSources
     /// one before it starts, so it never waits for it.</summary>
     public const string Generate = "generate";
 
-    /// <summary>A linked key (<c>from</c>): the render gives it its source's value, so it holds none of its own.</summary>
+    /// <summary>A linked key: the release's <c>from</c> (the render gives it its source's value, so it holds none of its
+    /// own) or the owner's link to another product's key in the same environment (the render sends that key's current
+    /// value, over one of its own).</summary>
     public const string Linked = "linked";
 }

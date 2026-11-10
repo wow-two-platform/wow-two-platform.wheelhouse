@@ -13,17 +13,19 @@ import { computed, ref, watch } from "vue";
 import { Link2, Plus, Sparkles } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge, EmptyState } from "@wow-two-beta/fe/presentation/display";
-import { useSettingKeys, useSettingSaver } from "@/application/settings";
+import { useSettingKeys, useSettingLinks, useSettingSaver } from "@/application/settings";
 import { EnvironmentSettingsRules, type EnvironmentKey } from "@/domain/settings";
 import { DeleteConfirm } from "@/presentation/common/components";
 import AddKeyModal from "./AddKeyModal.vue";
+import LinkKeyModal from "./LinkKeyModal.vue";
 import SettingField from "./SettingField.vue";
 
 /**
  * The environment's plain settings, every key once: the ones its release declares, with their type and the services
  * that take them, and the ones the owner added. Each field saves as soon as it is confirmed; a set value can be reset
  * to the release's default, and an added key removed. A linked key shows its source and the source's value, read-only:
- * the source is the one to change. Secrets live on the Secrets tab.
+ * the source is the one to change. Link takes a key's value from another product's key in the same environment, and
+ * Unlink gives it back its own. Secrets live on the Secrets tab.
  */
 defineOptions({ name: "SettingsEditor" });
 const props = defineProps<SettingsEditorProps>();
@@ -31,7 +33,9 @@ defineSlots<{}>();
 
 const saver = useSettingSaver(() => props.plan.target);
 const keys = useSettingKeys();
+const links = useSettingLinks();
 const adding = ref(false);
+const linking = ref<string | null>(null);
 const rows = computed(() => EnvironmentSettingsRules.settings(props.plan));
 const derived = computed(() => EnvironmentSettingsRules.derived(props.plan));
 
@@ -91,6 +95,24 @@ async function save(row: EnvironmentKey, value: string, confirmPlain: boolean): 
           <Badge v-if="EnvironmentSettingsRules.isLinked(row)" variant="neutral">linked</Badge>
           <Badge v-if="row.unapplied" variant="info">changed</Badge>
           <Badge v-if="row.adHoc" variant="neutral">added</Badge>
+          <Button
+            v-if="EnvironmentSettingsRules.canLink(row)"
+            variant="ghost"
+            tone="neutral"
+            size="sm"
+            :aria-label="`Link ${row.key} to another product's key`"
+            title="Take the value of another product's key"
+            @click="linking = row.key"
+          >
+            <template #leading><Link2 :size="14" /></template>Link
+          </Button>
+          <DeleteConfirm
+            v-if="row.link"
+            size="sm"
+            label="Unlink"
+            :question="`Unlink ${row.key} from ${row.link.target} · ${row.link.key}? It renders its own value again, if it has one.`"
+            :on-confirm="() => links.unlink.mutateAsync({ target: props.plan.target, key: row.key })"
+          />
           <DeleteConfirm
             v-if="row.source === 'stored' && !EnvironmentSettingsRules.isLinked(row)"
             size="sm"
@@ -120,5 +142,11 @@ async function save(row: EnvironmentKey, value: string, confirmPlain: boolean): 
       </dl>
     </details>
     <AddKeyModal v-model:open="adding" :product="props.product" :secret="false" />
+    <LinkKeyModal
+      :open="linking !== null"
+      :plan="props.plan"
+      :setting-key="linking"
+      @update:open="(open: boolean) => !open && (linking = null)"
+    />
   </div>
 </template>

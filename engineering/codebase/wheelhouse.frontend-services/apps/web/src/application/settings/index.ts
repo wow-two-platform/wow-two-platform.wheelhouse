@@ -11,5 +11,6 @@ export {
   useSecretExpiry,
   useSecretHistory,
   useSettingKeys,
+  useSettingLinks,
   useVaultOperations,
 } from "./useEnvironmentSettings";

@@ -1,6 +1,6 @@
 import { toValue, type MaybeRefOrGetter } from "vue";
 import { useAppMutation, useAppQuery } from "@/bootstrap/query";
-import type { SettingKeyRequest } from "@/domain/settings";
+import type { SettingKeyRequest, SettingLink } from "@/domain/settings";
 import { deploySettingsApi } from "@/integration/deployments/settingsApi";
 import { vaultApi } from "@/integration/secrets/vaultApi";
 import { SettingsKeys } from "./SettingsKeys";
@@ -76,6 +76,22 @@ export function useSecretExpiry() {
     invalidates: ({ target }) => [SettingsKeys.of(target), SettingsKeys.vault],
     meta: { suppressGlobalError: true },
   });
+}
+
+/** Links a key to another product's key in the same environment, or unlinks it; every plan reads again. */
+export function useSettingLinks() {
+  const link = useAppMutation({
+    mutationFn: ({ target, key, source }: { target: string; key: string; source: SettingLink }, { signal }) =>
+      deploySettingsApi.link(target, key, source, signal),
+    invalidates: () => [["deployments", "settings"]],
+    meta: { suppressGlobalError: true },
+  });
+  const unlink = useAppMutation({
+    mutationFn: ({ target, key }: { target: string; key: string }, { signal }) => deploySettingsApi.unlink(target, key, signal),
+    invalidates: () => [["deployments", "settings"]],
+    meta: { suppressGlobalError: true },
+  });
+  return { link, unlink };
 }
 
 /** Adds a key to a product, or removes one the owner added; every plan reads again. */

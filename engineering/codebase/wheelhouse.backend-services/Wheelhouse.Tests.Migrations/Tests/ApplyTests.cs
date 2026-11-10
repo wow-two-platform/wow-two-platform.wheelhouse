@@ -35,6 +35,7 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         "032-root-key-checks",
         "033-product-manifest-source",
         "034-server-console-url",
+        "035-setting-links",
     ];
 
     /// <summary>The migrations after <paramref name="ordinal"/>, as the migrator labels them.</summary>
@@ -914,6 +915,52 @@ public sealed class ApplyTests(MigratorPostgresFixture fixture)
         (await ReadColumnsAsync(connection, "servers")).Select(column => column.Name).Should().NotContain("console_url");
         (await Scalar(connection, "SELECT count(*) FROM servers")).Should().Be(2L, "rollback drops only the column");
         Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("034-server-console-url"));
+    }
+
+    [Fact]
+    public async Task SettingLinks_ShouldHoldOneLinkPerKeyAndEnvironment_GoWithTheProductAndTheSource_AndRollBack()
+    {
+        await fixture.ResetAsync();
+        await using var migrator = CreateMigrator(o => o.AllowRollback = true);
+        await using (var cleanup = await migrator.OpenConnectionAsync())
+            await Execute(cleanup, "DROP SCHEMA IF EXISTS vault CASCADE"); // the fixture's reset drops public only
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None));
+        await using var connection = await migrator.OpenConnectionAsync();
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000001", "ocharo"));
+        await Execute(connection, InsertProduct("00000000-0000-0000-0000-000000000002", "events"));
+        await Execute(connection,
+            "INSERT INTO servers (id, slug, name, provider, host, region, ssh_user, ssh_port, ingress, created_at_utc, updated_at_utc) " +
+            "VALUES ('00000000-0000-0000-0000-0000000000a1', 'hel1', 'Helsinki', 'hetzner', 'vps.example.net', 'hel1', " +
+            "'deploy', 22, '{}'::jsonb, now(), now())");
+        const string target =
+            "INSERT INTO targets (id, slug, product_id, server_id, environment, network, root, settings, smoke_checks, " +
+            "sites, created_at_utc, updated_at_utc) VALUES ('00000000-0000-0000-0000-0000000000b1', 'ocharo-dev', " +
+            "'00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a1', 'dev', " +
+            "'platform', '/srv/wheelhouse', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now(), now())";
+        const string link =
+            "INSERT INTO setting_links (product_id, environment, key, source_target_id, source_key, created_by, created_at_utc) " +
+            "VALUES ('00000000-0000-0000-0000-000000000002', '{0}', 'Scfd:ClientSecret', '00000000-0000-0000-0000-0000000000b1', " +
+            "'Identity:Server:Clients:8:ClientSecret', 'owner', now())";
+        await Execute(connection, target);
+        await Execute(connection, string.Format(link, "dev"));
+        await Execute(connection, string.Format(link, "prod"));
+        var again = async () => await Execute(connection, string.Format(link, "dev"));
+        await again.Should().ThrowAsync<Npgsql.PostgresException>("a key links once per environment");
+        await Execute(connection, "DELETE FROM targets");
+        (await Scalar(connection, "SELECT count(*) FROM setting_links")).Should().Be(0L, "a link goes with its source's target");
+        await Execute(connection, target);
+        await Execute(connection, string.Format(link, "dev"));
+        await Execute(connection, "DELETE FROM products WHERE slug = 'events'");
+        (await Scalar(connection, "SELECT count(*) FROM setting_links")).Should().Be(0L, "a link goes with its product");
+
+        // Both scripts re-run cleanly over the state they leave.
+        await Execute(connection, MigrationSql("035-setting-links", "Apply.sql"));
+        var before = Ordinals[Array.IndexOf(Migrations, "035-setting-links") - 1];
+        Unwrap(await migrator.Runner.RollbackAsync(targetOrdinal: before, CancellationToken.None));
+        await Execute(connection, MigrationSql("035-setting-links", "Rollback.sql"));
+        (await migrator.HasTableAsync("setting_links")).Should().BeFalse();
+        (await Scalar(connection, "SELECT count(*) FROM targets")).Should().Be(1L, "rollback drops only the links");
+        Unwrap(await migrator.Runner.ApplyPendingAsync("test", CancellationToken.None)).Should().Equal(From("035-setting-links"));
     }
 
     /// <summary>The text of one embedded migration script.</summary>

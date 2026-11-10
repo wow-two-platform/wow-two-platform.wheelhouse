@@ -33,6 +33,7 @@ export type {
   DeploySettingsService,
   DeploySettingValue,
   SettingGenerate,
+  SettingLink,
 } from './models/DeploySettings';
 export {
   DeploySettingsRules,

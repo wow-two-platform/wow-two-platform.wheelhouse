@@ -133,6 +133,10 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
     /// <summary>What the <c>settings</c> read answers for any target: each service's declared keys; none by default.</summary>
     public object? Declarations { get; set; }
 
+    /// <summary>What the <c>settings</c> read answers for one target, by slug, over <see cref="Declarations"/>: two products'
+    /// releases declaring different keys.</summary>
+    public Dictionary<string, object> TargetDeclarations { get; } = [];
+
     /// <summary>Every <c>generate-setting</c> call, in order: target, release, service and key.</summary>
     public List<(string Target, string Release, string Service, string Key)> Generations { get; } = [];
 
@@ -156,7 +160,7 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
     public IReadOnlyCollection<string>? LastCheckKeys { get; private set; }
 
     public Task<AppResult<JsonElement>> SettingsAsync(string target, string release, CancellationToken ct) =>
-        Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(Declarations ?? new
+        Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(TargetDeclarations.GetValueOrDefault(target) ?? Declarations ?? new
         {
             targetId = target, release, services = Array.Empty<object>(),
         })));

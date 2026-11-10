@@ -47,6 +47,9 @@ public sealed class WheelhouseDbContext(DbContextOptions<WheelhouseDbContext> op
     /// <summary>Gets the setting and secret keys owners added to products in the console.</summary>
     public DbSet<ProductSettingKeyEntity> ProductSettingKeys => Set<ProductSettingKeyEntity>();
 
+    /// <summary>Gets owners' links from a product environment's key to another product's key in the same environment.</summary>
+    public DbSet<SettingLinkEntity> SettingLinks => Set<SettingLinkEntity>();
+
     /// <summary>Gets what each deploy's settings render held, by fingerprint and without values.</summary>
     public DbSet<DeploymentRenderEntity> DeploymentRenders => Set<DeploymentRenderEntity>();
 

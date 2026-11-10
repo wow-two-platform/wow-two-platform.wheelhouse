@@ -295,6 +295,18 @@ own targets keep their hand-placed files), into `<root>/config/<product>-<enviro
   names the key, version, fingerprint and `generated`, never the value; the audit detail reads `<key> secret v<n>
   generated`. The deploy dialog's secret fields and the Secrets tab's new-version dialog offer it as Generate, and the
   field then reads "set in the vault".
+- An owner links a key to another product's key in the same environment (v0.15, `setting_links`, one per product,
+  environment and key): `PUT …/settings/{key}/link` (action `settings`) `{ sourceTarget, sourceKey }`, `DELETE` to
+  unlink; audited as `settings.link` / `settings.unlink` with subject `<target>/<key>` and the source
+  `<sourceTarget>/<sourceKey>`, never a value. Each render puts the source's current value under the key, over its own
+  stored value or secret: a source vault secret read through the source target's vault (a source vault that cannot be
+  read holds the deploy like the target's own), else its stored setting; a source without a value leaves the key out.
+  The plan reads the key as `linked` with `link` `{ target, key }`, the source's secrecy and vault metadata, and a plain
+  source's value; a required one whose source holds nothing is `missing`, and a source's new version marks it
+  `unapplied`. Refused: a missing source target, the same product (the release's `from` links inside one), another
+  environment, a key that is no configuration path or is derived, a key the release links with `from`, and a second
+  hop (a source key that is itself linked, or a key another link takes as its source). A value saved to a linked key,
+  and a regeneration of it, is refused until it is unlinked; `remove` takes out only the key's own value.
 - Products declare typed keys in `deploy.yml` (`settings.keys`: `text`, `number`, `boolean`, `choice` with values,
   `url`, `cron`, `date` with a format, `email`; required or optional with a default for non-secrets; pipelines
   `v0.10.0`). The bundle carries them as `settings.<service>.{optional, secrets, allowed, types}`, which the runner

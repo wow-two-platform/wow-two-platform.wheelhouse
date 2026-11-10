@@ -1,4 +1,4 @@
-import type { DeploySettings, DeploySettingValue } from '@/domain/deployments';
+import type { DeploySettings, DeploySettingValue, SettingLink } from '@/domain/deployments';
 import type { SavedSetting, SecretHistory, SettingKeyRequest, SettingsApply } from '@/domain/settings';
 import { requestData, requestEmpty } from '@/integration/common';
 import {
@@ -7,6 +7,7 @@ import {
   DeploySettingsSchema,
   SecretHistorySchema,
   SecretWrittenSchema,
+  SettingLinkSchema,
   SettingsApplySchema,
 } from './settingsSchemas';
 
@@ -46,6 +47,20 @@ export const deploySettingsApi = {
   /** Drops the target's scheduled apply. */
   cancelApply: (target: string, signal?: AbortSignal) =>
     requestEmpty(`${base(target)}/settings/apply`, { signal, method: 'DELETE', action: 'settings' }),
+
+  /** Links a key of the target's environment to another product's key in the same environment; each deploy renders the
+   *  source's current value under it. */
+  link: (target: string, key: string, source: SettingLink, signal?: AbortSignal) =>
+    requestData<SettingLink>(`${base(target)}/settings/${segment(key)}/link`, SettingLinkSchema, {
+      signal,
+      method: 'PUT',
+      action: 'settings',
+      body: { sourceTarget: source.target, sourceKey: source.key },
+    }),
+
+  /** Removes a key's link; the key renders its own value again, and the source keeps everything it holds. */
+  unlink: (target: string, key: string, signal?: AbortSignal) =>
+    requestEmpty(`${base(target)}/settings/${segment(key)}/link`, { signal, method: 'DELETE', action: 'settings' }),
 
   /** A secret's versions, never a value. */
   versions: (target: string, key: string, signal?: AbortSignal) =>

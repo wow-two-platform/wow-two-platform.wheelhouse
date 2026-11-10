@@ -38,4 +38,10 @@ public sealed record DeploySettingDto(
     /// <summary>Gets the configuration path a linked key takes its value from, per environment; null for a key of its
     /// own. A linked key is read-only: it takes its source's type and secrecy, and a save to it is refused.</summary>
     public string? From { get; init; }
+
+    /// <summary>Gets the other product's key the owner linked this key to, in the same environment; null for a key not
+    /// linked so. Each deploy renders the source's current value under this key, which wins over a value of its own;
+    /// <see cref="Secret"/> and <see cref="Vault"/> then describe the source, and a save to the key is refused until it is
+    /// unlinked.</summary>
+    public SettingLinkDto? Link { get; init; }
 }

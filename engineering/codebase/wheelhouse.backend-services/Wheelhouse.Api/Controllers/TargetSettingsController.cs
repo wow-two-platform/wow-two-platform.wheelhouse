@@ -17,8 +17,9 @@ using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 
 namespace Wheelhouse.Api.Controllers;
 
-/// <summary>Exposes what an environment's settings and secrets do after a save: applying them now or at a set time, and
-/// each secret's versions, restore, regeneration and expiry. Signed-in owner only; values never travel back.</summary>
+/// <summary>Exposes what an environment's settings and secrets do after a save: applying them now or at a set time, a
+/// key's link to another product's key, and each secret's versions, restore, regeneration and expiry. Signed-in owner
+/// only; values never travel back.</summary>
 [ApiController]
 [Route("api/deployments/targets/{target}")]
 [Authorize(Policy = AuthConfigurationExtensions.OwnerSessionPolicy)]
@@ -42,6 +43,26 @@ public sealed class TargetSettingsController(ISender sender, IActorContext actor
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     public async Task<IActionResult> CancelApply([RegularExpression(Slug)] string target, CancellationToken ct) =>
         this.ToActionResult(await sender.SendAsync(new SettingsApplyCancelCommand(target), ct), _ => NoContent());
+
+    /// <summary>Links a setting key of the target's product environment to another product's key in the same
+    /// environment: each deploy renders the source's current value under the key, over a value of its own. Replaces the
+    /// key's earlier link; audited by both keys, never a value.</summary>
+    [HttpPut("settings/{key}/link")]
+    [RequireActionHeader("settings")]
+    [ProducesResponseType<ApiResponse<SettingLinkDto>>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> Link(
+        [RegularExpression(Slug)] string target, [RegularExpression(FormatPatternConstants.ConfigurationKey)] string key, SettingLinkRequest request,
+        CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(
+            new SettingLinkSetCommand(target, key, request.SourceTarget, request.SourceKey, actor.Actor), ct));
+
+    /// <summary>Removes a key's link; the key renders its own value again, and the source keeps everything it holds.</summary>
+    [HttpDelete("settings/{key}/link")]
+    [RequireActionHeader("settings")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> Unlink(
+        [RegularExpression(Slug)] string target, [RegularExpression(FormatPatternConstants.ConfigurationKey)] string key, CancellationToken ct) =>
+        this.ToActionResult(await sender.SendAsync(new SettingLinkRemoveCommand(target, key), ct), _ => NoContent());
 
     /// <summary>Gets a secret's versions: who, when, fingerprint and note; never a value.</summary>
     [HttpGet("secrets/{key}/versions")]

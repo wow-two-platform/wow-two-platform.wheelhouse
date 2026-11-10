@@ -126,10 +126,11 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddScoped<IDeployFreezesRepository, DeployFreezesRepository>();
         builder.Services.AddScoped<IFleetRolloutsRepository, FleetRolloutsRepository>();
         builder.Services.AddScoped<IVitalsHistory, EfVitalsHistory>();
-        // The built-in Secrets Vault's tables (schema vault), the keys owners add, renders and scheduled applies.
+        // The built-in Secrets Vault's tables (schema vault), the keys owners add and link, renders and scheduled applies.
         builder.Services.AddScoped<ISecretsVaultStore, SecretsVaultStore>();
         builder.Services.AddScoped<IVaultRootKeyVerifications, VaultRootKeyVerificationsRepository>();
         builder.Services.AddScoped<IProductSettingKeysRepository, ProductSettingKeysRepository>();
+        builder.Services.AddScoped<ISettingLinksRepository, SettingLinksRepository>();
         builder.Services.AddScoped<IDeploymentRenders, DeploymentRendersRepository>();
         builder.Services.AddScoped<ISettingsApplies, SettingsAppliesRepository>();
         builder.Services.AddScoped<IStandaloneVaultReader, StandaloneVaultDatabaseReader>();

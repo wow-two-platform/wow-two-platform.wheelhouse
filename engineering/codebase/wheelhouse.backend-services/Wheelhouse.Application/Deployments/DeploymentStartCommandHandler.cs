@@ -93,7 +93,8 @@ public sealed class DeploymentStartCommandHandler(
         var missing = planned.Services
             .Where(service => !service.HostFile)
             .Select(service => (service.Name, Keys: service.Keys.Where(key => key.Source == SettingSources.Missing)
-                .Select(key => key.From is { } from ? key.Key + " (from " + from + ")" : key.Key).ToList()))
+                .Select(key => key.From is { } from ? key.Key + " (from " + from + ")"
+                    : key.Link is { } link ? key.Key + " (linked to " + link.Target + " " + link.Key + ")" : key.Key).ToList()))
             .Where(service => service.Keys.Count > 0)
             .ToList();
         var extra = planned.Extra.Where(key => key.Source == SettingSources.Missing).Select(key => key.Key).ToList();

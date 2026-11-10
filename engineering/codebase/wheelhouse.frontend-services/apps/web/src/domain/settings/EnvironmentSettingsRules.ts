@@ -1,5 +1,6 @@
-import type { DeploySetting, DeploySettings, DeploySettingSource, SettingGenerate } from "../deployments/models/DeploySettings";
+import type { DeploySetting, DeploySettings, DeploySettingSource, SettingGenerate, SettingLink } from "../deployments/models/DeploySettings";
 import type { SettingChange } from "./models";
+import { SettingTypes } from "./SettingTypes";
 
 /** One key of an environment as the Settings and Secrets editors list it, once whatever the services that take it. */
 export interface EnvironmentKey extends DeploySetting {
@@ -12,6 +13,16 @@ export interface EnvironmentKey extends DeploySetting {
 const sourceOrder: Record<DeploySettingSource, number> = {
   missing: 0, host: 1, stored: 2, vault: 2, generate: 2, default: 3, linked: 3, unset: 4, derived: 5,
 };
+
+/** The keys every render derives, which take no value and no link. */
+const derivedKeys = new Set(["allowedhosts", "deployment:trustedproxies"]);
+
+/** A target as a link's picker reads it: its slug, product and environment. */
+export interface LinkableTarget {
+  id: string;
+  product: string;
+  environment: string;
+}
 
 /** Pure rules of an environment's Settings and Secrets editors. */
 export const EnvironmentSettingsRules = {
@@ -30,6 +41,7 @@ export const EnvironmentSettingsRules = {
           known.secret ||= key.secret;
           known.generate ??= key.generate;
           known.from ??= key.from;
+          known.link ??= key.link;
           if (sourceOrder[key.source] < sourceOrder[known.source]) known.source = key.source;
           continue;
         }
@@ -66,14 +78,59 @@ export const EnvironmentSettingsRules = {
     return key.secret || key.source === "vault";
   },
 
-  /** Whether a key takes another key's value: it is read-only in every editor, and a save to it is refused. */
-  isLinked(key: Pick<DeploySetting, "from">): boolean {
-    return Boolean(key.from);
+  /** Whether a key takes another key's value — the release's `from`, or the owner's link to another product's key: it is
+   *  read-only in every editor, and a save to it is refused. */
+  isLinked(key: Pick<DeploySetting, "from"> & Partial<Pick<DeploySetting, "link">>): boolean {
+    return Boolean(key.from || key.link);
+  },
+
+  /** Whether a key is one each deploy derives: `AllowedHosts`, `Deployment:TrustedProxies` or a `Sites:<site>:Url`. */
+  isDerived(key: string): boolean {
+    return derivedKeys.has(key.toLowerCase()) || /^Sites:[^:]+:Url$/i.test(key);
+  },
+
+  /** Whether the owner may link a key to another product's: neither derived nor linked already. */
+  canLink(key: Pick<DeploySetting, "key" | "from" | "source"> & Partial<Pick<DeploySetting, "link">>): boolean {
+    return !key.from && !key.link && key.source !== "derived" && !EnvironmentSettingsRules.isDerived(key.key);
+  },
+
+  /** A link's source in the editors' words. */
+  linkLabel(link: SettingLink): string {
+    return `linked to ${link.target} · ${link.key}`;
+  },
+
+  /** The targets a key of a plan may link to: another product's, in the plan's environment, by slug. */
+  linkTargets(targets: readonly LinkableTarget[] | null | undefined, plan: Pick<DeploySettings, "product" | "environment">): string[] {
+    return (targets ?? [])
+      .filter((target) => target.product !== plan.product && target.environment === plan.environment)
+      .map((target) => target.id)
+      .sort((a, b) => a.localeCompare(b));
+  },
+
+  /** The keys of a source target's plan a link may take, matching the typed text: neither derived nor linked
+   *  themselves, since links go one hop; secrets first, at most 50. */
+  sourceKeys(plan: DeploySettings | null | undefined, typed: string): EnvironmentKey[] {
+    const text = typed.trim().toLowerCase();
+    return EnvironmentSettingsRules.keys(plan)
+      .filter((key) => EnvironmentSettingsRules.canLink(key) && (!text || key.key.toLowerCase().includes(text)))
+      .sort((a, b) => Number(EnvironmentSettingsRules.isSecret(b)) - Number(EnvironmentSettingsRules.isSecret(a)) || a.key.localeCompare(b.key))
+      .slice(0, 50);
+  },
+
+  /** Why a link cannot be saved yet, or null; the server's answer still decides the rest (same product, environment,
+   *  a second hop). */
+  linkProblem(sourceTarget: string | null, sourceKey: string): string | null {
+    const key = sourceKey.trim();
+    if (!sourceTarget) return "Pick the target whose key it takes.";
+    if (!key) return "Name the source key.";
+    if (!SettingTypes.isKey(key)) return "A source key is a configuration path such as Section:Key.";
+    if (EnvironmentSettingsRules.isDerived(key)) return `${key} is derived at each deploy of its own product; link to a key it holds.`;
+    return null;
   },
 
   /** Whether Wheelhouse makes the key's value, so the owner regenerates it rather than typing one. */
-  canRegenerate(key: Pick<DeploySetting, "generate" | "from">): boolean {
-    return Boolean(key.generate) && !key.from;
+  canRegenerate(key: Pick<DeploySetting, "generate" | "from"> & Partial<Pick<DeploySetting, "link">>): boolean {
+    return Boolean(key.generate) && !key.from && !key.link;
   },
 
   /** How Wheelhouse makes a key's value, in a few words: `32 random bytes, base64url` or `command: …`. */
@@ -84,7 +141,8 @@ export const EnvironmentSettingsRules = {
   },
 
   /** The words a key's source reads as in the editors. */
-  sourceLabel(key: Pick<DeploySetting, "source" | "default"> & Partial<Pick<DeploySetting, "from">>): string {
+  sourceLabel(key: Pick<DeploySetting, "source" | "default"> & Partial<Pick<DeploySetting, "from" | "link">>): string {
+    if (key.link) return EnvironmentSettingsRules.linkLabel(key.link) + (key.source === "missing" ? ", not set yet" : "");
     switch (key.source) {
       case "linked":
         return `from ${key.from ?? "another key"}`;

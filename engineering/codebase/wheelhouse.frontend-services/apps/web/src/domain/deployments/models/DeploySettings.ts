@@ -33,6 +33,13 @@ export interface SecretMeta {
   expiry: "expired" | "7d" | "30d" | null;
 }
 
+/** The other product's key an owner linked a key to, in the same environment: a target of that product and the key.
+ *  Names only; the source's value never travels. */
+export interface SettingLink {
+  target: string;
+  key: string;
+}
+
 /** One setting a service takes on a target; a secret's value is never sent to the console. */
 export interface DeploySetting {
   key: string;
@@ -58,6 +65,9 @@ export interface DeploySetting {
   generate: SettingGenerate | null;
   /** The key a linked key takes its value from; such a key is read-only. */
   from: string | null;
+  /** The other product's key the owner linked this key to: each deploy renders that key's current value here, so the
+   *  key is read-only until unlinked, and `secret` and `vault` describe the source. */
+  link: SettingLink | null;
 }
 
 /** One service's settings file on a target. */

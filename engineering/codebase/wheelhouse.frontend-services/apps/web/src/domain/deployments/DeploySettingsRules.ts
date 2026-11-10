@@ -39,7 +39,10 @@ export interface SettingsSections {
 /** A key that takes another key's value, as the dialog's summary lists it: read-only, never asked for. */
 export interface LinkedSetting {
   key: string;
+  /** The source key: in the same product (the release's `from`), or another product's (`target`). */
   from: string;
+  /** The other product's target the owner linked the key to; null for the release's `from`. */
+  target: string | null;
   secret: boolean;
   /** A plain source's value, when known; never a secret's. */
   value: string | null;
@@ -89,7 +92,7 @@ export const DeploySettingsRules = {
     for (const service of settings?.services ?? []) {
       for (const key of service.keys) {
         // A linked key takes its source's value: the source is the one asked for.
-        if (key.from) continue;
+        if (key.from || key.link) continue;
         const missing = key.required && key.source === "missing" && !service.hostFile;
         const optional = settings!.firstDeploy && !key.required && (key.source === "default" || key.source === "unset");
         if (missing || optional) merge(prompted, service.name, key);
@@ -98,17 +101,25 @@ export const DeploySettingsRules = {
     return [...prompted.values()].sort(byRequired);
   },
 
-  /** The linked keys, once each: each takes its source's value at every deploy, so the dialog only names them. */
+  /** The linked keys, once each — the release's `from` and the owner's links to another product's key, which a key no
+   *  service declares may carry too: each takes its source's value at every deploy, so the dialog only names them. */
   linked(settings: DeploySettings | null | undefined): LinkedSetting[] {
     const linked = new Map<string, LinkedSetting>();
-    for (const service of settings?.services ?? []) {
-      for (const key of service.keys) {
-        if (!key.from) continue;
-        const known = linked.get(key.key);
-        if (known) known.services.push(service.name);
-        else linked.set(key.key, { key: key.key, from: key.from, secret: key.secret, value: key.secret ? null : key.value, services: [service.name] });
+    const add = (service: string | null, key: DeploySetting) => {
+      const from = key.link?.key ?? key.from;
+      if (!from) return;
+      const known = linked.get(key.key);
+      if (known) {
+        if (service) known.services.push(service);
+        return;
       }
-    }
+      linked.set(key.key, {
+        key: key.key, from, target: key.link?.target ?? null, secret: key.secret, value: key.secret ? null : key.value,
+        services: service ? [service] : [],
+      });
+    };
+    for (const service of settings?.services ?? []) for (const key of service.keys) add(service.name, key);
+    for (const key of settings?.extra ?? []) add(null, key);
     return [...linked.values()].sort((a, b) => a.key.localeCompare(b.key));
   },
 
@@ -116,7 +127,7 @@ export const DeploySettingsRules = {
   generated(settings: DeploySettings | null | undefined): string[] {
     const keys = new Set<string>();
     for (const service of settings?.services ?? [])
-      for (const key of service.keys) if (key.source === "generate" && !key.from) keys.add(key.key);
+      for (const key of service.keys) if (key.source === "generate" && !key.from && !key.link) keys.add(key.key);
     return [...keys].sort((a, b) => a.localeCompare(b));
   },
 
