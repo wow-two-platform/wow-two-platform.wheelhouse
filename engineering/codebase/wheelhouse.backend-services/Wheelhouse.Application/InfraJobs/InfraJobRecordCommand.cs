@@ -9,7 +9,8 @@ namespace Wheelhouse.Application.InfraJobs;
 /// <summary>Records a finished infrastructure job in the audit trail, as the owner who started it; an enrollment that
 /// succeeded also points its server at the host's tailnet address and the deploy account, where prod's runner now
 /// reaches it. A job that brought the host to the kit (enrollment, placement, host upkeep) records the ingress the kit
-/// lays out and the server's public address.</summary>
+/// lays out and the server's public address. A placement records each private site's tailnet host on the environment
+/// its node serves, where that environment stores no host for the site yet.</summary>
 public sealed record InfraJobRecordCommand : ICommand<AppResult<bool>>, IAuditedCommand, IInventoryCommand
 {
     /// <summary>The kind of job that enrolls a server.</summary>
@@ -51,6 +52,9 @@ public sealed record InfraJobRecordCommand : ICommand<AppResult<bool>>, IAudited
     /// <summary>Gets the server's public IPv4 address the job recorded, or <c>null</c>.</summary>
     public string? PublicAddress { get; init; }
 
+    /// <summary>Gets the private sites a placement put on the tailnet, each with its node's host.</summary>
+    public IReadOnlyList<InfraPlacedSite> Sites { get; init; } = [];
+
     /// <summary>Gets the kit's digest on the host, for the audit detail.</summary>
     public string? KitDigest { get; init; }
 
@@ -74,6 +78,7 @@ public sealed record InfraJobRecordCommand : ICommand<AppResult<bool>>, IAudited
                          + (TailnetAddress is null ? "" : ", tailnet " + TailnetAddress)
                          + (KitDigest is null ? "" : ", kit " + (KitDigest.Length > 12 ? KitDigest[..12] : KitDigest))
                          + (PublicAddress is null ? "" : ", public " + PublicAddress)
+                         + (Sites.Count == 0 ? "" : "; sites " + string.Join(", ", Sites.Select(site => site.Environment + " " + site.Site + " " + site.Host)))
                          + (Mints.Count == 0 ? "" : "; keys " + string.Join(", ", Mints));
             return detail.Length > 480 ? detail[..480] : detail;
         }

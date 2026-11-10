@@ -109,7 +109,22 @@ public sealed partial class InfraJobRecorder(
             Ingress = facts.ValueKind == JsonValueKind.Object ? IngressOf(facts) : null,
             PublicAddress = facts.ValueKind == JsonValueKind.Object ? Text(facts, "publicAddress") : null,
             KitDigest = facts.ValueKind == JsonValueKind.Object ? Text(facts, "kitDigest") : null,
+            Sites = facts.ValueKind == JsonValueKind.Object ? SitesOf(facts) : [],
         };
+    }
+
+    /// <summary>The private sites a placement registered, each with its node's tailnet host read from the URL the job
+    /// recorded; an entry without a site, environment or https URL is left out. The handler validates each host.</summary>
+    private static IReadOnlyList<InfraPlacedSite> SitesOf(JsonElement facts)
+    {
+        if (!facts.TryGetProperty("sites", out var sites) || sites.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<InfraPlacedSite>();
+        foreach (var item in sites.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.Object).Take(20))
+            if (Text(item, "site") is { } site && Text(item, "environment") is { } environment
+                && Uri.TryCreate(Text(item, "url"), UriKind.Absolute, out var url) && url.Scheme == Uri.UriSchemeHttps)
+                result.Add(new InfraPlacedSite(site, environment, url.Host.ToLowerInvariant()));
+        return result;
     }
 
     /// <summary>The ingress the kit laid out, as the job recorded it; <c>null</c> when it recorded none or another

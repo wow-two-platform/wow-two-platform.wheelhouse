@@ -45,7 +45,10 @@ project, platform-network alias, database, settings files and hostnames. No hard
   (`ocharo-studio-admin-dev.203-0-113-10.sslip.io`). The runner fills it at deploy, so `AllowedHosts` and
   `Sites:<site>:Url` name it. The environment form lists every site the product declares, read-only: the host the target
   stores, else the derived baseline host (it follows the environment and server, and a stored host that differs from the
-  derived one stays with a note); nothing is typed. A private site never gets a baseline host and shows its tailnet node.
+  derived one stays with a note); nothing is typed. A private site never gets a baseline host and shows its tailnet node;
+  a finished placement stores that node's tailnet host (`<node>.<tailnet>`) on the environment the node serves, on the
+  placement's server, unless the environment already stores one, so the ingress routes the site (v0.15.6; before it, a
+  placed private site stayed unrouted and its node answered the ingress's 404 until a placement ran again).
 - A baseline host is served by the server's own ingress on 80 and 443 with a Let's Encrypt HTTP-01 certificate, not
   through Cloudflare; a bound domain replaces it.
 - After a verified rollout the runner writes `<root>/ingress/<product>-<environment>.yml`, a Traefik file-provider route.

@@ -269,6 +269,46 @@ public sealed class InfraAutomationE2ETests(WheelhouseAppFixture fixture) : Whee
     }
 
     [Fact]
+    public async Task FinishedPlacement_ShouldGiveEachPrivateSiteItsNodesHost_AndKeepAHostAlreadyStored()
+    {
+        object Placed(string id, string devUrl) => new
+        {
+            id, kind = "placement", serverId = "pilot-host", product = "foreverpin", status = "succeeded", actor = "sulton-max",
+            facts = new
+            {
+                sites = new object[]
+                {
+                    new { site = "ops", environment = "dev", node = "foreverpin-ops-dev", url = devUrl },
+                    new { site = "ops", environment = "prod", node = "foreverpin-ops", url = "https://foreverpin-ops.tailtest.ts.net" },
+                    new { site = "bad", environment = "dev", node = "foreverpin-bad-dev", url = "http://not-https.example" },
+                },
+            },
+        };
+        async Task<Dictionary<string, string>> SitesOf(string slug)
+        {
+            var targets = (await (await AdminClient.GetAsync("api/targets")).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data");
+            return targets.EnumerateArray().Single(target => target.GetProperty("slug").GetString() == slug).GetProperty("sites")
+                .EnumerateArray().ToDictionary(site => site.GetProperty("site").GetString()!, site => site.GetProperty("host").GetString()!);
+        }
+
+        Infra.Finished.Add(Placed("6f1c2a9e-0000-4000-8000-000000000010", "https://foreverpin-ops-dev.tailtest.ts.net"));
+        await using (var scope = Fixture.Host.Services.CreateAsyncScope())
+            (await scope.ServiceProvider.GetRequiredService<InfraJobRecorder>().PassAsync(CancellationToken.None)).Should().Be(1);
+        (await SitesOf("foreverpin-dev")).Should().Contain("ops", "foreverpin-ops-dev.tailtest.ts.net")
+            .And.NotContainKey("bad", "only an https node URL names a host");
+        (await SitesOf("foreverpin-prod")).Should().NotContainKey("ops", "prod runs on another server than the placement's");
+        var inventory = await File.ReadAllTextAsync(Path.Combine(Fixture.InventoryRoot, "inventory.json"));
+        inventory.Should().Contain("foreverpin-ops-dev.tailtest.ts.net", "the runner routes the site on it");
+        (await Entries()).Single(entry => entry.GetProperty("action").GetString() == "product.placement.finish")
+            .GetProperty("detail").GetString().Should().Contain("dev ops foreverpin-ops-dev.tailtest.ts.net");
+
+        Infra.Finished.Add(Placed("6f1c2a9e-0000-4000-8000-000000000011", "https://renamed-node.tailtest.ts.net"));
+        await using (var scope = Fixture.Host.Services.CreateAsyncScope())
+            await scope.ServiceProvider.GetRequiredService<InfraJobRecorder>().PassAsync(CancellationToken.None);
+        (await SitesOf("foreverpin-dev"))["ops"].Should().Be("foreverpin-ops-dev.tailtest.ts.net", "a stored host stays");
+    }
+
+    [Fact]
     public async Task Upkeep_ShouldStartTheJobAsTheOwnerForAKnownServerAndAuditIt()
     {
         (await AdminClient.PostAsync("api/servers/prod-host/upkeep", null)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
