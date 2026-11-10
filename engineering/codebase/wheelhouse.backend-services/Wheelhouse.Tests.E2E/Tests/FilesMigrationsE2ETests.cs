@@ -78,6 +78,26 @@ public sealed class FilesMigrationsE2ETests(WheelhouseAppFixture fixture) : Whee
     }
 
     [Fact]
+    public async Task Plan_ShouldTakeTheMoverFromServiceFss_AfterTheFssRename()
+    {
+        await PrepareAsync();
+        // The FSS rename (2026-11-10) names Files' service fss; the release it runs carries no files service any more.
+        const string Fss = "ghcr.io/wow-two-sdk-beta/wow-two-sdk-beta.files/fss@sha256:bbbb";
+        Fixture.Deployments.History.Insert(0, new
+        {
+            id = Guid.NewGuid().ToString(), targetId = "files-dev", environment = "dev", bundleId = "files-dev-fss-bundle",
+            release = "v1.1.0", actor = "test-admin", status = "succeeded", submittedAt = "2026-11-10T09:00:00+00:00",
+            services = new Dictionary<string, object> { ["fss"] = new { image = Fss, version = "0.2.0" } },
+        });
+
+        var response = await MigrateAsync("foreverpin-dev", new { step = "plan", filesTarget = "files-dev", filesUrl = FilesUrl });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
+        Fixture.Deployments.FilesMigrations.Should().ContainSingle().Which.Payload.GetProperty("image").GetString()
+            .Should().Be(Fss, "the newest name wins once the running release has it");
+    }
+
+    [Fact]
     public async Task Push_ShouldOpenAnImport_WithTheOperatorKey_AndTheTokenOnlyInThePayload()
     {
         await PrepareAsync();

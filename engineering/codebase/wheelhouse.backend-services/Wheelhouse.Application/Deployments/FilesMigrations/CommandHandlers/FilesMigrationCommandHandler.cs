@@ -31,8 +31,9 @@ public sealed class FilesMigrationCommandHandler(
     /// <summary>Holds the Files product's slug.</summary>
     public const string FilesProduct = "files";
 
-    /// <summary>Holds the service whose image is the mover.</summary>
-    public const string FilesService = "files";
+    /// <summary>Holds the services whose image is the mover, newest name first: Files' service is named <c>fss</c> since
+    /// the FSS rename (2026-11-10) and <c>files</c> before it; the first one the running release has is taken.</summary>
+    public static readonly IReadOnlyList<string> FilesServices = ["fss", "files"];
 
     /// <summary>Holds the vault key of the Files operator API key.</summary>
     public const string OperatorKey = "Files:Operator:ApiKey";
@@ -67,9 +68,10 @@ public sealed class FilesMigrationCommandHandler(
             return Fail(AppErrorFactory.Validation("No source matches the wave or ids asked for."));
         request.Picked = [.. picked.Select(source => source.Id)];
 
-        var image = FilesMigrationReleaseReader.Running(all, filesTarget)?.Services?.GetValueOrDefault(FilesService)?.Image;
+        var services = FilesMigrationReleaseReader.Running(all, filesTarget)?.Services;
+        var image = FilesServices.Select(name => services?.GetValueOrDefault(name)?.Image).FirstOrDefault(found => !string.IsNullOrEmpty(found));
         if (string.IsNullOrEmpty(image))
-            return Fail(AppErrorFactory.Conflict($"{filesTarget.Slug} runs no {FilesService} image yet; deploy it first."));
+            return Fail(AppErrorFactory.Conflict($"{filesTarget.Slug} runs no {string.Join(" or ", FilesServices)} image yet; deploy it first."));
 
         var import = request.Import;
         string? token = null;
