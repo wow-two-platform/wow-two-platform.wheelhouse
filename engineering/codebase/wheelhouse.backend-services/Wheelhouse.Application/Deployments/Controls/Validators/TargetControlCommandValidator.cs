@@ -17,6 +17,9 @@ public sealed class TargetControlCommandValidator : AbstractValidator<TargetCont
     /// <summary>Holds how many arguments a run's command takes at most, as the runner does.</summary>
     public const int MaxCommandArguments = 40;
 
+    /// <summary>Holds how many bytes a run's stdin file holds at most, as the runner does.</summary>
+    public const int MaxInputBytes = 2 * 1024 * 1024;
+
     /// <summary>Holds how long one argument of a run's command may be, as the runner does.</summary>
     public const int MaxArgumentLength = 500;
 
@@ -37,11 +40,24 @@ public sealed class TargetControlCommandValidator : AbstractValidator<TargetCont
         RuleFor(x => x.Command).Must(IsCommand).When(x => x.Operation == ControlOperation.Run)
             .WithMessage($"A run takes its command as 1 to {MaxCommandArguments} arguments, each one line of at most "
                 + $"{MaxArgumentLength} characters.");
+        RuleFor(x => x.Input).Null().When(x => x.Operation != ControlOperation.Run)
+            .WithMessage("Only a run takes a file on its stdin.");
+        RuleFor(x => x.Input!).Must(IsInput).When(x => x.Input is not null)
+            .WithMessage("A run's stdin file is base64 of 1 byte to 2 MiB.");
         RuleFor(x => x.Set).Null().When(x => x.Operation != ControlOperation.Reset)
             .WithMessage("Only a reset names a migration set.");
         RuleFor(x => x.Set!).Matches(SetName).When(x => x.Set is not null)
             .WithMessage("'Set' must be a migration set's name: lowercase letters, digits, '-' and '_'.");
         RuleFor(x => x.Reason).Must(FreezeRules.IsReason).WithMessage("'Reason' must be one line of 300 characters at most.");
+    }
+
+    /// <summary>Whether <paramref name="input"/> is base64 of 1 byte to <see cref="MaxInputBytes"/>.</summary>
+    private static bool IsInput(string input)
+    {
+        if (input.Length == 0 || input.Length > (MaxInputBytes + 2) / 3 * 4)
+            return false;
+        var buffer = new byte[input.Length / 4 * 3 + 3];
+        return Convert.TryFromBase64String(input, buffer, out var written) && written is > 0 and <= MaxInputBytes;
     }
 
     /// <summary>Whether <paramref name="command"/> is a run's command: 1 to 40 arguments, each one line of 1 to 500

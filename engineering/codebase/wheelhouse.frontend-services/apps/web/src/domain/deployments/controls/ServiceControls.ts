@@ -1,3 +1,4 @@
+import type { RunInput } from "./RunFiles";
 /**
  * Service controls (decision 45): the owner stops, starts or restarts the release an environment runs — one service, or
  * the whole environment for a stop or a start. A stop keeps containers, volumes and routes; every deploy to an
@@ -53,6 +54,10 @@ export interface ControlRun {
   seconds: number;
   lastLine: string | null;
   reveal?: { expiresAt: string } | null;
+  /** The lines it printed before its last, scrubbed the same way, oldest first. */
+  tail?: string[] | null;
+  /** The file it took on its stdin: its size and SHA-256. */
+  input?: RunInput | null;
 }
 
 /** A control the target queued: its submission, which the history and outcome reads follow. */
@@ -93,6 +98,8 @@ export interface ControlRequest {
   readonly service: string | null;
   readonly set?: ControlSet | null;
   readonly command?: readonly string[] | null;
+  /** A file for a run's stdin, base64. */
+  readonly input?: string | null;
 }
 
 /** Pure rules for what a control may do and how it reads. */

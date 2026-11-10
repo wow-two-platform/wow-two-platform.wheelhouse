@@ -221,7 +221,11 @@ promotion replace them), as is a target a running fleet has yet to promote (409)
   API → transport → target worker on stdin only. The job, history and audit (`service.run`, subject
   `{target}/{service}`, the same prod guard) keep its label — leading words and option names, every value `…` — never an
   argument. The job's `run` keeps the exit code, seconds and the last stdout line with phone numbers, long digit runs,
-  addresses' local parts, URL queries and fragments, token-like runs and password pairs cut out; uuids stay. Exit 0
+  addresses' local parts, URL queries and fragments, token-like runs and password pairs cut out; uuids stay. The last
+  line is kept whole up to 16 KiB (a JSON result line), and the lines before it as `tail`, scrubbed the same way: the
+  last 20, newest first within 32 KiB in all (v0.15). A file for the command's stdin (`input`, base64, 2 MiB at most)
+  travels beside the command on the same stdin, goes into the container once (`docker run --interactive`) and is never
+  written down: the job keeps `run.input` `{ bytes, sha256 }`, the audit `stdin file: N bytes`. Exit 0
   succeeds; any other exit, a timeout (600 s) or a container Docker cannot start fails it. A line the scrub cut (an
   invitation link) is kept as printed in `<root>/<product>-<env>/reveals/<job>.json` (0600) with `run.reveal.expiresAt`
   15 minutes on; `POST …/controls/{job}/reveal` (owner only, `no-store`, audited `service.run.reveal` without the line)

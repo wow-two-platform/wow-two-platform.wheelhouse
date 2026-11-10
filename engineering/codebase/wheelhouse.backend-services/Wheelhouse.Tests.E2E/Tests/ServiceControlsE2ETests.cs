@@ -155,6 +155,34 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
     }
 
     [Fact]
+    public async Task Run_ShouldHandItsStdinFileToTheRunner_AndAuditOnlyItsSize()
+    {
+        string[] command = ["dotnet", "Events.Api.dll", "import", "ocharo-fashion"];
+        var bundle = System.Text.Encoding.UTF8.GetBytes("{\"rows\":[{\"title\":\"PRIVATE_NOTE\"}]}");
+        var input = Convert.ToBase64String(bundle);
+        var accepted = await ControlAsync("foreverpin-dev", new { operation = "run", service = "management", command, input });
+        accepted.StatusCode.Should().Be(HttpStatusCode.Accepted, await accepted.Content.ReadAsStringAsync());
+        Fixture.Deployments.Inputs.Should().Equal(input);
+
+        var stop = await ControlAsync("foreverpin-dev", new { operation = "stop", service = "management", input });
+        stop.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await stop.Content.ReadAsStringAsync()).Should().Contain("Only a run takes a file on its stdin");
+        foreach (var refused in new[] { "not base64!", Convert.ToBase64String(new byte[2 * 1024 * 1024 + 1]) })
+        {
+            var response = await ControlAsync("foreverpin-dev", new { operation = "run", service = "management", command, input = refused });
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("base64 of 1 byte to 2 MiB");
+        }
+        Fixture.Deployments.Inputs.Should().HaveCount(1, "nothing reaches the runner before the rules hold");
+
+        var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray()
+            .Where(entry => entry.GetProperty("action").GetString() == "service.run").ToList();
+        audit.Should().Contain(entry => entry.GetProperty("detail").GetString()
+            == "command: dotnet Events.Api.dll import ocharo-fashion; stdin file: " + bundle.Length + " bytes");
+        audit.Select(entry => entry.GetRawText()).Should().NotContain(text => text.Contains("PRIVATE_NOTE") || text.Contains(input));
+    }
+
+    [Fact]
     public async Task Reveal_ShouldAnswerARunsLineOnce_UncachedAndUnaudited()
     {
         var job = Guid.NewGuid();

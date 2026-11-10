@@ -82,6 +82,7 @@ export function useTargetControl() {
         service,
         set,
         command,
+        input,
         reason,
         confirm,
       }: {
@@ -90,11 +91,12 @@ export function useTargetControl() {
         service?: string | null | undefined;
         set?: string | null | undefined;
         command?: readonly string[] | null | undefined;
+        input?: string | null | undefined;
         reason?: string | undefined;
         confirm?: string | undefined;
       },
       { signal },
-    ) => deploymentsApi.control(target, { operation, service, set, command, reason, confirm }, signal),
+    ) => deploymentsApi.control(target, { operation, service, set, command, input, reason, confirm }, signal),
     invalidates: ({ target }) => refreshed(target),
     meta: { suppressGlobalError: true },
   });

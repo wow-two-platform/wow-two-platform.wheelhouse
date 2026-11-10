@@ -191,11 +191,19 @@ FINDINGS_LIMIT = 50
 RESTING = "resting.json"
 # One-off commands (v0.13): the owner's command, run once in a container of a service's running release image built as
 # a migrate item's, with the service's settings, mounts and the platform network (a first owner's `admin create`). The
-# longest it may run, how many arguments it takes and how long each, and how much of its last stdout line the job keeps.
+# longest it may run, how many arguments it takes and how long each, and how much of its last stdout line the job keeps:
+# a structured result line (a JSON report) whole up to 16 KiB. Its job also keeps the lines before it (`tail`), scrubbed
+# the same way: the last RUN_TAIL_LINES of them, the newest first to stay within RUN_TAIL_LIMIT characters in all.
 RUN_TIMEOUT = 600
 RUN_ARGUMENTS_LIMIT = 40
 RUN_ARGUMENT_LENGTH = 500
-RUN_LINE_LIMIT = 500
+RUN_LINE_LIMIT = 16384
+RUN_TAIL_LINES = 20
+RUN_TAIL_LIMIT = 32768
+# A file a run takes on its stdin (a bundle a verb such as `import` reads there): base64 in the control plane's stdin
+# document, at most this many bytes decoded, piped into the one-off container once and never written to disk; its job
+# keeps only its size and SHA-256.
+RUN_INPUT_LIMIT = 2 * 1024 * 1024
 # Seconds before a failed image pull's second and third attempt: a fresh release's first pull has failed at once and
 # passed minutes later (Ocharo dev 2026-11-09, platform v0.2.1 to v0.2.4 and Studio v0.1.17).
 PULL_BACKOFF = (15, 45)
@@ -215,7 +223,7 @@ RUN_TOKEN = re.compile(r"[A-Za-z0-9_+/=-]{32,}")
 # never in a job, history or audit record. How much of the line it keeps.
 RUN_REVEALS = "reveals"
 RUN_REVEAL_SECONDS = 900
-RUN_REVEAL_LIMIT = 4000
+RUN_REVEAL_LIMIT = RUN_LINE_LIMIT
 
 
 class Rejected(ValueError):
@@ -2054,11 +2062,22 @@ class Docker:
         discarded unread: a note there may quote what a setting holds."""
         return self.result_run(arguments, {}, timeout, container, CONFIG_RESULT)
 
-    def one_off(self, arguments, timeout, container):
-        """Runs the owner's one-off container with no variable passed into it. Returns its exit code and its last nonblank
-        stdout line (None when it printed none), unscrubbed: the caller scrubs it before anything keeps it; a run past
-        `timeout` stops and removes `container` and returns None for the code. stderr is discarded unread."""
-        return self.result_run(arguments, {}, timeout, container, None)
+    def one_off(self, arguments, timeout, container, document=None):
+        """Runs the owner's one-off container with no variable passed into it, `document` (bytes) on its stdin when
+        given, else an empty one. Returns its exit code and its last nonblank stdout lines, at most RUN_TAIL_LINES + 1,
+        oldest first (empty when it printed none), unscrubbed: the caller scrubs them before anything keeps them; a run
+        past `timeout` stops and removes `container` and returns None for the code. stderr is discarded unread."""
+        try:
+            result = subprocess.run(arguments, env=self.environment, input=document if document is not None else b"",
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            for command in (["docker", "stop", "--time", "10", container], ["docker", "rm", "--force", container]):
+                with contextlib.suppress(Exception):
+                    subprocess.run(command, env=self.environment, capture_output=True, timeout=60)
+            return None, []
+        output = (result.stdout or b"")[-MIGRATE_OUTPUT_LIMIT:].decode("utf-8", "replace")
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        return result.returncode, lines[-(RUN_TAIL_LINES + 1):]
 
     def stream(self, arguments, document, timeout, container, on_line, cancelled, on_error=None):
         """Runs a one-off container with `document` (bytes, it may hold a secret) on its stdin and hands each stdout line to
@@ -3711,15 +3730,16 @@ def control_ready(base):
             "Failed mutation requires reconciliation")
 
 
-def control_launch(target_path, operation, services, actor, set_name=None, command=None):
+def control_launch(target_path, operation, services, actor, set_name=None, command=None, input_file=None):
     """Queues a control of the release a target runs and starts its worker detached, as a deploy's launch does; every
-    rule is checked here first, so a refusal reaches the owner before any job exists. A run's command reaches its worker
-    on the worker's stdin, never as an argument or a file."""
+    rule is checked here first, so a refusal reaches the owner before any job exists. A run's command and its stdin file
+    reach its worker on the worker's stdin, never as an argument or a file."""
     target = read_json(target_path)
     root, project = validate_target(target)
     base = root / project
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
     command = control_command(operation, command)
+    run_input(operation, input_file)
     control_ready(base)
     current, bundle, manifest, _ = control_plan(base, operation, services, set_name)
     control_environment(target, manifest, bundle)
@@ -3738,7 +3758,7 @@ def control_launch(target_path, operation, services, actor, set_name=None, comma
     if command:
         # A worker that died before reading fails its own job; the command never lands anywhere else.
         with contextlib.suppress(OSError), worker.stdin:
-            worker.stdin.write(json.dumps({"command": command}).encode())
+            worker.stdin.write(json.dumps({"command": command, **({"input": input_file} if input_file else {})}).encode())
     return {"id": job_id, "status": "queued", "release": current.get("release")}
 
 
@@ -3796,6 +3816,36 @@ def run_verb(command):
     return " ".join(words)
 
 
+def run_input(operation, value):
+    """A run's stdin file, checked: base64 of 1 to RUN_INPUT_LIMIT bytes, and only a run takes one. Returns the bytes,
+    or None without one; its content never reaches a message."""
+    if value is None:
+        return None
+    require(operation == "run", "Only a run takes a file on its stdin")
+    try:
+        document = base64.b64decode(value, validate=True) if isinstance(value, str) else None
+    except ValueError:
+        document = None
+    require(document is not None and 0 < len(document) <= RUN_INPUT_LIMIT,
+            "A run's stdin file is base64 of 1 byte to " + str(RUN_INPUT_LIMIT // (1024 * 1024)) + " MiB")
+    return document
+
+
+def run_tail(lines):
+    """What a job keeps of the lines a one-off printed before its last: each scrubbed as run_line keeps a line, the
+    newest kept first within RUN_TAIL_LIMIT characters in all, in the order printed."""
+    kept, size = [], 0
+    for line in reversed(lines or []):
+        scrubbed = run_line(line)
+        if scrubbed is None:
+            continue
+        if size + len(scrubbed) > RUN_TAIL_LIMIT:
+            break
+        kept.append(scrubbed)
+        size += len(scrubbed)
+    return list(reversed(kept))
+
+
 def run_line(line):
     """What a job keeps of a one-off's last stdout line: an identifier (uuid) as printed; phone numbers and other long
     digit runs, an email address's local part, a URL's query and fragment, token-like runs and password pairs cut out;
@@ -3818,12 +3868,13 @@ def run_scrub(text):
     return PASSWORD_PAIR.sub(lambda match: match.group(1) + "=***", text)
 
 
-def control(target, operation, services, actor, job_id, docker_factory=Docker, set_name=None, command=None):
+def control(target, operation, services, actor, job_id, docker_factory=Docker, set_name=None, command=None,
+            input_file=None):
     """Stops, starts or restarts the release a target runs, under the deployment lock, as a job in the target's journal
     and its durable intent (`active.json`) like a rollout. A stop marks what it stops before stopping it; a start
     clears its mark only once its services are healthy, so a control cut short leaves the target refusing deploys and a
     second start finishes it. The release, its containers, volumes and routes never change. A run's command comes as
-    `command` and its job keeps only its label (run_one_off)."""
+    `command` and its job keeps only its label (run_one_off); its stdin file comes as `input_file` (base64, run_input)."""
     root, project = validate_target(target)
     base = root / project
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
@@ -3864,7 +3915,7 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker, s
                 reset(base, target, manifest, bundle, project, docker, steps, record, job_id, actor, names, progress)
             elif operation == "run":
                 run_one_off(target, manifest, bundle, project, environment, docker, steps, record, job_id, services[0],
-                            command, base=base)
+                            command, base=base, document=run_input(operation, input_file))
             elif operation == "stop":
                 # Marked first: a stop cut short still keeps deploys from starting what it reached.
                 write_stopped(base, after, actor)
@@ -3988,26 +4039,35 @@ def run_detail(entry):
 
 
 def run_one_off(target, manifest, bundle, project, environment, docker, steps, record, job_id, service, command,
-                clock=time.monotonic, base=None):
+                clock=time.monotonic, base=None, document=None):
     """A run's one step (v0.13): `command` once in a one-off container of `service`'s running release image, built as a
     migrate item's (migrate_arguments): `--pull never`, the command's first word as the entrypoint, the service's
     environment, its rendered settings file and other mounts as the service declares them, its memory, the platform
     network, every capability dropped, the image's user; never the migrate key. The job keeps the command's label, the
     exit code, how long it took and the last stdout line scrubbed (`run`), never an argument; anything but exit 0 fails
-    it. A line the scrub cut is also kept as printed for one read (`base`, keep_reveal). The services keep running."""
+    it. A line the scrub cut is also kept as printed for one read (`base`, keep_reveal). The lines it printed before its
+    last are kept scrubbed too (`tail`, run_tail). A `document` (bytes) goes to its stdin (`--interactive`); the job
+    keeps only its size and SHA-256 (`input`). The services keep running."""
     label = run_label(command)
     entry = {"service": service, "command": label, "release": manifest["release"], "status": "failed",
              "exitCode": None, "seconds": 0, "lastLine": None}
+    if document is not None:
+        entry["input"] = {"bytes": len(document), "sha256": hashlib.sha256(document).hexdigest()}
     record["run"] = entry
     container = project + "-run-" + service + "-" + job_id[:8]
     with steps.run(control_label("run", [service], command=command)) as step:
         started, begun = now(), clock()
         arguments = migrate_arguments(target, read_json(Path(bundle) / "compose.json"), manifest, project, service,
                                       command, None, environment, docker, container, label="wheelhouse.run")
-        code, line = docker.one_off(arguments, RUN_TIMEOUT, container)
+        if document is not None:
+            arguments = [*arguments[:2], "--interactive", *arguments[2:]]
+        code, lines = docker.one_off(arguments, RUN_TIMEOUT, container, document)
+        line = lines[-1] if lines else None
         entry.update(status="succeeded" if code == 0 else "timed out" if code is None else "failed",
                      exitCode=code if type(code) is int else None, seconds=int(clock() - begun),
                      lastLine=run_line(line), startedAt=started, completedAt=now())
+        if tail := run_tail(lines[:-1]):
+            entry["tail"] = tail
         if base is not None:
             expires = keep_reveal(base, job_id, line, entry["lastLine"])
             if expires:
@@ -4851,10 +4911,11 @@ def main():
             result = files_migration().work(read_json(args.target), args.actor, args.job, provided)
         elif args.action == "control-launch":
             result = control_launch(args.target, args.operation, [args.service] if args.service else [], args.actor,
-                                    args.set_name, (provided or {}).get("command"))
+                                    args.set_name, (provided or {}).get("command"), (provided or {}).get("input"))
         elif args.action == "control":
             result = control(read_json(args.target), args.operation, [args.service] if args.service else [],
-                             args.actor, args.job, set_name=args.set_name, command=(provided or {}).get("command"))
+                             args.actor, args.job, set_name=args.set_name, command=(provided or {}).get("command"),
+                             input_file=(provided or {}).get("input"))
         else:
             result = apply(args.bundle, read_json(args.target), args.actor, args.job, provided=provided)
         print(json.dumps(result))

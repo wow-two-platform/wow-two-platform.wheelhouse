@@ -167,6 +167,7 @@ export const deploymentsApi = {
       readonly service?: string | null | undefined;
       readonly set?: string | null | undefined;
       readonly command?: readonly string[] | null | undefined;
+      readonly input?: string | null | undefined;
       readonly reason?: string | undefined;
       readonly confirm?: string | undefined;
     },
@@ -181,6 +182,7 @@ export const deploymentsApi = {
         ...(body.service ? { service: body.service } : {}),
         ...(body.set ? { set: body.set } : {}),
         ...(body.command?.length ? { command: body.command } : {}),
+        ...(body.input ? { input: body.input } : {}),
         ...(body.reason?.trim() ? { reason: body.reason.trim() } : {}),
         ...(body.confirm ? { confirm: body.confirm } : {}),
       },

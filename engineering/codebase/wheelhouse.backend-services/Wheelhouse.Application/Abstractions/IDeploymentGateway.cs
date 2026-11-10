@@ -65,6 +65,14 @@ public interface IDeploymentGateway
         command is null
             ? ControlAsync(target, operation, service, set, actor, reason, ct)
             : Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("This runner cannot run a command.")));
+    /// <summary>Submits a run as <see cref="ControlAsync(string, string, string?, string?, string, string?, IReadOnlyList{string}?, CancellationToken)"/>
+    /// does, with <paramref name="input"/> (base64) for its container's stdin: it reaches the runner beside the command on
+    /// its standard input, is piped into the one-off container once and never kept. A gateway without it refuses one.</summary>
+    Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set, string actor,
+        string? reason, IReadOnlyList<string>? command, string? input, CancellationToken ct) =>
+        input is null
+            ? ControlAsync(target, operation, service, set, actor, reason, command, ct)
+            : Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("This runner cannot hand a run a file.")));
     /// <summary>Submits a files migration (operation <c>files-migration</c>) as a control: the whole
     /// <paramref name="payload"/> (<c>step</c>, <c>image</c>, <c>files</c>, <c>import</c>, <c>token</c>, <c>sources</c>)
     /// reaches the runner on its standard input, never as an argument. A gateway without migrations refuses it.</summary>

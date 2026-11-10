@@ -131,7 +131,12 @@ public sealed class DeploymentGateway(
 
     /// <inheritdoc />
     public Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set,
-        string actor, string? reason, IReadOnlyList<string>? command, CancellationToken ct)
+        string actor, string? reason, IReadOnlyList<string>? command, CancellationToken ct) =>
+        ControlAsync(target, operation, service, set, actor, reason, command, null, ct);
+
+    /// <inheritdoc />
+    public Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set,
+        string actor, string? reason, IReadOnlyList<string>? command, string? input, CancellationToken ct)
     {
         List<string> arguments = ["control", "--target", target, "--operation", operation, "--actor", actor];
         if (service is not null)
@@ -141,10 +146,11 @@ public sealed class DeploymentGateway(
         // An argument list, never a shell: the reason reaches the runner as one value.
         if (reason is not null)
             arguments.AddRange(["--reason", reason]);
-        // A run's command goes to the runner's stdin, never an argument a process listing would show.
+        // A run's command, and a file for its stdin, go to the runner's stdin, never an argument a process listing shows.
         if (command is not null)
             arguments.Add("--stdin");
-        return RunAsync([.. arguments], ct, command is null ? null : JsonSerializer.Serialize(new { command }));
+        return RunAsync([.. arguments], ct, command is null ? null
+            : input is null ? JsonSerializer.Serialize(new { command }) : JsonSerializer.Serialize(new { command, input }));
     }
 
     /// <inheritdoc />

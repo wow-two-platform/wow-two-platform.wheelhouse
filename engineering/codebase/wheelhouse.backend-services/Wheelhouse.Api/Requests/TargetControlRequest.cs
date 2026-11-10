@@ -15,5 +15,7 @@ namespace Wheelhouse.Api.Requests;
 /// the service hosting it stops; null resets the whole database.</param>
 /// <param name="Command">A run's command, one argument per item (<c>["dotnet", "Identity.Api.dll", "admin", "create",
 /// …]</c>): the first is the entrypoint. Never kept: the job, history and audit name it by its label.</param>
+/// <param name="Input">A file for a run's stdin, base64, 2 MiB at most (a bundle a verb such as <c>import</c> reads
+/// there). Piped into the one-off container once; the job keeps its size and SHA-256, the audit its size.</param>
 public sealed record TargetControlRequest([Required] ControlOperation? Operation, string? Service = null, string? Reason = null,
-    string? Confirm = null, string? Set = null, IReadOnlyList<string>? Command = null);
+    string? Confirm = null, string? Set = null, IReadOnlyList<string>? Command = null, string? Input = null);

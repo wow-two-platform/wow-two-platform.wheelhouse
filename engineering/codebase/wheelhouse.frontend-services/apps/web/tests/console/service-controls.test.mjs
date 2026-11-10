@@ -279,3 +279,21 @@ test("a run whose line was cut offers one read, which posts to its job and parse
     globalThis.fetch = original;
   }
 });
+
+test("a run's stdin file is base64 of 1 byte to 2 MiB, and a run keeps its tail and the file's size and hash", async () => {
+  const { RunFiles } = await bundleModule(`export { RunFiles } from './src/domain/deployments/controls';`);
+  assert.equal(RunFiles.problem(0), "The file is empty.");
+  assert.equal(RunFiles.problem(RunFiles.limit), null);
+  assert.match(RunFiles.problem(RunFiles.limit + 1), /2 MiB at most/);
+  const bytes = new Uint8Array(70000).map((_, index) => index % 251);
+  assert.equal(RunFiles.toBase64(bytes), Buffer.from(bytes).toString("base64"));
+  assert.equal(RunFiles.label({ bytes: 231536, sha256: "308deb17c5f5ae88aaaa" }), "Took a 231536-byte file on its stdin · SHA-256 308deb17c5f5ae88…");
+  assert.equal(RunFiles.label(null), null);
+  const job = DeploymentJobSchema.parse({
+    id: "11111111-1111-4111-8111-111111111111", status: "succeeded", actor: "max",
+    run: { service: "events", command: "dotnet Events.Api.dll import …", status: "succeeded", exitCode: 0, seconds: 3,
+      lastLine: "import-result ok=true", tail: ["import-report {\"map\":[]}"], input: { bytes: 4, sha256: "ab" } },
+  });
+  assert.deepEqual(job.run.tail, ["import-report {\"map\":[]}"]);
+  assert.deepEqual(job.run.input, { bytes: 4, sha256: "ab" });
+});

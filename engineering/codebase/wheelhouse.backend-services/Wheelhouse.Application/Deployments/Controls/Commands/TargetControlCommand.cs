@@ -20,9 +20,11 @@ namespace Wheelhouse.Application.Deployments.Controls.Commands;
 /// <param name="Confirm">The typed target ID.</param>
 /// <param name="Set">The migration set a reset rolls back to 0, alone; null for the whole database.</param>
 /// <param name="Command">A run's command, one argument per item; null for every other control.</param>
+/// <param name="Input">A file for a run's stdin, base64; piped into its container once, kept nowhere (only its size is
+/// audited).</param>
 public sealed record TargetControlCommand(
     string Target, ControlOperation Operation, string? Service, string Actor, string? Reason = null, string? Confirm = null,
-    string? Set = null, IReadOnlyList<string>? Command = null)
+    string? Set = null, IReadOnlyList<string>? Command = null, string? Input = null)
     : ICommand<AppResult<JsonElement>>, IAuditedCommand
 {
     /// <summary>Gets the operation's lowercase name, as the runner and the audit trail name it.</summary>
@@ -40,6 +42,13 @@ public sealed record TargetControlCommand(
     public string? AuditDetail => string.Join("; ", new[]
     {
         Operation == ControlOperation.Run ? "command: " + OneOffCommandLabel.Of(Command) : null,
+        Input is null ? null : "stdin file: " + InputBytes(Input) + " bytes",
         string.IsNullOrWhiteSpace(Reason) ? null : "reason: " + Reason.Trim(),
     }.OfType<string>()) is { Length: > 0 } detail ? detail : null;
+
+    /// <summary>How many bytes a base64 text holds, without decoding it.</summary>
+    /// <param name="base64">The base64 text.</param>
+    /// <returns>Its decoded length.</returns>
+    public static int InputBytes(string base64) =>
+        base64.Length / 4 * 3 - (base64.EndsWith("==", StringComparison.Ordinal) ? 2 : base64.EndsWith('=') ? 1 : 0);
 }

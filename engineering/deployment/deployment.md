@@ -1148,15 +1148,17 @@ console in that service's running release image
 
 1. **Products › the product › the environment › the service's menu › Run a command…** Type the command as one line
    (`dotnet Identity.Api.dll admin create --slug ocharo --name Ocharo --display-name "…" --phone …`): whitespace
-   separates arguments, single or double quotes group them, nothing expands. Dev confirms once; prod asks for its
-   target ID typed and a reason.
+   separates arguments, single or double quotes group them, nothing expands. **Stdin file** optionally takes a file the
+   command reads on its stdin (`import` without `--file`), 2 MiB at most. Dev confirms once; prod asks for its target
+   ID typed and a reason.
 2. The job (`control --operation run --service <service>`, the command on stdin) runs it in a one-off container with the
-   service's rendered settings and mounts on the platform network, then the dialog shows the exit code and the last
-   output line.
+   service's rendered settings and mounts on the platform network, then the dialog shows the exit code, the last
+   output line (whole up to 16 KiB), the lines before it under **Earlier output**, and the file's size and SHA-256.
 
 - The job, history and audit name the command by its label (`admin create --slug … --phone …`); the arguments are kept
-  nowhere. During the run they sit in the `docker run` process on the target, which `--rm` removes.
-- The last line is scrubbed of phone numbers, addresses, URL queries and fragments and tokens. When the scrub cut
+  nowhere. During the run they sit in the `docker run` process on the target, which `--rm` removes. A stdin file is
+  kept nowhere either: it passes through memory on the console, the control host and the target into the container.
+- The last line and the earlier output are scrubbed of phone numbers, addresses, URL queries and fragments and tokens. When the scrub cut
   something — a single-use link, say — the dialog offers **Show the full line once** for 15 minutes: the
   target deletes the line with that read, so copy it then.
 - Exit 0 succeeds; anything else fails the job with the exit and the last line. It reads as not applied (command

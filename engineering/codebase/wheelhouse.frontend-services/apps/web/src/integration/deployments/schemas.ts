@@ -103,6 +103,8 @@ export const ControlRunSchema = z.object({
   seconds: z.number(),
   lastLine: z.string().nullable(),
   reveal: z.object({ expiresAt: z.string() }).nullish().catch(null),
+  tail: z.array(z.string()).nullish().catch(null),
+  input: z.object({ bytes: z.number().int(), sha256: z.string() }).nullish().catch(null),
 });
 /** A run's last line as its command printed it, read once. */
 export const RunRevealSchema = z.object({ line: z.string() });

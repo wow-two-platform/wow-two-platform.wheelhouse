@@ -1,4 +1,5 @@
 export { CommandLine, type CommandSplit } from './CommandLine';
+export { RunFiles, type RunInput } from './RunFiles';
 export {
   FilesMigrationStep,
   FilesMigrations,

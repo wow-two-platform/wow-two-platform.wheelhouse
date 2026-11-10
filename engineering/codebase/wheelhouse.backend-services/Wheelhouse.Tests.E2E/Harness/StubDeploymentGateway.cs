@@ -304,13 +304,22 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
         ControlAsync(target, operation, service, set, actor, reason, null, ct);
 
     public Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set, string actor,
-        string? reason, IReadOnlyList<string>? command, CancellationToken ct)
+        string? reason, IReadOnlyList<string>? command, CancellationToken ct) =>
+        ControlAsync(target, operation, service, set, actor, reason, command, null, ct);
+
+    /// <summary>Every stdin file a run took, base64, in order.</summary>
+    public List<string> Inputs { get; } = [];
+
+    public Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set, string actor,
+        string? reason, IReadOnlyList<string>? command, string? input, CancellationToken ct)
     {
         Controls.Add((target, operation, service, actor, reason, set));
         if (command is not null)
             Commands.Add(command);
+        if (input is not null)
+            Inputs.Add(input);
         if (Runner is not null)
-            return Runner.ControlAsync(target, operation, service, set, actor, reason, command, ct);
+            return Runner.ControlAsync(target, operation, service, set, actor, reason, command, input, ct);
         if (ControlRefusal is not null)
             return Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(ControlRefusal)));
         return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new

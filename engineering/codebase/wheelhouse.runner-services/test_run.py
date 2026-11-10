@@ -4,6 +4,8 @@ its settings, mounts and the platform network, as a control beside stop, start, 
 The job keeps the command's label, never an argument, and the exit code with the last stdout line scrubbed; nothing
 stops, and nothing the owner stopped changes.
 """
+import base64
+import hashlib
 import json
 import subprocess
 import unittest
@@ -26,14 +28,16 @@ RESULT = ("admin-result {\"verb\":\"create\",\"exit\":0,\"status\":\"created\",\
 
 
 class RunDocker(ControlDocker):
-    """Answers each one-off as `answer` says, (exit, last line); records its arguments."""
+    """Answers each one-off as `answer` says, (exit, last line) or (exit, its last lines); records its arguments and
+    what went to its stdin."""
     answer = (0, RESULT)
     runs = []
 
-    def one_off(self, arguments, timeout, container):
-        self.runs.append({"arguments": arguments, "timeout": timeout, "container": container})
+    def one_off(self, arguments, timeout, container, document=None):
+        self.runs.append({"arguments": arguments, "timeout": timeout, "container": container, "document": document})
         self.events.append("run")
-        return self.answer
+        code, printed = self.answer
+        return code, [printed] if isinstance(printed, str) else list(printed or [])
 
 
 class RunTests(unittest.TestCase):
@@ -156,6 +160,57 @@ class RunTests(unittest.TestCase):
     def test_the_run_reaches_the_history_observation(self):
         self.assertIn("run", history.OBSERVED)
 
+    def test_a_run_keeps_a_structured_last_line_whole_and_the_lines_before_it_scrubbed(self):
+        self.deployed()
+        report = "import-report " + json.dumps({"map": [{"legacyId": "r" + str(index), "eventId": OWNER, "phone": PHONE}
+                                                        for index in range(120)]})
+        result = "import-result ok=true dry-run=false rows=68 created=68 updated=0 unchanged=0 failed=0"
+        RunDocker.answer = (0, ["Importing 68 rows", report, result])
+        record = self.run_command(command=["dotnet", "Events.Api.dll", "import", "ocharo-fashion"])
+        self.assertEqual("succeeded", record["status"], record.get("reason"))
+        run = record["run"]
+        self.assertEqual(result, run["lastLine"])
+        self.assertGreater(len(report), 8000, "the report is a long structured line")
+        self.assertEqual(2, len(run["tail"]))
+        self.assertEqual("Importing 68 rows", run["tail"][0])
+        self.assertTrue(run["tail"][1].startswith("import-report {"))
+        self.assertIn(OWNER, run["tail"][1], "an identifier stays as printed")
+        self.assertNotIn(PHONE, json.dumps(record))
+        # The report stays whole, its phone numbers cut; the tail keeps the newest lines within its own limit.
+        self.assertEqual(len(report) - 120 * (len(PHONE) - 1), len(run["tail"][1]))
+        older, newer, newest = "a " * 10000, "b " * 8000, "c " * 8000
+        self.assertEqual([runner.run_line(newer), runner.run_line(newest)], runner.run_tail([older, newer, newest]))
+        self.assertEqual(runner.RUN_LINE_LIMIT, len(runner.run_line(older)))
+
+    def test_a_run_takes_a_file_on_its_stdin_and_keeps_only_its_size_and_hash(self):
+        self.deployed()
+        bundle = b'{"rows": [' + b'{"title":"Fashion week","phone":"' + PHONE.encode() + b'"},' * 300 + b'{}]}'
+        encoded = base64.b64encode(bundle).decode()
+        record = runner.control(self.target, "run", ["api"], "max", "11111111-1111-4111-8111-111111111182",
+                                docker_factory=RunDocker, command=["dotnet", "Events.Api.dll", "import", "ocharo-fashion"],
+                                input_file=encoded)
+        self.assertEqual("succeeded", record["status"], record.get("reason"))
+        [call] = RunDocker.runs
+        self.assertEqual(bundle, call["document"])
+        self.assertEqual(["docker", "run", "--interactive", "--rm"], call["arguments"][:4])
+        self.assertEqual({"bytes": len(bundle), "sha256": hashlib.sha256(bundle).hexdigest()}, record["run"]["input"])
+        saved = (self.base / "jobs" / (record["id"] + ".json")).read_text()
+        for value in (encoded[:40], "Fashion week", PHONE):
+            self.assertNotIn(value, saved)
+            self.assertNotIn(value, json.dumps(record))
+
+    def test_only_a_run_takes_a_stdin_file_of_base64_within_its_limit(self):
+        self.deployed()
+        too_large = base64.b64encode(b"x" * (runner.RUN_INPUT_LIMIT + 1)).decode()
+        for operation, value, refusal in (("stop", "eA==", "Only a run takes a file"),
+                                          ("run", "not base64!", "base64 of 1 byte to 2 MiB"),
+                                          ("run", "", "base64 of 1 byte to 2 MiB"),
+                                          ("run", too_large, "base64 of 1 byte to 2 MiB")):
+            with self.subTest(refusal=refusal, size=len(value)), self.assertRaisesRegex(ValueError, refusal):
+                runner.run_input(operation, value)
+        self.assertIsNone(runner.run_input("run", None))
+        self.assertEqual(b"x", runner.run_input("run", "eA=="))
+
 
 INVITE = ("admin-result {\"verb\":\"invite\",\"exit\":0,\"link\":\"https://id.example.com/sign-up?invitation="
           + "Tk9" * 12 + "\",\"expiresAt\":\"2026-11-09T10:00:00Z\"}")
@@ -253,7 +308,7 @@ class RunLabelTests(unittest.TestCase):
         self.assertEqual("link https://id.example.com/admin/sign-in… for … …@example.com chat … at "
                          "2026-11-02T10:00:00Z Password=*** key …", line)
         self.assertIsNone(runner.run_line("  "))
-        self.assertEqual(runner.RUN_LINE_LIMIT, len(runner.run_line("word " * 200)))
+        self.assertEqual(runner.RUN_LINE_LIMIT, len(runner.run_line("word " * 5000)))
 
 
 class RunDockerTests(unittest.TestCase):
@@ -262,13 +317,15 @@ class RunDockerTests(unittest.TestCase):
 
         def fake_run(arguments, **options):
             seen.append(options)
-            return subprocess.CompletedProcess(arguments, 0, "report\n" + RESULT + "\n\n   \n", None)
+            return subprocess.CompletedProcess(arguments, 0, ("report\n" + RESULT + "\n\n   \n").encode(), None)
 
         with patch.object(runner.subprocess, "run", side_effect=fake_run):
-            code, line = runner.Docker({"product": "pilot", "environment": "dev"}, {"PATH": "/bin"}).one_off(
-                ["docker", "run"], 60, "box")
-        self.assertEqual((0, RESULT), (code, line))
+            docker = runner.Docker({"product": "pilot", "environment": "dev"}, {"PATH": "/bin"})
+            code, lines = docker.one_off(["docker", "run"], 60, "box")
+            docker.one_off(["docker", "run", "--interactive"], 60, "box", b"bundle")
+        self.assertEqual((0, ["report", RESULT]), (code, lines))
         self.assertEqual(subprocess.DEVNULL, seen[0]["stderr"])
+        self.assertEqual((b"", b"bundle"), (seen[0]["input"], seen[1]["input"]), "stdin is empty unless a file is given")
         self.assertNotIn(runner.MIGRATE_KEY, seen[0]["env"])
 
 
@@ -299,6 +356,12 @@ class TransportRunTests(unittest.TestCase):
         self.assertEqual({"kind": "run", "services": ["api"], "command": LABEL}, submitted["operation"])
         self.assertTrue(commands[-1].endswith("--operation run --actor max --service api --stdin"), commands[-1])
         self.assertEqual({"command": COMMAND}, json.loads(inputs[-1]))
+        with patch.object(transport.fleet, "resolve_target", return_value=self.config), \
+                patch.object(transport, "Ssh", FakeSsh):
+            transport.control(self.root, "pilot-dev", "run", "api", "max", command=COMMAND, input_file="eA==")
+        self.assertEqual({"command": COMMAND, "input": "eA=="}, json.loads(inputs[-1]))
+        for command in commands:
+            self.assertNotIn("eA==", command)
         for command in commands:
             self.assertNotIn(PHONE, command)
         record = (self.root / "jobs" / (submitted["id"] + ".json")).read_text()

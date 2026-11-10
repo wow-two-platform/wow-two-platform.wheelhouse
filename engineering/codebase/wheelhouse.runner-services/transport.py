@@ -31,6 +31,7 @@ import runner
 from fleet import rehearsal
 from runner import (GENERATE_PULL_TIMEOUT, OPERATIONS, PROXIES, SET_NAME, SETTING_KEY, SLUG, TERMINAL, CommandFailed,
                     Rejected, control_command, control_operation, now, reason, rejection, require, read_json, write_json, validate_bundle,
+                    run_input,
                     validate_target, empty_topology, provided_values, release_settings, settings_declarations,
                     stopped_refusal)
 
@@ -403,14 +404,15 @@ def launched(root, request_id, launch):
         raise
 
 
-def control(root, target_id, operation, service, actor, reason=None, set_name=None, command=None):
+def control(root, target_id, operation, service, actor, reason=None, set_name=None, command=None, input_file=None):
     """Stops, starts or restarts the release a target runs (decision 45): one service, or the whole environment
     without one; a restart takes one service. A reset (v0.9) drops and recreates the environment's database for the
     next deploy's migrate step to rebuild; with `set_name` it rolls only that migration set back to 0, with the running
     release's own scripts, and stops only its service. Submitted like a deploy — the runner and the target uploaded, the
     target's worker detached, the job recorded here and followed — and refused while a rollout or another control runs.
     A run (v0.13) runs `command` once in a one-off container of `service`'s running release image; the command travels
-    on SSH stdin and only its label is recorded. Wheelhouse's own targets are never controlled from here: the console
+    on SSH stdin and only its label is recorded; a file for its stdin (`input_file`, base64) travels beside it and is
+    never written here. Wheelhouse's own targets are never controlled from here: the console
     would stop itself, or lose its data."""
     reason = deploy_reason(reason)
     require(operation in OPERATIONS, "Unknown control: " + str(operation))
@@ -422,6 +424,7 @@ def control(root, target_id, operation, service, actor, reason=None, set_name=No
     require(set_name is None or (isinstance(set_name, str) and SET_NAME.fullmatch(set_name)), "Invalid migration set")
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
     command = control_command(operation, command)
+    run_input(operation, input_file)
     config = fleet.resolve_target(root, target_id)
     require(not config.get("self"), "Wheelhouse's own environments are never stopped, restarted or reset from the "
                                     "console")
@@ -445,9 +448,10 @@ def control(root, target_id, operation, service, actor, reason=None, set_name=No
     launch = shlex.join(["python3", remote + "/runner.py", "control-launch", "--target", remote + "/target.json",
                          "--operation", operation, "--actor", actor, *(["--service", service] if service else []),
                          *(["--set", set_name] if set_name else []), *(["--stdin"] if command else [])])
-    # A run's command on SSH stdin, never an argument a process listing would show.
+    # A run's command and its stdin file on SSH stdin, never an argument a process listing would show.
+    payload = {"command": command, **({"input": input_file} if input_file else {})}
     remote_job = launched(root, request_id, lambda: json.loads(
-        ssh.run(launch, json.dumps({"command": command}) if command else None)))
+        ssh.run(launch, json.dumps(payload) if command else None)))
     record.update(status=remote_job["status"], remoteJobId=remote_job["id"], release=remote_job.get("release"))
     write_json(root / "jobs" / (request_id + ".json"), record)
     return {"id": request_id, "targetId": target_id, "operation": record["operation"], "release": record["release"],
@@ -1328,7 +1332,7 @@ def main():
             result = files_migration(root, args.target, args.actor, args.reason, provided)
         elif args.action == "control":
             result = control(root, args.target, args.operation, args.service, args.actor, args.reason, args.set_name,
-                             (provided or {}).get("command"))
+                             (provided or {}).get("command"), (provided or {}).get("input"))
         elif args.action == "stops":
             result = stops(root)
         elif args.action == "jobs":

@@ -55,7 +55,7 @@ public sealed class TargetControlCommandHandler(
 
         var result = await gateway.ControlAsync(
             target.Slug, request.OperationName, request.Service, request.Set, request.Actor, reason, request.Command,
-            cancellationToken);
+            request.Input, cancellationToken);
         if (result is not AppResult<JsonElement>.Failure { Error.Type: AppErrorType.Conflict })
             following.Wake();
         return result;

@@ -34,7 +34,7 @@ public sealed class TargetControlsController(ISender sender, IActorContext actor
     {
         var result = await sender.SendAsync(new TargetControlCommand(
             target, request.Operation!.Value, request.Service, actor.Actor, request.Reason, request.Confirm, request.Set,
-            request.Command), ct);
+            request.Command, request.Input), ct);
         return this.ToActionResult(result, envelope => Accepted(envelope));
     }
 

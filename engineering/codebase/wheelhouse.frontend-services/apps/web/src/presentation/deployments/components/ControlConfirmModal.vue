@@ -11,17 +11,17 @@ export interface ControlConfirmModalProps {
 </script>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import { Eraser, Pause, Play, RotateCw, SquareTerminal } from "lucide-vue-next";
 
 import { Button, CopyButton } from "@wow-two-beta/fe/presentation/actions";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
-import { Field, TextInput } from "@wow-two-beta/fe/presentation/forms";
+import { Field, FilePicker, TextInput } from "@wow-two-beta/fe/presentation/forms";
 import { TypedConfirmModal } from "@wow-two-beta/fe/presentation/overlays";
 
 import { useTargetControl } from "@/application/deployments";
 import { JobStatus } from "@/domain/deployments";
-import { CommandLine, ControlOperation, ServiceControls, type ControlRun } from "@/domain/deployments/controls";
+import { CommandLine, ControlOperation, RunFiles, ServiceControls, type ControlRun } from "@/domain/deployments/controls";
 import { failureReason } from "@/integration/common";
 
 /**
@@ -40,6 +40,10 @@ const control = useTargetControl();
 const reason = ref("");
 /** A run's command line as typed; empty whenever the dialog opens. */
 const command = ref("");
+/** A file the run's command reads on its stdin, if any; it lives in this dialog only and goes to the target once. */
+const file = shallowRef<File | null>(null);
+/** Why the chosen file cannot go to the run's stdin; null while it can, or none is chosen. */
+const fileProblem = computed(() => (file.value ? RunFiles.problem(file.value.size) : null));
 /** While the queued control runs on its target: what it is doing. */
 const progress = ref<string | null>(null);
 /** Why the target failed or refused the control, once it ended so. */
@@ -67,7 +71,11 @@ const commandProblem = computed(() => (parsed.value.ok ? "" : parsed.value.error
 const guarded = computed(() => (props.request ? ServiceControls.isGuarded(props.request.target) : false));
 /** Whether everything the control needs is filled: a prod reason, a run's command. */
 const complete = computed(
-  () => (!guarded.value || reason.value.trim().length > 0) && (!isRun.value || args.value.length > 0) && !finished.value,
+  () =>
+    (!guarded.value || reason.value.trim().length > 0) &&
+    (!isRun.value || args.value.length > 0) &&
+    !fileProblem.value &&
+    !finished.value,
 );
 const tone = computed(() =>
   props.request?.operation === ControlOperation.Stop || props.request?.operation === ControlOperation.Reset
@@ -96,6 +104,7 @@ watch(
   () => {
     reason.value = "";
     command.value = "";
+    file.value = null;
     progress.value = null;
     outcome.value = null;
     finished.value = null;
@@ -122,12 +131,14 @@ async function submit(typed: string) {
   revealProblem.value = null;
   submitting.value = true;
   try {
+    const input = isRun.value && file.value ? RunFiles.toBase64(new Uint8Array(await file.value.arrayBuffer())) : null;
     const result = await control.mutateAsync({
       target: request.target.id,
       operation: request.operation,
       service: request.service,
       set: request.set?.name ?? null,
       command: isRun.value ? args.value : null,
+      input,
       ...(guarded.value ? { reason: reason.value, confirm: typed } : {}),
     });
     if (!result.ok) return result;
@@ -151,6 +162,11 @@ async function submit(typed: string) {
   } finally {
     submitting.value = false;
   }
+}
+
+/** Keeps the first file the picker chose, or none. @internal */
+function pick(files: FileList | null) {
+  file.value = files?.[0] ?? null;
 }
 
 /** Reads the run's last line as printed, once: the target removes it with this read. @internal */
@@ -190,6 +206,19 @@ async function reveal() {
         placeholder="dotnet Identity.Api.dll admin create --slug …"
       />
     </Field>
+    <Field
+      v-if="isRun"
+      label="Stdin file"
+      helper="Optional: a file the command reads on its stdin, 2 MiB at most; sent once, kept nowhere"
+      :is-read-only="submitting || Boolean(finished)"
+      :error="fileProblem ?? ''"
+    >
+      <FilePicker
+        label="Choose a file"
+        :preview="file ? `${file.name} · ${file.size} bytes` : 'No file'"
+        @files-change="pick"
+      />
+    </Field>
     <Field v-if="guarded" label="Reason" is-required>
       <TextInput v-model="reason" autocomplete="off" maxlength="300" />
     </Field>
@@ -209,7 +238,16 @@ async function reveal() {
         />
       </div>
       <p v-else class="text-xs">The command printed no output.</p>
+      <p v-if="finished.input" class="mt-1 text-xs">{{ RunFiles.label(finished.input) }}</p>
+      <details v-if="finished.tail?.length" class="mt-2 text-xs">
+        <summary class="cursor-pointer">Earlier output ({{ finished.tail.length }} lines)</summary>
+        <pre class="mt-1 max-h-60 overflow-auto font-mono break-all whitespace-pre-wrap">{{ finished.tail.join("\n") }}</pre>
+      </details>
     </Alert>
+    <details v-if="failed?.tail?.length" class="text-xs">
+      <summary class="cursor-pointer">Earlier output ({{ failed.tail.length }} lines)</summary>
+      <pre class="mt-1 max-h-60 overflow-auto font-mono break-all whitespace-pre-wrap">{{ failed.tail.join("\n") }}</pre>
+    </details>
     <div v-if="failed?.lastLine" class="flex items-center justify-end gap-2">
       <span class="text-xs text-muted-foreground">Copy the last line it printed</span>
       <CopyButton
