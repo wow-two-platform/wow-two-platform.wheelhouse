@@ -51,7 +51,7 @@ public interface IDeploymentGateway
     /// <summary>Records the owner's reconciliation of an interrupted or failed rollout on its target.</summary>
     Task<AppResult<JsonElement>> ReconcileAsync(string target, string job, string actor, CancellationToken ct);
     /// <summary>Submits a control of the release a target runs: <paramref name="operation"/> (<c>stop</c>, <c>start</c>,
-    /// <c>restart</c> or <c>reset</c>) of <paramref name="service"/>, or of the whole environment without one, a reset
+    /// <c>restart</c>, <c>reset</c>, <c>run</c> or <c>copy</c>) of <paramref name="service"/>, or of the whole environment without one, a reset
     /// of <paramref name="set"/> rolling only that migration set back; the target's worker runs it under the deployment
     /// lock and its journal keeps it. A gateway without controls refuses it.</summary>
     Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set, string actor,
@@ -73,6 +73,14 @@ public interface IDeploymentGateway
         input is null
             ? ControlAsync(target, operation, service, set, actor, reason, command, ct)
             : Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("This runner cannot hand a run a file.")));
+    /// <summary>Submits a control as <see cref="ControlAsync(string, string, string?, string?, string, string?, IReadOnlyList{string}?, string?, CancellationToken)"/>
+    /// does, a copy naming <paramref name="from"/>: the target whose database the runner copies into this one's on their
+    /// server's platform PostgreSQL. A gateway without copies refuses one.</summary>
+    Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set, string actor,
+        string? reason, IReadOnlyList<string>? command, string? input, string? from, CancellationToken ct) =>
+        from is null
+            ? ControlAsync(target, operation, service, set, actor, reason, command, input, ct)
+            : Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Unexpected("This runner cannot copy a database.")));
     /// <summary>Submits a files migration (operation <c>files-migration</c>) as a control: the whole
     /// <paramref name="payload"/> (<c>step</c>, <c>image</c>, <c>files</c>, <c>import</c>, <c>token</c>, <c>sources</c>)
     /// reaches the runner on its standard input, never as an argument. A gateway without migrations refuses it.</summary>

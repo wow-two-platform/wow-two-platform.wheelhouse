@@ -33,7 +33,11 @@ public sealed class DeploymentDetailQueryHandler(DeploymentHistoryService histor
             : null;
         var previous = entry.Previous is { } prior ? new DeploymentReferenceDto(prior.Id, prior.Release, prior.BundleId) : null;
         return AppResult<DeploymentDetailDto>.Ok(new DeploymentDetailDto(
-            observed?.FilesMigration is { } migration ? DeploymentItemDto.From(entry) with { FilesMigration = migration } : DeploymentItemDto.From(entry),
+            DeploymentItemDto.From(entry) with
+            {
+                FilesMigration = observed?.FilesMigration ?? entry.Record.FilesMigration,
+                Copy = observed?.Copy ?? entry.Record.Copy,
+            },
             entry.Changes,
             previous,
             CanRollBack(entry, loaded) ? previous : null,

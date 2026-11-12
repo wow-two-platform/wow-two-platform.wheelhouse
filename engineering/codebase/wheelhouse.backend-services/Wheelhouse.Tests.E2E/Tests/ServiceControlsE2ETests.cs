@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Domain.Deployments.Entities;
 using Wheelhouse.Domain.Deployments.Enums;
+using Wheelhouse.Domain.Products.Entities;
 using Wheelhouse.Domain.Servers.Entities;
 using Wheelhouse.Domain.Servers.Enums;
 using Wheelhouse.Domain.Servers.Models;
@@ -119,6 +120,112 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
         audit.Should().Contain(entry => entry.GetProperty("subject").GetString() == "foreverpin-dev/identity");
         audit.Should().Contain(entry => entry.GetProperty("subject").GetString() == "foreverpin-prod/identity"
             && entry.GetProperty("detail").GetString() == "reason: identity drifted");
+    }
+
+    [Fact]
+    public async Task Copy_ShouldReachTheRunnerWithItsSource_AndTheAuditNamesIt()
+    {
+        await AddHarvestAsync();
+
+        var dev = await ControlAsync("harvest-dev", new { operation = "copy", from = "foreverpin-dev" });
+        dev.StatusCode.Should().Be(HttpStatusCode.Accepted, await dev.Content.ReadAsStringAsync());
+        Fixture.Deployments.Controls.Should().Equal(("harvest-dev", "copy", (string?)null, "test-admin", (string?)null, (string?)null));
+        Fixture.Deployments.Copies.Should().Equal(("harvest-dev", "foreverpin-dev"));
+        (await dev.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("data").GetProperty("operation").GetProperty("from")
+            .GetString().Should().Be("foreverpin-dev");
+
+        var audit = (await AdminClient.AuditItemsAsync()).EnumerateArray()
+            .Single(entry => entry.GetProperty("action").GetString() == "database.copy");
+        (audit.GetProperty("subject").GetString(), audit.GetProperty("detail").GetString())
+            .Should().Be(("harvest-dev", "from: foreverpin-dev"));
+    }
+
+    [Fact]
+    public async Task Copy_ShouldNeedProdsTargetIdTypedAndAReason_LikeAReset()
+    {
+        await AddHarvestAsync();
+
+        var untyped = await ControlAsync("harvest-prod", new { operation = "copy", from = "foreverpin-prod", reason = "move data" });
+        untyped.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await untyped.Content.ReadAsStringAsync()).Should().Contain("Type harvest-prod to copy prod");
+        var silent = await ControlAsync("harvest-prod", new { operation = "copy", from = "foreverpin-prod", confirm = "harvest-prod" });
+        silent.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await silent.Content.ReadAsStringAsync()).Should().Contain("Give a reason to copy prod");
+        Fixture.Deployments.Controls.Should().BeEmpty("nothing reaches the runner before both are given");
+
+        var accepted = await ControlAsync("harvest-prod",
+            new { operation = "copy", from = "foreverpin-prod", confirm = "harvest-prod", reason = " move data " });
+        accepted.StatusCode.Should().Be(HttpStatusCode.Accepted, await accepted.Content.ReadAsStringAsync());
+        Fixture.Deployments.Controls.Should().Equal(("harvest-prod", "copy", (string?)null, "test-admin", "move data", (string?)null));
+        Fixture.Deployments.Copies.Should().Equal(("harvest-prod", "foreverpin-prod"));
+        (await AdminClient.AuditItemsAsync()).EnumerateArray()
+            .Where(entry => entry.GetProperty("action").GetString() == "database.copy").Should()
+            .Contain(entry => entry.GetProperty("subject").GetString() == "harvest-prod"
+                && entry.GetProperty("detail").GetString() == "from: foreverpin-prod; reason: move data");
+    }
+
+    [Fact]
+    public async Task Copy_ShouldRefuseASourceOnAnotherServer_WheelhouseItself_TheSameEnvironmentAndAnUnknownOne()
+    {
+        var (pilot, foreverPin) = await AddHarvestAsync();
+        await using (var scope = Fixture.Host.Services.CreateAsyncScope())
+        {
+            var services = scope.ServiceProvider;
+            var wheelhouse = await services.GetRequiredService<IProductsRepository>().GetBySlugAsync("wheelhouse");
+            var targets = services.GetRequiredService<ITargetsRepository>();
+            await targets.CreateAsync(Target("wheelhouse-dev", wheelhouse!.Id, pilot, DeploymentEnvironment.Dev));
+            await targets.CreateAsync(Target("foreverpin-dev2", foreverPin, pilot, DeploymentEnvironment.Dev));
+        }
+
+        var crossed = await ControlAsync("harvest-dev", new { operation = "copy", from = "foreverpin-prod" });
+        crossed.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await crossed.Content.ReadAsStringAsync()).Should()
+            .Contain("A copy reads the source on the same platform PostgreSQL; foreverpin-prod is on another server");
+        var self = await ControlAsync("harvest-dev", new { operation = "copy", from = "wheelhouse-dev" });
+        self.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await self.Content.ReadAsStringAsync()).Should().Contain("wheelhouse-dev runs Wheelhouse itself");
+        var twin = await ControlAsync("foreverpin-dev", new { operation = "copy", from = "foreverpin-dev2" });
+        twin.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await twin.Content.ReadAsStringAsync()).Should().Contain("own product and environment");
+        var unknown = await ControlAsync("harvest-dev", new { operation = "copy", from = "nowhere-dev" });
+        unknown.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await unknown.Content.ReadAsStringAsync()).Should().Contain("There is no environment nowhere-dev to copy from");
+        var into = await ControlAsync("wheelhouse-dev", new { operation = "copy", from = "harvest-dev" });
+        into.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await into.Content.ReadAsStringAsync()).Should().Contain("its database is never replaced from the console");
+        Fixture.Deployments.Controls.Should().BeEmpty("nothing reaches the runner while the source is refused");
+    }
+
+    [Fact]
+    public async Task History_ShouldReadACopy_WithItsSourceAndWhatItCopied()
+    {
+        const string id = "00000000-0000-4000-8000-000000000c07";
+        var now = Fixture.Host.Clock.GetUtcNow();
+        Fixture.Deployments.History.Add(new
+        {
+            id, targetId = "foreverpin-dev", release = "v1.0.0", actor = "test-admin", status = "succeeded",
+            operation = new { kind = "copy", services = Array.Empty<string>(), from = "harvestadapters-dev" },
+            copy = new { from = "harvestadapters-dev", source = "harvestadapters_dev", database = "foreverpin_dev", tables = 12, rows = 48210 },
+            stopped = (object?)null, submittedAt = Instant(now.AddHours(-1)), completedAt = Instant(now.AddHours(-1).AddSeconds(50)),
+        });
+        Fixture.Deployments.History.Add(new
+        {
+            id = "00000000-0000-4000-8000-000000000c08", targetId = "foreverpin-dev", release = "v1.0.0", actor = "test-admin",
+            status = "failed", operation = new { kind = "copy", services = Array.Empty<string>(), from = "harvestadapters-dev" },
+            copy = "unreadable", submittedAt = Instant(now.AddHours(-2)), completedAt = Instant(now.AddHours(-2).AddSeconds(5)),
+        });
+
+        var items = (await DataAsync("/api/deployments/history")).GetProperty("items").EnumerateArray().ToList();
+        var item = items.Single(entry => entry.GetProperty("id").GetString() == id);
+        (item.GetProperty("operation").GetProperty("kind").GetString(), item.GetProperty("operation").GetProperty("from").GetString(),
+            item.GetProperty("state").GetString()).Should().Be(("copy", "harvestadapters-dev", "succeeded"));
+        var copy = item.GetProperty("copy");
+        (copy.GetProperty("source").GetString(), copy.GetProperty("database").GetString(), copy.GetProperty("tables").GetInt64(),
+            copy.GetProperty("rows").GetInt64()).Should().Be(("harvestadapters_dev", "foreverpin_dev", 12L, 48210L));
+        items.Single(entry => entry.GetProperty("id").GetString() == "00000000-0000-4000-8000-000000000c08")
+            .GetProperty("copy").ValueKind.Should().Be(JsonValueKind.Null, "an unreadable copy never drops its record");
+        (await DataAsync("/api/deployments/" + id + "/detail")).GetProperty("deployment").GetProperty("copy").GetProperty("rows")
+            .GetInt64().Should().Be(48210);
     }
 
     [Fact]
@@ -266,6 +373,11 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
     [InlineData("{\"operation\":\"reset\",\"set\":\"Identity;rm\"}", "migration set's name")]
     [InlineData("{\"operation\":\"restart\"}", "Restart one service at a time")]
     [InlineData("{\"operation\":\"stop\",\"service\":\"Management;rm\"}", "Service")]
+    [InlineData("{\"operation\":\"copy\"}", "A copy names the environment it copies from")]
+    [InlineData("{\"operation\":\"copy\",\"from\":\"harvest-dev\",\"service\":\"management\"}", "never one service")]
+    [InlineData("{\"operation\":\"copy\",\"from\":\"foreverpin-dev\"}", "never its own")]
+    [InlineData("{\"operation\":\"copy\",\"from\":\"Harvest;rm\"}", "From")]
+    [InlineData("{\"operation\":\"stop\",\"from\":\"harvest-dev\"}", "Only a copy names an environment to copy from")]
     [InlineData("{\"operation\":\"pause\"}", "operation")]
     [InlineData("{}", "Operation")]
     public async Task Control_ShouldRefuseAMalformedRequest(string body, string message)
@@ -447,6 +559,33 @@ public sealed class ServiceControlsE2ETests(WheelhouseAppFixture fixture) : Whee
         environments.Single(row => row.GetProperty("environment").GetString() == "prod").GetProperty("stopped").ValueKind
             .Should().Be(JsonValueKind.Null);
     }
+
+    /// <summary>Adds a Harvest product with its dev on ForeverPin dev's server and its prod on ForeverPin prod's, so each
+    /// has a source on its own server to copy from; answers dev's server and ForeverPin's id.</summary>
+    private async Task<(Guid Pilot, Guid ForeverPin)> AddHarvestAsync()
+    {
+        await using var scope = Fixture.Host.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var products = services.GetRequiredService<IProductsRepository>();
+        var targets = services.GetRequiredService<ITargetsRepository>();
+        var foreverPin = await products.GetBySlugAsync("foreverpin");
+        var dev = await targets.GetBySlugAsync("foreverpin-dev");
+        var prod = await targets.GetBySlugAsync("foreverpin-prod");
+        var harvest = await products.CreateAsync(new ProductEntity
+        {
+            Id = Guid.NewGuid(), Slug = "harvest", Name = "Harvest", Description = "Scrapes and keeps listings.",
+            Repository = "sulton-max/harvest", DefaultBranch = "main", WorkspaceId = foreverPin!.WorkspaceId,
+        });
+        await targets.CreateAsync(Target("harvest-dev", harvest.Id, dev!.ServerId, DeploymentEnvironment.Dev));
+        await targets.CreateAsync(Target("harvest-prod", harvest.Id, prod!.ServerId, DeploymentEnvironment.Prod));
+        return (dev.ServerId, foreverPin.Id);
+    }
+
+    private static TargetEntity Target(string slug, Guid product, Guid server, DeploymentEnvironment environment) => new()
+    {
+        Id = Guid.NewGuid(), Slug = slug, ProductId = product, ServerId = server, Environment = environment,
+        Network = "platform", Root = "/srv/wheelhouse",
+    };
 
     private HttpClient ActionClient()
     {

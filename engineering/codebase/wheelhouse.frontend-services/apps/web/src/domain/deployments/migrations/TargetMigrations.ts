@@ -17,6 +17,9 @@ export const MigrationSource = {
   /** A database reset, every set at level 0, or a set reset, that set alone, until the next deploy's migrate step
    * builds it again. */
   Reset: 'reset',
+  /** A database copy from another environment, every set behind until the next deploy's migrate step reads the copied
+   * schema. */
+  Copy: 'copy',
 } as const;
 export type MigrationSource = (typeof MigrationSource)[keyof typeof MigrationSource];
 
@@ -102,6 +105,7 @@ const SourceWords: Readonly<Record<MigrationSource, string>> = {
   gate: 'Rollback gate',
   check: 'Checked',
   reset: 'Reset',
+  copy: 'Copied',
 };
 
 /** Pure rules over a target's migration readings and checks. */

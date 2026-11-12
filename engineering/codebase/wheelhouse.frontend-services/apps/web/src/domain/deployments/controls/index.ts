@@ -20,6 +20,8 @@ export {
   type ControlRunStatus,
   type ControlSet,
   type ControlTarget,
+  type CopySourceCandidate,
+  type DatabaseCopy,
   type DeploymentOperation,
   type QueuedControl,
   type TargetStop,

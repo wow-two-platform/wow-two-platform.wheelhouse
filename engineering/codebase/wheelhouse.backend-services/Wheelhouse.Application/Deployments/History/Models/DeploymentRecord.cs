@@ -106,6 +106,12 @@ public sealed record DeploymentRecord
     /// job and for a record older than the control.</summary>
     public FilesMigrationDto? FilesMigration { get; init; }
 
+    /// <summary>Gets what a database copy kept — its source, both databases and the tables and rows it compared; null
+    /// for any other job. Read by the adapter, never bound from the runner's JSON directly, so a malformed one never drops
+    /// the record.</summary>
+    [JsonIgnore]
+    public DatabaseCopyDto? Copy { get; init; }
+
     /// <summary>Gets what the owner kept stopped on the target once this control ended; null for a deploy, a control
     /// that has not ended, or one that left nothing stopped.</summary>
     public TargetStopDto? Stopped { get; init; }

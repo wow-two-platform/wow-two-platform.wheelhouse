@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Attention, DeployState, ServiceResult } from '@/domain/common';
 import { DeploymentIssueKind, DeploymentOutcome, DeploymentStates, JobStatus, StepStatus } from '@/domain/deployments';
-import { DeploymentOperationSchema, FilesMigrationRunSchema, ReleaseComponentSchema, ServiceRolloutSchema, StepFindingsSchema } from './schemas';
+import { DatabaseCopySchema, DeploymentOperationSchema, FilesMigrationRunSchema, ReleaseComponentSchema, ServiceRolloutSchema, StepFindingsSchema } from './schemas';
 
 const nullableText = z.string().nullable();
 // Site links open in the owner's browser, so only http(s) addresses survive decoding.
@@ -105,6 +105,8 @@ const DeploymentItemFields = z.object({
   operation: DeploymentOperationSchema.nullish().catch(null).transform((value) => value ?? null),
   /** What a files migration kept — its import and each finished source's result; null for any other item. */
   filesMigration: FilesMigrationRunSchema.transform((value) => value ?? null),
+  /** What a copy kept — its source, both databases and the tables and rows it compared; null for any other item. */
+  copy: DatabaseCopySchema.transform((value) => value ?? null),
 });
 
 /** A deployment as lists read it; an answer from before the status taxonomy reads its state from the runner status. */

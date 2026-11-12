@@ -13,7 +13,8 @@ using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 namespace Wheelhouse.Api.Controllers;
 
 /// <summary>Stops, starts and restarts what an environment runs (decision 45), resets its database (v0.9) or one
-/// migration set of it, and runs a one-off command in a service's release image (v0.13). Signed-in owner only: an
+/// migration set of it, runs a one-off command in a service's release image (v0.13), and copies another environment's
+/// database on the same server into its own. Signed-in owner only: an
 /// integration key is refused, and no MCP tool reaches it.</summary>
 [ApiController]
 [Route("api/deployments/targets/{target}")]
@@ -24,8 +25,10 @@ public sealed class TargetControlsController(ISender sender, IActorContext actor
 
     /// <summary>Queues a stop, start or restart of the release the target runs — one service, or the whole environment
     /// without one — a reset of its database or of one migration set (<c>set</c>), or a run of <c>command</c> in one
-    /// service's release image, as a job in its journal; its outcome reads like a deploy's, a run's with its exit code and
-    /// last output line. Prod needs its target ID typed and a reason. Refused (409) for Wheelhouse's own
+    /// service's release image, or a copy of the database of the target <c>from</c> names into its own, as a job in its
+    /// journal; its outcome reads like a deploy's, a run's with its exit code and last output line. Prod needs its target
+    /// ID typed and a reason. A copy's source must be another product or environment on the same server (409 otherwise).
+    /// Refused (409) for Wheelhouse's own
     /// environments, while a rollout, a fleet or another control runs there, and when the target's state forbids it (a
     /// set the running release does not carry, or whose service has no migrate item).</summary>
     [HttpPost("controls")]
@@ -34,7 +37,7 @@ public sealed class TargetControlsController(ISender sender, IActorContext actor
     {
         var result = await sender.SendAsync(new TargetControlCommand(
             target, request.Operation!.Value, request.Service, actor.Actor, request.Reason, request.Confirm, request.Set,
-            request.Command, request.Input), ct);
+            request.Command, request.Input, request.From), ct);
         return this.ToActionResult(result, envelope => Accepted(envelope));
     }
 

@@ -64,7 +64,19 @@ export const DeploymentOperationSchema = z.object({
   /** A files migration's step and source ids; absent on every other control. */
   step: z.string().nullish().catch(null),
   sources: z.array(z.string()).nullish().catch(null),
+  /** A copy's source target; absent on every other control. */
+  from: z.string().nullish().catch(null),
 });
+/** A count a copy kept; anything but a whole non-negative number reads as none. */
+const copyCount = z.number().int().nonnegative().nullish().catch(null).transform((value) => value ?? null);
+/** A name a copy kept; anything but text reads as none. */
+const copyText = z.string().nullish().catch(null).transform((value) => value ?? null);
+/** What a copy kept: its source target, both databases and the tables and rows it compared. A malformed one reads as none
+ * and never fails the read it rides on. */
+export const DatabaseCopySchema = z
+  .object({ from: copyText, source: copyText, database: copyText, tables: copyCount, rows: copyCount })
+  .nullish()
+  .catch(null);
 /** How the mover counted one source; a count it did not report reads as none. */
 const FilesMigrationResultSchema = z.object({
   files: z.number().int().nonnegative(),
@@ -160,6 +172,8 @@ export const DeploymentJobSchema = z.object({
   run: ControlRunSchema.nullish().catch(null),
   // A files migration's job carries its import and each finished source's result.
   filesMigration: FilesMigrationRunSchema,
+  // A copy's job carries its source and what it copied once it compared the row counts.
+  copy: DatabaseCopySchema,
 });
 export const DeploymentTargetSchema = z.object({
   id: z.string(),

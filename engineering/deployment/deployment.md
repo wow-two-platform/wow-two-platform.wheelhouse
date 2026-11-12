@@ -1143,6 +1143,23 @@ A `reason` names the refused rule, missing setting key, failed step or unhealthy
 The API returns it as ProblemDetails `detail`: `409` for a refused precondition, `503` for a failed step.
 A service's recent container output is readable on request through `logs`; Docker rotates it on the target.
 
+### Database copy
+
+A product moving to another product slug on the same server (SCFD Adapters into SCFD, 2026-11-12) takes its data with
+a copy, never a hand-run dump ([architecture § Service controls](../architecture/architecture.md#service-controls)):
+
+1. **Deploy the new environment once** on its empty database, so it runs a release with a `migrate` item.
+2. **Stop the source environment** (its Manage › Stop): the copy refuses a source with a running container.
+3. **Products › the product › the environment › Migrations › Copy from…**, picking the source among the other
+   environments on that server. Prod asks for the target ID typed and a reason. The job counts the source's tables,
+   snapshots this database, stops every service, dumps the source, recreates this database and restores the dump as
+   its owner, and compares every table's rows with the source's.
+4. **Deploy the environment again**: its migrate step reads the copied schema and the services start.
+
+- A failure before the drop starts the environment again; after it, the environment stays stopped and the reason names
+  the snapshot holding its old data. The source's database is never changed.
+- Settings are not copied: type the new environment's own values, or link them.
+
 ### One-off command
 
 A command a product's service runs once against its environment — a first owner's `admin create` — runs from the

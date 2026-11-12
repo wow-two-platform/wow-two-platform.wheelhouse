@@ -85,6 +85,85 @@ test("a set reset names its set, rolls only it back and says which service stops
     null, "a whole-database reset names no set");
 });
 
+const harvest = { id: "harvest-dev", environment: "dev", product: "harvest" };
+
+test("a copy names its source, says what it replaces and that the source stops first", () => {
+  assert.equal(ControlOperation.Copy, "copy");
+  assert.equal(ServiceControls.verb(ControlOperation.Copy), "Copy");
+  assert.equal(ServiceControls.labelOf({ kind: "copy", services: [], from: "harvestadapters-dev" }),
+    "Copy the database from harvestadapters-dev");
+  assert.equal(ServiceControls.labelOf({ kind: "copy", services: [] }), "Copy the database from another environment");
+  const request = { target: harvest, operation: ControlOperation.Copy, service: null, from: "harvestadapters-dev" };
+  assert.equal(ServiceControls.labelOfRequest(request), "Copy the database from harvestadapters-dev");
+  assert.equal(ServiceControls.titleOf(request), "Copy the database from harvestadapters-dev into harvest-dev?");
+  assert.equal(ServiceControls.titleOf({ ...request, from: null }), "Copy the database from another environment into harvest-dev?");
+  const consequence = ServiceControls.consequence(request);
+  assert.match(consequence, /^harvest-dev's database is snapshotted, then replaced with a copy of harvestadapters-dev's database/);
+  assert.match(consequence, /Stop harvestadapters-dev first, so nothing writes while it is read/);
+  assert.match(consequence, /next deploy's migrate step reads the copied schema and starts them/);
+  assert.equal(ServiceControls.isGuarded({ ...harvest, environment: "prod" }), true, "prod's copy asks for its target ID and a reason");
+});
+
+test("a copy reads only another environment on the same server, never Wheelhouse's own or its own twin", () => {
+  const on = (id, product, environment, serverId, self = false) => ({ id, product, environment, serverId, self });
+  const targets = [
+    on("harvest-dev", "harvest", "dev", "products"), on("harvestadapters-dev", "harvestadapters", "dev", "products"),
+    on("foreverpin-dev", "foreverpin", "dev", "products"), on("harvest-dev-2", "harvest", "dev", "products"),
+    on("wheelhouse-dev", "wheelhouse", "dev", "products", true), on("harvestadapters-prod", "harvestadapters", "prod", "prod-host"),
+  ];
+  const sources = ServiceControls.copySources(harvest, targets);
+  assert.deepEqual(sources.map((source) => source.id), ["foreverpin-dev", "harvestadapters-dev"]);
+  assert.equal(ServiceControls.sourceLabel(sources[1]), "harvestadapters · dev");
+  assert.deepEqual(ServiceControls.copySources({ ...harvest, id: "nowhere-dev" }, targets), [], "an unknown target has no sources");
+});
+
+test("the wire carries a copy's source and what it copied, and tolerates a copy it cannot read", () => {
+  const operation = { kind: "copy", services: [], from: "harvestadapters-dev" };
+  const copy = { from: "harvestadapters-dev", source: "harvestadapters_dev", database: "harvest_dev", tables: 12, rows: 48210 };
+  const item = DeploymentItemSchema.parse({ id: "c7", status: "succeeded", outcome: "succeeded", state: "succeeded",
+    attention: "none", submittedAt: "2026-11-12T10:00:00Z", operation, copy });
+  assert.equal(ServiceControls.labelOf(item.operation), "Copy the database from harvestadapters-dev");
+  assert.deepEqual(item.copy, copy);
+  assert.equal(ServiceControls.copyResult(item.copy), "Copied 12 tables, 48,210 rows from harvestadapters_dev into harvest_dev");
+  assert.equal(ServiceControls.copyResult({ ...copy, tables: null }), null, "no line before the counts were compared");
+  assert.equal(ServiceControls.copyResult({ ...copy, tables: 1, rows: 1 }), "Copied 1 table, 1 row from harvestadapters_dev into harvest_dev");
+  assert.equal(DeploymentItemSchema.parse({ id: "c8", status: "failed", outcome: "failed", state: "failed", attention: "act",
+    submittedAt: "2026-11-12T10:00:00Z", operation, copy: "unreadable" }).copy, null, "an unreadable copy never fails the read");
+  assert.deepEqual(DeploymentItemSchema.parse({ id: "c9", status: "succeeded", outcome: "succeeded", state: "succeeded",
+    attention: "none", submittedAt: "2026-11-12T10:00:00Z", operation, copy: { ...copy, rows: -1, tables: "12" } }).copy,
+    { ...copy, rows: null, tables: null }, "a count that is no whole number reads as none");
+  const queued = ControlSubmittedSchema.parse({ id: "c7", targetId: "harvest-dev", status: "queued", operation, release: "v1.0.0" });
+  assert.equal(queued.operation.from, "harvestadapters-dev");
+  const job = DeploymentJobSchema.parse({ id: "c7", status: "succeeded", operation, copy });
+  assert.deepEqual(job.copy, copy);
+  assert.equal(DeploymentJobSchema.parse({ id: "d1", status: "succeeded" }).copy, undefined, "a deploy has no copy");
+});
+
+test("a copy sends its source, and no other control does", async () => {
+  const bodies = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    bodies.push([url, options.headers.get("X-Wheelhouse-Action"), JSON.parse(options.body)]);
+    return new Response(JSON.stringify({ data: { id: "c7", targetId: "harvest-prod", status: "queued",
+      operation: { kind: "copy", services: [], from: "harvestadapters-prod" } } }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const copied = await deploymentsApi.control("harvest-prod", { operation: "copy", from: "harvestadapters-prod",
+      reason: " move SCFD data ", confirm: "harvest-prod" });
+    assert.equal(copied.ok, true);
+    assert.equal(copied.value.operation.from, "harvestadapters-prod");
+    await deploymentsApi.control("harvest-dev", { operation: "reset", from: "harvestadapters-dev" });
+    assert.deepEqual(bodies.map(([url, action]) => [url, action]), [
+      ["/api/deployments/targets/harvest-prod/controls", "control"],
+      ["/api/deployments/targets/harvest-dev/controls", "control"],
+    ]);
+    assert.deepEqual(bodies[0][2], { operation: "copy", from: "harvestadapters-prod", reason: "move SCFD data", confirm: "harvest-prod" });
+    assert.deepEqual(bodies[1][2], { operation: "reset" }, "only a copy names a source");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("a stopped environment's pill reads stopped, never failed", () => {
   const summary = { environment: "dev", lastDeploy: null, running: null, weekly: [], lastAttempt: null,
     stopped: { environment: true, services: [] } };

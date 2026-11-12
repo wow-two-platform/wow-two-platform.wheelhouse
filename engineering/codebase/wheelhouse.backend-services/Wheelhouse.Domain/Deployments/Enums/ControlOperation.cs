@@ -1,7 +1,7 @@
 namespace Wheelhouse.Domain.Deployments.Enums;
 
 /// <summary>Refers to what the owner does to the release an environment runs, outside a deploy (decision 45): one
-/// service, or the whole environment for a stop, a start or a reset.</summary>
+/// service, or the whole environment for a stop, a start, a reset or a copy.</summary>
 public enum ControlOperation
 {
     /// <summary>Stops the containers; they, their volumes and routes stay, and deploys wait until a start.</summary>
@@ -23,4 +23,11 @@ public enum ControlOperation
     /// service's settings, mounts and the platform network (v0.13), such as a first owner's <c>admin create</c>; nothing
     /// stops, and the job keeps the exit code and the last output line, never the arguments.</summary>
     Run = 4,
+
+    /// <summary>Copies another environment's database into this one's on the same platform PostgreSQL: snapshots this
+    /// database, stops every service, dumps the source, drops and recreates this database for its owner, restores the dump
+    /// as that owner, compares every table's row count with the source, and marks the migration sets <c>behind</c>
+    /// (source <c>copy</c>); the next deploy's migrate step reads the copied schema and starts the services. The source
+    /// environment must already be stopped, so nothing writes during the copy.</summary>
+    Copy = 5,
 }

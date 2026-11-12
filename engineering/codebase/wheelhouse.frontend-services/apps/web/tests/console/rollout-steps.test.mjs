@@ -32,6 +32,15 @@ test("each runner step name reads as its kind, and a name the runner adds later 
 
 const step = (name, status = "succeeded") => ({ name, status });
 
+test("a copy's steps read as a check, a snapshot, a stop, the copy itself, a verify and the migration levels", () => {
+  const names = ["Check the copy", "Snapshot the database", "Stop the environment", "Dump harvestadapters_dev",
+    "Copy into harvest_dev", "Compare row counts", "Migration levels to behind"];
+  assert.deepEqual(names.map(StepKinds.of), [StepKind.CheckTarget, StepKind.Snapshot, StepKind.Stop, StepKind.Copy,
+    StepKind.Copy, StepKind.Verify, StepKind.Migrations]);
+  assert.deepEqual([...StepKinds.restoreSteps(names.map((name) => step(name, name === "Compare row counts" ? "failed" : "succeeded")))], [],
+    "a copy's steps never read as an automatic restore");
+});
+
 test("a set reset's steps never read as an automatic restore", () => {
   const failed = [step("Snapshot the database"), step("Stop identity"), step("Reset identity to level 0", "failed")];
   assert.deepEqual([...StepKinds.restoreSteps(failed)], []);

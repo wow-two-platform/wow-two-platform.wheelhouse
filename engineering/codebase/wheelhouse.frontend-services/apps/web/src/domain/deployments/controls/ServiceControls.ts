@@ -8,7 +8,11 @@ import type { RunInput } from "./RunFiles";
  * with the running release's own scripts instead, and stops only the service hosting it; the next deploy builds the
  * set again and starts it. A run executes one command once in a one-off container of a service's running release, with
  * the service's settings and database network; every service keeps running and nothing stopped changes. Its job keeps
- * the command as a masked label, the exit code and the last output line, never the arguments.
+ * the command as a masked label, the exit code and the last output line, never the arguments. A copy replaces the
+ * environment's database with another environment's on the same server's platform PostgreSQL: it snapshots this
+ * database, stops every service, restores the source's dump, checks every table's row count against the source and
+ * marks the migration sets behind; the next deploy's migrate step reads the copied schema and starts the services. The
+ * source must be stopped first, so nothing writes while it is read.
  */
 
 import { Measures } from '@/domain/common/Measures';
@@ -20,6 +24,8 @@ export const ControlOperation = {
   Restart: 'restart',
   Reset: 'reset',
   Run: 'run',
+  /** Copies another environment's database, on the same server, into this one's. */
+  Copy: 'copy',
   /** Moves a dev target's legacy files into Files: a plan, a push or a verify. */
   FilesMigration: 'files-migration',
 } as const;
@@ -37,6 +43,28 @@ export interface DeploymentOperation {
   step?: string | null | undefined;
   /** A files migration's source ids. */
   sources?: string[] | null | undefined;
+  /** A copy's source target. */
+  from?: string | null | undefined;
+}
+
+/** What a copy kept on its job: its source target, both databases' names, and how many tables and rows it compared with
+ * the source; a count it has not reached yet is null. */
+export interface DatabaseCopy {
+  from: string | null;
+  source: string | null;
+  database: string | null;
+  tables: number | null;
+  rows: number | null;
+}
+
+/** An environment a copy may read from, as the target list names it. */
+export interface CopySourceCandidate {
+  readonly id: string;
+  readonly product: string;
+  readonly environment: string;
+  readonly serverId: string;
+  /** Runs Wheelhouse itself, whose database is never copied. */
+  readonly self?: boolean;
 }
 
 /** How a run's command ended: it exited 0, it exited otherwise or never started, or it outran its time limit. */
@@ -100,6 +128,8 @@ export interface ControlRequest {
   readonly command?: readonly string[] | null;
   /** A file for a run's stdin, base64. */
   readonly input?: string | null;
+  /** A copy's source target ID; null until the owner picks one. */
+  readonly from?: string | null;
 }
 
 /** Pure rules for what a control may do and how it reads. */
@@ -132,15 +162,19 @@ export const ServiceControls = {
   isGuarded: (target: ControlTarget): boolean => target.environment === 'prod',
 
   /** A control's name: `Stop management`, `Start the environment`, `Reset the database`, `Reset the identity
-   * migrations`, `Run admin create on identity`; a run without its label reads `Run a command on identity`. */
+   * migrations`, `Run admin create on identity`, `Copy the database from harvestadapters-dev`; a run without its label
+   * reads `Run a command on identity`, a copy without its source `Copy the database from another environment`. */
   label: (
     operation: ControlOperation,
     service: string | null,
     set?: string | null,
     command?: string | null,
     step?: string | null,
+    from?: string | null,
   ): string =>
-    operation === ControlOperation.FilesMigration
+    operation === ControlOperation.Copy
+      ? `Copy the database from ${from || 'another environment'}`
+      : operation === ControlOperation.FilesMigration
       ? step
         ? `Files migration: ${step}`
         : 'Files migration'
@@ -160,18 +194,50 @@ export const ServiceControls = {
       operation.set,
       operation.command,
       operation.step,
+      operation.from,
     ),
 
   /** A request's name; a run's arguments never name it, only its recorded label does. */
   labelOfRequest: (request: ControlRequest): string =>
-    ServiceControls.label(request.operation, request.service, request.set?.name),
+    ServiceControls.label(request.operation, request.service, request.set?.name, null, null, request.from),
 
   /** A request's confirmation question: `Stop management on foreverpin-dev?`, `Run a command in identity on
-   * ocharo-prod?`. */
+   * ocharo-prod?`, `Copy the database from harvestadapters-dev into harvest-dev?`. */
   titleOf: (request: ControlRequest): string =>
     request.operation === ControlOperation.Run
       ? `Run a command in ${request.service ?? 'a service'} on ${request.target.id}?`
-      : `${ServiceControls.labelOfRequest(request)} on ${request.target.id}?`,
+      : request.operation === ControlOperation.Copy
+        ? `${ServiceControls.labelOfRequest(request)} into ${request.target.id}?`
+        : `${ServiceControls.labelOfRequest(request)} on ${request.target.id}?`,
+
+  /** The environments a copy into `target` may read: the other targets on its server, never Wheelhouse's own and never
+   * the same product's same environment, by product then environment. None while `target` is not in the list. */
+  copySources: (target: ControlTarget, targets: readonly CopySourceCandidate[]): CopySourceCandidate[] => {
+    const here = targets.find((candidate) => candidate.id === target.id);
+    if (!here) return [];
+    return targets
+      .filter(
+        (candidate) =>
+          candidate.serverId === here.serverId &&
+          candidate.id !== here.id &&
+          !candidate.self &&
+          !(candidate.product === here.product && candidate.environment === here.environment),
+      )
+      .sort((left, right) => left.product.localeCompare(right.product) || left.environment.localeCompare(right.environment));
+  },
+
+  /** A copy source's name in the picker: `harvestadapters · dev`. */
+  sourceLabel: (candidate: Pick<CopySourceCandidate, 'product' | 'environment'>): string =>
+    `${candidate.product} · ${candidate.environment}`,
+
+  /** What a copy restored, in one line: `Copied 12 tables, 48,210 rows from harvestadapters_dev into harvest_dev`; null
+   * before it compared them. */
+  copyResult: (copy: DatabaseCopy | null | undefined): string | null =>
+    copy && copy.tables !== null && copy.rows !== null
+      ? `Copied ${copy.tables.toLocaleString('en-US')} ${copy.tables === 1 ? 'table' : 'tables'}, `
+        + `${copy.rows.toLocaleString('en-US')} ${copy.rows === 1 ? 'row' : 'rows'} from ${copy.source ?? copy.from ?? 'the source'} `
+        + `into ${copy.database ?? 'this database'}`
+      : null,
 
   /** The words a masked command label names its run by: what it runs before its first option, without the `dotnet
    * X.dll` launcher — `dotnet Identity.Api.dll admin create --slug …` reads `admin create`; none reads `a command`. */
@@ -201,7 +267,9 @@ export const ServiceControls = {
           ? 'Reset'
           : operation === ControlOperation.Run
             ? 'Run'
-            : operation === ControlOperation.FilesMigration
+            : operation === ControlOperation.Copy
+              ? 'Copy'
+              : operation === ControlOperation.FilesMigration
               ? 'Move files'
               : 'Restart',
 
@@ -217,6 +285,12 @@ export const ServiceControls = {
         + `runs, after a snapshot of the database; ${request.set.service} stops until the next deploy's migrate step `
         + 'builds the set again and starts it. The other services keep running, and the rest of the database keeps its '
         + 'data.';
+    if (request.operation === ControlOperation.Copy) {
+      const source = request.from || 'the source environment';
+      return `${request.target.id}'s database is snapshotted, then replaced with a copy of ${source}'s database on the same `
+        + `server. Stop ${source} first, so nothing writes while it is read. Every service on ${request.target.id} stops `
+        + "until the next deploy's migrate step reads the copied schema and starts them; the snapshot stays on the target.";
+    }
     if (request.operation === ControlOperation.Reset)
       return `${subject}'s database is snapshotted, then dropped and created again, empty. Every service stops until the `
         + "next deploy's migrate step builds the schema and starts them; the snapshot stays on the target.";

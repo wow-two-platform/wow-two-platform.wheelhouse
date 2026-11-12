@@ -134,7 +134,7 @@ VERIFY_SUMMARY_LIMIT = 300
 # a set reset (`--set`) rolls one migration set back to 0 with the running release's own scripts instead, and stops only
 # the service that hosts it. A run (v0.13) runs the owner's command once in a one-off container of one service's running
 # release image; nothing stops and nothing stopped changes.
-OPERATIONS = ("stop", "start", "restart", "reset", "run")
+OPERATIONS = ("stop", "start", "restart", "reset", "run", "copy")
 # The Files migration job (files_migration.py): a control of its own, beside the others, that never stops a service.
 # A cancel leaves `cancel/<job>.json` for the worker to read; `Docker.stream` answers CANCELLED when it saw one.
 FILES_MIGRATION = "files-migration"
@@ -3487,9 +3487,12 @@ def write_resting(base, services, job_id=None):
     return sorted(set(services))
 
 
-def control_label(operation, services, set_name=None, command=None):
+def control_label(operation, services, set_name=None, command=None, source=None):
     """A control's one-line name, as its step and history read it: `Stop management`, `Start the environment`,
-    `Reset the database`, `Reset the identity migrations`, `Run admin create on identity`."""
+    `Reset the database`, `Reset the identity migrations`, `Run admin create on identity`, `Copy the database from
+    harvestadapters-dev`."""
+    if operation == "copy":
+        return "Copy the database from " + (source or "another environment")
     if operation == "run":
         return "Run " + (run_verb(command) or "a command") + " on " + ", ".join(services)
     if operation == "reset":
@@ -3537,6 +3540,13 @@ def control_plan(base, operation, services, set_name=None):
             return current, bundle, manifest, {"environment": False, "services": kept} if kept else None
         require(release_migrate(manifest), "The release " + manifest["release"] + " declares no migrate item, so no "
                                            "deploy would rebuild a reset database; deploy one that does first")
+        return current, bundle, manifest, None
+    if operation == "copy":
+        # The whole environment's database, as a reset takes it: the next deploy migrates the copy and starts everything.
+        require(not services, "A copy replaces the environment's database, never one service's")
+        require(manifest["product"] != SELF_PRODUCT, "Wheelhouse's own databases are never replaced; they keep their data")
+        require(release_migrate(manifest), "The release " + manifest["release"] + " declares no migrate item, so no "
+                                           "deploy would read the copied schema; deploy one that does first")
         return current, bundle, manifest, None
     if operation == "stop":
         require(not whole, base.name + " is already stopped")
@@ -3638,10 +3648,10 @@ def reset_database(docker, container, database, extensions):
                                              for extension in extensions), "Extensions in " + name)
 
 
-def reset_levels(base, job_id, release, snapshot):
-    """Every migration set the target knows goes to level 0, read as `behind` from source `reset`: the database holds no
-    schema until the next deploy's migrate step rebuilds it, which no rollback gate may then hold up. Returns how many
-    sets it set."""
+def reset_levels(base, job_id, release, snapshot, source="reset"):
+    """Every migration set the target knows goes to level 0, read as `behind` from source `reset` (or `copy`): the
+    database holds no schema the runner has read until the next deploy's migrate step reads or rebuilds it, which no
+    rollback gate may then hold up. Returns how many sets it set."""
     known = known_migrations(base)
     if not known or not known["sets"]:
         return 0
@@ -3652,7 +3662,7 @@ def reset_levels(base, job_id, release, snapshot):
             continue
         reset = {key: value for key, value in item.items() if key != "appliedBy"}
         reset.update(level=0, newestLabel=None, newestKind=None, state="behind", rollbackFloor=None, release=release,
-                     job=job_id, source="reset", at=at, resetFrom=item.get("level"), snapshot=snapshot)
+                     job=job_id, source=source, at=at, resetFrom=item.get("level"), snapshot=snapshot)
         sets.append(reset)
     write_json(Path(base) / MIGRATIONS_FILE, {"updatedAt": at, "sets": sets})
     return len(sets)
@@ -3730,10 +3740,12 @@ def control_ready(base):
             "Failed mutation requires reconciliation")
 
 
-def control_launch(target_path, operation, services, actor, set_name=None, command=None, input_file=None):
+def control_launch(target_path, operation, services, actor, set_name=None, command=None, input_file=None,
+                   source_path=None):
     """Queues a control of the release a target runs and starts its worker detached, as a deploy's launch does; every
     rule is checked here first, so a refusal reaches the owner before any job exists. A run's command and its stdin file
-    reach its worker on the worker's stdin, never as an argument or a file."""
+    reach its worker on the worker's stdin, never as an argument or a file. A copy names the environment it reads by
+    that environment's target file (`source_path`), uploaded beside this one's."""
     target = read_json(target_path)
     root, project = validate_target(target)
     base = root / project
@@ -3742,17 +3754,22 @@ def control_launch(target_path, operation, services, actor, set_name=None, comma
     run_input(operation, input_file)
     control_ready(base)
     current, bundle, manifest, _ = control_plan(base, operation, services, set_name)
+    source = copy_target(operation, source_path)
+    if source is not None:
+        copy_databases(target, source, manifest, bundle)
     control_environment(target, manifest, bundle)
     job_id = str(uuid.uuid4())
     jobs = base / "jobs"
     jobs.mkdir(parents=True, exist_ok=True, mode=0o700)
     write_json(jobs / (job_id + ".json"), {"id": job_id, "status": "queued", "actor": actor, "queuedAt": now(),
-                                           "operation": control_operation(operation, services, set_name, command),
+                                           "operation": control_operation(operation, services, set_name, command,
+                                                                          copy_from(source)),
                                            "release": current.get("release")})
     worker = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "control", "--target",
                                str(Path(target_path).resolve()), "--operation", operation, "--actor", actor,
                                "--job", job_id, *[argument for name in services for argument in ("--service", name)],
-                               *(["--set", set_name] if set_name else []), *(["--stdin"] if command else [])],
+                               *(["--set", set_name] if set_name else []), *(["--stdin"] if command else []),
+                               *(["--source", str(Path(source_path).resolve())] if source is not None else [])],
                               stdin=subprocess.PIPE if command else subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                               stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
     if command:
@@ -3762,11 +3779,11 @@ def control_launch(target_path, operation, services, actor, set_name=None, comma
     return {"id": job_id, "status": "queued", "release": current.get("release")}
 
 
-def control_operation(operation, services, set_name=None, command=None):
+def control_operation(operation, services, set_name=None, command=None, source=None):
     """A control as its job names it: the kind, the service it named (none for the environment) and, for a set reset,
-    the migration set; for a run, its command's label, never its arguments."""
+    the migration set; for a run, its command's label, never its arguments; for a copy, the environment it read."""
     return {"kind": operation, "services": list(services), **({"set": set_name} if set_name else {}),
-            **({"command": run_label(command)} if command else {})}
+            **({"command": run_label(command)} if command else {}), **({"from": source} if source else {})}
 
 
 def control_command(operation, command):
@@ -3869,7 +3886,7 @@ def run_scrub(text):
 
 
 def control(target, operation, services, actor, job_id, docker_factory=Docker, set_name=None, command=None,
-            input_file=None):
+            input_file=None, source=None):
     """Stops, starts or restarts the release a target runs, under the deployment lock, as a job in the target's journal
     and its durable intent (`active.json`) like a rollout. A stop marks what it stops before stopping it; a start
     clears its mark only once its services are healthy, so a control cut short leaves the target refusing deploys and a
@@ -3887,8 +3904,9 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker, s
         require(not active or not (active.get("mutationStarted") and active["status"] in ("failed", "rollback_failed")),
                 "Failed mutation requires reconciliation")
         current, bundle, manifest, after = control_plan(base, operation, services, set_name)
+        require((operation == "copy") == (source is not None), "A copy, and only a copy, names the environment it reads")
         record = {"id": job_id, "project": project,
-                  "operation": control_operation(operation, services, set_name, command),
+                  "operation": control_operation(operation, services, set_name, command, copy_from(source)),
                   "release": current.get("release"), "sourceCommit": current.get("sourceCommit"),
                   "kind": current.get("kind", "release"), "actor": actor, "status": "running", "startedAt": now(),
                   "previous": current["id"]}
@@ -3913,6 +3931,9 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker, s
                           set_name, after, progress)
             elif operation == "reset":
                 reset(base, target, manifest, bundle, project, docker, steps, record, job_id, actor, names, progress)
+            elif operation == "copy":
+                copy(base, target, source, manifest, bundle, project, docker, steps, record, job_id, actor, names,
+                     progress)
             elif operation == "run":
                 run_one_off(target, manifest, bundle, project, environment, docker, steps, record, job_id, services[0],
                             command, base=base, document=run_input(operation, input_file))
@@ -3948,8 +3969,8 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker, s
                     # Its service stays stopped until the next deploy, as after a set reset that finished.
                     with contextlib.suppress(Exception):
                         write_resting(base, [*resting_of(base), *resting], job_id)
-            elif operation == "reset":
-                record["reason"] = reset_failed(record.get("reason"), docker, bundle, prior, progress, record)
+            elif operation in ("reset", "copy"):
+                record["reason"] = reset_failed(record.get("reason"), docker, bundle, prior, progress, record, operation)
                 if progress["dropped"]:
                     with contextlib.suppress(Exception):
                         write_resting(base, names, job_id)
@@ -3959,7 +3980,7 @@ def control(target, operation, services, actor, job_id, docker_factory=Docker, s
                     if states:
                         record["reason"] = record.get("reason", "The control failed") + "; not healthy: " + ", ".join(states)
         record["stopped"] = stopped_of(base)
-        if docker is not None and (operation != "reset" or set_name):
+        if docker is not None and (operation not in ("reset", "copy") or set_name):
             # A service the owner keeps stopped has no health to report; a reset leaves every service stopped for the
             # next deploy, so it reports none either, and a set reset none for the service it leaves stopped.
             with contextlib.suppress(Exception):
@@ -4160,10 +4181,11 @@ def reset(base, target, manifest, bundle, project, docker, steps, record, job_id
     write_resting(base, names, job_id)
 
 
-def reset_failed(why, docker, bundle, prior, progress, record):
-    """What a failed reset left, appended to its reason: before any database was dropped, the environment starts again
-    on its database (unless the owner had stopped something); after, it stays stopped and the snapshot holds the data."""
-    why = why or "The reset failed"
+def reset_failed(why, docker, bundle, prior, progress, record, operation="reset"):
+    """What a failed reset or copy left, appended to its reason: before any database was dropped, the environment starts
+    again on its database (unless the owner had stopped something); after, it stays stopped and the snapshot holds the
+    data."""
+    why = why or "The " + operation + " failed"
     snapshot = (record.get("snapshot") or {}).get("path")
     if progress["dropped"]:
         return (why + "; the environment stays stopped" + ("; its data is in " + snapshot if snapshot else ""))[:600]
@@ -4174,6 +4196,188 @@ def reset_failed(why, docker, bundle, prior, progress, record):
         except Exception:
             return (why + "; nothing was dropped, but the environment did not start again: start it")[:600]
     return (why + "; nothing was dropped")[:600]
+
+
+# ---- Database copy ----
+
+# Every table's rows, by schema-qualified name, counted by the superuser; the cluster's own schemas and extensions' own
+# tables aside. Only names and counts are read.
+TABLE_ROWS = ("SELECT n.nspname || '.' || c.relname, (xpath('/row/c/text()', query_to_xml(format("
+              "'SELECT count(*) AS c FROM %I.%I', n.nspname, c.relname), false, true, '')))[1]::text "
+              "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+              "WHERE c.relkind IN ('r', 'p') AND n.nspname NOT IN ('pg_catalog', 'information_schema') "
+              "AND n.nspname !~ '^pg_(toast|temp)' AND NOT EXISTS (SELECT 1 FROM pg_depend d "
+              "WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.deptype = 'e') ORDER BY 1;\n")
+# What a copy's restore leaves out of the dump's list: extensions, created first as the superuser, and their comments.
+RESTORE_SKIPPED = re.compile(r"\d+; \d+ \d+ (EXTENSION|COMMENT - EXTENSION) ")
+
+
+def copy_target(operation, source_path):
+    """The target file a copy reads its source environment from (uploaded beside this one's), checked; None for every
+    other control, which never names one."""
+    require((operation == "copy") == (source_path is not None), "A copy, and only a copy, names the environment it reads")
+    if source_path is None:
+        return None
+    source = read_json(source_path)
+    require(isinstance(source, dict), "The source environment's target is unreadable")
+    validate_target(source)
+    require(source.get("product") != SELF_PRODUCT, "Wheelhouse's own databases are never copied from the console")
+    return source
+
+
+def copy_from(source):
+    """A copy's source environment as its job names it: its Compose project, `<product>-<environment>`."""
+    return validate_target(source)[1] if source is not None else None
+
+
+def copy_from_path(source_path):
+    """copy_from for a failed worker's record: the source's name if its target file still reads, else nothing."""
+    try:
+        return copy_from(read_json(source_path)) if source_path else None
+    except Exception:
+        return None
+
+
+def copy_databases(target, source, manifest, bundle):
+    """The two databases a copy joins: the source environment's own (its database.json, as the host kit placed it) and
+    this one's, as a reset reads it, exactly one. Each a plain database and owner, never the cluster's own or
+    Wheelhouse's, and never one database for both."""
+    origin_project, own = copy_from(source), validate_target(target)[1]
+    require(origin_project != own, "A copy reads another environment, never its own")
+    destination = reset_databases(target, manifest, bundle)
+    require(len(destination) == 1, "A copy replaces one database; " + own + " names " + str(len(destination)))
+    folder = settings_folder(source)
+    value = target_database(folder) if folder.is_dir() else None
+    require(value is not None, origin_project + " has no database.json; a copy reads only a database the host kit "
+                               "placed")
+    origin = connection_of(value)
+    require(origin is not None and IDENTIFIER.fullmatch(origin["database"])
+            and IDENTIFIER.fullmatch(origin["username"] or ""),
+            origin_project + "'s database.json names no plain PostgreSQL database and owner")
+    require(origin["database"] not in PROTECTED_DATABASES, origin["database"] + " is never copied")
+    require(origin["database"] != destination[0]["database"], origin_project + " and " + own + " share "
+            + origin["database"] + "; there is nothing to copy")
+    return {**origin, "service": None}, destination[0]
+
+
+def project_running(docker, project):
+    """How many containers of a Compose project run on the host."""
+    return len(docker.execute(["docker", "ps", "--quiet", "--filter", "label=com.docker.compose.project=" + project,
+                               "--filter", "status=running"], "docker ps", timeout=30).split())
+
+
+def table_rows(docker, container, database, step):
+    """Every table's row count in `database` (TABLE_ROWS), by schema-qualified name."""
+    rows = {}
+    for line in docker.psql(container, database, TABLE_ROWS, step):
+        name, _, count = line.rpartition("|")
+        require(name and count.isdigit(), step + " read a line it did not expect")
+        rows[name] = int(count)
+    return rows
+
+
+def database_extensions(docker, container, database):
+    """The extensions a database holds beyond plpgsql, which a copy creates again as the superuser before its restore."""
+    names = docker.psql(container, database, "SELECT extname FROM pg_extension WHERE extname <> 'plpgsql' ORDER BY 1;\n",
+                        "Extensions in " + database)
+    require(all(EXTENSION.fullmatch(name) for name in names), database + " holds an extension with an unexpected name")
+    return names
+
+
+def copy_dump(docker, target, folder, database, image):
+    """The source database's pg_dump, custom format, into the copy's folder: as its owner, over the platform network,
+    its password in the environment only. Returns the file's name."""
+    user = str(os.getuid()) + ":" + str(os.getgid())
+    network = target.get("variables", {}).get("PLATFORM_NETWORK")
+    file = "copy-" + database["database"] + ".dump"
+    docker.run(["docker", "run", "--rm", "--user", user, *(["--network", network] if network else []), "-e", "PGPASSWORD",
+                "-v", str(folder) + ":/snapshot", image, "pg_dump", "--host", database["host"],
+                "--port", str(database["port"]), "--username", database["username"], "--dbname", database["database"],
+                "--format", "custom", "--no-password", "--file", "/snapshot/" + file],
+               "pg_dump " + database["database"], {"PGPASSWORD": database["password"]})
+    return file
+
+
+def copy_restore(docker, target, folder, file, database, image):
+    """Restores the copy's dump into the recreated database as its owner, in one transaction that stops at the first
+    error: no source owner or privilege, and none of the extensions (RESTORE_SKIPPED), which the superuser created.
+    Returns how many entries of the dump's list it left out."""
+    user = str(os.getuid()) + ":" + str(os.getgid())
+    network = target.get("variables", {}).get("PLATFORM_NETWORK")
+    on_network = ["--network", network] if network else []
+    docker.run(["docker", "run", "--rm", "--user", user, "-v", str(folder) + ":/snapshot", image, "sh", "-c",
+                "pg_restore --list /snapshot/" + file + " > /snapshot/" + file + ".list"], "pg_restore --list " + file)
+    listed = (Path(folder) / (file + ".list")).read_text().splitlines()
+    kept = [line for line in listed if not RESTORE_SKIPPED.match(line)]
+    (Path(folder) / (file + ".restore")).write_text("\n".join(kept) + "\n")
+    docker.run(["docker", "run", "--rm", "--user", user, *on_network, "-e", "PGPASSWORD", "-v", str(folder) + ":/snapshot:ro",
+                image, "pg_restore", "--host", database["host"], "--port", str(database["port"]),
+                "--username", database["username"], "--dbname", database["database"], "--no-owner", "--no-privileges",
+                "--single-transaction", "--no-password", "--use-list", "/snapshot/" + file + ".restore",
+                "/snapshot/" + file], "pg_restore into " + database["database"], {"PGPASSWORD": database["password"]})
+    return len(listed) - len(kept)
+
+
+def copy(base, target, source, manifest, bundle, project, docker, steps, record, job_id, actor, names, progress):
+    """A copy's steps: another environment's database, stopped, into this one's through the same platform PostgreSQL
+    (one cluster, so transaction ids a product stores stay valid). Its tables counted; this database snapshotted; every
+    service stopped; the source dumped as its owner; this database dropped and created again for its owner with the
+    source's extensions, and the dump restored as that owner; every table's rows compared with the source's; the
+    migration levels read as `behind` from source `copy`. Every service stays stopped until the next deploy, whose
+    migrate step reads the copied schema; the source environment stays stopped, its database untouched."""
+    origin_project = copy_from(source)
+    with steps.run("Check the copy") as step:
+        origin, database = copy_databases(target, source, manifest, bundle)
+        container = platform_postgres(docker, target, [origin, database])
+        owned_database(docker, container, origin)
+        owned_database(docker, container, database)
+        running = project_running(docker, origin_project)
+        require(not running, origin_project + " still runs " + plural(running, "container") + "; stop it first, so "
+                             "nothing writes during the copy")
+        rows = table_rows(docker, container, origin["database"], "Count " + origin["database"])
+        extensions = sorted(set(database_extensions(docker, container, origin["database"]))
+                            | set(release_extensions(manifest)))
+        record["copy"] = {"from": origin_project, "source": origin["database"], "database": database["database"],
+                          "tables": len(rows), "rows": sum(rows.values())}
+        step["detail"] = (origin["database"] + " on stopped " + origin_project + ": " + plural(len(rows), "table") + ", "
+                          + plural(sum(rows.values()), "row"))
+    with steps.run("Snapshot the database") as step:
+        taken = take_snapshot(base, job_id, target, manifest, read_json(Path(bundle) / "compose.json"), project, docker,
+                              sources=([database], []))
+        record["snapshot"] = taken
+        step["detail"] = plural(len(taken["databases"]), "database") + " in " + taken["path"]
+    with steps.run("Stop the environment") as step:
+        progress["stopped"] = True
+        docker.stop(bundle, [])
+        step["detail"] = plural(len(names), "service") + " stopped until the next deploy"
+    image, folder = snapshot_settings(target)[0], Path(taken["path"])
+    with steps.run("Dump " + origin["database"]) as step:
+        file = copy_dump(docker, target, folder, origin, image)
+        record["copy"]["dump"] = str(folder / file)
+        size = (folder / file).stat().st_size if (folder / file).exists() else None
+        step["detail"] = file + (" (" + str(size) + " bytes)" if size is not None else "") + " in " + str(folder)
+    with steps.run("Copy into " + database["database"]) as step:
+        progress["dropped"] = True
+        reset_database(docker, container, database, extensions)
+        skipped = copy_restore(docker, target, folder, file, database, image)
+        step["detail"] = ("Dropped and created again, owned by " + database["username"] + "; " + origin["database"]
+                          + "'s dump restored as " + database["username"]
+                          + ("; extensions " + ", ".join(extensions) + " created as superuser, " + str(skipped)
+                             + " of the dump's entries left to them" if extensions else ""))
+    with steps.run("Compare row counts") as step:
+        copied = table_rows(docker, container, database["database"], "Count " + database["database"])
+        differ = sorted(name for name in set(rows) | set(copied) if rows.get(name) != copied.get(name))
+        require(not differ, "The copy's rows differ from " + origin["database"] + "'s in " + plural(len(differ), "table")
+                + ": " + ", ".join(differ[:5]))
+        record["copy"].update(tables=len(copied), rows=sum(copied.values()))
+        step["detail"] = (plural(len(copied), "table") + ", " + plural(sum(copied.values()), "row") + ", each as in "
+                          + origin["database"])
+    with steps.run("Migration levels to behind") as step:
+        count = reset_levels(base, job_id, manifest["release"], taken["path"], "copy")
+        step["detail"] = ((plural(count, "migration set") + " read as behind" if count else "No migration set recorded yet")
+                          + "; the next deploy's migrate step reads the copied schema and starts the services")
+    write_stopped(base, None, actor)
+    write_resting(base, names, job_id)
 
 
 def reset_set(base, target, manifest, bundle, project, environment, docker, steps, record, job_id, actor, name, after,
@@ -4858,6 +5062,7 @@ def main():
     parser.add_argument("--operation", choices=(*OPERATIONS, FILES_MIGRATION),
                         help="control: stop, start, restart, reset, run or files-migration")
     parser.add_argument("--set", dest="set_name", help="control: the migration set a reset rolls back to 0, alone")
+    parser.add_argument("--source", help="control-launch, control: a copy's source environment, as its target file")
     parser.add_argument("--tail", type=int, default=200)
     parser.add_argument("--stdin", action="store_true",
                         help="launch, apply: read this deploy's settings values and registry sign-in from stdin; "
@@ -4911,11 +5116,12 @@ def main():
             result = files_migration().work(read_json(args.target), args.actor, args.job, provided)
         elif args.action == "control-launch":
             result = control_launch(args.target, args.operation, [args.service] if args.service else [], args.actor,
-                                    args.set_name, (provided or {}).get("command"), (provided or {}).get("input"))
+                                    args.set_name, (provided or {}).get("command"), (provided or {}).get("input"),
+                                    args.source)
         elif args.action == "control":
             result = control(read_json(args.target), args.operation, [args.service] if args.service else [],
                              args.actor, args.job, set_name=args.set_name, command=(provided or {}).get("command"),
-                             input_file=(provided or {}).get("input"))
+                             input_file=(provided or {}).get("input"), source=copy_target(args.operation, args.source))
         else:
             result = apply(args.bundle, read_json(args.target), args.actor, args.job, provided=provided)
         print(json.dumps(result))
@@ -4938,7 +5144,8 @@ def main():
                 kept = ({"operation": files_migration().operation_safe(provided)}
                         if args.action == "control" and args.operation == FILES_MIGRATION else
                         {"operation": control_operation(args.operation, [args.service] if args.service else [],
-                                                        args.set_name, command if isinstance(command, list) else None)
+                                                        args.set_name, command if isinstance(command, list) else None,
+                                                        copy_from_path(args.source))
                          } if args.action == "control" else {})
                 write_json(root / project / "jobs" / (args.job + ".json"),
                            {"id": args.job, **kept, **refused, "completedAt": now(), "steps": [failed_step]})

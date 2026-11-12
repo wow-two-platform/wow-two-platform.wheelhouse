@@ -23,4 +23,7 @@ public sealed record DeploymentObservation
 
     /// <summary>Gets what a files migration job kept, as its target last reported it; null for any other job.</summary>
     public FilesMigrationDto? FilesMigration { get; init; }
+
+    /// <summary>Gets what a database copy kept, as its target last reported it; null for any other job.</summary>
+    public DatabaseCopyDto? Copy { get; init; }
 }

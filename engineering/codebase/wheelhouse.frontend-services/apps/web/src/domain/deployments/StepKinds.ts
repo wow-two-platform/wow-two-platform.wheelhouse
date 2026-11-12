@@ -31,6 +31,9 @@ export const StepKind = {
   /** A database reset dropping and creating one database again (`Reset ocharo_dev`), or a set reset rolling one
    * migration set back (`Reset identity to level 0`). */
   Reset: 'reset',
+  /** A database copy moving another environment's data in: dumping the source (`Dump harvestadapters_dev`) and
+   * restoring it into this one's (`Copy into harvest_dev`). */
+  Copy: 'copy',
   /** A step this console does not know yet; it still shows, with a neutral mark. */
   Other: 'other',
 } as const;
@@ -40,10 +43,13 @@ export type StepKind = (typeof StepKind)[keyof typeof StepKind];
 const NAMED: Readonly<Record<string, StepKind>> = {
   'Render settings': StepKind.RenderSettings,
   'Check target': StepKind.CheckTarget,
+  'Check the copy': StepKind.CheckTarget,
   'Snapshot data': StepKind.Snapshot,
   'Snapshot the database': StepKind.Snapshot,
   'Migration levels to 0': StepKind.Migrations,
   'Migration level to 0': StepKind.Migrations,
+  'Migration levels to behind': StepKind.Migrations,
+  'Compare row counts': StepKind.Verify,
   'Pull images': StepKind.Pull,
   'Dry-run migrations': StepKind.Migrations,
   'Start containers': StepKind.Start,
@@ -65,6 +71,8 @@ const PREFIXED: readonly (readonly [string, StepKind])[] = [
   ['Restore ', StepKind.Restore],
   ['Restart ', StepKind.Restart],
   ['Reset ', StepKind.Reset],
+  ['Dump ', StepKind.Copy],
+  ['Copy into ', StepKind.Copy],
   ['Migrate ', StepKind.Migrations],
   ['Start ', StepKind.Start],
   ['Stop ', StepKind.Stop],

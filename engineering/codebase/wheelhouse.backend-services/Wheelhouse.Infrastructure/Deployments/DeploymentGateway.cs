@@ -136,13 +136,21 @@ public sealed class DeploymentGateway(
 
     /// <inheritdoc />
     public Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set,
-        string actor, string? reason, IReadOnlyList<string>? command, string? input, CancellationToken ct)
+        string actor, string? reason, IReadOnlyList<string>? command, string? input, CancellationToken ct) =>
+        ControlAsync(target, operation, service, set, actor, reason, command, input, null, ct);
+
+    /// <inheritdoc />
+    public Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set,
+        string actor, string? reason, IReadOnlyList<string>? command, string? input, string? from, CancellationToken ct)
     {
         List<string> arguments = ["control", "--target", target, "--operation", operation, "--actor", actor];
         if (service is not null)
             arguments.AddRange(["--service", service]);
         if (set is not null)
             arguments.AddRange(["--set", set]);
+        // A copy's source target; the validator lets only a copy name one.
+        if (from is not null)
+            arguments.AddRange(["--from", from]);
         // An argument list, never a shell: the reason reaches the runner as one value.
         if (reason is not null)
             arguments.AddRange(["--reason", reason]);

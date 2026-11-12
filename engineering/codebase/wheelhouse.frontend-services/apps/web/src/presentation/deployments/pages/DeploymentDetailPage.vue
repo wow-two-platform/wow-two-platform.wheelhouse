@@ -448,6 +448,14 @@ function rollBack(): void {
               No source has finished yet.
             </p>
           </Panel>
+          <Panel v-if="deployment?.operation?.kind === ControlOperation.Copy" title="Database copy">
+            <p class="text-sm">
+              {{
+                ServiceControls.copyResult(deployment.copy) ??
+                `From ${deployment.operation.from ?? "another environment"}; the row counts are not compared yet.`
+              }}
+            </p>
+          </Panel>
           <Panel title="Services">
             <template #info>
               <InfoPopover title="Services">

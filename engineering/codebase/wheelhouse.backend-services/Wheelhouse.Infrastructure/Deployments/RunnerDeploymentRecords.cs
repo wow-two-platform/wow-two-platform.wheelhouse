@@ -60,6 +60,7 @@ public sealed partial class RunnerDeploymentRecords(
             Snapshot = ParseSnapshot(document),
             ServiceRollout = ParseServiceRollout(document),
             FilesMigration = ParseFilesMigration(document),
+            Copy = ParseCopy(document),
         };
         return AppResult<DeploymentObservation>.Ok(observation);
     }
@@ -104,6 +105,7 @@ public sealed partial class RunnerDeploymentRecords(
             {
                 Watch = watch, ServiceRollout = ParseServiceRollout(element),
                 FilesMigration = element.TryGetProperty("filesMigration", out _) ? ParseFilesMigration(element) : null,
+                Copy = ParseCopy(element),
             };
         }
         catch (JsonException)
@@ -187,6 +189,13 @@ public sealed partial class RunnerDeploymentRecords(
                     results[source.Name] = new FilesMigrationResultDto(files, bytes, Count(source.Value, "skipped") ?? 0, Count(source.Value, "failed") ?? 0);
         return new FilesMigrationDto(Text(migration, "import"), results);
     }
+
+    /// <summary>Reads what a database copy kept: its source target, both databases and the tables and rows it compared;
+    /// null when absent or not an object. A count that is not a whole number reads as none. @internal</summary>
+    private static DatabaseCopyDto? ParseCopy(JsonElement document) =>
+        document.ValueKind == JsonValueKind.Object && document.TryGetProperty("copy", out var copy) && copy.ValueKind == JsonValueKind.Object
+            ? new DatabaseCopyDto(Text(copy, "from"), Text(copy, "source"), Text(copy, "database"), Count(copy, "tables"), Count(copy, "rows"))
+            : null;
 
     /// <summary>A whole non-negative number property, or null. @internal</summary>
     private static long? Count(JsonElement element, string property) =>

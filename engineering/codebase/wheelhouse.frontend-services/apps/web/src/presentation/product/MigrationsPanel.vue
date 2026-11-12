@@ -8,21 +8,22 @@ export interface MigrationsPanelProps {
   readonly target: string;
   /** What the target last learned about each migration set, from its state. */
   readonly migrations: TargetMigrations | null | undefined;
-  /** The environment a database or set reset acts on; none offers no reset (Wheelhouse itself keeps its data). */
+  /** The environment a database or set reset, or a copy, acts on; none offers neither (Wheelhouse itself keeps its
+   * data). */
   readonly control?: ControlTarget | null;
 }
 </script>
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { DatabaseZap, Eraser, ShieldCheck } from "lucide-vue-next";
+import { Copy, DatabaseZap, Eraser, ShieldCheck } from "lucide-vue-next";
 import { Button } from "@wow-two-beta/fe/presentation/actions";
 import { Badge, RelativeTime } from "@wow-two-beta/fe/presentation/display";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
 
-import { useMigrationsCheck } from "@/application/deployments";
+import { useDeploymentTargets, useMigrationsCheck } from "@/application/deployments";
 import { ReleaseSets } from "@/domain/deployments";
-import { ControlOperation, type ControlRequest } from "@/domain/deployments/controls";
+import { ControlOperation, ServiceControls, type ControlRequest } from "@/domain/deployments/controls";
 import { MigrationRules, type MigrationCheck, type MigrationSetReading } from "@/domain/deployments/migrations";
 import { failureReason } from "@/integration/common";
 import { InfoPopover, StatusPill } from "@/presentation/common/components";
@@ -34,15 +35,22 @@ import ControlConfirmModal from "@/presentation/deployments/components/ControlCo
  * `migrate check` from the image the environment runs (`GET /api/deployments/targets/{target}/migrations`, up to about
  * 90 seconds), shows any item that did not pass, and reads the target's state again. Reset database drops and creates
  * the environment's database again after a snapshot (v0.9); each set's Reset rolls only that set back to 0 with the
- * running release's own scripts and stops only the service hosting it. Dev asks once, prod for its target ID typed and
- * a reason; the next deploy's migrate step builds the schema. The page keys the panel by target, so a check's answer
- * never follows the owner to another environment.
+ * running release's own scripts and stops only the service hosting it. Copy from… replaces the database with another
+ * environment's on the same server, picked among the targets that server runs, after the same snapshot; the source must
+ * be stopped first. Dev asks once, prod for its target ID typed and a reason; the next deploy's migrate step builds or
+ * reads the schema. The page keys the panel by target, so a check's answer never follows the owner to another
+ * environment.
  */
 defineOptions({ name: "MigrationsPanel" });
 const props = defineProps<MigrationsPanelProps>();
 defineSlots<{}>();
 
 const check = useMigrationsCheck();
+const targets = useDeploymentTargets();
+/** The environments a copy may read from: the other targets on this one's server. */
+const sources = computed(() =>
+  props.control ? ServiceControls.copySources(props.control, targets.data.value ?? []) : [],
+);
 /** The last check's answer. */
 const result = ref<MigrationCheck | null>(null);
 const sets = computed(() => MigrationRules.setsOf(props.migrations));
@@ -50,7 +58,7 @@ const sets = computed(() => MigrationRules.setsOf(props.migrations));
 const namesService = computed(() => MigrationRules.spansServices(sets.value));
 const failures = computed(() => (result.value ? MigrationRules.failures(result.value) : []));
 const blocking = computed(() => failures.value.some(MigrationRules.isBlocking));
-/** The database reset the owner is confirming. */
+/** The database reset or copy the owner is confirming. */
 const reset = ref<ControlRequest | null>(null);
 const confirmingReset = ref(false);
 
@@ -63,6 +71,13 @@ function askReset(set?: MigrationSetReading): void {
     service: null,
     set: set ? { name: set.name, service: set.service } : null,
   };
+  confirmingReset.value = true;
+}
+
+/** Asks to confirm a copy of another environment's database into this one's; the dialog picks the source. @internal */
+function askCopy(): void {
+  if (!props.control) return;
+  reset.value = { target: props.control, operation: ControlOperation.Copy, service: null, from: null };
   confirmingReset.value = true;
 }
 
@@ -101,6 +116,11 @@ async function checkNow(): Promise<void> {
             snapshot, and stops only the service hosting it; the other services and the rest of the database keep their
             data. Use it when a set's history no longer matches the release, as after a migration rewritten in place.
           </p>
+          <p class="mt-2">
+            Copy from… replaces this environment's database with another environment's on the same server, after the same
+            snapshot, and stops every service; stop the source first. The copy checks every table's row count against the
+            source and marks the sets behind, so the next deploy's migrate step reads the copied schema and starts them.
+          </p>
         </InfoPopover>
       </div>
       <Button
@@ -115,6 +135,18 @@ async function checkNow(): Promise<void> {
       </Button>
       <Button v-if="props.control" size="sm" variant="outline" tone="danger" class="max-md:min-h-11" @click="askReset()">
         <template #leading><Eraser :size="14" /></template>Reset database
+      </Button>
+      <Button
+        v-if="props.control"
+        size="sm"
+        variant="outline"
+        tone="danger"
+        class="max-md:min-h-11"
+        :is-disabled="!sources.length"
+        :title="sources.length ? 'Replace this database with a copy from this server' : 'No other environment runs on this server'"
+        @click="askCopy"
+      >
+        <template #leading><Copy :size="14" /></template>Copy from…
       </Button>
     </div>
     <div aria-live="polite" class="empty:hidden mb-3 flex flex-col gap-2">
@@ -172,6 +204,11 @@ async function checkNow(): Promise<void> {
         </Button>
       </li>
     </ul>
-    <ControlConfirmModal :open="confirmingReset" :request="reset" @update:open="confirmingReset = $event" />
+    <ControlConfirmModal
+      :open="confirmingReset"
+      :request="reset"
+      :sources="sources"
+      @update:open="confirmingReset = $event"
+    />
   </section>
 </template>

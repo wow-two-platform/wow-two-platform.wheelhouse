@@ -214,6 +214,19 @@ promotion replace them), as is a target a running fleet has yet to promote (409)
   container built as the migrate step builds its item; that set alone at level 0 in `migrations.json`. The next deploy's
   migrate step builds it and starts the service. Each set's row on the Migrations panel offers it
   ([deployment § One migration set](../deployment/deployment.md#one-migration-set)).
+- **Copy (v0.15).** `copy --from <target>` replaces the environment's database with another environment's, read through
+  the same platform PostgreSQL (one cluster, so transaction ids a product stores, such as Events' `xid8` cursors, stay
+  valid): audited as `database.copy` with subject `{target}` and `from: {source}`, the reset's prod guard. The source is
+  a target on the same server, never Wheelhouse's own nor this environment; its database is its `database.json`, this
+  one's as a reset reads it, and both must be plain lowercase identifiers on the platform PostgreSQL, owned by the roles
+  their connections name. The source must already be stopped (no running container in its Compose project), so nothing
+  writes during the copy. Steps: every source table counted; this database's snapshot; every service stopped; the
+  source's `pg_dump` as its owner into `snapshots/<job>/`; this database dropped and created again for its owner with
+  the source's extensions as the superuser; the dump restored as that owner in one transaction (no owners, no
+  privileges, no extension entries); every table's rows compared with the source's, any difference failing the job;
+  every migration set `behind` from source `copy`. Every service stays stopped until the next deploy, whose migrate step
+  reads the copied schema; the source stays stopped and untouched. The Migrations panel offers Copy from…
+  ([deployment § Database copy](../deployment/deployment.md#database-copy)).
 - **Run (v0.13).** `run` executes the owner's command once in a one-off container of one service's running release
   image, built as a migrate item's (`--pull never`, the command's first word as entrypoint, the service's environment,
   rendered settings file and mounts as declared, its memory, the platform network, every capability dropped, the

@@ -2,6 +2,7 @@ import type { Component } from "vue";
 import {
   ArchiveRestore,
   CloudDownload,
+  Copy,
   DatabaseBackup,
   DatabaseZap,
   Dot,
@@ -49,5 +50,6 @@ export const StepKindIcons: Readonly<Record<StepKind, Component>> = {
   [StepKind.RollBack]: History,
   [StepKind.Restore]: ArchiveRestore,
   [StepKind.Reset]: Eraser,
+  [StepKind.Copy]: Copy,
   [StepKind.Other]: Dot,
 };

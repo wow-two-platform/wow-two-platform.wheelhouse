@@ -120,6 +120,10 @@ public sealed record DeploymentItemDto
     /// item and for a record older than the control.</summary>
     public FilesMigrationDto? FilesMigration { get; init; }
 
+    /// <summary>Gets what a database copy kept — its source, both databases and the tables and rows it compared — or null
+    /// for any other item.</summary>
+    public DatabaseCopyDto? Copy { get; init; }
+
     /// <summary>Maps an entry.</summary>
     /// <param name="entry">The joined submission.</param>
     /// <returns>The list item.</returns>
@@ -146,6 +150,7 @@ public sealed record DeploymentItemDto
             Status = record.Status,
             Operation = record.Operation,
             FilesMigration = record.FilesMigration,
+            Copy = record.Copy,
             Outcome = entry.Outcome,
             State = entry.State.State,
             Substate = entry.State.Substate,

@@ -47,6 +47,26 @@ public sealed class ServiceControlTests : IDisposable
     }
 
     [Fact]
+    public async Task ControlAsync_ShouldNameACopysSource_AndOnlyACopys()
+    {
+        var transport = Path.Combine(_root, "transport.py");
+        File.WriteAllText(transport, "import json, sys\nprint(json.dumps({'argv': sys.argv[1:], 'stdin': sys.stdin.read()}))\n");
+        var gateway = new DeploymentGateway(RunnerProcessClients.Create(), new DeploymentSettings() with { TransportPath = transport, Root = _root });
+
+        var data = (await gateway.ControlAsync("harvest-dev", "copy", null, null, "max", "move SCFD data", null, null,
+                "harvestadapters-dev", CancellationToken.None))
+            .Should().BeOfType<AppResult<JsonElement>.Success>().Subject.Data;
+        data.GetProperty("argv").EnumerateArray().Select(item => item.GetString()!).TakeWhile(item => item != "--root")
+            .Should().Equal("control", "--target", "harvest-dev", "--operation", "copy", "--actor", "max",
+                "--from", "harvestadapters-dev", "--reason", "move SCFD data");
+        data.GetProperty("stdin").GetString().Should().BeEmpty("a copy hands the runner nothing on its stdin");
+
+        (await gateway.ControlAsync("harvest-dev", "reset", null, null, "max", null, null, null, null, CancellationToken.None))
+            .Should().BeOfType<AppResult<JsonElement>.Success>().Subject.Data.GetProperty("argv").EnumerateArray()
+            .Select(item => item.GetString()!).Should().NotContain("--from");
+    }
+
+    [Fact]
     public async Task ControlAsync_ShouldSendARunsCommandOnStdin_NeverAsAnArgument()
     {
         var transport = Path.Combine(_root, "transport.py");
@@ -128,6 +148,57 @@ public sealed class ServiceControlTests : IDisposable
         var named = validator.Validate(reset with { Service = "management" });
         named.IsValid.Should().BeFalse();
         named.Errors.Should().ContainSingle(error => error.ErrorMessage == "A reset takes the environment's database, never one service.");
+    }
+
+    [Fact]
+    public void Copy_ShouldNameAnotherEnvironment_TakeNothingElse_AndAuditAsADatabaseCopy()
+    {
+        var validator = new TargetControlCommandValidator();
+        var copy = new TargetControlCommand("harvest-dev", ControlOperation.Copy, null, "max", " move SCFD data ",
+            From: "harvestadapters-dev");
+        validator.Validate(copy).IsValid.Should().BeTrue();
+        (copy.OperationName, copy.AuditAction, copy.AuditSubject, copy.AuditDetail)
+            .Should().Be(("copy", "database.copy", "harvest-dev", "from: harvestadapters-dev; reason: move SCFD data"));
+        (copy with { Reason = null }).AuditDetail.Should().Be("from: harvestadapters-dev");
+
+        IEnumerable<string> Errors(TargetControlCommand control) =>
+            validator.Validate(control).Errors.Select(error => error.ErrorMessage);
+        Errors(copy with { From = null }).Should().ContainSingle().Which.Should().Be("A copy names the environment it copies from.");
+        Errors(copy with { Service = "api" }).Should().ContainSingle()
+            .Which.Should().Be("A copy takes the environment's database, never one service.");
+        Errors(copy with { Set = "identity" }).Should().ContainSingle().Which.Should().Be("Only a reset names a migration set.");
+        Errors(copy with { Command = ["psql"] }).Should().ContainSingle().Which.Should().Be("Only a run takes a command.");
+        Errors(copy with { Input = "AQID" }).Should().ContainSingle().Which.Should().Be("Only a run takes a file on its stdin.");
+        Errors(copy with { From = "harvest-dev" }).Should().ContainSingle()
+            .Which.Should().Be("A copy reads another environment's database, never its own.");
+        foreach (var slug in new[] { "Harvest-dev", "harvest;rm -rf /", "", "-dev" })
+            validator.Validate(copy with { From = slug }).IsValid.Should().BeFalse(slug);
+    }
+
+    [Theory]
+    [InlineData(ControlOperation.Stop)]
+    [InlineData(ControlOperation.Start)]
+    [InlineData(ControlOperation.Reset)]
+    public void From_ShouldBelongToACopyAlone(ControlOperation operation)
+    {
+        var control = new TargetControlCommand("harvest-dev", operation, null, "max", From: "harvestadapters-dev");
+        new TargetControlCommandValidator().Validate(control).Errors.Select(error => error.ErrorMessage)
+            .Should().Contain("Only a copy names an environment to copy from.");
+        control.AuditDetail.Should().BeNull("only a copy names its source in the audit");
+    }
+
+    [Fact]
+    public void StopsOf_ShouldLetACopyClearAnOlderStop_AndTheHistoryKeepsItsSource()
+    {
+        var stopped = new TargetStopDto(true, [], null, "max");
+        DeploymentEntry Entry(DeploymentRecord record) => new(record, "foreverpin", "own-ventures", "dev", null, null);
+
+        DeploymentHistoryService.StopsOf([
+            Entry(Control("copy", "succeeded", null) with { Operation = new DeploymentOperationDto("copy", [], From: "harvestadapters-dev") }),
+            Entry(Control("stop", "succeeded", stopped)),
+        ]).Should().BeEmpty("the copy leaves every service for the next deploy to start, with nothing marked stopped");
+        JsonSerializer.Deserialize<DeploymentOperationDto>("""{"kind":"copy","services":[],"from":"harvestadapters-dev"}""",
+            JsonSerializerOptions.Web)!.From.Should().Be("harvestadapters-dev", "the history keeps the copy's source");
     }
 
     [Fact]

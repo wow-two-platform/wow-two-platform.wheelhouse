@@ -7,8 +7,9 @@ using WoW.Two.Sdk.Beta.Be.Foundation.Validation.Formats;
 namespace Wheelhouse.Application.Deployments.Controls.Validators;
 
 /// <summary>Validates a control: a target, a known operation, a service key when one is named — a restart and a run
-/// always name one, a reset never — a migration set's name only on a reset, a command only on a run, and a one-line reason
-/// of 300 characters at most. No message ever quotes a command's value.</summary>
+/// always name one, a reset and a copy never — a migration set's name only on a reset, a command only on a run, a source
+/// environment only on a copy, which always names another one, and a one-line reason of 300 characters at most. No
+/// message ever quotes a command's value.</summary>
 public sealed class TargetControlCommandValidator : AbstractValidator<TargetControlCommand>
 {
     /// <summary>A migration set's name, as an image's <c>migrate sets --json</c> gives it and the runner accepts it.</summary>
@@ -35,6 +36,15 @@ public sealed class TargetControlCommandValidator : AbstractValidator<TargetCont
             .WithMessage("Run a command in one service.");
         RuleFor(x => x.Service).Null().When(x => x.Operation == ControlOperation.Reset)
             .WithMessage("A reset takes the environment's database, never one service.");
+        RuleFor(x => x.Service).Null().When(x => x.Operation == ControlOperation.Copy)
+            .WithMessage("A copy takes the environment's database, never one service.");
+        RuleFor(x => x.From).NotNull().When(x => x.Operation == ControlOperation.Copy)
+            .WithMessage("A copy names the environment it copies from.");
+        RuleFor(x => x.From).Null().When(x => x.Operation != ControlOperation.Copy)
+            .WithMessage("Only a copy names an environment to copy from.");
+        RuleFor(x => x.From!).MustBeNameSlug().When(x => x.From is not null);
+        RuleFor(x => x.From).NotEqual(x => x.Target, StringComparer.Ordinal).When(x => x.From is not null)
+            .WithMessage("A copy reads another environment's database, never its own.");
         RuleFor(x => x.Command).Null().When(x => x.Operation != ControlOperation.Run)
             .WithMessage("Only a run takes a command.");
         RuleFor(x => x.Command).Must(IsCommand).When(x => x.Operation == ControlOperation.Run)

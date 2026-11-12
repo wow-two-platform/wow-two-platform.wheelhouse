@@ -404,7 +404,8 @@ def launched(root, request_id, launch):
         raise
 
 
-def control(root, target_id, operation, service, actor, reason=None, set_name=None, command=None, input_file=None):
+def control(root, target_id, operation, service, actor, reason=None, set_name=None, command=None, input_file=None,
+            source_id=None):
     """Stops, starts or restarts the release a target runs (decision 45): one service, or the whole environment
     without one; a restart takes one service. A reset (v0.9) drops and recreates the environment's database for the
     next deploy's migrate step to rebuild; with `set_name` it rolls only that migration set back to 0, with the running
@@ -412,8 +413,9 @@ def control(root, target_id, operation, service, actor, reason=None, set_name=No
     target's worker detached, the job recorded here and followed — and refused while a rollout or another control runs.
     A run (v0.13) runs `command` once in a one-off container of `service`'s running release image; the command travels
     on SSH stdin and only its label is recorded; a file for its stdin (`input_file`, base64) travels beside it and is
-    never written here. Wheelhouse's own targets are never controlled from here: the console
-    would stop itself, or lose its data."""
+    never written here. A copy (v0.15) replaces the environment's database with another environment's (`source_id`), a
+    target on the same server, read through the same platform PostgreSQL; that target's file travels beside this one's.
+    Wheelhouse's own targets are never controlled from here: the console would stop itself, or lose its data."""
     reason = deploy_reason(reason)
     require(operation in OPERATIONS, "Unknown control: " + str(operation))
     require(service is None or (isinstance(service, str) and SLUG.fullmatch(service)), "Invalid service")
@@ -423,11 +425,20 @@ def control(root, target_id, operation, service, actor, reason=None, set_name=No
     require(set_name is None or operation == "reset", "Only a reset names a migration set")
     require(set_name is None or (isinstance(set_name, str) and SET_NAME.fullmatch(set_name)), "Invalid migration set")
     require(isinstance(actor, str) and 0 < len(actor) <= 160 and "\n" not in actor, "Invalid actor")
+    require(operation != "copy" or service is None, "A copy replaces the environment's database, never one service's")
+    require((operation == "copy") == (source_id is not None), "A copy, and only a copy, names the environment it reads")
     command = control_command(operation, command)
     run_input(operation, input_file)
     config = fleet.resolve_target(root, target_id)
     require(not config.get("self"), "Wheelhouse's own environments are never stopped, restarted or reset from the "
                                     "console")
+    source = None
+    if source_id is not None:
+        require(source_id != target_id, "A copy reads another environment, never its own")
+        source = fleet.resolve_target(root, source_id)
+        require(not source.get("self"), "Wheelhouse's own databases are never copied from the console")
+        require(source["serverId"] == config["serverId"], "A copy reads the source through the same platform PostgreSQL; "
+                + source_id + " is on another server")
     target_root, _ = validate_target(config["target"])
     require(re.fullmatch(r"/[A-Za-z0-9/_-]+", str(target_root)), "SSH root requires a simple absolute path")
     ssh = Ssh(config["ssh"])
@@ -437,17 +448,23 @@ def control(root, target_id, operation, service, actor, reason=None, set_name=No
     with tempfile.TemporaryDirectory() as temporary:
         target_path = Path(temporary) / "target.json"
         write_json(target_path, config["target"])
-        ssh.copy([Path(__file__).with_name("runner.py"), target_path], remote)
+        files = [Path(__file__).with_name("runner.py"), target_path]
+        if source is not None:
+            files.append(Path(temporary) / "source.json")
+            write_json(files[-1], source["target"])
+        ssh.copy(files, remote)
     services = [service] if service else []
     record = {"id": request_id, "targetId": target_id, "environment": config["target"]["environment"],
-              "operation": control_operation(operation, services, set_name, command), "remote": remote, "actor": actor,
+              "operation": control_operation(operation, services, set_name, command, source_id), "remote": remote,
+              "actor": actor,
               "status": "submitting", "submittedAt": now(), "ssh": config["ssh"], "serverId": config["serverId"]}
     if reason:
         record["deployReason"] = reason
     write_json(root / "jobs" / (request_id + ".json"), record)
     launch = shlex.join(["python3", remote + "/runner.py", "control-launch", "--target", remote + "/target.json",
                          "--operation", operation, "--actor", actor, *(["--service", service] if service else []),
-                         *(["--set", set_name] if set_name else []), *(["--stdin"] if command else [])])
+                         *(["--set", set_name] if set_name else []), *(["--stdin"] if command else []),
+                         *(["--source", remote + "/source.json"] if source is not None else [])])
     # A run's command and its stdin file on SSH stdin, never an argument a process listing would show.
     payload = {"command": command, **({"input": input_file} if input_file else {})}
     remote_job = launched(root, request_id, lambda: json.loads(
@@ -1264,11 +1281,12 @@ def main():
                         help="compose: name=bundle, one per repository of the product that has released, in order (the local server only)")
     parser.add_argument("--confirm", help="submit: the target ID, typed, for prod on the local server")
     parser.add_argument("--reason", help="submit, control: the owner's one-line why, kept on the job")
-    parser.add_argument("--operation", help="control: stop, start, restart, reset or run; --service names one, none the "
-                                            "environment")
+    parser.add_argument("--operation", help="control: stop, start, restart, reset, run or copy; --service names one, "
+                                            "none the environment")
     parser.add_argument("--set", dest="set_name", help="control: the migration set a reset rolls back to 0, alone")
     parser.add_argument("--fleet", help="submit: the fleet rollout the submission belongs to, kept on the job")
-    parser.add_argument("--from", dest="start", help="changelog: the release the target runs now")
+    parser.add_argument("--from", dest="start", help="changelog: the release the target runs now; control: the target a "
+                                                     "copy reads its database from")
     parser.add_argument("--to", dest="end", help="changelog: the release to promote")
     parser.add_argument("--skip-dev-pass", action="store_true",
                         help="submit: deploy to prod without a dev pass; needs --confirm with the target ID")
@@ -1332,7 +1350,8 @@ def main():
             result = files_migration(root, args.target, args.actor, args.reason, provided)
         elif args.action == "control":
             result = control(root, args.target, args.operation, args.service, args.actor, args.reason, args.set_name,
-                             (provided or {}).get("command"), (provided or {}).get("input"))
+                             (provided or {}).get("command"), (provided or {}).get("input"),
+                             args.start if args.operation == "copy" else None)
         elif args.action == "stops":
             result = stops(root)
         elif args.action == "jobs":

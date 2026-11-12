@@ -159,7 +159,8 @@ export const deploymentsApi = {
 
   /** Stops, starts or restarts the release a target runs: `service`, or the whole environment without one; a reset
    *  takes its database, or only the migration set `set` names; a run executes `command` — its split arguments — once
-   *  in a one-off container of `service`'s release. Prod needs `confirm`, its target ID typed, and a `reason`. */
+   *  in a one-off container of `service`'s release; a copy replaces its database with the one of the target `from`
+   *  names, on the same server. Prod needs `confirm`, its target ID typed, and a `reason`. */
   control: (
     target: string,
     body: {
@@ -168,6 +169,7 @@ export const deploymentsApi = {
       readonly set?: string | null | undefined;
       readonly command?: readonly string[] | null | undefined;
       readonly input?: string | null | undefined;
+      readonly from?: string | null | undefined;
       readonly reason?: string | undefined;
       readonly confirm?: string | undefined;
     },
@@ -183,6 +185,7 @@ export const deploymentsApi = {
         ...(body.set ? { set: body.set } : {}),
         ...(body.command?.length ? { command: body.command } : {}),
         ...(body.input ? { input: body.input } : {}),
+        ...(body.operation === "copy" && body.from ? { from: body.from } : {}),
         ...(body.reason?.trim() ? { reason: body.reason.trim() } : {}),
         ...(body.confirm ? { confirm: body.confirm } : {}),
       },

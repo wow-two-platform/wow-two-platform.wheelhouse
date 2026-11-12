@@ -311,21 +311,30 @@ public sealed class StubDeploymentGateway : IDeploymentGateway
     public List<string> Inputs { get; } = [];
 
     public Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set, string actor,
-        string? reason, IReadOnlyList<string>? command, string? input, CancellationToken ct)
+        string? reason, IReadOnlyList<string>? command, string? input, CancellationToken ct) =>
+        ControlAsync(target, operation, service, set, actor, reason, command, input, null, ct);
+
+    /// <summary>Every copy's source, in order: the target copied into and the target copied from.</summary>
+    public List<(string Target, string From)> Copies { get; } = [];
+
+    public Task<AppResult<JsonElement>> ControlAsync(string target, string operation, string? service, string? set, string actor,
+        string? reason, IReadOnlyList<string>? command, string? input, string? from, CancellationToken ct)
     {
         Controls.Add((target, operation, service, actor, reason, set));
         if (command is not null)
             Commands.Add(command);
         if (input is not null)
             Inputs.Add(input);
+        if (from is not null)
+            Copies.Add((target, from));
         if (Runner is not null)
-            return Runner.ControlAsync(target, operation, service, set, actor, reason, command, input, ct);
+            return Runner.ControlAsync(target, operation, service, set, actor, reason, command, input, from, ct);
         if (ControlRefusal is not null)
             return Task.FromResult(AppResult<JsonElement>.Fail(AppErrorFactory.Conflict(ControlRefusal)));
         return Task.FromResult(AppResult<JsonElement>.Ok(JsonSerializer.SerializeToElement(new
         {
             id = Guid.NewGuid(), targetId = target,
-            operation = new { kind = operation, services = service is null ? [] : new[] { service }, set },
+            operation = new { kind = operation, services = service is null ? [] : new[] { service }, set, from },
             release = "v1.0.0", status = "queued",
         })));
     }

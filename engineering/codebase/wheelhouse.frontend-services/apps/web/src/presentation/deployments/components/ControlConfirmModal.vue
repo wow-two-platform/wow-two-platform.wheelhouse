@@ -1,35 +1,44 @@
 <script lang="ts">
-import type { ControlRequest } from "@/domain/deployments/controls";
+import type { ControlRequest, CopySourceCandidate } from "@/domain/deployments/controls";
 
 /** The control the owner asked for and whether its confirmation is open. */
 export interface ControlConfirmModalProps {
-  /** The stop, start, restart, database reset, set reset or run to confirm; null while none is asked for. */
+  /** The stop, start, restart, database reset, set reset, run or copy to confirm; null while none is asked for. */
   readonly request: ControlRequest | null;
   /** The controlled dialog state. */
   readonly open: boolean;
+  /** The environments a copy may read from: the other targets on the same server. Only a copy shows them. */
+  readonly sources?: readonly CopySourceCandidate[];
 }
 </script>
 
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from "vue";
-import { Eraser, Pause, Play, RotateCw, SquareTerminal } from "lucide-vue-next";
+import { Copy as CopyIcon, Eraser, Pause, Play, RotateCw, SquareTerminal } from "lucide-vue-next";
 
 import { Button, CopyButton } from "@wow-two-beta/fe/presentation/actions";
 import { Alert } from "@wow-two-beta/fe/presentation/feedback";
-import { Field, FilePicker, TextInput } from "@wow-two-beta/fe/presentation/forms";
+import { Field, FilePicker, RadioField, RadioGroup, TextInput } from "@wow-two-beta/fe/presentation/forms";
 import { TypedConfirmModal } from "@wow-two-beta/fe/presentation/overlays";
 
 import { useTargetControl } from "@/application/deployments";
 import { JobStatus } from "@/domain/deployments";
-import { CommandLine, ControlOperation, RunFiles, ServiceControls, type ControlRun } from "@/domain/deployments/controls";
+import {
+  CommandLine,
+  ControlOperation,
+  RunFiles,
+  ServiceControls,
+  type ControlRun,
+} from "@/domain/deployments/controls";
 import { failureReason } from "@/integration/common";
 
 /**
- * Confirms a stop, start, restart, database reset, set reset or run before it is queued: dev asks once, prod asks for its
- * target ID typed and a reason. The job then reads in the environment's deployments like a deploy; the dialog stays until
- * the target ends it. A run also asks for its command line, split into arguments the way a shell would, and stays open
- * after it to show the exit code and the last output line. The typed command lives in this dialog only — never logged,
- * stored or kept once the dialog opens again.
+ * Confirms a stop, start, restart, database reset, set reset, run or copy before it is queued: dev asks once, prod asks
+ * for its target ID typed and a reason. The job then reads in the environment's deployments like a deploy; the dialog
+ * stays until the target ends it. A run also asks for its command line, split into arguments the way a shell would, and
+ * stays open after it to show the exit code and the last output line. The typed command lives in this dialog only —
+ * never logged, stored or kept once the dialog opens again. A copy asks which environment on the same server to read,
+ * and warns that this environment's database is replaced and that the source must be stopped first.
  */
 defineOptions({ name: "ControlConfirmModal" });
 const props = defineProps<ControlConfirmModalProps>();
@@ -38,6 +47,8 @@ defineSlots<{}>();
 
 const control = useTargetControl();
 const reason = ref("");
+/** A copy's source target ID, as the owner picked it; none whenever the dialog opens. */
+const from = ref<string | null>(null);
 /** A run's command line as typed; empty whenever the dialog opens. */
 const command = ref("");
 /** A file the run's command reads on its stdin, if any; it lives in this dialog only and goes to the target once. */
@@ -60,25 +71,34 @@ const revealable = ref<{ target: string; job: string } | null>(null);
 const revealed = ref<string | null>(null);
 /** Why the one read was refused. */
 const revealProblem = ref<string | null>(null);
-const label = computed(() => (props.request ? ServiceControls.labelOfRequest(props.request) : ""));
-const title = computed(() => (props.request ? ServiceControls.titleOf(props.request) : ""));
+const isCopy = computed(() => props.request?.operation === ControlOperation.Copy);
+/** The request as it stands: a copy names the source picked here. */
+const asked = computed<ControlRequest | null>(() =>
+  props.request && isCopy.value ? { ...props.request, from: from.value } : props.request,
+);
+const label = computed(() => (asked.value ? ServiceControls.labelOfRequest(asked.value) : ""));
+const title = computed(() => (asked.value ? ServiceControls.titleOf(asked.value) : ""));
 const isRun = computed(() => props.request?.operation === ControlOperation.Run);
+const sources = computed(() => props.sources ?? []);
 const parsed = computed(() => CommandLine.split(command.value));
 /** The arguments the typed command line splits to; none while it is empty or cannot be split. */
 const args = computed(() => (parsed.value.ok ? parsed.value.args : []));
 /** Why the typed command line cannot be split; empty while it can, or is empty. */
 const commandProblem = computed(() => (parsed.value.ok ? "" : parsed.value.error));
 const guarded = computed(() => (props.request ? ServiceControls.isGuarded(props.request.target) : false));
-/** Whether everything the control needs is filled: a prod reason, a run's command. */
+/** Whether everything the control needs is filled: a prod reason, a run's command, a copy's source. */
 const complete = computed(
   () =>
     (!guarded.value || reason.value.trim().length > 0) &&
     (!isRun.value || args.value.length > 0) &&
+    (!isCopy.value || sources.value.some((source) => source.id === from.value)) &&
     !fileProblem.value &&
     !finished.value,
 );
 const tone = computed(() =>
-  props.request?.operation === ControlOperation.Stop || props.request?.operation === ControlOperation.Reset
+  props.request?.operation === ControlOperation.Stop ||
+  props.request?.operation === ControlOperation.Reset ||
+  props.request?.operation === ControlOperation.Copy
     ? "danger"
     : props.request?.operation === ControlOperation.Restart || props.request?.operation === ControlOperation.Run
       ? "warning"
@@ -87,7 +107,9 @@ const tone = computed(() =>
 const icon = computed(() =>
   props.request?.operation === ControlOperation.Reset
     ? Eraser
-    : props.request?.operation === ControlOperation.Stop
+    : props.request?.operation === ControlOperation.Copy
+      ? CopyIcon
+      : props.request?.operation === ControlOperation.Stop
       ? Pause
       : props.request?.operation === ControlOperation.Restart
         ? RotateCw
@@ -103,6 +125,7 @@ watch(
   () => [props.open, props.request?.target.id, props.request?.operation, props.request?.service, props.request?.set?.name],
   () => {
     reason.value = "";
+    from.value = null;
     command.value = "";
     file.value = null;
     progress.value = null;
@@ -139,6 +162,7 @@ async function submit(typed: string) {
       set: request.set?.name ?? null,
       command: isRun.value ? args.value : null,
       input,
+      from: isCopy.value ? from.value : null,
       ...(guarded.value ? { reason: reason.value, confirm: typed } : {}),
     });
     if (!result.ok) return result;
@@ -185,7 +209,7 @@ async function reveal() {
   <TypedConfirmModal
     :open="props.open && Boolean(props.request)"
     :title="title"
-    :description="props.request ? ServiceControls.consequence(props.request) : ''"
+    :description="asked ? ServiceControls.consequence(asked) : ''"
     v-bind="guarded && props.request ? { expected: props.request.target.id } : {}"
     :can-confirm="complete"
     :confirm-label="props.request ? ServiceControls.verb(props.request.operation) : ''"
@@ -196,6 +220,22 @@ async function reveal() {
     @confirm="submit"
   >
     <template #confirm-icon><component :is="icon" :size="16" aria-hidden="true" /></template>
+    <template v-if="isCopy && props.request">
+      <Alert
+        severity="warning"
+        :title="`${props.request.target.id}'s database is replaced; stop ${from ?? 'the source'} first`"
+      />
+      <RadioGroup v-if="sources.length" v-model="from" legend="Copy from" :is-disabled="submitting">
+        <RadioField
+          v-for="source in sources"
+          :key="source.id"
+          :value="source.id"
+          :label="ServiceControls.sourceLabel(source)"
+          :description="source.id"
+        />
+      </RadioGroup>
+      <p v-else class="text-sm text-muted-foreground">No other environment runs on this server to copy from.</p>
+    </template>
     <Field v-if="isRun" label="Command" is-required :is-read-only="submitting || Boolean(finished)" :error="commandProblem">
       <TextInput
         v-model="command"

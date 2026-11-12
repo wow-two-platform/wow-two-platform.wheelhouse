@@ -3,7 +3,7 @@ import type { Attention, DeployState, ServiceResult } from '@/domain/common/Stat
 import type { JobStatus } from '../../enums/JobStatus';
 import type { ReleaseKind } from '../../models/ReleaseArtifact';
 import type { ReleaseComponent } from '../../models/ReleaseComponent';
-import type { DeploymentOperation } from '../../controls/ServiceControls';
+import type { DatabaseCopy, DeploymentOperation } from '../../controls/ServiceControls';
 import type { FilesMigrationRun } from '../../controls/FilesMigration';
 
 /** What a deployment status amounted to before the status taxonomy; kept one release beside the state. */
@@ -122,4 +122,6 @@ export interface DeploymentItem {
   operation?: DeploymentOperation | null;
   /** What a files migration kept — its import and each finished source's result; null for any other item. */
   filesMigration?: FilesMigrationRun | null;
+  /** What a copy kept — its source, both databases and the tables and rows it compared; null for any other item. */
+  copy?: DatabaseCopy | null;
 }
