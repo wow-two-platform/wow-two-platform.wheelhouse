@@ -759,7 +759,8 @@ vault version, like a console save. A saved value reaches the product at its nex
 
 | Command | Does |
 |---|---|
-| `wow2 setup --url <console>` | Stores the console URL and an integration key in the macOS Keychain (`wow2.wheelhouse`, accounts `url` and `key`) through a hidden prompt, and links `~/.local/bin/wow2` |
+| `wow2 setup --url <console>` | Stores the console URL and an integration key in the macOS Keychain (`wow2.wheelhouse`, accounts `url` and `key`) through a hidden prompt, checks the key, links `~/.local/bin/wow2` and puts `~/.local/bin` on PATH (`~/.zprofile`, once) |
+| `wow2 install` | The link and PATH alone, without a key |
 | `wow2 check` | Proves the stored key reaches the save: an empty save answers 400 only after the key and its scope pass |
 | `wow2 secret set <product> <dev\|prod> <key>` | A secret typed hidden, or piped on stdin (`… \| wow2 secret set …`); prints the key, target and new vault version |
 | `wow2 secret generate <product> <env> <key>` | Wheelhouse makes 32 random bytes (`--format base64url\|hex`) straight into the vault; nobody sees them |
