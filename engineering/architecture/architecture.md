@@ -647,9 +647,12 @@ read, and every response is a download with `nosniff`, so a repository's SVG nev
 
 Another program — an app, a script, Claude or Codex — reads Wheelhouse with an integration key: the SDK `ApiKey`
 scheme with the `wh_` marker. Only the secret's SHA-256 and a display prefix are stored; the secret is shown once;
-a key can be revoked and shows its last use. A key grants scopes, `catalog:read` or `deployments:read`, and reaches only endpoints
-whose policy names the key scheme; every other endpoint stays cookie-only through the default-deny fallback, and
-key management is the owner's alone. A key's actions audit as `key:{name}`.
+a key can be revoked and shows its last use. A key grants scopes, `catalog:read`, `deployments:read` or `settings:write`, and
+reaches only endpoints whose policy names the key scheme; every other endpoint stays cookie-only through the default-deny
+fallback, and key management is the owner's alone. A key's actions audit as `key:{name}`. `settings:write` is write-only:
+it reaches the settings save (`PUT api/deployments/targets/{target}/settings`, with its `X-Wheelhouse-Action: settings`
+header) and nothing that reads, so a key that writes a secret never reads one back; the save's reply names keys and vault
+versions only. The hub's `wow2` CLI presents it ([deployment § The wow2 CLI](../deployment/deployment.md#the-wow2-cli)).
 
 Whoever performs an action is its **actor**: a signed-in user's login, or `key:{name}` for an integration key (later,
 automation). `IActorContext` names it once per request for commands, the runner and the audit trail alike. The trail

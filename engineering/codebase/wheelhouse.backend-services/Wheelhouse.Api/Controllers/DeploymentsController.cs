@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+using Wheelhouse.Api.Auth;
 using Wheelhouse.Api.Requests;
 using Wheelhouse.Application.Abstractions;
 using Wheelhouse.Application.Deployments;
@@ -14,6 +15,7 @@ using Wheelhouse.Application.Deployments.History.Queries;
 using Wheelhouse.Application.Deployments.Settings.Commands;
 using Wheelhouse.Application.Deployments.Settings.Queries;
 using Wheelhouse.Application.Operations;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using WoW.Two.Sdk.Beta.Be.Mediator;
 using WoW.Two.Sdk.Beta.Be.Web.Antiforgery;
@@ -300,8 +302,11 @@ public sealed class DeploymentsController(ISender sender, IActorContext actor) :
 
     /// <summary>Gives a target's environment setting values: secrets become new vault versions, the rest go to the
     /// settings store, in one transaction. Typed values are checked; a key that reads as a secret needs a confirmation to
-    /// be plain. Audited by key and version, never by value.</summary>
+    /// be plain. Audited by key and version, never by value. The owner's session saves, and so does an integration key
+    /// granting <c>settings:write</c> (the <c>wow2</c> CLI), audited as <c>key:{name}</c>; the reply carries keys and
+    /// versions only.</summary>
     [HttpPut("targets/{target}/settings")]
+    [Authorize(Policy = AuthConfigurationExtensions.SettingsWritePolicy)]
     [RequireActionHeader("settings")]
     public async Task<IActionResult> SaveSettings(
         [RegularExpression(Slug)] string target, DeploymentSettingsSaveRequest request, CancellationToken ct) =>

@@ -1,6 +1,6 @@
 # Deployment operations
 
-*Last updated: 2026-10-29*
+*Last updated: 2026-11-19*
 
 ## Ownership and current boundary
 
@@ -749,6 +749,29 @@ The job record's `serviceRollout` (the status lane projects it; fields are only 
 A background sampler reads the vitals each `Operations:VitalsSampleMinutes` (default 5; 0 turns it off), stores each
 server's load, memory and fullest disk (a row with no target) and each target's container health in `vitals_samples`,
 and deletes readings older than 30 days.
+
+## The wow2 CLI
+
+`wow2` (wow-two-ws `scripts/wow2/wow2.py`) sets a target's secrets and settings from a terminal, write-only: the owner
+types the value at a hidden prompt, or pipes it, and it goes in one HTTPS request to the console's settings save. It
+never prints, logs or stores a value, and Wheelhouse never returns one. Each save audits as `key:{name}` with the key and
+vault version, like a console save. A saved value reaches the product at its next deploy or settings Apply.
+
+| Command | Does |
+|---|---|
+| `wow2 setup --url <console>` | Stores the console URL and an integration key in the macOS Keychain (`wow2.wheelhouse`, accounts `url` and `key`) through a hidden prompt, and links `~/.local/bin/wow2` |
+| `wow2 check` | Proves the stored key reaches the save: an empty save answers 400 only after the key and its scope pass |
+| `wow2 secret set <product> <dev\|prod> <key>` | A secret typed hidden, or piped on stdin (`… \| wow2 secret set …`); prints the key, target and new vault version |
+| `wow2 secret generate <product> <env> <key>` | Wheelhouse makes 32 random bytes (`--format base64url\|hex`) straight into the vault; nobody sees them |
+| `wow2 setting set <product> <env> <key> [value]` | A plain setting; `--confirm-plain` for a key that reads as a secret |
+
+- The target is `<product>-<env>` (`harvest-dev`); `--target` names another. `--note` keeps a note with a secret's version.
+- The key: Integrations › New key, scope `settings:write` alone, named for the machine (`wow2-cli`); the secret shows once,
+  straight into `wow2 setup`. Revoke it there; the CLI then answers 401.
+- Refusals name the status and Wheelhouse's own detail, which never quotes a value: 401 unknown or revoked key, 403 no
+  `settings:write`, 404 no such target, 400 a type or a declared secret given as plain.
+- The console is reached over the tailnet; keep the Mac on it.
+- Tests: `python3 -I -m unittest discover -s scripts/wow2` from the hub root; the scope's E2E is `SettingsWriteKeyE2ETests`.
 
 ## Rollout steps
 

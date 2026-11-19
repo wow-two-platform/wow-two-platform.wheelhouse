@@ -10,6 +10,11 @@ public static class IntegrationScopeConstants
     /// <summary>Holds the scope for read-only MCP fleet, deployment and health observations.</summary>
     public const string DeploymentsRead = "deployments:read";
 
+    /// <summary>Holds the write-only scope that gives a target's environment setting values: secrets become vault
+    /// versions, the rest go to the settings store. It reaches the settings save alone and reads nothing back; the
+    /// <c>wow2</c> CLI presents it.</summary>
+    public const string SettingsWrite = "settings:write";
+
     /// <summary>Holds every scope a key can be created with.</summary>
-    public static readonly IReadOnlyList<string> All = [CatalogRead, DeploymentsRead];
+    public static readonly IReadOnlyList<string> All = [CatalogRead, DeploymentsRead, SettingsWrite];
 }

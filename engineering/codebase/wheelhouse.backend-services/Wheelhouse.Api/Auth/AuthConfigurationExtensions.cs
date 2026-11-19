@@ -41,6 +41,10 @@ public static class AuthConfigurationExtensions
     /// <summary>The policy catalog reads require: the owner's session, or an integration key granting the scope.</summary>
     public const string ProductsReadPolicy = "ProductsRead";
 
+    /// <summary>The policy the settings save requires: the owner's session, or an integration key granting
+    /// <c>settings:write</c>. No read admits that scope, so a key that writes a secret never reads one back.</summary>
+    public const string SettingsWritePolicy = "SettingsWrite";
+
     /// <summary>The policy the owner's own preferences require: the allowlisted session. An integration key is
     /// authenticated so it can be told apart, then refused with 403; anonymous callers get 401.</summary>
     public const string OwnerSessionPolicy = "OwnerSession";
@@ -95,11 +99,14 @@ public static class AuthConfigurationExtensions
 
         // Integration keys: another program reads the catalog with a scoped key. A key reaches only an endpoint whose
         // policy names the key scheme; the default-deny fallback above stays cookie-only. A catalog read admits the
-        // allowlisted session or a key granting catalog:read; a key never passes as a session.
+        // allowlisted session or a key granting catalog:read, and the settings save one granting settings:write; a key
+        // never passes as a session.
         builder.Services.AddApiKeyAuthentication(keys => keys.Marker = KeyMarker);
         builder.Services.AddAuthorizationBuilder()
             .AddPolicy(ProductsReadPolicy, policy => policy
                 .RequireAllowlistedSessionOrApiKeyScope(IntegrationScopeConstants.CatalogRead, CookieScheme))
+            .AddPolicy(SettingsWritePolicy, policy => policy
+                .RequireAllowlistedSessionOrApiKeyScope(IntegrationScopeConstants.SettingsWrite, CookieScheme))
             .AddPolicy(OwnerSessionPolicy, policy => policy.RequireOwnerSession(CookieScheme));
 
         return builder;

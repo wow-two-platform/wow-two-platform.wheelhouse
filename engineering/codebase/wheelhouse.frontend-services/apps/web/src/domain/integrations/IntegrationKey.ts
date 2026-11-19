@@ -2,6 +2,7 @@
 export const IntegrationScope = {
   CatalogRead: 'catalog:read',
   DeploymentsRead: 'deployments:read',
+  SettingsWrite: 'settings:write',
 } as const;
 export type IntegrationScope = (typeof IntegrationScope)[keyof typeof IntegrationScope];
 
@@ -9,9 +10,10 @@ export type IntegrationScope = (typeof IntegrationScope)[keyof typeof Integratio
 export const IntegrationScopes: readonly { value: IntegrationScope; description: string }[] = [
   { value: IntegrationScope.CatalogRead, description: 'Read products, their lifecycle, sites and vault namespaces.' },
   { value: IntegrationScope.DeploymentsRead, description: 'Read servers, targets, deployment status and health through MCP.' },
+  { value: IntegrationScope.SettingsWrite, description: 'Save settings and secrets of any environment, write-only: the wow2 CLI.' },
 ];
 
-/** A key another program presents to read Wheelhouse; never its secret. */
+/** A key another program presents to read Wheelhouse, or to write settings; never its secret. */
 export interface IntegrationKey {
   id: string;
   name: string;

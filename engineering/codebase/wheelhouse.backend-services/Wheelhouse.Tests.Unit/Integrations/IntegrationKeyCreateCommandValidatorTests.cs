@@ -35,6 +35,16 @@ public sealed class IntegrationKeyCreateCommandValidatorTests
         result.Errors.Should().ContainSingle(error => error.PropertyName == nameof(IntegrationKeyCreateCommand.Name));
     }
 
+    [Theory]
+    [InlineData(IntegrationScopeConstants.DeploymentsRead)]
+    [InlineData(IntegrationScopeConstants.SettingsWrite)]
+    public void Validate_ShouldPass_WhenEachGrantedScopeIsChosen(string scope)
+    {
+        var result = _validator.Validate(With("wow2-cli", scope));
+
+        result.IsValid.Should().BeTrue();
+    }
+
     [Fact]
     public void Validate_ShouldFail_WhenNoScopeIsChosen()
     {
