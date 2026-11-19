@@ -766,8 +766,8 @@ vault version, like a console save. A saved value reaches the product at its nex
 | `wow2 setting set <product> <env> <key> [value]` | A plain setting; `--confirm-plain` for a key that reads as a secret |
 
 - The target is `<product>-<env>` (`harvest-dev`); `--target` names another. `--note` keeps a note with a secret's version.
-- The key: Integrations › New key, scope `settings:write` alone, named for the machine (`wow2-cli`); the secret shows once,
-  straight into `wow2 setup`. Revoke it there; the CLI then answers 401.
+- The key: profile menu › Integration keys (`/settings/keys`) › New key, scope `settings:write` alone (untick
+  `catalog:read`), named for the machine (`wow2-cli`); the secret shows once, straight into `wow2 setup`. Revoke it there; the CLI then answers 401.
 - Refusals name the status and Wheelhouse's own detail, which never quotes a value: 401 unknown or revoked key, 403 no
   `settings:write`, 404 no such target, 400 a type or a declared secret given as plain.
 - The console is reached over the tailnet; keep the Mac on it.
