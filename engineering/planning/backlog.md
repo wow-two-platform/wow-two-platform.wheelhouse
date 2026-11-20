@@ -1,6 +1,6 @@
 # Wheelhouse — Backlog
 
-*Last updated: 2026-11-10*
+*Last updated: 2026-11-21*
 
 Every unbuilt item; top of each group = next. The active version is the newest folder in
 [version-track](version-track/).
@@ -49,6 +49,7 @@ Dynamic provider plugins are excluded by product decision; a provider is an enum
 
 | Item | Type | Notes |
 |---|---|---|
+| Ability to run two instances of one product in one environment on one server | feature | haven-scfd #16 (developer 2026-11-21: Haven's SCFD, Identity and Files apart from Ocharo's on `ocharo-vps`): the runner, placement and `prepare.py` name the Compose project, database, config folder, aliases, route file and baseline host `<product>-<environment>` (`runner.py:765`, `placement.py:149-151`), so Haven took the `prod` environments, `harvest-prod`, `identity-prod` and `files-prod`; `files_prod` was placed for Ocharo prod in v0.14 and now holds Haven's Files. Ocharo prod's own SCFD and Files on `ocharo-vps` need this instance part, or another server |
 | Show a private site's tailnet URL and reachability, and probe it | bug | Assets chat 2026-11-09: `ocharo-dev`'s private `motion` site reads url null and reachable null, and its tailnet node answers 404 on every path, so the lab is checked only by the rollout's in-container health gate. Find whether the node lacks a serve rule for the site or the console only lacks the URL; a private site gets its URL, a reachability probe over the tailnet, and a step in the rollout's site probes |
 | Retire CI's deploy path and its secrets after the burn-in | engineering | After the self-deploy burn-in below; fallback in `deployment.md` § Activation |
 | Close the control host's public SSH | engineering | Once CI's deploy path is retired |
