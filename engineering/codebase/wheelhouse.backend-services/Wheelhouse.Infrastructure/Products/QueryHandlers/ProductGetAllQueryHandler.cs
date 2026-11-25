@@ -1,0 +1,21 @@
+using Wheelhouse.Application;
+using Wheelhouse.Application.Products;
+using Wheelhouse.Application.Abstractions;
+using Wheelhouse.Application.Products.Models;
+using Wheelhouse.Application.Products.Queries;
+using Wheelhouse.Application.Products.Services;
+using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
+
+namespace Wheelhouse.Infrastructure.Products.QueryHandlers;
+
+/// <summary>Handles <see cref="ProductGetAllQuery"/>.</summary>
+public sealed class ProductGetAllQueryHandler(IProductsRepository products, ProductsProjectionService projection)
+    : IQueryHandler<ProductGetAllQuery, AppResult<IReadOnlyList<ProductDto>>>
+{
+    /// <inheritdoc />
+    public async ValueTask<AppResult<IReadOnlyList<ProductDto>>> HandleAsync(
+        ProductGetAllQuery request, CancellationToken cancellationToken) =>
+        AppResult<IReadOnlyList<ProductDto>>.Ok(
+            await projection.ProjectAsync(await products.GetAllAsync(cancellationToken), cancellationToken));
+}

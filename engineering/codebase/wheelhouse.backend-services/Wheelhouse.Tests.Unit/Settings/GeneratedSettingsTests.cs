@@ -1,7 +1,7 @@
+using Wheelhouse.Infrastructure.Deployments.Settings.CommandHandlers;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using AwesomeAssertions;
-using Wheelhouse.Application.Deployments.Settings.CommandHandlers;
 using Wheelhouse.Application.Deployments.Settings.Models;
 using Wheelhouse.Application.Deployments.Settings.Services;
 using Wheelhouse.Application.SecretsVault.Models;

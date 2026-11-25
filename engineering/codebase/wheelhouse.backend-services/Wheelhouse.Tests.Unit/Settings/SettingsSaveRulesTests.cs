@@ -1,5 +1,5 @@
+using Wheelhouse.Infrastructure.Deployments.Settings.CommandHandlers;
 using AwesomeAssertions;
-using Wheelhouse.Application.Deployments.Settings.CommandHandlers;
 using Wheelhouse.Application.Deployments.Settings.Models;
 using Wheelhouse.Application.Deployments.Settings.Services;
 using Wheelhouse.Domain.Settings.Enums;

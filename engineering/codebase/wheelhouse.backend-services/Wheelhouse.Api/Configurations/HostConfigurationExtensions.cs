@@ -1,3 +1,5 @@
+using Wheelhouse.Infrastructure.Deployments;
+using Wheelhouse.Application.SystemStatus.Constants;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -108,7 +110,7 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddDataSession<WheelhouseDbContext>(o => o.HookTimeout = TimeSpan.FromSeconds(30));
 
         // The SDK readiness endpoint, /api/system/ready, reports this check (tag `ready`); /health skips it.
-        builder.Services.AddHealthChecks().AddDatabaseReadinessCheck<WheelhouseDbContext>();
+        builder.Services.AddHealthChecks().AddDatabaseReadinessCheck<WheelhouseDbContext>(ControlPlaneHealthCheckNames.Database);
 
         builder.Services.AddScoped<IWorkspacesRepository, WorkspacesRepository>();
         builder.Services.AddScoped<IPinsRepository, PinsRepository>();
@@ -256,10 +258,10 @@ public static partial class HostConfigurationExtensions
     /// the projection services, and the application assembly's handlers and validators.</summary>
     public static WebApplicationBuilder AddApplicationLayer(this WebApplicationBuilder builder)
     {
-        builder.Services.AddMediator(typeof(IApplicationMarker).Assembly);
+        builder.Services.AddMediator(typeof(DeploymentGateway).Assembly);
         // Registered before validation so it wraps it: a refused request is audited too.
-        builder.Services.AddMediatorInterceptor(typeof(Wheelhouse.Application.Audit.Interceptors.AuditRecordingInterceptor<,>));
-        builder.Services.AddMediatorInterceptor(typeof(Wheelhouse.Application.Inventory.Interceptors.InventoryExportingInterceptor<,>));
+        builder.Services.AddMediatorInterceptor(typeof(Wheelhouse.Infrastructure.Audit.Interceptors.AuditRecordingInterceptor<,>));
+        builder.Services.AddMediatorInterceptor(typeof(Wheelhouse.Infrastructure.Inventory.Interceptors.InventoryExportingInterceptor<,>));
         builder.Services.AddMediatorValidatingInterceptor();
         // Generated secret values (SDK cryptographic selection; the SDK registers no generator itself).
         builder.Services.AddSingleton<IIdGenerator, CryptographicIdGenerator>();
@@ -270,7 +272,7 @@ public static partial class HostConfigurationExtensions
         builder.Services.AddScoped<Wheelhouse.Application.Products.Services.ProductIdentityService>();
         builder.Services.AddScoped<Wheelhouse.Application.Products.Services.ProductReleaseSourcesService>();
         builder.Services.AddScoped<Wheelhouse.Application.Products.Services.ProductsProjectionService>();
-        builder.Services.AddScoped<Wheelhouse.Application.Targets.Services.TargetsProjectionService>();
+        builder.Services.AddScoped<Wheelhouse.Infrastructure.Targets.Services.TargetsProjectionService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.History.Services.DeploymentHistoryService>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.FilesMigrations.Services.FilesMigrationReleaseReader>();
         builder.Services.AddScoped<Wheelhouse.Application.Deployments.Automation.Services.DeploymentAutomationService>();

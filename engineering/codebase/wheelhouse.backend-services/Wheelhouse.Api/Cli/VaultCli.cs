@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Wheelhouse.Application.Abstractions;
-using Wheelhouse.Application.SecretsVault.CommandHandlers;
 using Wheelhouse.Application.SecretsVault.Commands;
 using Wheelhouse.Application.SecretsVault.Models;
 using Wheelhouse.Application.SecretsVault.Queries;

@@ -1,6 +1,6 @@
+using Wheelhouse.Infrastructure.Deployments.SelfDeploy.Interceptors;
 using AwesomeAssertions;
 using Wheelhouse.Application.Deployments;
-using Wheelhouse.Application.Deployments.SelfDeploy.Interceptors;
 using Wheelhouse.Domain.Deployments.Enums;
 using Wheelhouse.Domain.Targets.Enums;
 

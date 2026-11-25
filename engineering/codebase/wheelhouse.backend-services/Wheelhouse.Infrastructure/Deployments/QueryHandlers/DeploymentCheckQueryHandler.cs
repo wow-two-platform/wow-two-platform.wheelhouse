@@ -1,0 +1,31 @@
+using Wheelhouse.Application.Deployments.Settings.Services;
+using Wheelhouse.Application.Products.Services;
+using Wheelhouse.Application;
+using Wheelhouse.Application.Deployments;
+using System.Text.Json;
+using Wheelhouse.Application.Abstractions;
+using WoW.Two.Sdk.Beta.Be.Mediator.Cqrs;
+using WoW.Two.Sdk.Beta.Be.Mediator.Result;
+
+namespace Wheelhouse.Infrastructure.Deployments.QueryHandlers;
+
+/// <summary>Handles a read-only target readiness check.</summary>
+/// <remarks>The check weighs the setting keys Wheelhouse would send (stored settings and vault secrets, the keys a deploy
+/// generates first, and linked keys whose source is set; names only), so it names a required key no layer sets. The target's product's approved services catch up with its repositories'
+/// <c>deploy.yml</c> first, since the runner checks the release against them.</remarks>
+public sealed class DeploymentCheckQueryHandler(
+    IDeploymentGateway gateway, ITargetsRepository targets, DeploymentSettingsService settings,
+    ProductReleaseSourcesService releaseSources)
+    : IQueryHandler<DeploymentCheckQuery, AppResult<JsonElement>>
+{
+    /// <inheritdoc />
+    public async ValueTask<AppResult<JsonElement>> HandleAsync(DeploymentCheckQuery request, CancellationToken cancellationToken)
+    {
+        await releaseSources.SyncTargetAsync(request.Target, cancellationToken);
+        var target = await targets.GetBySlugAsync(request.Target, cancellationToken);
+        var keys = target is null ? null : await settings.KeysAsync(target, request.Release, cancellationToken);
+        return keys is null
+            ? await gateway.CheckAsync(request.Target, request.Release, cancellationToken)
+            : await gateway.CheckAsync(request.Target, request.Release, keys, cancellationToken);
+    }
+}

@@ -10,9 +10,8 @@ using Wheelhouse.Application.Products.Models;
 using Wheelhouse.Application.Products.Queries;
 using Wheelhouse.Application.Servers.Models;
 using Wheelhouse.Application.Servers.Queries;
+using Wheelhouse.Application.SystemStatus.Queries;
 using Wheelhouse.Application.Targets.Queries;
-using Wheelhouse.Infrastructure.Settings;
-using Wheelhouse.Persistence;
 using WoW.Two.Sdk.Beta.Be.Foundation.Errors;
 using WoW.Two.Sdk.Beta.Be.Mediator;
 using WoW.Two.Sdk.Beta.Be.Mediator.Result;
@@ -22,7 +21,7 @@ namespace Wheelhouse.Api.Mcp;
 
 /// <summary>Reads portfolio and fleet state without exposing credentials or mutation operations.</summary>
 [McpServerToolType]
-public sealed partial class WheelhouseReadTools(ISender sender, WheelhouseDbContext database, DeploymentSettings deployment)
+public sealed partial class WheelhouseReadTools(ISender sender)
 {
     /// <summary>Reads the product catalog as <c>GET /api/products</c> returns it: the one <c>catalog:read</c>
     /// projection, so the two cannot drift.</summary>
@@ -105,13 +104,12 @@ public sealed partial class WheelhouseReadTools(ISender sender, WheelhouseDbCont
     [McpServerTool(Name = "get_health", ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("Read Wheelhouse database readiness, build version and whether this instance uses the local rehearsal rig.")]
     [Authorize(Policy = WheelhouseMcpConfiguration.DeploymentsPolicy)]
-    public async Task<object> GetHealth(CancellationToken ct) => new
+    public async Task<object> GetHealth(CancellationToken ct)
     {
-        Service = "Wheelhouse",
-        DatabaseReady = await database.Database.CanConnectAsync(ct),
-        Version = typeof(WheelhouseReadTools).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown",
-        LocalRig = deployment.IsLocalRig
-    };
+        var version = typeof(WheelhouseReadTools).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+
+        return Read(await sender.SendAsync(new GetControlPlaneHealthQuery(version), ct));
+    }
 
     // A failure leaves as its own error; the SDK's McpToolErrorFilter turns it into the tool error the agent reads.
     private static T Read<T>(AppResult<T> result) where T : notnull => result.Match(

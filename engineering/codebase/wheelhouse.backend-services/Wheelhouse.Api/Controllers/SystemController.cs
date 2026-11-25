@@ -1,7 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Wheelhouse.Application.Abstractions;
-using Wheelhouse.Infrastructure.Settings;
+using Wheelhouse.Application.SystemStatus.Queries;
+using WoW.Two.Sdk.Beta.Be.Mediator;
+using WoW.Two.Sdk.Beta.Be.Web.ExceptionHandling.Extensions;
 using WoW.Two.Sdk.Beta.Be.Web.SystemStatus;
 
 namespace Wheelhouse.Api.Controllers;
@@ -10,23 +11,18 @@ namespace Wheelhouse.Api.Controllers;
 /// endpoint over the database check (<c>AddPlatformDefaults</c>).</summary>
 [ApiController]
 [Route("api/system")]
-public sealed class SystemController(DeploymentSettings deployment, IConsoleIdentity console) : ControllerBase
+public sealed class SystemController(ISender sender) : ControllerBase
 {
     /// <summary>The running build's informational version: the product version plus the commit it was built from.</summary>
     private static readonly string Version = BuildVersion.Read(typeof(SystemController).Assembly).Version;
 
-    /// <summary>Reports service liveness and version, the environment this console serves (<see cref="IConsoleIdentity.Environment"/>:
-    /// the runner's <c>DEPLOY_ENVIRONMENT</c>, else <c>prod</c> when it runs as Production and <c>dev</c> otherwise; its own
-    /// CI deploys it, so the Products page shows it there) and whether this instance drives the local rehearsal rig instead
-    /// of real hosts.</summary>
+    /// <summary>Reports service liveness, version, deployment environment and rehearsal mode.</summary>
     [AllowAnonymous]
     [HttpGet("status")]
-    public IActionResult Status()
+    public async Task<IActionResult> Status(CancellationToken cancellationToken)
     {
-        return Ok(new
-        {
-            service = "Wheelhouse", status = "ok", version = Version, environment = console.Environment,
-            localRig = deployment.IsLocalRig,
-        });
+        var result = await sender.SendAsync(new GetSystemStatusQuery(Version), cancellationToken);
+
+        return result.Match<IActionResult>(success => Ok(success.Data), failure => this.ToProblem(failure.Error));
     }
 }
