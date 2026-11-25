@@ -44,7 +44,7 @@ public sealed class IntegrationKeysE2ETests(WheelhouseAppFixture fixture) : Whee
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
         var created = await response.ReadEnvelopeAsync<IntegrationKeyWithSecretResponse>();
-        created.Secret.Should().MatchRegex("^wh_[A-Za-z0-9]{32}$");
+        created.Secret.Should().MatchRegex("^wh_[A-Za-z0-9]{38}$");
         created.Key.Prefix.Should().Be(created.Secret[..11]);
         created.Key.Scopes.Should().Equal("catalog:read");
         created.Key.CreatedBy.Should().Be("test-admin");

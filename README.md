@@ -19,7 +19,7 @@ product/                          ← the definition (what · why · flows · br
 engineering/                      ← the execution (build · ship · run)
 ├── engineering.md · architecture/ · development/ · deployment/ · planning/ · research/ · scripts/
 └── codebase/
-    ├── wheelhouse.backend-services/         ← .NET 10 API (Clean Architecture + SDK mediator + EF Core/PostgreSQL)
+    ├── wheelhouse.backend-services/         ← .NET 11 API (Clean Architecture + SDK mediator + EF Core/PostgreSQL)
     │   ├── Wheelhouse.Domain        ← entities and enums
     │   ├── Wheelhouse.Application   ← commands and queries, repository abstractions
     │   ├── Wheelhouse.Infrastructure← integration clients and bounded deployment gateway
@@ -62,7 +62,7 @@ Container startup requires an explicit database password and owner login; see
 
 ## Stack
 
-- **Backend:** .NET 10, Clean Architecture, the be sdk `WoW2.Sdk.Beta.Be` (mediator, results, identity), EF Core 10 + PostgreSQL.
+- **Backend:** .NET 11, Clean Architecture, the be sdk `WoW2.Sdk.Beta.Be` (mediator, results, identity), EF Core 11 + PostgreSQL.
 - **Frontend:** Vue 3, Vue Router, Vite 6, Tailwind v4, the fe sdk `@wow-two-beta/fe`.
 - **Runtime (target):** Docker + Traefik per Hetzner VPS; images from GHCR.
 

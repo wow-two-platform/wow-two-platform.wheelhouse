@@ -19,7 +19,7 @@ engineering/              ← the execution (build · ship · run)
 ├── engineering.md · architecture/ · development/ · deployment/ · planning/ · research/ · scripts/
 │   └── planning/ = backlog.md + version-track/v{X.Y}/ (newest folder = active version)
 └── codebase/
-    ├── wheelhouse.backend-services/   ← .NET 10 Clean Architecture solution (Wheelhouse.BackendServices.slnx)
+    ├── wheelhouse.backend-services/   ← .NET 11 Clean Architecture solution (Wheelhouse.BackendServices.slnx)
     ├── wheelhouse.frontend-services/  ← pnpm workspace; apps/web = Vue 3 + Vite + Tailwind v4 + the fe sdk @wow-two-beta/fe
     │                                     (Home · Products · Deployments · Servers; /p/:product/:tab; profile menu)
     └── wheelhouse.runner-services/    ← Python runner: fleet, catalog, SSH transport, target executor,

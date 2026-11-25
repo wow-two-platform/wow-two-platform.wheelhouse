@@ -1,7 +1,6 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Wheelhouse.Application.Abstractions;
@@ -128,38 +127,13 @@ public sealed class DevPassGateE2ETests(WheelhouseAppFixture fixture) : Wheelhou
         await using (var scope = Fixture.Host.Services.CreateAsyncScope())
             await scope.ServiceProvider.GetRequiredService<IInventorySnapshot>().ExportAsync(CancellationToken.None);
         File.Copy(Path.Combine(Fixture.InventoryRoot, "inventory.json"), Path.Combine(_root, "inventory.json"));
-        ImportRelease(Bundle, Release);
-        ImportRelease("foreverpin-v0-9-0", "v0.9.0");
+        ForeverPinReleaseFixture.Import(_root, Bundle, Release);
+        ForeverPinReleaseFixture.Import(_root, "foreverpin-v0-9-0", "v0.9.0");
 
         var settings = new DeploymentSettings { TransportPath = TransportPath(), Root = _root, Rehearsal = DeploymentSettings.RigHost };
         // The host's own runner process client: its time limit, environment allowlist and failure parser.
         var runner = Fixture.Host.Services.GetRequiredKeyedService<IProcessClient>(RunnerProcess.ClientName);
         Fixture.Deployments.Runner = new DeploymentGateway(runner, settings);
-    }
-
-    private void ImportRelease(string bundle, string release)
-    {
-        const string image = "ghcr.io/sulton-max/10x-venture-forever-pin/management@sha256:";
-        var folder = Directory.CreateDirectory(Path.Combine(_root, "bundles", bundle)).FullName;
-        var compose = JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            services = new
-            {
-                management = new
-                {
-                    image = image + new string('a', 64), platform = "linux/amd64",
-                    healthcheck = new { test = new[] { "CMD", "true" } },
-                },
-            },
-        });
-        File.WriteAllBytes(Path.Combine(folder, "compose.json"), compose);
-        File.WriteAllText(Path.Combine(folder, "release.json"), JsonSerializer.Serialize(new
-        {
-            schemaVersion = 1, product = "foreverpin", release, kind = "release", sourceCommit = new string('a', 40),
-            platform = "linux/amd64", rollbackCompatible = false,
-            composeSha256 = Convert.ToHexStringLower(SHA256.HashData(compose)),
-            images = new { management = image + new string('a', 64) },
-        }));
     }
 
     /// <summary>Writes a submission record the way the runner keeps them, with the outcome its target journal reported
@@ -172,13 +146,16 @@ public sealed class DevPassGateE2ETests(WheelhouseAppFixture fixture) : Wheelhou
         Directory.CreateDirectory(Path.Combine(_root, "observed"));
         File.WriteAllText(Path.Combine(_root, "jobs", id + ".json"), JsonSerializer.Serialize(new
         {
-            id, targetId = target, release, actor = "test-admin", status = "submitting", submittedAt = now.AddMinutes(-5).ToString("O"),
+            id, targetId = target, release, actor = "test-admin", status = "submitting", submittedAt = Timestamp(now.AddMinutes(-5)),
         }));
         File.WriteAllText(Path.Combine(_root, "observed", id + ".json"), JsonSerializer.Serialize(new Dictionary<string, string?>
         {
-            ["status"] = status, ["completedAt"] = now.ToString("O"), ["project"] = project,
+            ["status"] = status, ["completedAt"] = Timestamp(now), ["project"] = project,
         }.Where(pair => pair.Value is not null).ToDictionary()));
     }
+
+    private static string Timestamp(DateTimeOffset timestamp) =>
+        timestamp.ToString("yyyy-MM-dd'T'HH:mm:ss.ffffffzzz", CultureInfo.InvariantCulture);
 
     private Task<HttpResponseMessage> Deploy(object request)
     {

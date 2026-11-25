@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -15,7 +16,7 @@ namespace Wheelhouse.Tests.E2E.Tests;
 /// Drives service controls through the API and the real runner, over the inventory the host exports from its database:
 /// ForeverPin's dev target names a host settings file for its service, as the canary's does on wheelhouse-dev. A control
 /// that passes every rule stops where it first needs SSH, which no test server has an identity for; and what a finished
-/// control left stopped holds every deploy back before anything is downloaded.
+/// control left stopped holds every deploy back before release preparation.
 /// </summary>
 [Collection(WheelhouseCollection.Name)]
 public sealed class ServiceControlsRunnerE2ETests(WheelhouseAppFixture fixture) : WheelhouseE2EBase(fixture), IDisposable
@@ -62,10 +63,11 @@ public sealed class ServiceControlsRunnerE2ETests(WheelhouseAppFixture fixture) 
             .EnumerateArray().Single(row => row.GetProperty("environment").GetString() == "dev");
         dev.GetProperty("stopped").GetProperty("services")[0].GetString().Should().Be("management");
 
-        // A later start that left nothing stopped lets deploys through again: the deploy reaches the release download.
+        // A later start lets the deploy reach the target connection.
         Control("foreverpin-dev", "start", null, minutesAgo: 1);
+        ForeverPinReleaseFixture.Import(_root, "foreverpin-v1-0-0", "v1.0.0");
         var next = await DeployAsync(new { target = "foreverpin-dev", release = "foreverpin-v1-0-0" });
-        (await next.Content.ReadAsStringAsync()).Should().NotContain("start it before deploying");
+        (await next.Content.ReadAsStringAsync()).Should().Contain(PastTheRules);
     }
 
     /// <summary>Routes the host's runner calls to the real runner over this test's root and the inventory the host
@@ -84,7 +86,8 @@ public sealed class ServiceControlsRunnerE2ETests(WheelhouseAppFixture fixture) 
     private void Control(string target, string kind, object? stopped, int minutesAgo = 5)
     {
         var id = Guid.NewGuid().ToString();
-        var at = DateTimeOffset.UtcNow.AddMinutes(-minutesAgo).ToString("O");
+        var at = DateTimeOffset.UtcNow.AddMinutes(-minutesAgo)
+            .ToString("yyyy-MM-dd'T'HH:mm:ss.ffffffzzz", CultureInfo.InvariantCulture);
         Directory.CreateDirectory(Path.Combine(_root, "jobs"));
         Directory.CreateDirectory(Path.Combine(_root, "observed"));
         File.WriteAllText(Path.Combine(_root, "jobs", id + ".json"), JsonSerializer.Serialize(new

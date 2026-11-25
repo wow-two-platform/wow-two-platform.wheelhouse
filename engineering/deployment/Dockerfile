@@ -12,7 +12,7 @@ ARG APP_VERSION
 RUN pnpm build
 
 # Stays in global.json's 10.0.3xx band; the floating 10.0 tag moved to 10.0.4xx, which the pin refuses.
-FROM mcr.microsoft.com/dotnet/sdk:10.0.302 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0.100 AS build
 ARG TARGETARCH
 WORKDIR /src
 COPY wheelhouse.backend-services/ ./
@@ -22,7 +22,7 @@ ARG APP_VERSION
 RUN case "$TARGETARCH" in amd64) rid=linux-x64 ;; arm64) rid=linux-arm64 ;; *) exit 1 ;; esac \
     && dotnet publish Wheelhouse.Api/Wheelhouse.Api.csproj -c Release -o /app -r "$rid" --self-contained false -p:BuildSpa=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS final
 RUN apt-get update && apt-get install -y --no-install-recommends curl python3 openssh-client \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app

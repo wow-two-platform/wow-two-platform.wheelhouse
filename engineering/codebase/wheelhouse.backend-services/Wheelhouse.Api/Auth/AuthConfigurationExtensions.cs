@@ -146,7 +146,16 @@ public static class AuthConfigurationExtensions
     /// <returns>The same application for chaining.</returns>
     public static WebApplication MapIdentityEndpoints(this WebApplication app)
     {
-        app.MapGroup(IdentityPath).MapOAuthSignInEndpoints(GitHubScheme, o => o.NotConfiguredDetail = NotConfiguredDetail);
+        app.MapGroup(IdentityPath)
+            .AddEndpointFilter(async (context, next) =>
+            {
+                var result = await next(context);
+
+                return result is IValueHttpResult { Value: OAuthSignedInUserDto user }
+                    ? Results.Ok(new { Login = user.Handle, user.Name, user.Avatar })
+                    : result;
+            })
+            .MapOAuthSignInEndpoints(GitHubScheme, o => o.NotConfiguredDetail = NotConfiguredDetail);
         return app;
     }
 
